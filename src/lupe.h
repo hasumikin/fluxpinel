@@ -66,6 +66,10 @@ typedef struct {
    the classes of an AOT program (0, 1, ...). */
 #define LUPE_CLS_BASE 0x100000
 
+/* The ids of the exception classes that only the runtime names (LoadError,
+   Math::DomainError, ...) count down from here, below the builtin table. */
+#define LUPE_EXC_CLS_BASE (-1000)
+
 struct LupeFrame;
 
 /* A block that a call passes: a block literal, a lambda, `&:sym` or the
@@ -73,7 +77,9 @@ struct LupeFrame;
 typedef struct LupeBlock {
   const pm_node_t *node;          /* a block or a lambda node; NULL for &:sym */
   struct LupeFrame *home;         /* the frame where the block was written */
-  uint64_t serial;                /* home->serial then; another value means home returned */
+  uint64_t serial;                /* home->serial then */
+  int depth;                      /* home->depth; the home is live while
+                                     L.fserial[depth] == serial */
   const struct LupeBlock *site;   /* the call that break leaves; NULL for none */
   sp_sym sym;                     /* &:sym */
   int lambda;
@@ -105,6 +111,7 @@ typedef struct LupeFrame {
                                  what `...` takes (rooted slots after `it`) */
   uint64_t serial;            /* unique to this frame, for LupeBlock.serial */
   int lambda;                 /* a lambda frame: return leaves it */
+  int depth;                  /* the index of this frame in L.fserial */
 } LupeFrame;
 
 /* A pending jump out of the statement under evaluation. A break in a
@@ -112,7 +119,7 @@ typedef struct LupeFrame {
    call that passed the block (L.ctl_target). A return ends the frame
    L.ctl_target. */
 typedef enum {
-  LUPE_CTL_NONE, LUPE_CTL_RETURN, LUPE_CTL_BREAK, LUPE_CTL_NEXT, LUPE_CTL_BREAK_BLOCK
+  LUPE_CTL_NONE, LUPE_CTL_RETURN, LUPE_CTL_BREAK, LUPE_CTL_NEXT, LUPE_CTL_BREAK_BLOCK, LUPE_CTL_RETRY
 } LupeCtl;
 
 typedef struct {
@@ -130,6 +137,10 @@ typedef struct {
   uint64_t serial;       /* the last LupeFrame.serial */
   const void *kwhash;    /* the Hash that a call passes as keywords (`m(a: 1)`), so
                             that a Hash literal in the last place stays positional */
+  uint64_t *fserial;     /* the serials of the live frames, outermost first. A
+                            frame pops its entry when it ends; a rescue cuts the
+                            entries of the frames that a raise unwound */
+  int fdepth, fcap;
 } Lupe;
 
 static Lupe L;
@@ -145,6 +156,19 @@ static int lupe_range_core(sp_RbVal r, const char *name, int argc, sp_RbVal *arg
 static int lupe_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
                           sp_RbVal *out);
 static int lupe_array_hash(sp_RbVal r, const char *name, int argc, sp_RbVal *out);
+static int lupe_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
+                             sp_RbVal *out);
+static LupeClass *lupe_class_named(const char *name);
+
+/* exc.c */
+static int lupe_is_exc(sp_RbVal v);
+static sp_RbVal lupe_exc_box(sp_Exception *e);
+static int lupe_is_exc_class(const LupeClass *k);
+static sp_RbVal lupe_exc_new(LupeClass *k, int argc, sp_RbVal *argv, const LupeBlock *blk);
+static void lupe_exc_init(sp_RbVal v, int argc, sp_RbVal *argv);
+static int lupe_exc_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int lupe_exc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int lupe_exc_matches(const char *cls, sp_RbVal ev, sp_RbVal target);
 static int lupe_is_proc(sp_RbVal v);
 static int lupe_is_range(sp_RbVal v);
 static int lupe_is_hash(sp_RbVal v);

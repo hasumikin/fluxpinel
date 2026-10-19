@@ -150,6 +150,15 @@ static LupeClass *lupe_builtin(const char *name) {
   for (int i = 0; i < L.nbuiltins; i++)
     if (!strcmp(L.builtins[i]->name, name)) return L.builtins[i];
   sp_int id = lupe_builtin_id(name);
+  /* an exception class that only the runtime knows (LoadError, ...): an id
+     of its own below the table, and the runtime's superclass */
+  const char *exc_parent = id ? NULL : sp_exc_parent_of_name(name);
+  if (exc_parent) {
+    LupeClass *c = lupe_class_alloc(LUPE_EXC_CLS_BASE - L.nbuiltins, strdup(name), 0, NULL, NULL);
+    lupe_push_class(&L.builtins, &L.nbuiltins, &L.builtins_cap, c);
+    c->super = lupe_builtin(exc_parent);
+    return c;
+  }
   if (!id) return NULL;
   const char *super = "Object", *mixin = NULL;
   int is_module = 0;
@@ -170,6 +179,8 @@ static LupeClass *lupe_class_by_id(sp_int cls_id) {
   if (cls_id >= LUPE_CLS_BASE && cls_id < LUPE_CLS_BASE + L.nclasses) return L.classes[cls_id - LUPE_CLS_BASE];
   int i = -100 - (int)cls_id;
   if (i >= 0 && i < LUPE_NBUILTIN_CLASSES) return lupe_builtin(lupe_builtin_class_names[i]);
+  for (int j = 0; cls_id <= LUPE_EXC_CLS_BASE && j < L.nbuiltins; j++)
+    if (L.builtins[j]->cls_id == cls_id) return L.builtins[j];
   return NULL;
 }
 
@@ -194,10 +205,20 @@ static int lupe_is_lupe_object(sp_RbVal v) {
   return v.tag == SP_TAG_OBJ && v.cls_id >= LUPE_CLS_BASE && v.v.p;
 }
 
-/* The class of any value. */
+/* The class of the program with this full name ("A::B"), or NULL. */
+static LupeClass *lupe_class_named(const char *name) {
+  for (int i = 0; i < L.nclasses; i++)
+    if (!strcmp(L.classes[i]->name, name)) return L.classes[i];
+  return NULL;
+}
+
+/* The class of any value. An exception names its class, which can be a
+   class of the program. */
 static LupeClass *lupe_class_of(sp_RbVal v) {
   if (lupe_is_lupe_object(v)) return lupe_class_by_id(v.cls_id);
-  LupeClass *c = lupe_builtin(sp_poly_class_name(v));
+  const char *name = sp_poly_class_name(v);
+  LupeClass *c = lupe_builtin(name);
+  if (!c && v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_EXCEPTION) c = lupe_class_named(name);
   return c ? c : L.object;
 }
 
@@ -344,14 +365,19 @@ static int lupe_ivar_slot(LupeClass *c, sp_sym name, int create) {
 /* The ivars of a class value (class-level @x) live in a hidden object. */
 static sp_PolyArray *lupe_class_ivars;   /* [class value, object, ...]; marked by the hook */
 
+/* An exception keeps its ivars in a hidden object too. The table holds
+   the exception, so an exception with an ivar lives until the end. */
 static sp_RbVal lupe_ivar_holder(sp_RbVal self) {
   if (lupe_is_lupe_object(self)) return self;
-  if (self.tag != SP_TAG_CLASS) return sp_box_nil();
-  LupeClass *c = lupe_class_value(self);
-  if (!c) return sp_box_nil();
+  int exc = self.tag == SP_TAG_OBJ && self.cls_id == SP_BUILTIN_EXCEPTION && self.v.p;
+  if (self.tag != SP_TAG_CLASS && !exc) return sp_box_nil();
+  LupeClass *c = exc ? NULL : lupe_class_value(self);
+  if (!c && !exc) return sp_box_nil();
   if (!lupe_class_ivars) lupe_class_ivars = sp_PolyArray_new();
-  for (sp_int i = 0; i + 1 < lupe_class_ivars->len; i += 2)
-    if (lupe_class_ivars->data[i].cls_id == c->cls_id) return lupe_class_ivars->data[i + 1];
+  for (sp_int i = 0; i + 1 < lupe_class_ivars->len; i += 2) {
+    sp_RbVal k = lupe_class_ivars->data[i];
+    if (exc ? k.v.p == self.v.p : k.tag == SP_TAG_CLASS && k.cls_id == c->cls_id) return lupe_class_ivars->data[i + 1];
+  }
   sp_RbVal holder = lupe_new_object(lupe_builtin("Object"));
   SP_GC_ROOT_RBVAL(holder);
   sp_PolyArray_push(lupe_class_ivars, self);
@@ -595,6 +621,11 @@ static int lupe_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
       *out = sp_box_bool(lupe_is_lupe_object(a) && a.v.p == r.v.p);
       return 1;
     }
+    /* equal?: the same object; an immediate value by its bits */
+    if (!strcmp(name, "equal?")) {
+      *out = sp_box_bool(r.tag == a.tag && r.cls_id == a.cls_id && r.v.i == a.v.i);
+      return 1;
+    }
     if (lupe_is_lupe_object(r) && !strcmp(name, "!=")) {
       *out = sp_box_bool(!sp_poly_truthy(lupe_send(r, "==", 1, argv)));
       return 1;
@@ -653,6 +684,11 @@ static int lupe_class_core(LupeFrame *f, sp_RbVal r, const char *name, int argc,
   if (!k) return 0;
   if (!strcmp(name, "new") || !strcmp(name, "allocate")) {
     if (k->is_module) return 0;
+    /* an exception is a runtime sp_Exception, for a builtin class too */
+    if (name[0] == 'n' && lupe_is_exc_class(k)) {
+      *out = lupe_exc_new(k, argc, argv, blk);
+      return 1;
+    }
     /* a builtin class other than Object makes its own instances */
     if (k->cls_id < 0 && k != L.object) return 0;
     /* an instance of a subclass of Exception, Array, Struct ... needs the

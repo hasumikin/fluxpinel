@@ -52,14 +52,29 @@ static sp_RbVal *lupe_local(LupeFrame *f, const pm_node_t *n, pm_constant_id_t n
   }                                                                               \
   LupeFrame f __attribute__((cleanup(lupe_frame_exit))) = {                       \
     .locals = f##_slots, .names = (namelist), .self = (self_), .cref = (cref_),   \
-    .it = &f##_slots[f##_n], .anon = &f##_slots[f##_n + 1], .serial = ++L.serial }
+    .it = &f##_slots[f##_n], .anon = &f##_slots[f##_n + 1], .serial = ++L.serial, \
+    .depth = lupe_frame_enter(L.serial) }
 
-/* A frame that ends drops its serial, so that a block of the frame sees
-   that its home has returned. The stale stack memory can keep the old
-   serial, so a check of the serial alone is not enough. The store is
-   volatile: the frame dies next, so the compiler drops a plain store. */
+/* The frame stack in L.fserial tells whether the home frame of a block is
+   live. It is on the heap, so a check never reads the stack memory of a
+   frame that has ended. */
+static int lupe_frame_enter(uint64_t serial) {
+  if (L.fdepth == L.fcap) {
+    L.fcap = L.fcap ? L.fcap * 2 : 256;
+    L.fserial = realloc(L.fserial, sizeof *L.fserial * (size_t)L.fcap);
+  }
+  L.fserial[L.fdepth] = serial;
+  return L.fdepth++;
+}
+
+/* A frame that ends pops its entry. A raise skips this cleanup; the
+   rescue that lands cuts the stack back to its own depth. */
 static void lupe_frame_exit(LupeFrame *f) {
-  *(volatile uint64_t *)&f->serial = 0;
+  L.fdepth = f->depth;
+}
+
+static int lupe_frame_live(const LupeBlock *b) {
+  return b->depth < L.fdepth && L.fserial[b->depth] == b->serial;
 }
 
 /* ---- methods ---- */
@@ -352,7 +367,7 @@ static sp_RbVal lupe_yield_x(const LupeBlock *b, int argc, sp_RbVal *argv, int s
     return lupe_send(argv[0], sp_sym_to_s(b->sym), argc - 1, argv + 1);
   }
   LupeFrame *h = b->home;
-  if (h->serial != b->serial) lupe_gap("a call of a block whose scope has returned");
+  if (!lupe_frame_live(b)) lupe_gap("a call of a block whose scope has returned");
   SP_GC_SAVE();
   const pm_constant_id_list_t *locals;
   const pm_node_t *params, *body;
@@ -409,7 +424,7 @@ static sp_RbVal lupe_block_proc(const LupeBlock *b) {
 static const LupeBlock *lupe_make_block(LupeFrame *f, const pm_node_t *bn, LupeBlock *lit, sp_RbVal *holder) {
   if (!bn) return NULL;
   if (PM_NODE_TYPE_P(bn, PM_BLOCK_NODE)) {
-    *lit = (LupeBlock){ .node = bn, .home = f, .serial = f->serial, .site = lit };
+    *lit = (LupeBlock){ .node = bn, .home = f, .serial = f->serial, .depth = f->depth, .site = lit };
     return lit;
   }
   const pm_node_t *e = ((const pm_block_argument_node_t *)bn)->expression;
@@ -636,6 +651,7 @@ static sp_RbVal lupe_call_self(LupeFrame *f, const char *name, int argc, sp_RbVa
   if (m) return lupe_invoke_b(m, self, argc, argv, blk);
   if (lupe_kernel_block(f, name, argc, blk, &out)) return out;
   if (blk) return lupe_send_b(self, name, argc, argv, blk);
+  if (lupe_exc_kernel(name, argc, argv, &out)) return out;
   if (lupe_kernel(name, argc, argv, &out)) return out;
   if (lupe_object_core(self, name, argc, argv, &out)) return out;
   if (!lupe_is_lupe_object(self) && self.tag != SP_TAG_CLASS) return lupe_send(self, name, argc, argv);
@@ -736,10 +752,20 @@ static sp_RbVal lupe_super_call(LupeFrame *f, const pm_node_t *n, const pm_argum
   if (s) return lupe_invoke_b(s, f->self, argc, argv, blk);
   const char *name = sp_sym_to_s(m->name);
   sp_RbVal out;
-  if (!strcmp(name, "initialize")) return sp_box_nil();
+  /* the builtin initialize: an exception takes its message */
+  if (!strcmp(name, "initialize")) {
+    if (lupe_is_exc(f->self)) lupe_exc_init(f->self, argc, argv);
+    return sp_box_nil();
+  }
   if (f->self.tag == SP_TAG_CLASS && lupe_class_core(NULL, f->self, name, argc, argv, blk, &out)) return out;
-  if (blk) lupe_gap(sp_sprintf("super with a block to the builtin %s", name));
-  if (lupe_object_core(f->self, name, argc, argv, &out)) return out;
+  /* an object of the program: the defaults of Object, which do not call
+     the hooks (to_s through a hook would call the program's to_s again) */
+  if (lupe_is_lupe_object(f->self)) {
+    if (blk) lupe_gap(sp_sprintf("super with a block to the builtin %s", name));
+    if (lupe_object_core(f->self, name, argc, argv, &out)) return out;
+  } else if (lupe_builtin_call(f->self, name, argc, argv, blk, &out)) {
+    return out;
+  }
   lupe_trace_missing("super", name, argc);
   sp_raise_cls("NoMethodError", sp_sprintf("super: no superclass method '%s'", name));
 }
@@ -1054,6 +1080,206 @@ static sp_RbVal lupe_index_logic_write(LupeFrame *f, const pm_node_t *n) {
   return argv[argc];
 }
 
+/* ---- exceptions ---- */
+
+/* Pushes a rescue handler and pops it, as the code that spinel emits
+   does (src/codegen: begin/rescue). LUPE_TRY_LANDED restores the GC roots
+   and the rescue stack at a landing, and cuts the frame stack of Lupe,
+   since a raise skips the cleanup of the frames that it unwinds. */
+#define LUPE_TRY_PUSH()                                                                \
+  sp_exc_check_depth();                                                                \
+  sp_exc_rootmark[sp_exc_top] = sp_gc_nroots;                                          \
+  sp_rescue_mark[sp_exc_top] = sp_rescue_sp;                                           \
+  sp_exc_msg[sp_exc_top] = 0;                                                          \
+  sp_exc_obj[sp_exc_top] = 0;                                                          \
+  sp_exc_top++
+#define LUPE_TRY_LANDED(depth)                                                         \
+  sp_exc_top--;                                                                        \
+  sp_gc_nroots = sp_exc_rootmark[sp_exc_top];                                          \
+  sp_rescue_sp = sp_rescue_mark[sp_exc_top];                                           \
+  L.fdepth = (depth);                                                                  \
+  L.kwhash = NULL
+
+/* The exception that a handler caught: its class name, message and object
+   (NULL when the runtime raised by name only). */
+typedef struct {
+  const char *cls, *msg;
+  void *obj;
+} LupeCaught;
+
+static LupeCaught lupe_caught(void) {
+  return (LupeCaught){ (const char *)sp_last_exc_cls, sp_exc_msg[sp_exc_top], sp_exc_obj[sp_exc_top] };
+}
+
+/* The object of a caught exception, made now when the runtime raised by
+   name. It takes as its cause the exception that a rescue handled when
+   the raise happened (sp_pending_cause), as the code of spinel does. */
+static sp_Exception *lupe_caught_obj(LupeCaught c) {
+  sp_Exception *e = c.obj ? (sp_Exception *)c.obj : sp_exc_new_for_catch(c.cls, c.msg);
+  if (!e->cause) {
+    sp_gc_wb(e);
+    e->cause = (sp_Exception *)sp_pending_cause;
+  }
+  sp_pending_cause = NULL;
+  return e;
+}
+
+/* Raises a caught exception again, the same object. */
+static __attribute__((noreturn)) void lupe_reraise(LupeCaught c) {
+  sp_pending_exc_obj = c.obj;
+  sp_bt_keep = 1;
+  sp_raise_cls(c.cls, c.msg);
+}
+
+/* Binds `=> target` of a rescue clause. */
+static void lupe_rescue_bind(LupeFrame *f, const pm_node_t *t, sp_RbVal v) {
+  if (PM_NODE_TYPE_P(t, PM_LOCAL_VARIABLE_TARGET_NODE)) {
+    const pm_local_variable_target_node_t *l = (const pm_local_variable_target_node_t *)t;
+    *lupe_local(f, t, l->name, l->depth) = v;
+  } else if (PM_NODE_TYPE_P(t, PM_INSTANCE_VARIABLE_TARGET_NODE)) {
+    lupe_ivar_set(f->self, lupe_sym(((const pm_instance_variable_target_node_t *)t)->name), v);
+  } else {
+    lupe_unsupported(t, "rescue target");
+  }
+}
+
+/* Whether a rescue clause takes the exception ev of class cls. A clause
+   with no class takes a StandardError. */
+static int lupe_rescue_takes(LupeFrame *f, const pm_rescue_node_t *r, const char *cls, sp_RbVal ev) {
+  if (r->exceptions.size == 0) return sp_exc_is_standard_error(cls);
+  sp_RbVal t = sp_box_nil();
+  SP_GC_ROOT_RBVAL(t);
+  for (size_t i = 0; i < r->exceptions.size; i++) {
+    const pm_node_t *x = r->exceptions.nodes[i];
+    if (PM_NODE_TYPE_P(x, PM_SPLAT_NODE)) {
+      t = lupe_eval(f, ((const pm_splat_node_t *)x)->expression);
+      for (sp_int j = 0; lupe_is_array_value(t) && j < sp_poly_length(t); j++)
+        if (lupe_exc_matches(cls, ev, sp_poly_arr_get(t, j))) return 1;
+      continue;
+    }
+    t = lupe_eval(f, x);
+    if (lupe_exc_matches(cls, ev, t)) return 1;
+  }
+  return 0;
+}
+
+/* The rescue clauses for a caught exception: the first that takes it
+   runs, else the exception goes on. Sets *retry for a retry. */
+static sp_RbVal lupe_rescue_run(LupeFrame *f, const pm_rescue_node_t *r, LupeCaught c, int *retry) {
+  sp_Exception *e = lupe_caught_obj(c);
+  SP_GC_ROOT(e);
+  sp_RbVal ev = lupe_exc_box(e);
+  SP_GC_ROOT_RBVAL(ev);
+  for (; r; r = r->subsequent) {
+    if (!lupe_rescue_takes(f, r, c.cls, ev)) continue;
+    sp_rescue_push(e);
+    if (r->reference) lupe_rescue_bind(f, r->reference, ev);
+    sp_RbVal v = lupe_eval_stmts(f, r->statements);
+    sp_rescue_sp--;
+    if (L.ctl == LUPE_CTL_RETRY) {
+      L.ctl = LUPE_CTL_NONE;
+      *retry = 1;
+    }
+    return v;
+  }
+  c.obj = e;
+  lupe_reraise(c);
+}
+
+/* begin/rescue/else: the body under a handler, then the else clause when
+   nothing was raised. A rescue clause runs outside the handler, so a raise
+   in it goes to the next handler out. */
+static sp_RbVal lupe_rescue(LupeFrame *f, const pm_begin_node_t *b) {
+  SP_GC_SAVE();
+  sp_RbVal v = sp_box_nil();
+  SP_GC_ROOT_RBVAL(v);
+  const int depth = L.fdepth;
+retry:
+  LUPE_TRY_PUSH();
+  if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
+    v = lupe_eval_stmts(f, b->statements);
+    sp_exc_top--;
+  } else {
+    LUPE_TRY_LANDED(depth);
+    if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
+    LupeCaught c = lupe_caught();
+    int again = 0;
+    v = lupe_rescue_run(f, b->rescue_clause, c, &again);
+    if (again) goto retry;
+    return v;
+  }
+  if (L.ctl == LUPE_CTL_NONE && b->else_clause) v = lupe_eval(f, (const pm_node_t *)b->else_clause);
+  return v;
+}
+
+/* begin/ensure: the ensure clause runs after the body, after a jump out of
+   it, and after a raise, which then goes on. A jump in the ensure clause
+   takes the place of the jump or the raise that was passing. */
+static sp_RbVal lupe_begin(LupeFrame *f, const pm_begin_node_t *b) {
+  if (!b->ensure_clause) return b->rescue_clause ? lupe_rescue(f, b) : lupe_eval_stmts(f, b->statements);
+  SP_GC_SAVE();
+  sp_RbVal v = sp_box_nil();
+  SP_GC_ROOT_RBVAL(v);
+  const int depth = L.fdepth;
+  LupeCaught c = { NULL, NULL, NULL };
+  sp_Exception *exc = NULL;
+  SP_GC_ROOT(exc);
+  LUPE_TRY_PUSH();
+  if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
+    v = b->rescue_clause ? lupe_rescue(f, b) : lupe_eval_stmts(f, b->statements);
+    sp_exc_top--;
+  } else {
+    LUPE_TRY_LANDED(depth);
+    if (sp_unwind_kind != SP_UNWIND_NONE) {
+      lupe_eval_stmts(f, b->ensure_clause->statements);
+      sp_unwind_resume();
+    }
+    c = lupe_caught();
+    exc = lupe_caught_obj(c);
+    c.obj = exc;
+  }
+  /* the jump that passes through the ensure clause */
+  LupeCtl ctl = L.ctl;
+  sp_RbVal ctl_val = L.ctl_val;
+  SP_GC_ROOT_RBVAL(ctl_val);
+  const void *ctl_target = L.ctl_target;
+  L.ctl = LUPE_CTL_NONE;
+  if (exc) sp_rescue_push(exc);
+  lupe_eval_stmts(f, b->ensure_clause->statements);
+  if (exc) sp_rescue_sp--;
+  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+  L.ctl = ctl;
+  L.ctl_val = ctl_val;
+  L.ctl_target = ctl_target;
+  if (exc) lupe_reraise(c);
+  return v;
+}
+
+/* expr rescue fallback: a StandardError from expr gives fallback. */
+static sp_RbVal lupe_rescue_modifier(LupeFrame *f, const pm_rescue_modifier_node_t *n) {
+  SP_GC_SAVE();
+  sp_RbVal v = sp_box_nil();
+  SP_GC_ROOT_RBVAL(v);
+  const int depth = L.fdepth;
+  LUPE_TRY_PUSH();
+  if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
+    v = lupe_eval(f, n->expression);
+    sp_exc_top--;
+    return v;
+  }
+  LUPE_TRY_LANDED(depth);
+  if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
+  LupeCaught c = lupe_caught();
+  if (!sp_exc_is_standard_error(c.cls)) lupe_reraise(c);
+  /* $! is the exception while the fallback runs */
+  sp_Exception *e = lupe_caught_obj(c);
+  SP_GC_ROOT(e);
+  sp_rescue_push(e);
+  v = lupe_eval(f, n->rescue_expression);
+  sp_rescue_sp--;
+  return v;
+}
+
 /* ---- the evaluator ---- */
 
 static sp_RbVal lupe_eval(LupeFrame *f, const pm_node_t *n) {
@@ -1176,7 +1402,7 @@ static sp_RbVal lupe_eval(LupeFrame *f, const pm_node_t *n) {
     return v;
   }
   case PM_LAMBDA_NODE: {
-    LupeBlock b = { .node = n, .home = f, .serial = f->serial, .lambda = 1 };
+    LupeBlock b = { .node = n, .home = f, .serial = f->serial, .depth = f->depth, .lambda = 1 };
     return lupe_block_proc(&b);
   }
   case PM_IT_LOCAL_VARIABLE_READ_NODE:
@@ -1259,10 +1485,19 @@ static sp_RbVal lupe_eval(LupeFrame *f, const pm_node_t *n) {
     *slot = v;
     return v;
   }
-  case PM_BEGIN_NODE: {
-    const pm_begin_node_t *b = (const pm_begin_node_t *)n;
-    if (b->rescue_clause || b->else_clause || b->ensure_clause) lupe_unsupported(n, "begin with rescue/ensure");
-    return lupe_eval_stmts(f, b->statements);
+  case PM_BEGIN_NODE:
+    return lupe_begin(f, (const pm_begin_node_t *)n);
+  case PM_RESCUE_MODIFIER_NODE:
+    return lupe_rescue_modifier(f, (const pm_rescue_modifier_node_t *)n);
+  case PM_RETRY_NODE:
+    L.ctl = LUPE_CTL_RETRY;
+    L.ctl_val = sp_box_nil();
+    return sp_box_nil();
+  case PM_GLOBAL_VARIABLE_READ_NODE: {
+    /* $!: the exception that a rescue handles */
+    sp_sym g = lupe_sym(((const pm_global_variable_read_node_t *)n)->name);
+    if (strcmp(sp_sym_to_s(g), "$!")) lupe_unsupported(n, "node");
+    return sp_rescue_sp > 0 ? lupe_exc_box((sp_Exception *)sp_exc_handling[sp_rescue_sp - 1]) : sp_box_nil();
   }
   default:
     lupe_unsupported(n, "node");

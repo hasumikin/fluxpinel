@@ -33,6 +33,7 @@ static int lupe_kind_of(sp_RbVal v, const char **family, const char **variant) {
     case SP_BUILTIN_FLT_ARRAY: fam = "ANY_ARRAY"; var = "float_array"; kind = LUPE_TY_FLOAT_ARRAY; break;
     case SP_BUILTIN_STR_ARRAY: fam = "ANY_ARRAY"; var = "str_array"; kind = LUPE_TY_STR_ARRAY; break;
     case SP_BUILTIN_RANGE: fam = var = "range"; kind = LUPE_TY_RANGE; break;
+    case SP_BUILTIN_EXCEPTION: fam = var = "exception"; break;
     case SP_BUILTIN_STR_INT_HASH: fam = "ANY_HASH"; var = "str_int_hash"; kind = LUPE_TY_STR_INT_HASH; break;
     case SP_BUILTIN_STR_STR_HASH: fam = "ANY_HASH"; var = "str_str_hash"; kind = LUPE_TY_STR_STR_HASH; break;
     case SP_BUILTIN_INT_INT_HASH: fam = "ANY_HASH"; var = "int_int_hash"; kind = LUPE_TY_INT_INT_HASH; break;
@@ -274,9 +275,30 @@ static sp_RbVal lupe_send(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
   return lupe_send_b(recv, name, argc, argv, NULL);
 }
 
-/* The same, with the block of the call. A builtin method that takes a
-   block is one of lupe_iter; Lupe stops at any other one, since the
-   generated wrappers would drop the block. */
+/* The builtin methods of a value, without the methods of the program:
+   for a call, and for super from a method of the program. A builtin
+   method that takes a block is one of lupe_iter; Lupe stops at any other
+   one, since the generated wrappers would drop the block. */
+static int lupe_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
+                             sp_RbVal *out) {
+  if (lupe_is_proc(recv) && lupe_proc_core(recv, name, argc, argv, out)) return 1;
+  if (!blk && lupe_range_core(recv, name, argc, argv, out)) return 1;
+  if (lupe_hash_core(recv, name, argc, argv, blk, out)) return 1;
+  if (!blk && lupe_array_hash(recv, name, argc, out)) return 1;
+  if (lupe_exc_core(recv, name, argc, argv, out)) return 1;
+  if (lupe_iter(recv, name, argc, argv, blk, out)) return 1;
+  if (blk) {
+    if (argc >= 1 && (!strcmp(name, "send") || !strcmp(name, "__send__") || !strcmp(name, "public_send"))) return 0;
+    lupe_gap(sp_sprintf("block for the builtin %s#%s", sp_poly_class_name(recv), name));
+  }
+  if (lupe_core(recv, name, argc, argv, out)) return 1;
+  if (lupe_poly_helper(recv, name, argc, argv, out)) return 1;
+  lupe_bop_fn fn = lupe_bop_find(recv, name, argc, argv);
+  if (fn) { *out = fn(recv, argv); return 1; }
+  return lupe_object_core(recv, name, argc, argv, out);
+}
+
+/* The same, with the block of the call. */
 static sp_RbVal lupe_send_b(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk) {
   sp_RbVal out;
   if (lupe_is_lupe_object(recv)) {
@@ -287,25 +309,14 @@ static sp_RbVal lupe_send_b(sp_RbVal recv, const char *name, int argc, sp_RbVal 
     LupeMethod *m = k ? lupe_find_smethod(k, sp_sym_intern(name)) : NULL;
     if (m) return lupe_invoke_b(m, recv, argc, argv, blk);
     if (lupe_class_core(NULL, recv, name, argc, argv, blk, &out)) return out;
-  } else if (lupe_reopened_builtins) {
+  } else if (lupe_reopened_builtins || lupe_is_exc(recv)) {
+    /* a reopened builtin class, or an exception of a class of the program */
     LupeMethod *m = lupe_find_method(lupe_class_of(recv), sp_sym_intern(name));
     if (m && m->owner != L.object) return lupe_invoke_b(m, recv, argc, argv, blk);
   }
-  if (lupe_is_proc(recv) && lupe_proc_core(recv, name, argc, argv, &out)) return out;
-  if (!blk && lupe_range_core(recv, name, argc, argv, &out)) return out;
-  if (lupe_hash_core(recv, name, argc, argv, blk, &out)) return out;
-  if (!blk && lupe_array_hash(recv, name, argc, &out)) return out;
-  if (lupe_iter(recv, name, argc, argv, blk, &out)) return out;
-  if (blk) {
-    if (argc >= 1 && (!strcmp(name, "send") || !strcmp(name, "__send__") || !strcmp(name, "public_send")))
-      return lupe_send_b(recv, lupe_name_arg(argv[0]), argc - 1, argv + 1, blk);
-    lupe_gap(sp_sprintf("block for the builtin %s#%s", sp_poly_class_name(recv), name));
-  }
-  if (lupe_core(recv, name, argc, argv, &out)) return out;
-  if (lupe_poly_helper(recv, name, argc, argv, &out)) return out;
-  lupe_bop_fn fn = lupe_bop_find(recv, name, argc, argv);
-  if (fn) return fn(recv, argv);
-  if (lupe_object_core(recv, name, argc, argv, &out)) return out;
+  if (lupe_builtin_call(recv, name, argc, argv, blk, &out)) return out;
+  if (blk && argc >= 1 && (!strcmp(name, "send") || !strcmp(name, "__send__") || !strcmp(name, "public_send")))
+    return lupe_send_b(recv, lupe_name_arg(argv[0]), argc - 1, argv + 1, blk);
   const char *cls = sp_poly_class_name(recv);
   lupe_trace_missing(cls, name, argc);
   sp_raise_cls("NoMethodError", sp_sprintf("undefined method '%s' for an instance of %s", name, cls));
@@ -313,6 +324,23 @@ static sp_RbVal lupe_send_b(sp_RbVal recv, const char *name, int argc, sp_RbVal 
 
 /* Kernel methods. Answers 1 and sets *out when it handles the call. */
 static int lupe_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  /* Integer(v), Integer(s, base) and exception: false */
+  if (!strcmp(name, "Integer") && argc >= 1 && argc <= 3) {
+    int raise = 1;
+    if (argv[argc - 1].tag == SP_TAG_OBJ && argv[argc - 1].v.p == L.kwhash && sp_poly_is_hash_kind(argv[argc - 1].cls_id)) {
+      sp_RbVal key = sp_box_sym(sp_sym_intern("exception"));
+      sp_RbVal ex = lupe_send(argv[argc - 1], "[]", 1, &key);
+      raise = ex.tag != SP_TAG_BOOL || ex.v.b;
+      argc--;
+    }
+    sp_int base = argc == 2 && argv[1].tag == SP_TAG_INT ? argv[1].v.i : 0;
+    *out = sp_kernel_Integer_val(argv[0], base, raise);
+    return 1;
+  }
+  if (!strcmp(name, "Float") && argc == 1) {
+    *out = sp_box_float(sp_poly_Float(argv[0]));
+    return 1;
+  }
   if (!strcmp(name, "puts")) {
     if (argc == 0) sp_puts_str_line(sp_str_empty);
     for (int i = 0; i < argc; i++) sp_poly_puts(argv[i]);

@@ -154,11 +154,13 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   every call of a Proc. `proc`, `lambda`, `->`, `Proc.new` and a `&b`
   parameter make one. `&proc`, `&:sym` and an anonymous `&` pass a block.
 - **Lifetime.** The home frame is on the C stack. Each frame has a serial
-  number, and a block keeps the serial of its home frame. A frame clears
-  its serial when its C scope ends (a `cleanup` attribute). A call of a
-  block whose home frame has returned stops as a gap. An exception skips
-  the cleanup with `longjmp`, so `rescue` must clear the serials of the
-  frames that it unwinds. Thus a Proc works
+  number and an entry in a stack of serials on the heap (`L.fserial`). A
+  block keeps the serial and the depth of its home frame. A frame pops
+  its entry when its C scope ends (a `cleanup` attribute). A call of a
+  block whose home frame has returned stops as a gap. The check reads
+  only the heap stack, never the stack memory of a frame that ended. A
+  raise skips the cleanup with `longjmp`, so a rescue cuts the heap stack
+  back to its own depth. Thus a Proc works
   while its scope runs, but `define_method` and a Proc that a method
   returns do not. A heap frame for a scope that a Proc outlives is a
   later step.
@@ -170,6 +172,33 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   `then`, `Array.new(n) { }` and `loop`. A builtin method with a block
   that `iter.c` does not have stops as a gap, since a generated wrapper
   would drop the block.
+
+### 3.3.2 Exceptions
+
+- **Value.** An exception is a spinel `sp_Exception`. It names its class
+  (`cls_name`). For a class of the program, the name is the `LupeClass`
+  name, and `sp_user_exc_parent_fn` answers its superclass. Thus
+  `sp_exc_cls_matches` and the report of an uncaught exception see the
+  classes of the program (`src/exc.c`).
+- **Creation.** `k.new` for a subclass of Exception makes an
+  `sp_Exception` and calls the `initialize` of the program, if any.
+  `super(msg)` from it reaches the builtin `initialize`, which sets the
+  message. An exception keeps its ivars in a hidden object, as a class
+  does.
+- **Handlers.** `begin`/`rescue` pushes a handler of the runtime with
+  `setjmp`, in the shape of the code that spinel emits. A rescue clause
+  runs outside the handler, so a raise in it goes to the next handler out.
+  A clause matches by `sp_exc_cls_matches`, and a module by `is_a?`.
+- **Ensure.** `ensure` is a second handler around the rescue part. The
+  ensure clause runs after the body, after a jump (`return`, `break`)
+  and after a raise, which then goes on. A jump in the ensure clause
+  takes the place of the passing jump or raise.
+- **Landing.** A landing restores the GC roots and the rescue stack from
+  the marks of the handler, as generated code does. It also cuts the
+  frame stack of Lupe (section 3.3.1).
+- **Missing methods.** A program that rescues `NoMethodError` can hide a
+  method that Lupe lacks. The oracle still sees the trace of the missing
+  method when the output differs.
 
 ### 3.4 User classes
 
@@ -200,7 +229,8 @@ Lupe gives walker classes their own object kind (`src/object.c`):
   classes. A top-level `def` defines a method of Object.
 - **Gaps.** A semantics that Lupe does not model stops the program as an
   unsupported node does (`lupe_gap`): an instance of a subclass of a
-  builtin class other than Object, an ivar on a builtin value, `extend` on
+  builtin class other than Object and Exception, an ivar on a builtin
+  value other than an exception, `extend` on
   an object, and the reopening of a CRuby core class that spinel's class
   table does not name (Random, Set, ...).
 
@@ -467,6 +497,25 @@ These facts apply to spinel commit `ffac8340d`.
   | a `rescue` modifier | 149 |
   | a multiple assignment | 145 |
 
+- The oracle on spinel `6ab3b2e20` (7910 tests), with exceptions: Lupe
+  runs 2023 tests and 1909 agree. 111 differ; about 30 of them check
+  `private` or `freeze`, which Lupe does not model. The largest blockers
+  now:
+
+  | blocker | tests |
+  |---|---|
+  | a Regexp literal | 262 |
+  | a global variable write | 189 |
+  | `Class#new` with a block | 181 |
+  | a multiple assignment | 151 |
+  | `case` / `when` | 132 |
+  | a Range of values other than Integer | 101 |
+
+- `rescue` lets a program reach two old defects of Lupe. A generated
+  wrapper whose row has no argument kinds takes any argument: `"s".include?(:x)`
+  passes a Symbol to `sp_str_include`, which crashes
+  (`param_include_body_widen`). A rescue with `retry` around a method that
+  Lupe lacks retries forever (`string_split_local_each_retry`).
 - A comparator block that does not compare (`sort { |x| x.length }`) gives
   an order that depends on the sort algorithm. Lupe uses a stable merge
   sort, and CRuby uses its own quicksort. `comparator_block_arity` differs
@@ -524,6 +573,8 @@ These facts apply to spinel commit `ffac8340d`.
    - Classes, modules and constants (section 3.4): `test/m3`.
    - Blocks, Proc and Integer Range (section 3.3.1): `test/m3`.
    - Hash and keyword arguments (section 3.5): `test/m3`.
-   - Next: `begin`/`rescue`.
+   - Exceptions: `raise`, `begin`/`rescue`/`else`/`ensure`, `retry` and
+     the `rescue` modifier (section 3.3.2): `test/m3`.
+   - Next: the largest blockers of the oracle report.
 6. **M4: embedded REPL.** Link Lupe into an AOT binary on a host. Then move
    to a microcontroller board.
