@@ -553,7 +553,12 @@ static int lupe_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
       *out = lupe_class_box(k);
       return 1;
     }
-    if (!strcmp(name, "frozen?")) { *out = sp_box_bool(!lupe_is_lupe_object(r)); return 1; }
+    /* an immediate value is frozen; a heap value carries the flag */
+    if (!strcmp(name, "frozen?")) {
+      int heap = r.tag == SP_TAG_OBJ && r.v.p;
+      *out = sp_box_bool(lupe_is_lupe_object(r) ? 0 : heap ? sp_gc_is_frozen(r.v.p) : 1);
+      return 1;
+    }
     if (!strcmp(name, "freeze") || !strcmp(name, "itself")) { *out = r; return 1; }
     if (!strcmp(name, "nil?")) { *out = sp_box_bool(r.tag == SP_TAG_NIL); return 1; }
     /* the defaults, also for super from a user to_s or inspect */

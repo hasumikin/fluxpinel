@@ -213,6 +213,35 @@ Spinel has 12 typed containers, for example `sp_IntArray`, `sp_StrIntHash`
 and `sp_PolyArray`. The walker creates only the poly forms. A value from AOT
 code can hold any of the 12 forms. The walker reads all 12 forms.
 
+- **Hash.** A Hash literal makes an `sp_PolyPolyHash`. Its entries keep the
+  insertion order. `Hash.new(v)` sets the default value. `Hash.new { }`
+  sets a C default proc that calls the block, and the hash marks the
+  `LupeProc` through `dproc_self` (`src/hash.c`).
+- **Typed Hash.** A method that reads a typed Hash takes a poly copy
+  (`sp_poly_as_poly_poly_hash`). A method that changes one stops as a gap.
+- **Enumerable.** `src/iter.c` reads a Hash as a sequence of `[key, value]`
+  pairs. A block with two parameters spreads each pair. `select`,
+  `reject`, `transform_values` and the mutators answer a Hash, so
+  `src/hash.c` has them.
+- **Keys.** A user object as a key reaches the program through two hooks:
+  `sp_obj_hash_hook` calls `hash`, and `sp_obj_eql_hook` calls `eql?`.
+  Without these methods, a key compares by identity.
+- **Keyword arguments.** `m(a: 1)` passes a Hash as the last argument,
+  and the call marks that Hash (`L.kwhash`). A method with keyword
+  parameters takes only the marked Hash, so a Hash literal in the last
+  place stays positional, as in Ruby 3. The binder binds each keyword and
+  puts the rest into `**rest`. A missing or unknown keyword raises
+  `ArgumentError`, as CRuby does. A bare `super` passes the keywords
+  with their current values.
+- **Forwarding.** A call with `*a`, `...` or a keyword Hash of only `**h`
+  evaluates its arguments into an Array, since the count is known at run
+  time only. An anonymous `*`, `**` or `...` parameter keeps its values
+  in two slots of the frame, after the slot of `it`.
+- **Write barrier.** The walker stores a pointer into a GC object only
+  through a runtime setter, or after `sp_gc_wb`. A young object that an
+  old one holds without the barrier is freed by a minor GC. The GC stress
+  run showed this with the default proc of `Hash.new { }`.
+
 ### 3.6 Boundary to AOT code
 
 - **Walker to AOT.** Spinel exports a method with `--ext-init NAME` and
@@ -425,6 +454,19 @@ These facts apply to spinel commit `ffac8340d`.
   | a keyword argument | 152 |
   | a global variable write | 144 |
 
+- The oracle on spinel `6ab3b2e20`, with Hash, keyword arguments and
+  forwarding: Lupe runs 1548 tests and 1519 agree. 29 differ, most of them
+  in `respond_to?` and in class semantics. The largest blockers now:
+
+  | blocker | tests |
+  |---|---|
+  | `begin` / `rescue` | 775 |
+  | a Regexp literal | 247 |
+  | `Class#new` with a block | 174 |
+  | a global variable write | 171 |
+  | a `rescue` modifier | 149 |
+  | a multiple assignment | 145 |
+
 - A comparator block that does not compare (`sort { |x| x.length }`) gives
   an order that depends on the sort algorithm. Lupe uses a stable merge
   sort, and CRuby uses its own quicksort. `comparator_block_arity` differs
@@ -481,6 +523,7 @@ These facts apply to spinel commit `ffac8340d`.
    Each step runs the oracle again.
    - Classes, modules and constants (section 3.4): `test/m3`.
    - Blocks, Proc and Integer Range (section 3.3.1): `test/m3`.
-   - Next: Hash, `begin`/`rescue`.
+   - Hash and keyword arguments (section 3.5): `test/m3`.
+   - Next: `begin`/`rescue`.
 6. **M4: embedded REPL.** Link Lupe into an AOT binary on a host. Then move
    to a microcontroller board.

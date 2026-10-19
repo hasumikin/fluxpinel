@@ -10,11 +10,14 @@
 
 #include "lupe.h"
 
-/* ---- sequences: the elements of an Array or of an Integer Range ---- */
+static sp_RbVal lupe_pair(sp_RbVal a, sp_RbVal b);
+
+/* ---- sequences: the elements of an Array, an Integer Range or a Hash ---- */
 
 typedef struct {
-  sp_RbVal src;   /* rooted by the caller */
+  sp_RbVal src;           /* rooted by the caller */
   int range;
+  sp_PolyPolyHash *hash;  /* a Hash: src itself, or a poly copy of a typed one */
   sp_int i, last;
 } LupeSeq;
 
@@ -22,11 +25,22 @@ static int lupe_is_range(sp_RbVal v) {
   return v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_RANGE && v.v.p;
 }
 
+static int lupe_is_hash(sp_RbVal v) {
+  return v.tag == SP_TAG_OBJ && sp_poly_is_hash_kind(v.cls_id) && v.v.p;
+}
+
+/* The caller roots s->src. A typed Hash gives a poly copy, which the
+   caller must root through s->hash when it allocates. */
 static int lupe_seq_open(sp_RbVal r, LupeSeq *s) {
   s->src = r;
   s->i = 0;
   s->range = 0;
+  s->hash = NULL;
   if (lupe_is_array(r)) return 1;
+  if (lupe_is_hash(r)) {
+    s->hash = sp_poly_as_poly_poly_hash(r);
+    return 1;
+  }
   if (!lupe_is_range(r)) return 0;
   const sp_Range *g = (const sp_Range *)r.v.p;
   if (g->nobeg) sp_raise_cls("TypeError", "can't iterate from NilClass");
@@ -43,6 +57,12 @@ static int lupe_seq_next(LupeSeq *s, sp_RbVal *v) {
     *v = sp_box_int(s->i);
     if (s->i == INT64_MAX) s->last = INT64_MIN;   /* an endless Range stops at the last word */
     else s->i++;
+    return 1;
+  }
+  if (s->hash) {
+    if (s->i >= s->hash->len) return 0;
+    sp_int slot = s->hash->order[s->i++];
+    *v = lupe_pair(s->hash->keys[slot], s->hash->vals[slot]);
     return 1;
   }
   if (s->i >= sp_poly_length(s->src)) return 0;
@@ -178,7 +198,8 @@ static int lupe_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     return 1;
   }
   if (!lupe_seq_open(r, &s)) return 0;
-  if (argc == 0 && LUPE_IS("each")) {
+  SP_GC_ROOT(s.hash);
+  if (argc == 0 && (LUPE_IS("each") || (s.hash && LUPE_IS("each_pair")))) {
     while (lupe_seq_next(&s, &v)) { lupe_y1(blk, v); LUPE_STOP(); }
     *out = r;
     return 1;
@@ -325,6 +346,30 @@ static int lupe_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     }
     *out = lupe_sorted(acc, keys, keys ? NULL : blk);
     LUPE_STOP();
+    return 1;
+  }
+  if (argc == 0 && (LUPE_IS("group_by") || LUPE_IS("to_h"))) {
+    sp_PolyPolyHash *h = sp_PolyPolyHash_new();
+    SP_GC_ROOT(h);
+    int group = name[0] == 'g';
+    while (lupe_seq_next(&s, &v)) {
+      y = lupe_y1(blk, v);
+      LUPE_STOP();
+      if (group) {
+        sp_RbVal list = sp_PolyPolyHash_get(h, y);
+        if (list.tag == SP_TAG_NIL) {
+          acc = sp_PolyArray_new();
+          sp_PolyPolyHash_set(h, y, sp_box_poly_array(acc));
+          list = sp_box_poly_array(acc);
+        }
+        sp_PolyArray_push((sp_PolyArray *)list.v.p, v);
+      } else {
+        if (!lupe_is_array(y) || sp_poly_length(y) != 2)
+          sp_raise_cls("TypeError", sp_sprintf("wrong element type %s (expected array)", sp_poly_class_name(y)));
+        sp_PolyPolyHash_set(h, sp_poly_arr_get(y, 0), sp_poly_arr_get(y, 1));
+      }
+    }
+    *out = sp_box_obj(h, SP_BUILTIN_POLY_POLY_HASH);
     return 1;
   }
   if (argc == 0 && LUPE_IS("partition")) {
@@ -527,7 +572,7 @@ static int lupe_proc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
   LupeProc *p = (LupeProc *)r.v.p;
   if (LUPE_IS("call") || LUPE_IS("()") || LUPE_IS("yield") || LUPE_IS("[]") || LUPE_IS("===")) {
     SP_GC_ROOT_RBVAL(r);
-    *out = lupe_yield(&p->b, argc, argv);
+    *out = lupe_yield_x(&p->b, argc, argv, 1);
     return 1;
   }
   if (argc == 0 && LUPE_IS("to_proc")) { *out = r; return 1; }

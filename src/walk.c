@@ -40,19 +40,19 @@ static sp_RbVal *lupe_local(LupeFrame *f, const pm_node_t *n, pm_constant_id_t n
 }
 
 /* Declares the slots of a frame on the C stack and roots each one, and
-   sets the self and the lexical class of the scope. The slot after the
-   locals holds `it`. The roots stay until the enclosing SP_GC_SAVE scope
-   ends. */
+   sets the self and the lexical class of the scope. Three slots follow
+   the locals: `it`, the anonymous *rest and the anonymous **kwrest. The
+   roots stay until the enclosing SP_GC_SAVE scope ends. */
 #define LUPE_FRAME(f, namelist, self_, cref_)                                     \
   size_t f##_n = (namelist)->size;                                                \
-  sp_RbVal f##_slots[f##_n + 1];                                                  \
-  for (size_t f##_i = 0; f##_i <= f##_n; f##_i++) {                                \
+  sp_RbVal f##_slots[f##_n + 3];                                                  \
+  for (size_t f##_i = 0; f##_i < f##_n + 3; f##_i++) {                            \
     f##_slots[f##_i] = sp_box_nil();                                               \
     _sp_gc_root_push((void **)((uintptr_t)&f##_slots[f##_i] | (uintptr_t)1));      \
   }                                                                               \
   LupeFrame f __attribute__((cleanup(lupe_frame_exit))) = {                       \
     .locals = f##_slots, .names = (namelist), .self = (self_), .cref = (cref_),   \
-    .it = &f##_slots[f##_n], .serial = ++L.serial }
+    .it = &f##_slots[f##_n], .anon = &f##_slots[f##_n + 1], .serial = ++L.serial }
 
 /* A frame that ends drops its serial, so that a block of the frame sees
    that its home has returned. The stale stack memory can keep the old
@@ -125,18 +125,92 @@ static void lupe_bind_target(LupeFrame *f, const pm_node_t *p, sp_RbVal v) {
 
 static sp_RbVal lupe_block_proc(const LupeBlock *b);
 
+/* ": a, :b" for an ArgumentError message. */
+static const char *lupe_key_list(sp_PolyArray *keys) {
+  sp_String *s = sp_String_new("");
+  SP_GC_ROOT(s);
+  for (sp_int i = 0; i < keys->len; i++) {
+    if (i) sp_String_append(s, ", ");
+    sp_String_append(s, sp_poly_inspect(keys->data[i]));
+  }
+  return s->data;
+}
+
+/* Binds the keyword parameters from the Hash kw (nil for none): each
+   keyword, then **rest. A missing required keyword and an unknown key
+   raise ArgumentError, as CRuby does. */
+static void lupe_bind_keywords(LupeFrame *f, const pm_parameters_node_t *ps, sp_RbVal kw) {
+  sp_PolyPolyHash *h = kw.tag == SP_TAG_NIL ? NULL : sp_poly_as_poly_poly_hash(kw);
+  SP_GC_ROOT(h);
+  sp_PolyArray *missing = sp_PolyArray_new(), *used = NULL;
+  SP_GC_ROOT(missing);
+  SP_GC_ROOT(used);
+  used = sp_PolyArray_new();
+  for (size_t i = 0; i < ps->keywords.size; i++) {
+    const pm_node_t *p = ps->keywords.nodes[i];
+    int req = PM_NODE_TYPE_P(p, PM_REQUIRED_KEYWORD_PARAMETER_NODE);
+    pm_constant_id_t name = req ? ((const pm_required_keyword_parameter_node_t *)p)->name
+                                : ((const pm_optional_keyword_parameter_node_t *)p)->name;
+    sp_RbVal key = sp_box_sym(lupe_sym(name));
+    sp_RbVal *slot = lupe_local(f, p, name, 0);
+    if (h && sp_PolyPolyHash_has_key(h, key)) {
+      *slot = sp_PolyPolyHash_get(h, key);
+      sp_PolyArray_push(used, key);
+    } else if (req) {
+      sp_PolyArray_push(missing, key);
+    } else {
+      *slot = lupe_eval(f, ((const pm_optional_keyword_parameter_node_t *)p)->value);
+    }
+  }
+  if (missing->len)
+    sp_raise_cls("ArgumentError", sp_sprintf("missing keyword%s: %s", missing->len > 1 ? "s" : "",
+                                             lupe_key_list(missing)));
+  sp_PolyPolyHash *rest = sp_PolyPolyHash_new();
+  SP_GC_ROOT(rest);
+  for (sp_int i = 0; h && i < h->len; i++) {
+    sp_RbVal k = h->keys[h->order[i]];
+    if (!sp_PolyArray_include(used, k)) sp_PolyPolyHash_set(rest, k, h->vals[h->order[i]]);
+  }
+  const pm_node_t *kr = ps->keyword_rest;
+  if (kr && PM_NODE_TYPE_P(kr, PM_KEYWORD_REST_PARAMETER_NODE)) {
+    pm_constant_id_t rn = ((const pm_keyword_rest_parameter_node_t *)kr)->name;
+    *(rn ? lupe_local(f, kr, rn, 0) : &f->anon[1]) = sp_box_obj(rest, SP_BUILTIN_POLY_POLY_HASH);
+    return;
+  }
+  if (kr && PM_NODE_TYPE_P(kr, PM_FORWARDING_PARAMETER_NODE)) {
+    f->anon[1] = sp_box_obj(rest, SP_BUILTIN_POLY_POLY_HASH);
+    return;
+  }
+  if (rest->len) {
+    sp_PolyArray *unknown = sp_PolyArray_new();
+    SP_GC_ROOT(unknown);
+    for (sp_int i = 0; i < rest->len; i++) sp_PolyArray_push(unknown, rest->keys[rest->order[i]]);
+    sp_raise_cls("ArgumentError", sp_sprintf("unknown keyword%s: %s", unknown->len > 1 ? "s" : "",
+                                             lupe_key_list(unknown)));
+  }
+}
+
 /* Binds the arguments to the parameters: the required ones, the optional
    ones (a default is evaluated in the callee frame), *rest, the required
    ones after it and &block. With loose set (a block that is not a lambda),
    a missing argument is nil and an extra one is dropped. */
 static void lupe_bind_list(LupeFrame *f, const pm_parameters_node_t *ps, int argc, sp_RbVal *argv, int loose) {
+  const void *kwp = L.kwhash;
+  L.kwhash = NULL;
   if (!ps) {
     if (argc != 0 && !loose) lupe_arity_error(argc, 0, 0, 0);
     return;
   }
-  if (ps->keywords.size || ps->keyword_rest) lupe_unsupported((const pm_node_t *)ps, "keyword parameter");
+  /* keyword parameters (and `...`) take the keyword Hash of the call, the
+     last argument; a Hash literal in that place stays positional */
+  const pm_node_t *kr = ps->keyword_rest;
+  int fwd = kr && PM_NODE_TYPE_P(kr, PM_FORWARDING_PARAMETER_NODE);
+  int haskw = ps->keywords.size || fwd || (kr && PM_NODE_TYPE_P(kr, PM_KEYWORD_REST_PARAMETER_NODE));
+  sp_RbVal kw = sp_box_nil();
+  SP_GC_ROOT_RBVAL(kw);
+  if (haskw && argc > 0 && argv[argc - 1].tag == SP_TAG_OBJ && argv[argc - 1].v.p == kwp) kw = argv[--argc];
   int npre = (int)ps->requireds.size, npost = (int)ps->posts.size, nopt = (int)ps->optionals.size;
-  int rest = ps->rest != NULL;
+  int rest = ps->rest != NULL || fwd;
   if (!loose && (argc < npre + npost || (!rest && argc > npre + npost + nopt)))
     lupe_arity_error(argc, npre + npost, nopt, rest);
   /* a block drops the extra arguments from the end */
@@ -150,17 +224,18 @@ static void lupe_bind_list(LupeFrame *f, const pm_parameters_node_t *ps, int arg
     if (i < nfill) *slot = argv[ai++];
     else *slot = lupe_eval(f, p->value);
   }
-  if (rest && PM_NODE_TYPE_P(ps->rest, PM_REST_PARAMETER_NODE)) {
+  if (fwd || (ps->rest && PM_NODE_TYPE_P(ps->rest, PM_REST_PARAMETER_NODE))) {
     sp_PolyArray *a = sp_PolyArray_new();
     SP_GC_ROOT(a);
     while (ai < argc - npost) sp_PolyArray_push(a, argv[ai++]);
-    pm_constant_id_t rn = ((const pm_rest_parameter_node_t *)ps->rest)->name;
-    if (rn) *lupe_local(f, ps->rest, rn, 0) = sp_box_poly_array(a);
-  } else if (rest && !PM_NODE_TYPE_P(ps->rest, PM_IMPLICIT_REST_NODE)) {
+    pm_constant_id_t rn = ps->rest ? ((const pm_rest_parameter_node_t *)ps->rest)->name : 0;
+    *(rn ? lupe_local(f, ps->rest, rn, 0) : &f->anon[0]) = sp_box_poly_array(a);
+  } else if (ps->rest && !PM_NODE_TYPE_P(ps->rest, PM_IMPLICIT_REST_NODE)) {
     lupe_unsupported(ps->rest, "rest parameter");
   }
   if (ai < argc - npost) ai = argc - npost;
   for (int i = 0; i < npost; i++, ai++) lupe_bind_target(f, ps->posts.nodes[i], ai < argc ? argv[ai] : sp_box_nil());
+  if (haskw) lupe_bind_keywords(f, ps, kw);
   if (ps->block) {
     pm_constant_id_t bn = ((const pm_block_parameter_node_t *)ps->block)->name;
     if (bn) *lupe_local(f, (const pm_node_t *)ps->block, bn, 0) = f->block ? lupe_block_proc(f->block) : sp_box_nil();
@@ -179,9 +254,11 @@ static sp_RbVal *lupe_numbered(LupeFrame *f, const pm_node_t *n, int i) {
   return lupe_local(f, n, id, 0);
 }
 
-/* Binds the arguments of a block call. A block that is not a lambda
-   spreads one Array argument over two or more parameters. */
-static void lupe_bind_block(LupeFrame *f, const pm_node_t *params, int argc, sp_RbVal *argv, int lambda) {
+/* Binds the arguments of a block call. A block spreads one Array argument
+   over two or more parameters. A lambda does so only when a method yields
+   to it (`h.map(&l)`), not when Proc#call calls it (strict). */
+static void lupe_bind_block(LupeFrame *f, const pm_node_t *params, int argc, sp_RbVal *argv, int lambda,
+                            int strict) {
   SP_GC_SAVE();
   if (!params) {
     if (lambda && argc != 0) lupe_arity_error(argc, 0, 0, 0);
@@ -205,7 +282,7 @@ static void lupe_bind_block(LupeFrame *f, const pm_node_t *params, int argc, sp_
     int n = (int)(ps->requireds.size + ps->optionals.size + ps->posts.size);
     many = n >= 2 || (n >= 1 && ps->rest) ? 2 : n;
   }
-  int spread = !lambda && argc == 1 && many >= 2 && lupe_is_array_value(argv[0]);
+  int spread = !(lambda && strict) && argc == 1 && many >= 2 && lupe_is_array_value(argv[0]);
   int len = spread ? (int)sp_poly_length(argv[0]) : 0;
   sp_RbVal elts[len ? len : 1];
   if (spread) {
@@ -268,8 +345,8 @@ static void lupe_block_parts(const pm_node_t *n, const pm_constant_id_list_t **l
 
 /* Calls a block with the arguments. A next ends the block call; a break
    ends the call that passed the block; a return ends the method that
-   holds the block, or the lambda. */
-static sp_RbVal lupe_yield(const LupeBlock *b, int argc, sp_RbVal *argv) {
+   holds the block, or the lambda. strict is set for Proc#call. */
+static sp_RbVal lupe_yield_x(const LupeBlock *b, int argc, sp_RbVal *argv, int strict) {
   if (!b->node) {
     if (argc < 1) sp_raise_cls("ArgumentError", "no receiver given");
     return lupe_send(argv[0], sp_sym_to_s(b->sym), argc - 1, argv + 1);
@@ -285,7 +362,7 @@ static sp_RbVal lupe_yield(const LupeBlock *b, int argc, sp_RbVal *argv) {
   bf.parent = h;
   bf.block = h->block;
   bf.lambda = b->lambda;
-  lupe_bind_block(&bf, params, argc, argv, b->lambda);
+  lupe_bind_block(&bf, params, argc, argv, b->lambda, strict);
   sp_RbVal v = body ? lupe_eval(&bf, body) : sp_box_nil();
   switch (L.ctl) {
   case LUPE_CTL_NEXT:
@@ -306,6 +383,10 @@ static sp_RbVal lupe_yield(const LupeBlock *b, int argc, sp_RbVal *argv) {
   default:
     return v;
   }
+}
+
+static sp_RbVal lupe_yield(const LupeBlock *b, int argc, sp_RbVal *argv) {
+  return lupe_yield_x(b, argc, argv, 0);
 }
 
 static int lupe_is_proc(sp_RbVal v) {
@@ -347,16 +428,113 @@ static const LupeBlock *lupe_make_block(LupeFrame *f, const pm_node_t *bn, LupeB
 
 /* ---- calls ---- */
 
-static int lupe_argc(const pm_arguments_node_t *args) {
+/* A keyword Hash of only `**h`, which passes nothing when it is empty. */
+static int lupe_kwsplat_only(const pm_node_t *a) {
+  if (!PM_NODE_TYPE_P(a, PM_KEYWORD_HASH_NODE)) return 0;
+  const pm_node_list_t *e = &((const pm_keyword_hash_node_t *)a)->elements;
+  for (size_t i = 0; i < e->size; i++)
+    if (!PM_NODE_TYPE_P(e->nodes[i], PM_ASSOC_SPLAT_NODE)) return 0;
+  return 1;
+}
+
+/* Whether the count of the arguments is known at run time only: a splat,
+   `...`, or a keyword Hash of only `**h`. */
+static int lupe_args_dynamic(const pm_arguments_node_t *args) {
   if (!args) return 0;
   for (size_t i = 0; i < args->arguments.size; i++) {
     const pm_node_t *a = args->arguments.nodes[i];
-    if (PM_NODE_TYPE_P(a, PM_SPLAT_NODE) || PM_NODE_TYPE_P(a, PM_KEYWORD_HASH_NODE) ||
-        PM_NODE_TYPE_P(a, PM_BLOCK_ARGUMENT_NODE) || PM_NODE_TYPE_P(a, PM_FORWARDING_ARGUMENTS_NODE))
-      lupe_unsupported(a, "argument kind");
+    if (PM_NODE_TYPE_P(a, PM_SPLAT_NODE) || PM_NODE_TYPE_P(a, PM_FORWARDING_ARGUMENTS_NODE) || lupe_kwsplat_only(a))
+      return 1;
   }
+  return 0;
+}
+
+static int lupe_has_forwarding(const pm_arguments_node_t *args) {
+  for (size_t i = 0; args && i < args->arguments.size; i++)
+    if (PM_NODE_TYPE_P(args->arguments.nodes[i], PM_FORWARDING_ARGUMENTS_NODE)) return 1;
+  return 0;
+}
+
+/* The argument count of a call site that needs a fixed count. */
+static int lupe_argc(const pm_arguments_node_t *args) {
+  if (!args) return 0;
+  if (lupe_args_dynamic(args)) lupe_unsupported((const pm_node_t *)args, "argument kind");
   return (int)args->arguments.size;
 }
+
+/* The frame of the method (or the program) that holds frame f. */
+static LupeFrame *lupe_method_frame(LupeFrame *f) {
+  while (f->parent) f = f->parent;
+  return f;
+}
+
+/* Pushes the elements of a splat: an Array spreads, nil passes nothing
+   and any other value passes itself. */
+static void lupe_spread(sp_PolyArray *out, sp_RbVal v) {
+  if (v.tag == SP_TAG_NIL) return;
+  if (!(v.tag == SP_TAG_OBJ && (sp_poly_is_array_kind(v.cls_id) || v.cls_id == SP_BUILTIN_RANGE))) {
+    sp_PolyArray_push(out, v);
+    return;
+  }
+  SP_GC_ROOT_RBVAL(v);
+  if (v.cls_id == SP_BUILTIN_RANGE) v = lupe_send(v, "to_a", 0, NULL);
+  for (sp_int i = 0; i < sp_poly_length(v); i++) sp_PolyArray_push(out, sp_poly_arr_get(v, i));
+}
+
+/* Evaluates arguments whose count is known at run time only into *out.
+   Sets *kw to the keyword Hash when it is the last argument. Answers 0
+   when a jump is pending. */
+static int lupe_args_spread(LupeFrame *f, const pm_arguments_node_t *args, sp_PolyArray *out, const void **kw) {
+  sp_RbVal v = sp_box_nil();
+  SP_GC_ROOT_RBVAL(v);
+  for (size_t i = 0; i < args->arguments.size; i++) {
+    const pm_node_t *a = args->arguments.nodes[i];
+    *kw = NULL;
+    if (PM_NODE_TYPE_P(a, PM_SPLAT_NODE)) {
+      const pm_node_t *e = ((const pm_splat_node_t *)a)->expression;
+      v = e ? lupe_eval(f, e) : lupe_method_frame(f)->anon[0];
+      if (L.ctl != LUPE_CTL_NONE) return 0;
+      lupe_spread(out, v);
+    } else if (PM_NODE_TYPE_P(a, PM_FORWARDING_ARGUMENTS_NODE)) {
+      LupeFrame *mf = lupe_method_frame(f);
+      lupe_spread(out, mf->anon[0]);
+      v = mf->anon[1];
+      if (v.tag != SP_TAG_NIL && sp_poly_length(v) > 0) {
+        sp_PolyArray_push(out, v);
+        *kw = v.v.p;
+      }
+    } else {
+      v = lupe_eval(f, a);
+      if (L.ctl != LUPE_CTL_NONE) return 0;
+      if (lupe_kwsplat_only(a) && sp_poly_length(v) == 0) continue;
+      sp_PolyArray_push(out, v);
+      if (PM_NODE_TYPE_P(a, PM_KEYWORD_HASH_NODE)) *kw = v.v.p;
+    }
+  }
+  return 1;
+}
+
+/* Declares argc and argv for a call site and evaluates the arguments: into
+   a C array when the count is fixed, else into a rooted Array. kw is the
+   keyword Hash of the call, or NULL. */
+#define LUPE_ARGS(f, args, argc, argv, kw, ok)                                            \
+  int argc = lupe_args_dynamic(args) ? -1 : (args) ? (int)(args)->arguments.size : 0;       \
+  sp_RbVal argc##_vla[argc > 0 ? argc : 1];                                                \
+  sp_RbVal *argv = argc##_vla;                                                             \
+  sp_PolyArray *argc##_spread = NULL;                                                      \
+  SP_GC_ROOT(argc##_spread);                                                               \
+  const void *kw = NULL;                                                                   \
+  int ok;                                                                                  \
+  if (argc >= 0) {                                                                         \
+    ok = lupe_args(f, args, argc, argv);                                                   \
+    if (ok && argc > 0 && PM_NODE_TYPE_P((args)->arguments.nodes[argc - 1], PM_KEYWORD_HASH_NODE)) \
+      kw = argv[argc - 1].v.p;                                                             \
+  } else {                                                                                 \
+    argc##_spread = sp_PolyArray_new();                                                    \
+    ok = lupe_args_spread(f, args, argc##_spread, &kw);                                    \
+    argc = (int)argc##_spread->len;                                                        \
+    argv = argc##_spread->data;                                                            \
+  }
 
 /* Roots argv[0..argc) and evaluates the arguments into it. Answers 0 when
    a jump is pending. The roots stay until the caller's SP_GC_SAVE ends. */
@@ -392,16 +570,21 @@ static sp_RbVal lupe_call(LupeFrame *f, const pm_call_node_t *c) {
     if (PM_NODE_FLAG_P((const pm_node_t *)c, PM_CALL_NODE_FLAGS_SAFE_NAVIGATION) && recv.tag == SP_TAG_NIL)
       return recv;
   }
-  int argc = lupe_argc(c->arguments);
-  sp_RbVal argv[argc ? argc : 1];
-  if (!lupe_args(f, c->arguments, argc, argv)) return sp_box_nil();
+  LUPE_ARGS(f, c->arguments, argc, argv, kw, ok);
+  if (!ok) return sp_box_nil();
   LupeBlock lit;
   sp_RbVal holder = sp_box_nil();
   SP_GC_ROOT_RBVAL(holder);
   const LupeBlock *blk = lupe_make_block(f, c->block, &lit, &holder);
   if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-  if (!c->receiver) return lupe_catch_break(&lit, lupe_call_self(f, name, argc, argv, blk));
-  sp_RbVal v = lupe_catch_break(&lit, lupe_send_b(recv, name, argc, argv, blk));
+  if (!c->block && lupe_has_forwarding(c->arguments)) blk = lupe_method_frame(f)->block;
+  /* the callee's binder takes the keyword Hash; a builtin leaves it, so
+     it is cleared after the call, before its address can be reused */
+  L.kwhash = kw;
+  sp_RbVal v = c->receiver ? lupe_send_b(recv, name, argc, argv, blk) : lupe_call_self(f, name, argc, argv, blk);
+  L.kwhash = NULL;
+  v = lupe_catch_break(&lit, v);
+  if (!c->receiver) return v;
   /* `obj.x = v` answers v, whatever x= returns */
   if (PM_NODE_FLAG_P((const pm_node_t *)c, PM_CALL_NODE_FLAGS_ATTRIBUTE_WRITE) && argc > 0) return argv[argc - 1];
   return v;
@@ -463,14 +646,13 @@ static sp_RbVal lupe_call_self(LupeFrame *f, const char *name, int argc, sp_RbVa
                                            sp_poly_class_name(self)));
 }
 
-/* The arguments that a bare super passes: the current values of the
-   parameters, in order, with *rest spread. Answers the count; with argv
-   NULL, it only counts. */
-static int lupe_zsuper_args(LupeFrame *f, const pm_node_t *n, sp_RbVal *argv) {
-  while (f->parent) f = f->parent;   /* a super in a block reads the method's parameters */
+/* The arguments that a bare super passes, into out: the current values of
+   the parameters, in order, with *rest spread, then a keyword Hash of the
+   keywords and **rest. Answers that Hash, or NULL for none. */
+static const void *lupe_zsuper_args(LupeFrame *f, const pm_node_t *n, sp_PolyArray *out) {
+  f = lupe_method_frame(f);   /* a super in a block reads the method's parameters */
   const pm_parameters_node_t *ps = f->method->def ? f->method->def->parameters : NULL;
-  if (!ps) return 0;
-  int k = 0;
+  if (!ps) return NULL;
   const pm_node_list_t *lists[3] = { &ps->requireds, &ps->optionals, NULL };
   for (int l = 0; lists[l]; l++)
     for (size_t i = 0; i < lists[l]->size; i++) {
@@ -478,20 +660,40 @@ static int lupe_zsuper_args(LupeFrame *f, const pm_node_t *n, sp_RbVal *argv) {
       pm_constant_id_t name = PM_NODE_TYPE_P(p, PM_OPTIONAL_PARAMETER_NODE)
                                 ? ((const pm_optional_parameter_node_t *)p)->name
                                 : ((const pm_required_parameter_node_t *)p)->name;
-      if (argv) argv[k] = *lupe_local(f, n, name, 0);
-      k++;
+      if (!PM_NODE_TYPE_P(p, PM_OPTIONAL_PARAMETER_NODE) && !PM_NODE_TYPE_P(p, PM_REQUIRED_PARAMETER_NODE))
+        lupe_unsupported(n, "bare super with a parameter pattern");
+      sp_PolyArray_push(out, *lupe_local(f, n, name, 0));
     }
-  if (ps->rest) {
-    pm_constant_id_t rn = ((const pm_rest_parameter_node_t *)ps->rest)->name;
-    if (!rn) lupe_unsupported(n, "bare super with an anonymous rest");
-    sp_RbVal rest = *lupe_local(f, n, rn, 0);
-    sp_int len = sp_poly_length(rest);
-    for (sp_int i = 0; i < len; i++, k++)
-      if (argv) argv[k] = sp_poly_arr_get(rest, i);
+  const pm_node_t *kr = ps->keyword_rest;
+  int fwd = kr && PM_NODE_TYPE_P(kr, PM_FORWARDING_PARAMETER_NODE);
+  if (fwd || (ps->rest && PM_NODE_TYPE_P(ps->rest, PM_REST_PARAMETER_NODE))) {
+    pm_constant_id_t rn = ps->rest ? ((const pm_rest_parameter_node_t *)ps->rest)->name : 0;
+    lupe_spread(out, rn ? *lupe_local(f, n, rn, 0) : f->anon[0]);
   }
-  for (size_t i = 0; i < ps->posts.size; i++, k++)
-    if (argv) argv[k] = *lupe_local(f, n, ((const pm_required_parameter_node_t *)ps->posts.nodes[i])->name, 0);
-  return k;
+  for (size_t i = 0; i < ps->posts.size; i++)
+    sp_PolyArray_push(out, *lupe_local(f, n, ((const pm_required_parameter_node_t *)ps->posts.nodes[i])->name, 0));
+  /* the keywords, with their current values, then **rest */
+  if (!ps->keywords.size && !kr) return NULL;
+  sp_PolyPolyHash *h = sp_PolyPolyHash_new();
+  SP_GC_ROOT(h);
+  for (size_t i = 0; i < ps->keywords.size; i++) {
+    const pm_node_t *p = ps->keywords.nodes[i];
+    pm_constant_id_t name = PM_NODE_TYPE_P(p, PM_REQUIRED_KEYWORD_PARAMETER_NODE)
+                              ? ((const pm_required_keyword_parameter_node_t *)p)->name
+                              : ((const pm_optional_keyword_parameter_node_t *)p)->name;
+    sp_PolyPolyHash_set(h, sp_box_sym(lupe_sym(name)), *lupe_local(f, n, name, 0));
+  }
+  sp_RbVal kwrest = sp_box_nil();
+  if (fwd) kwrest = f->anon[1];
+  else if (kr && PM_NODE_TYPE_P(kr, PM_KEYWORD_REST_PARAMETER_NODE)) {
+    pm_constant_id_t rn = ((const pm_keyword_rest_parameter_node_t *)kr)->name;
+    kwrest = rn ? *lupe_local(f, n, rn, 0) : f->anon[1];
+  }
+  sp_PolyPolyHash *r = kwrest.tag == SP_TAG_NIL ? NULL : sp_poly_as_poly_poly_hash(kwrest);
+  for (sp_int i = 0; r && i < r->len; i++) sp_PolyPolyHash_set(h, r->keys[r->order[i]], r->vals[r->order[i]]);
+  if (h->len == 0) return NULL;
+  sp_PolyArray_push(out, sp_box_obj(h, SP_BUILTIN_POLY_POLY_HASH));
+  return h;
 }
 
 static sp_RbVal lupe_super_call(LupeFrame *f, const pm_node_t *n, const pm_arguments_node_t *args, int forward,
@@ -508,20 +710,23 @@ static sp_RbVal lupe_super(LupeFrame *f, const pm_node_t *n, const pm_arguments_
   SP_GC_ROOT_RBVAL(holder);
   const LupeBlock *blk = bnode ? lupe_make_block(f, bnode, &lit, &holder) : f->block;
   if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-  return lupe_catch_break(&lit, lupe_super_call(f, n, args, forward, blk));
+  sp_RbVal v = lupe_super_call(f, n, args, forward, blk);
+  L.kwhash = NULL;
+  return lupe_catch_break(&lit, v);
 }
 
 static sp_RbVal lupe_super_call(LupeFrame *f, const pm_node_t *n, const pm_arguments_node_t *args, int forward,
                                 const LupeBlock *blk) {
   SP_GC_SAVE();
-  int argc = forward ? lupe_zsuper_args(f, n, NULL) : lupe_argc(args);
-  sp_RbVal argv[argc ? argc : 1];
+  LUPE_ARGS(f, forward ? NULL : args, argc, argv, kw, ok);
+  if (!ok) return sp_box_nil();
   if (forward) {
-    lupe_zsuper_args(f, n, argv);
-    for (int i = 0; i < argc; i++) _sp_gc_root_push((void **)((uintptr_t)&argv[i] | (uintptr_t)1));
-  } else if (!lupe_args(f, args, argc, argv)) {
-    return sp_box_nil();
+    argc_spread = sp_PolyArray_new();
+    kw = lupe_zsuper_args(f, n, argc_spread);
+    argc = (int)argc_spread->len;
+    argv = argc_spread->data;
   }
+  L.kwhash = kw;
   const LupeMethod *m = f->method;
   LupeMethod *s;
   if (f->self.tag == SP_TAG_CLASS && lupe_table_get(&m->owner->smethods, m->name) == m)
@@ -638,6 +843,39 @@ static sp_RbVal lupe_array(LupeFrame *f, const pm_array_node_t *n) {
     sp_PolyArray_push(a, v);
   }
   return sp_box_poly_array(a);
+}
+
+/* A Hash literal, or the keyword arguments of a call (`m(a: 1)`), as a
+   poly Hash. `**h` copies the entries of h. */
+static sp_RbVal lupe_hash_lit(LupeFrame *f, const pm_node_list_t *elts) {
+  sp_PolyPolyHash *h = sp_PolyPolyHash_new();
+  SP_GC_ROOT(h);
+  sp_RbVal k = sp_box_nil(), v = sp_box_nil();
+  SP_GC_ROOT_RBVAL(k);
+  SP_GC_ROOT_RBVAL(v);
+  for (size_t i = 0; i < elts->size; i++) {
+    const pm_node_t *e = elts->nodes[i];
+    if (PM_NODE_TYPE_P(e, PM_ASSOC_SPLAT_NODE)) {
+      const pm_node_t *x = ((const pm_assoc_splat_node_t *)e)->value;
+      v = x ? lupe_eval(f, x) : lupe_method_frame(f)->anon[1];   /* `**` passes the method's **kwrest */
+      if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+      if (v.tag == SP_TAG_NIL) continue;
+      if (lupe_is_lupe_object(v)) v = lupe_send(v, "to_hash", 0, NULL);
+      sp_PolyPolyHash *o = sp_poly_as_poly_poly_hash(v);
+      if (!o) sp_raise_cls("TypeError", sp_sprintf("no implicit conversion of %s into Hash", sp_poly_class_name(v)));
+      for (sp_int j = 0; j < o->len; j++) sp_PolyPolyHash_set(h, o->keys[o->order[j]], o->vals[o->order[j]]);
+      continue;
+    }
+    const pm_assoc_node_t *a = (const pm_assoc_node_t *)e;
+    k = lupe_eval(f, a->key);
+    if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+    /* `{x:}` reads x */
+    v = PM_NODE_TYPE_P(a->value, PM_IMPLICIT_NODE) ? lupe_eval(f, ((const pm_implicit_node_t *)a->value)->value)
+                                                   : lupe_eval(f, a->value);
+    if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+    sp_PolyPolyHash_set(h, k, v);
+  }
+  return sp_box_obj(h, SP_BUILTIN_POLY_POLY_HASH);
 }
 
 /* A Range of Integers. A missing end makes a beginless or endless one. */
@@ -787,6 +1025,35 @@ static sp_RbVal lupe_index_op_write(LupeFrame *f, const pm_index_operator_write_
   return argv[argc];
 }
 
+/* x[i] ||= v and x[i] &&= v: read, test, and write only when needed. */
+static sp_RbVal lupe_index_logic_write(LupeFrame *f, const pm_node_t *n) {
+  SP_GC_SAVE();
+  int is_or = PM_NODE_TYPE_P(n, PM_INDEX_OR_WRITE_NODE);
+  const pm_node_t *recv_n, *value, *block;
+  const pm_arguments_node_t *args;
+  if (is_or) {
+    const pm_index_or_write_node_t *w = (const pm_index_or_write_node_t *)n;
+    recv_n = w->receiver, args = w->arguments, value = w->value, block = (const pm_node_t *)w->block;
+  } else {
+    const pm_index_and_write_node_t *w = (const pm_index_and_write_node_t *)n;
+    recv_n = w->receiver, args = w->arguments, value = w->value, block = (const pm_node_t *)w->block;
+  }
+  if (block) lupe_unsupported(n, "block");
+  sp_RbVal recv = lupe_eval(f, recv_n);
+  SP_GC_ROOT_RBVAL(recv);
+  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+  int argc = lupe_argc(args);
+  sp_RbVal argv[argc + 1];
+  if (!lupe_args(f, args, argc, argv)) return sp_box_nil();
+  sp_RbVal cur = lupe_send(recv, "[]", argc, argv);
+  if (sp_poly_truthy(cur) == is_or) return cur;
+  argv[argc] = lupe_eval(f, value);
+  _sp_gc_root_push((void **)((uintptr_t)&argv[argc] | (uintptr_t)1));
+  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+  lupe_send(recv, "[]=", argc + 1, argv);
+  return argv[argc];
+}
+
 /* ---- the evaluator ---- */
 
 static sp_RbVal lupe_eval(LupeFrame *f, const pm_node_t *n) {
@@ -901,10 +1168,12 @@ static sp_RbVal lupe_eval(LupeFrame *f, const pm_node_t *n) {
     SP_GC_SAVE();
     const pm_arguments_node_t *args = ((const pm_yield_node_t *)n)->arguments;
     if (!f->block) sp_raise_cls("LocalJumpError", "no block given (yield)");
-    int argc = lupe_argc(args);
-    sp_RbVal argv[argc ? argc : 1];
-    if (!lupe_args(f, args, argc, argv)) return sp_box_nil();
-    return lupe_yield(f->block, argc, argv);
+    LUPE_ARGS(f, args, argc, argv, kw, ok);
+    if (!ok) return sp_box_nil();
+    L.kwhash = kw;
+    sp_RbVal v = lupe_yield(f->block, argc, argv);
+    L.kwhash = NULL;
+    return v;
   }
   case PM_LAMBDA_NODE: {
     LupeBlock b = { .node = n, .home = f, .serial = f->serial, .lambda = 1 };
@@ -914,6 +1183,13 @@ static sp_RbVal lupe_eval(LupeFrame *f, const pm_node_t *n) {
     return *f->it;
   case PM_RANGE_NODE:
     return lupe_range(f, (const pm_range_node_t *)n);
+  case PM_HASH_NODE:
+    return lupe_hash_lit(f, &((const pm_hash_node_t *)n)->elements);
+  case PM_KEYWORD_HASH_NODE:
+    return lupe_hash_lit(f, &((const pm_keyword_hash_node_t *)n)->elements);
+  case PM_INDEX_OR_WRITE_NODE:
+  case PM_INDEX_AND_WRITE_NODE:
+    return lupe_index_logic_write(f, n);
   case PM_SELF_NODE:
     return f->self;
   case PM_CLASS_NODE: {

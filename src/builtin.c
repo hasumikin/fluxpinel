@@ -33,6 +33,17 @@ static int lupe_kind_of(sp_RbVal v, const char **family, const char **variant) {
     case SP_BUILTIN_FLT_ARRAY: fam = "ANY_ARRAY"; var = "float_array"; kind = LUPE_TY_FLOAT_ARRAY; break;
     case SP_BUILTIN_STR_ARRAY: fam = "ANY_ARRAY"; var = "str_array"; kind = LUPE_TY_STR_ARRAY; break;
     case SP_BUILTIN_RANGE: fam = var = "range"; kind = LUPE_TY_RANGE; break;
+    case SP_BUILTIN_STR_INT_HASH: fam = "ANY_HASH"; var = "str_int_hash"; kind = LUPE_TY_STR_INT_HASH; break;
+    case SP_BUILTIN_STR_STR_HASH: fam = "ANY_HASH"; var = "str_str_hash"; kind = LUPE_TY_STR_STR_HASH; break;
+    case SP_BUILTIN_INT_INT_HASH: fam = "ANY_HASH"; var = "int_int_hash"; kind = LUPE_TY_INT_INT_HASH; break;
+    case SP_BUILTIN_INT_STR_HASH: fam = "ANY_HASH"; var = "int_str_hash"; kind = LUPE_TY_INT_STR_HASH; break;
+    case SP_BUILTIN_SYM_POLY_HASH: fam = "ANY_HASH"; var = "sym_poly_hash"; kind = LUPE_TY_SYM_POLY_HASH; break;
+    case SP_BUILTIN_STR_POLY_HASH: fam = "ANY_HASH"; var = "str_poly_hash"; kind = LUPE_TY_STR_POLY_HASH; break;
+    case SP_BUILTIN_POLY_POLY_HASH:
+      fam = "ANY_HASH";
+      var = "poly_poly_hash";
+      kind = LUPE_TY_POLY_POLY_HASH;
+      break;
     default: break;
     }
     break;
@@ -106,9 +117,20 @@ static int lupe_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_
   if (argc == 0) {
     if (!strcmp(name, "!")) { *out = sp_box_bool(!sp_poly_truthy(r)); return 1; }
     if (!strcmp(name, "nil?")) { *out = sp_box_bool(r.tag == SP_TAG_NIL); return 1; }
-    if (!strcmp(name, "to_s")) { *out = sp_poly_to_s_box(r); return 1; }
+    /* String#to_s answers the String itself, so a change to it shows */
+    if (!strcmp(name, "to_s")) { *out = lupe_is_string(r) ? r : sp_poly_to_s_box(r); return 1; }
     if (!strcmp(name, "inspect")) { *out = sp_box_str_new(sp_str_dup(sp_poly_inspect(r))); return 1; }
-    if (!strcmp(name, "-@")) { *out = sp_poly_neg(r); return 1; }
+    /* the value that a Hash key hashes by; it differs from CRuby's numbers */
+    if (!strcmp(name, "hash")) { *out = sp_box_int(sp_rbval_hash_key(r)); return 1; }
+    if (!strcmp(name, "-@") && !lupe_is_string(r)) { *out = sp_poly_neg(r); return 1; }
+    /* +str: the String itself when it can change, else a mutable copy */
+    if (!strcmp(name, "+@") && lupe_is_string(r)) {
+      if (r.tag == SP_TAG_OBJ && !sp_gc_is_frozen(r.v.p)) { *out = r; return 1; }
+      const char *s = sp_poly_recv_s(r, name);
+      *out = lupe_new_string((const uint8_t *)s, strlen(s));
+      return 1;
+    }
+    if (!strcmp(name, "+@") && (lupe_is_integer(r) || r.tag == SP_TAG_FLT)) { *out = r; return 1; }
     if ((!strcmp(name, "length") || !strcmp(name, "size")) && (lupe_is_array(r) || lupe_is_string(r))) {
       *out = sp_box_int(sp_poly_length_m(r));
       return 1;
@@ -132,6 +154,13 @@ static int lupe_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_
       if (!strcmp(name, "^")) { *out = sp_poly_bxor(r, a); return 1; }
       if (!strcmp(name, "<<")) { *out = sp_poly_shl(r, a); return 1; }
       if (!strcmp(name, ">>")) { *out = sp_poly_shr(r, a); return 1; }
+    }
+    /* str << other on a mutable String: the handle grows in place */
+    if (r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_STRBUF && lupe_is_string(a) &&
+        (!strcmp(name, "<<") || !strcmp(name, "concat"))) {
+      sp_String_append((sp_String *)r.v.p, sp_poly_recv_s(a, name));
+      *out = r;
+      return 1;
     }
     if (r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_POLY_ARRAY &&
         (!strcmp(name, "<<") || !strcmp(name, "push"))) {
@@ -195,12 +224,24 @@ static int lupe_builtin_responds(sp_RbVal r, const char *name) {
   static const char *const str[] = { "+", "*", "%", "length", "size", "start_with?", "end_with?", "split", NULL };
   static const char *const ary[] = { "length", "size", "first", "last", "include?", "[]", "[]=", "<<", "push", "+",
                                      NULL };
-  const char *const *lists[4] = { any, NULL, NULL, NULL };
+  /* the Enumerable methods of iter.c, and the methods of hash.c */
+  static const char *const enm[] = { "each", "each_with_index", "each_with_object", "map", "collect", "flat_map",
+                                     "select", "filter", "reject", "filter_map", "find", "detect", "count", "any?",
+                                     "all?", "none?", "one?", "inject", "reduce", "sum", "min_by", "max_by",
+                                     "sort_by", "sort", "min", "max", "partition", "group_by", "to_h", "to_a",
+                                     "take_while", "drop_while", "each_slice", "each_cons", "reverse_each", NULL };
+  static const char *const hsh[] = { "[]", "[]=", "store", "key?", "has_key?", "include?", "member?", "fetch",
+                                     "delete", "keys", "values", "size", "length", "empty?", "each_pair",
+                                     "each_key", "each_value", "merge", "merge!", "update", "transform_values",
+                                     "transform_keys", "dig", "default", "invert", "key", "compact", NULL };
+  const char *const *lists[6] = { any, NULL, NULL, NULL, NULL, NULL };
   int nl = 1;
   if (lupe_is_integer(r) || r.tag == SP_TAG_FLT) lists[nl++] = num;
   if (lupe_is_integer(r)) lists[nl++] = bits;
   if (lupe_is_string(r)) lists[nl++] = str;
   if (lupe_is_array(r)) lists[nl++] = ary;
+  if (lupe_is_array(r) || lupe_is_range(r) || lupe_is_hash(r)) lists[nl++] = enm;
+  if (lupe_is_hash(r)) lists[nl++] = hsh;
   for (int l = 0; l < nl; l++)
     for (int i = 0; lists[l][i]; i++)
       if (!strcmp(lists[l][i], name)) return 1;
@@ -252,6 +293,8 @@ static sp_RbVal lupe_send_b(sp_RbVal recv, const char *name, int argc, sp_RbVal 
   }
   if (lupe_is_proc(recv) && lupe_proc_core(recv, name, argc, argv, &out)) return out;
   if (!blk && lupe_range_core(recv, name, argc, argv, &out)) return out;
+  if (lupe_hash_core(recv, name, argc, argv, blk, &out)) return out;
+  if (!blk && lupe_array_hash(recv, name, argc, &out)) return out;
   if (lupe_iter(recv, name, argc, argv, blk, &out)) return out;
   if (blk) {
     if (argc >= 1 && (!strcmp(name, "send") || !strcmp(name, "__send__") || !strcmp(name, "public_send")))

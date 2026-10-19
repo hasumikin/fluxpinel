@@ -101,6 +101,8 @@ typedef struct LupeFrame {
   struct LupeFrame *parent;   /* a block frame: the frame of the enclosing scope */
   const LupeBlock *block;     /* the block of the method, for yield; NULL for none */
   sp_RbVal *it;               /* the slot of `it` (a rooted slot after the locals) */
+  sp_RbVal *anon;             /* [0]: anonymous *rest, [1]: anonymous **kwrest, also
+                                 what `...` takes (rooted slots after `it`) */
   uint64_t serial;            /* unique to this frame, for LupeBlock.serial */
   int lambda;                 /* a lambda frame: return leaves it */
 } LupeFrame;
@@ -126,6 +128,8 @@ typedef struct {
   sp_RbVal ctl_val;      /* the value that the jump carries; a GC root */
   const void *ctl_target;   /* LUPE_CTL_RETURN: a LupeFrame; LUPE_CTL_BREAK_BLOCK: a LupeBlock */
   uint64_t serial;       /* the last LupeFrame.serial */
+  const void *kwhash;    /* the Hash that a call passes as keywords (`m(a: 1)`), so
+                            that a Hash literal in the last place stays positional */
 } Lupe;
 
 static Lupe L;
@@ -138,7 +142,12 @@ static sp_RbVal lupe_yield(const LupeBlock *b, int argc, sp_RbVal *argv);
 static int lupe_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk, sp_RbVal *out);
 static int lupe_proc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int lupe_range_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int lupe_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
+                          sp_RbVal *out);
+static int lupe_array_hash(sp_RbVal r, const char *name, int argc, sp_RbVal *out);
 static int lupe_is_proc(sp_RbVal v);
+static int lupe_is_range(sp_RbVal v);
+static int lupe_is_hash(sp_RbVal v);
 static int lupe_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static void lupe_trace_missing(const char *cls, const char *name, int argc);
 static int lupe_builtin_responds(sp_RbVal r, const char *name);

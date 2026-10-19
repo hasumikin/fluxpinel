@@ -12,6 +12,7 @@
 #include "walk.c"
 #include "builtin.c"
 #include "iter.c"
+#include "hash.c"
 
 static char *lupe_read_file(const char *path, size_t *len) {
   FILE *fp = fopen(path, "rb");
@@ -33,6 +34,7 @@ static void lupe_body(void) {
   L.ctl_val = sp_box_nil();
   _sp_gc_root_push((void **)((uintptr_t)&L.ctl_val | (uintptr_t)1));
   lupe_object_init();
+  lupe_hash_init();
 
   size_t len;
   char *src = lupe_read_file(L.path, &len);

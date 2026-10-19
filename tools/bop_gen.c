@@ -222,6 +222,10 @@ int main(int argc, char **argv) {
     { "SYMBOL", TY_SYMBOL }, { "BOOL", TY_BOOL }, { "POLY", TY_POLY },
     { "INT_ARRAY", TY_INT_ARRAY }, { "FLOAT_ARRAY", TY_FLOAT_ARRAY },
     { "STR_ARRAY", TY_STR_ARRAY }, { "POLY_ARRAY", TY_POLY_ARRAY }, { "RANGE", TY_RANGE },
+    { "STR_INT_HASH", TY_STR_INT_HASH }, { "STR_STR_HASH", TY_STR_STR_HASH },
+    { "INT_INT_HASH", TY_INT_INT_HASH }, { "INT_STR_HASH", TY_INT_STR_HASH },
+    { "SYM_POLY_HASH", TY_SYM_POLY_HASH }, { "STR_POLY_HASH", TY_STR_POLY_HASH },
+    { "POLY_POLY_HASH", TY_POLY_POLY_HASH },
   };
   for (size_t k = 0; k < sizeof kinds / sizeof kinds[0]; k++)
     fprintf(out, "#define LUPE_TY_%s %d\n", kinds[k].name, (int)kinds[k].kind);
