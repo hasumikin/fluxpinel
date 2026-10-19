@@ -67,18 +67,38 @@ The tags are INT, STR, FLT, BOOL, NIL, OBJ, SYM, CLASS, ENCODING and BIGINT
 The spinel runtime has no `send` by name. The compiler owns the map from a
 method name to C code. The map is `bop_rows[]` in `src/builtin_ops.c`.
 
-Lupe generates its builtin dispatch from that table at build time:
+Lupe generates part of its builtin dispatch from that table at build time
+(`tools/bop_gen.c`):
 
 - A `BOPE_TEMPLATE` row holds a C expression, for example
-  `sp_poly_case_conv($r, sp_str_upcase, "upcase")`. A generator turns each
-  such row into one wrapper function. The wrapper unboxes by tag and calls
-  the expression.
-- A row with a special emitter (`BOPE_ARRAY_SORT` and others) has its logic
-  in the codegen C code. Lupe implements these rows by hand, or leaves them
-  out.
+  `sp_str_center($r, $i0)`. The generator turns each such row into one
+  wrapper per receiver variant:
+  `sp_RbVal lupe_bop_N(sp_RbVal recv, sp_RbVal *argv)`.
+- The wrapper unboxes and boxes with the spellings of `ty_traits[]`
+  (`src/types.c`). This table gives the C type, the box and the unbox of
+  each builtin kind. Thus the wrapper converts values as the AOT code does.
+- A row for every Array kind or every Hash kind gives one wrapper for each
+  concrete kind (`sp_IntArray`, `sp_StrIntHash` and others).
+- A row with a special emitter (`BOPE_ARRAY_SORT` and others) or with no
+  emitter (`BOPE_NONE`) has its logic in the codegen C code. Lupe writes
+  these methods by hand.
 
 The generator reads the spinel source at the pinned commit. This keeps the
 builtin semantics of Lupe equal to the AOT output.
+
+Several rows can share one receiver and one name. They differ in argument
+count or argument kinds (`arg0`, `arg1`). The dispatcher selects a row by
+`argc_min`/`argc_max` and by the tags of the arguments.
+
+The generated wrappers cover the long tail: Rational, Complex, Time, IO,
+MatchData, Range and others. The core of Array, Hash and String is mostly
+outside the table. Lupe writes these methods by hand:
+
+- element access and operators (`[]`, `[]=`, `==`, `+`, `length`, `push`),
+- methods with a block (`each`, `map`, `select`, `inject`). The walker
+  must call its own blocks, so these methods are walker-native anyway.
+- bang methods on String (`sub!`, `upcase!`). They change the receiver
+  through the STRBUF handle.
 
 ### 3.3 User classes
 
@@ -183,13 +203,34 @@ These facts apply to spinel commit `ffac8340d`.
   same frame.
 - A host binary of the runtime alone is about 1.4 MB of text (x86_64,
   `-O2`). Most of it is `static inline` code from `spinel_rt.h`.
+- `bop_rows[]` has 2035 rows: 958 `BOPE_TEMPLATE`, 183 with a special
+  emitter and 894 `BOPE_NONE`.
+- The 958 template rows give 1204 wrappers (row times receiver variant).
+  `poc/m1` measures them:
+
+  | result | wrappers | cause |
+  |---|---|---|
+  | compile and link | 1072 | |
+  | skip | 123 | a fact of the compiler (see below) |
+  | compile error | 6 | the result kind of the row does not match the C type of the template |
+  | link error | 3 | Thread methods are in `libspinel_rt_mt.a` only |
+
+- The skipped rows need one of these facts of the compiler:
+  - an argument of no single kind (`$e` with `arg0` 0): 46,
+  - a result kind that the analysis derives (`BOPR_*`, `TY_UNKNOWN`): 36,
+  - a temp that the method family takes before its arms (`$T`): 31,
+  - other placeholders (`$[`, `$R`, `$F`): 10.
+- The wrappers cover 734 of the 1266 builtin methods (58%). By family:
+  Rational 94%, Complex 96%, IO 73%, Integer 62%, String 44%, Array 22%,
+  Hash 15%.
+- Some runtime helpers answer `sp_oint` where the row says Integer
+  (`IO#getbyte`). The wrapper boxes by the C type with `_Generic`.
+- `String#crypt` needs `-lcrypt` at link time.
 
 ## 8. Open questions
 
-- What fraction of the `BOPE_TEMPLATE` rows can a generator convert with no
-  manual work?
-- How does a template refer to compiler state beyond `$r` and the
-  arguments?
+- The smoke test in `poc/m1` checks 6 wrappers. How does Lupe check the
+  other wrappers? The oracle (M3) is one answer.
 - How does the walker call a block, and how does a block from the walker
   reach a builtin that yields?
 - Which AOT build of a test program serves as the oracle reference: one
@@ -204,8 +245,9 @@ These facts apply to spinel commit `ffac8340d`.
 1. **M0: runtime alone.** `poc/m0` links only `libspinel_rt`. It makes
    boxed values, calls `sp_poly_*` operations, rescues an exception and
    runs the GC. Run it with `make -C poc/m0 run`.
-2. **M1: template survey.** Count the `BOPE_TEMPLATE` rows that a generator
-   converts with no manual work.
+2. **M1: template survey.** `poc/m1` generates the wrappers, compiles and
+   links them, and reports the coverage. A smoke test calls a sample.
+   Run it with `make -C poc/m1`.
 3. **M2: minimal walker.** Parse with libprism. Evaluate literals, locals,
    `def`, calls and `if`/`while` on Integer, String and Array.
 4. **M3: oracle harness.** Run the spinel test suite under CRuby, Lupe and
