@@ -129,7 +129,47 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   A call with no receiver looks in that table first, then in the Kernel
   methods (`puts`, `print`, `p`).
 - **One TU.** `src/main.c` includes `lupe_tu.c`, the generated wrappers,
-  `walk.c` and `builtin.c`.
+  `walk.c`, `builtin.c` and `iter.c`.
+
+### 3.3.1 Blocks
+
+- **Block value.** A call passes a `LupeBlock` to the callee as a C
+  argument. A block literal lives in the C frame of its call. The block
+  keeps a pointer to its home frame, the frame where the program wrote it.
+- **Block frame.** A block call makes a frame whose parent is the home
+  frame. A local with depth `d` is in the frame `d` parents up. The block
+  frame takes `self`, the lexical class and the method block from the home
+  frame. Thus `yield` in a block yields to the block of the method.
+- **Parameters.** A block that is not a lambda spreads one Array argument
+  over two or more parameters. A missing argument is nil, and an extra one
+  is dropped. A lambda checks the count, as a method does. Numbered
+  parameters (`_1`) and `it` are supported.
+- **Jumps.** `next` ends the block call. `break` ends the call that passed
+  the block: the block boundary changes it to `LUPE_CTL_BREAK_BLOCK` with
+  that call as the target. `return` ends the method that holds the block,
+  or the lambda. A loop or a method call takes only a jump with its own
+  target.
+- **Proc.** A `LupeProc` starts with a spinel `sp_Proc`, so the runtime
+  reads `lambda?` and `frozen?` from it. Its `fn` is NULL: Lupe answers
+  every call of a Proc. `proc`, `lambda`, `->`, `Proc.new` and a `&b`
+  parameter make one. `&proc`, `&:sym` and an anonymous `&` pass a block.
+- **Lifetime.** The home frame is on the C stack. Each frame has a serial
+  number, and a block keeps the serial of its home frame. A frame clears
+  its serial when its C scope ends (a `cleanup` attribute). A call of a
+  block whose home frame has returned stops as a gap. An exception skips
+  the cleanup with `longjmp`, so `rescue` must clear the serials of the
+  frames that it unwinds. Thus a Proc works
+  while its scope runs, but `define_method` and a Proc that a method
+  returns do not. A heap frame for a scope that a Proc outlives is a
+  later step.
+- **Builtins with a block.** No runtime function calls a block, because
+  codegen emits each builtin with a block as an inline C loop. `src/iter.c`
+  writes these methods on the poly API: the Enumerable methods of Array
+  and of an Integer Range, the Array mutators (`map!`, `select!`, ...),
+  `Integer#times`/`upto`/`downto`/`step`, `String#each_char`, `tap`,
+  `then`, `Array.new(n) { }` and `loop`. A builtin method with a block
+  that `iter.c` does not have stops as a gap, since a generated wrapper
+  would drop the block.
 
 ### 3.4 User classes
 
@@ -372,6 +412,23 @@ These facts apply to spinel commit `ffac8340d`.
 
   One test times out: 2^24 calls of class methods
   (`cmethod_chain_reachability`).
+- The oracle on spinel `6ab3b2e20` (7857 tests, promote mode), with
+  blocks: Lupe runs 873 tests and 854 agree. 19 differ. The largest
+  blockers now:
+
+  | blocker | tests |
+  |---|---|
+  | a Hash literal | 854 |
+  | `begin` / `rescue` | 629 |
+  | a Regexp literal | 208 |
+  | `Class#new` with a block | 174 |
+  | a keyword argument | 152 |
+  | a global variable write | 144 |
+
+- A comparator block that does not compare (`sort { |x| x.length }`) gives
+  an order that depends on the sort algorithm. Lupe uses a stable merge
+  sort, and CRuby uses its own quicksort. `comparator_block_arity` differs
+  for this reason.
 - The M2 walker runs `fib(32)` in 0.85 s. CRuby 4.0.6 runs it in 0.24 s,
   and CRuby with YJIT in 0.06 s. The walker compares each method name with
   `strcmp` and looks up methods by a linear search.
@@ -380,8 +437,9 @@ These facts apply to spinel commit `ffac8340d`.
 
 - The smoke test in `poc/m1` checks 6 wrappers. How does Lupe check the
   other wrappers? The oracle (M3) is one answer.
-- How does the walker call a block, and how does a block from the walker
-  reach a builtin that yields?
+- How does a Proc outlive its scope? Candidates are a heap frame for each
+  scope that holds a block literal, and a copy of the frame when a Proc
+  escapes.
 - Which AOT build of a test program serves as the oracle reference: one
   build per program, or one shared build?
 - How much of the 1.4 MB text does a walker keep after the linker drops
@@ -422,6 +480,7 @@ These facts apply to spinel commit `ffac8340d`.
 5. **M3+: coverage.** Take the blockers in the order of the oracle report.
    Each step runs the oracle again.
    - Classes, modules and constants (section 3.4): `test/m3`.
-   - Next: blocks, Hash, `begin`/`rescue`.
+   - Blocks, Proc and Integer Range (section 3.3.1): `test/m3`.
+   - Next: Hash, `begin`/`rescue`.
 6. **M4: embedded REPL.** Link Lupe into an AOT binary on a host. Then move
    to a microcontroller board.

@@ -29,24 +29,38 @@ static sp_sym lupe_sym(pm_constant_id_t id) {
   return sp_sym_intern_n((const char *)c->start, c->length);
 }
 
+/* The slot of a local variable. depth counts the block scopes between the
+   reference and the scope that owns the variable. */
 static sp_RbVal *lupe_local(LupeFrame *f, const pm_node_t *n, pm_constant_id_t name, uint32_t depth) {
-  if (depth != 0) lupe_unsupported(n, "local variable of an outer scope");
+  for (uint32_t d = 0; d < depth; d++)
+    if (!(f = f->parent)) lupe_unsupported(n, "local variable of an outer scope");
   for (size_t i = 0; i < f->names->size; i++)
     if (f->names->ids[i] == name) return &f->locals[i];
   lupe_unsupported(n, "local variable with no slot");
 }
 
 /* Declares the slots of a frame on the C stack and roots each one, and
-   sets the self and the lexical class of the scope. The roots stay until
-   the enclosing SP_GC_SAVE scope ends. */
+   sets the self and the lexical class of the scope. The slot after the
+   locals holds `it`. The roots stay until the enclosing SP_GC_SAVE scope
+   ends. */
 #define LUPE_FRAME(f, namelist, self_, cref_)                                     \
   size_t f##_n = (namelist)->size;                                                \
-  sp_RbVal f##_slots[f##_n ? f##_n : 1];                                           \
-  for (size_t f##_i = 0; f##_i < f##_n; f##_i++) {                                 \
+  sp_RbVal f##_slots[f##_n + 1];                                                  \
+  for (size_t f##_i = 0; f##_i <= f##_n; f##_i++) {                                \
     f##_slots[f##_i] = sp_box_nil();                                               \
     _sp_gc_root_push((void **)((uintptr_t)&f##_slots[f##_i] | (uintptr_t)1));      \
   }                                                                               \
-  LupeFrame f = { f##_slots, (namelist), (self_), (cref_), NULL, 0 }
+  LupeFrame f __attribute__((cleanup(lupe_frame_exit))) = {                       \
+    .locals = f##_slots, .names = (namelist), .self = (self_), .cref = (cref_),   \
+    .it = &f##_slots[f##_n], .serial = ++L.serial }
+
+/* A frame that ends drops its serial, so that a block of the frame sees
+   that its home has returned. The stale stack memory can keep the old
+   serial, so a check of the serial alone is not enough. The store is
+   volatile: the frame dies next, so the compiler drops a plain store. */
+static void lupe_frame_exit(LupeFrame *f) {
+  *(volatile uint64_t *)&f->serial = 0;
+}
 
 /* ---- methods ---- */
 
@@ -74,24 +88,61 @@ static __attribute__((noreturn)) void lupe_arity_error(int argc, int nreq, int n
   sp_raise_cls("ArgumentError", sp_sprintf("wrong number of arguments (given %d, expected %d)", argc, nreq));
 }
 
+static int lupe_is_array_value(sp_RbVal v) {
+  return v.tag == SP_TAG_OBJ && sp_poly_is_array_kind(v.cls_id);
+}
+
+/* Binds one value to a required parameter or to a pattern `(a, *b, c)`.
+   A pattern takes the elements of an Array; any other value is one element. */
+static void lupe_bind_target(LupeFrame *f, const pm_node_t *p, sp_RbVal v) {
+  if (PM_NODE_TYPE_P(p, PM_REQUIRED_PARAMETER_NODE)) {
+    /* a repeated `_x` takes its argument, but the name reads the first one */
+    if (PM_NODE_FLAG_P(p, PM_PARAMETER_FLAGS_REPEATED_PARAMETER)) return;
+    *lupe_local(f, p, ((const pm_required_parameter_node_t *)p)->name, 0) = v;
+    return;
+  }
+  if (!PM_NODE_TYPE_P(p, PM_MULTI_TARGET_NODE)) lupe_unsupported(p, "parameter pattern");
+  SP_GC_ROOT_RBVAL(v);
+  const pm_multi_target_node_t *mt = (const pm_multi_target_node_t *)p;
+  sp_int len = lupe_is_array_value(v) ? sp_poly_length(v) : 1;
+  sp_int nl = (sp_int)mt->lefts.size, nr = (sp_int)mt->rights.size;
+#define LUPE_ELT(i) (lupe_is_array_value(v) ? sp_poly_arr_get(v, (i)) : (i) == 0 ? v : sp_box_nil())
+  for (sp_int i = 0; i < nl; i++) lupe_bind_target(f, mt->lefts.nodes[i], i < len ? LUPE_ELT(i) : sp_box_nil());
+  sp_int rstart = len - nr > nl ? len - nr : nl;
+  if (mt->rest && PM_NODE_TYPE_P(mt->rest, PM_SPLAT_NODE)) {
+    const pm_node_t *e = ((const pm_splat_node_t *)mt->rest)->expression;
+    if (e) {
+      sp_PolyArray *a = sp_PolyArray_new();
+      SP_GC_ROOT(a);
+      for (sp_int i = nl; i < rstart; i++) sp_PolyArray_push(a, LUPE_ELT(i));
+      lupe_bind_target(f, e, sp_box_poly_array(a));
+    }
+  }
+  for (sp_int i = 0; i < nr; i++)
+    lupe_bind_target(f, mt->rights.nodes[i], rstart + i < len ? LUPE_ELT(rstart + i) : sp_box_nil());
+#undef LUPE_ELT
+}
+
+static sp_RbVal lupe_block_proc(const LupeBlock *b);
+
 /* Binds the arguments to the parameters: the required ones, the optional
-   ones (a default is evaluated in the callee frame), *rest and the
-   required ones after it. */
-static void lupe_bind_params(LupeFrame *f, const pm_parameters_node_t *ps, int argc, sp_RbVal *argv) {
+   ones (a default is evaluated in the callee frame), *rest, the required
+   ones after it and &block. With loose set (a block that is not a lambda),
+   a missing argument is nil and an extra one is dropped. */
+static void lupe_bind_list(LupeFrame *f, const pm_parameters_node_t *ps, int argc, sp_RbVal *argv, int loose) {
   if (!ps) {
-    if (argc != 0) lupe_arity_error(argc, 0, 0, 0);
+    if (argc != 0 && !loose) lupe_arity_error(argc, 0, 0, 0);
     return;
   }
   if (ps->keywords.size || ps->keyword_rest) lupe_unsupported((const pm_node_t *)ps, "keyword parameter");
   int npre = (int)ps->requireds.size, npost = (int)ps->posts.size, nopt = (int)ps->optionals.size;
   int rest = ps->rest != NULL;
-  if (argc < npre + npost || (!rest && argc > npre + npost + nopt)) lupe_arity_error(argc, npre + npost, nopt, rest);
+  if (!loose && (argc < npre + npost || (!rest && argc > npre + npost + nopt)))
+    lupe_arity_error(argc, npre + npost, nopt, rest);
+  /* a block drops the extra arguments from the end */
+  if (loose && !rest && argc > npre + nopt + npost) argc = npre + nopt + npost;
   int ai = 0;
-  for (int i = 0; i < npre; i++) {
-    const pm_node_t *p = ps->requireds.nodes[i];
-    if (!PM_NODE_TYPE_P(p, PM_REQUIRED_PARAMETER_NODE)) lupe_unsupported(p, "parameter pattern");
-    *lupe_local(f, p, ((const pm_required_parameter_node_t *)p)->name, 0) = argv[ai++];
-  }
+  for (int i = 0; i < npre; i++, ai++) lupe_bind_target(f, ps->requireds.nodes[i], ai < argc ? argv[ai] : sp_box_nil());
   int nfill = argc - npre - npost;
   for (int i = 0; i < nopt; i++) {
     const pm_optional_parameter_node_t *p = (const pm_optional_parameter_node_t *)ps->optionals.nodes[i];
@@ -99,27 +150,87 @@ static void lupe_bind_params(LupeFrame *f, const pm_parameters_node_t *ps, int a
     if (i < nfill) *slot = argv[ai++];
     else *slot = lupe_eval(f, p->value);
   }
-  if (rest) {
+  if (rest && PM_NODE_TYPE_P(ps->rest, PM_REST_PARAMETER_NODE)) {
     sp_PolyArray *a = sp_PolyArray_new();
     SP_GC_ROOT(a);
     while (ai < argc - npost) sp_PolyArray_push(a, argv[ai++]);
-    const pm_node_t *r = ps->rest;
-    if (!PM_NODE_TYPE_P(r, PM_REST_PARAMETER_NODE)) lupe_unsupported(r, "rest parameter");
-    pm_constant_id_t rn = ((const pm_rest_parameter_node_t *)r)->name;
-    if (rn) *lupe_local(f, r, rn, 0) = sp_box_poly_array(a);
+    pm_constant_id_t rn = ((const pm_rest_parameter_node_t *)ps->rest)->name;
+    if (rn) *lupe_local(f, ps->rest, rn, 0) = sp_box_poly_array(a);
+  } else if (rest && !PM_NODE_TYPE_P(ps->rest, PM_IMPLICIT_REST_NODE)) {
+    lupe_unsupported(ps->rest, "rest parameter");
   }
-  for (int i = 0; i < npost; i++) {
-    const pm_node_t *p = ps->posts.nodes[i];
-    if (!PM_NODE_TYPE_P(p, PM_REQUIRED_PARAMETER_NODE)) lupe_unsupported(p, "parameter pattern");
-    *lupe_local(f, p, ((const pm_required_parameter_node_t *)p)->name, 0) = argv[ai++];
-  }
+  if (ai < argc - npost) ai = argc - npost;
+  for (int i = 0; i < npost; i++, ai++) lupe_bind_target(f, ps->posts.nodes[i], ai < argc ? argv[ai] : sp_box_nil());
   if (ps->block) {
     pm_constant_id_t bn = ((const pm_block_parameter_node_t *)ps->block)->name;
-    if (bn) *lupe_local(f, (const pm_node_t *)ps->block, bn, 0) = sp_box_nil();
+    if (bn) *lupe_local(f, (const pm_node_t *)ps->block, bn, 0) = f->block ? lupe_block_proc(f->block) : sp_box_nil();
   }
 }
 
+static void lupe_bind_params(LupeFrame *f, const pm_parameters_node_t *ps, int argc, sp_RbVal *argv) {
+  lupe_bind_list(f, ps, argc, argv, 0);
+}
+
+/* The slot of the numbered parameter _i (1..9) of a block frame. */
+static sp_RbVal *lupe_numbered(LupeFrame *f, const pm_node_t *n, int i) {
+  char name[3] = { '_', (char)('0' + i), 0 };
+  pm_constant_id_t id = pm_constant_pool_find(&L.parser.constant_pool, (const uint8_t *)name, 2);
+  if (!id) lupe_unsupported(n, "numbered parameter");
+  return lupe_local(f, n, id, 0);
+}
+
+/* Binds the arguments of a block call. A block that is not a lambda
+   spreads one Array argument over two or more parameters. */
+static void lupe_bind_block(LupeFrame *f, const pm_node_t *params, int argc, sp_RbVal *argv, int lambda) {
+  SP_GC_SAVE();
+  if (!params) {
+    if (lambda && argc != 0) lupe_arity_error(argc, 0, 0, 0);
+    return;
+  }
+  if (PM_NODE_TYPE_P(params, PM_IT_PARAMETERS_NODE)) {
+    if (lambda && argc != 1) lupe_arity_error(argc, 1, 0, 0);
+    *f->it = argc ? argv[0] : sp_box_nil();
+    return;
+  }
+  int many;
+  const pm_parameters_node_t *ps = NULL;
+  if (PM_NODE_TYPE_P(params, PM_NUMBERED_PARAMETERS_NODE)) {
+    many = ((const pm_numbered_parameters_node_t *)params)->maximum;
+  } else {
+    ps = ((const pm_block_parameters_node_t *)params)->parameters;
+    if (!ps) {
+      if (lambda && argc != 0) lupe_arity_error(argc, 0, 0, 0);
+      return;
+    }
+    int n = (int)(ps->requireds.size + ps->optionals.size + ps->posts.size);
+    many = n >= 2 || (n >= 1 && ps->rest) ? 2 : n;
+  }
+  int spread = !lambda && argc == 1 && many >= 2 && lupe_is_array_value(argv[0]);
+  int len = spread ? (int)sp_poly_length(argv[0]) : 0;
+  sp_RbVal elts[len ? len : 1];
+  if (spread) {
+    sp_RbVal a = argv[0];
+    SP_GC_ROOT_RBVAL(a);
+    for (int i = 0; i < len; i++) {
+      elts[i] = sp_poly_arr_get(a, i);
+      _sp_gc_root_push((void **)((uintptr_t)&elts[i] | (uintptr_t)1));
+    }
+    argc = len;
+    argv = elts;
+  }
+  if (ps) {
+    lupe_bind_list(f, ps, argc, argv, !lambda);
+    return;
+  }
+  if (lambda && argc != many) lupe_arity_error(argc, many, 0, 0);
+  for (int i = 0; i < many; i++) *lupe_numbered(f, params, i + 1) = i < argc ? argv[i] : sp_box_nil();
+}
+
 static sp_RbVal lupe_invoke(const LupeMethod *m, sp_RbVal self, int argc, sp_RbVal *argv) {
+  return lupe_invoke_b(m, self, argc, argv, NULL);
+}
+
+static sp_RbVal lupe_invoke_b(const LupeMethod *m, sp_RbVal self, int argc, sp_RbVal *argv, const LupeBlock *blk) {
   if (m->kind == LUPE_M_READER) {
     if (argc != 0) lupe_arity_error(argc, 0, 0, 0);
     return lupe_ivar_get(self, m->ivar);
@@ -135,10 +246,103 @@ static sp_RbVal lupe_invoke(const LupeMethod *m, sp_RbVal self, int argc, sp_RbV
   const pm_def_node_t *def = m->def;
   LUPE_FRAME(f, &def->locals, me, m->owner);
   f.method = m;
+  f.block = blk;
   lupe_bind_params(&f, def->parameters, argc, argv);
   sp_RbVal v = def->body ? lupe_eval(&f, def->body) : sp_box_nil();
-  if (L.ctl == LUPE_CTL_RETURN) { v = L.ctl_val; L.ctl = LUPE_CTL_NONE; }
+  if (L.ctl == LUPE_CTL_RETURN && L.ctl_target == &f) { v = L.ctl_val; L.ctl = LUPE_CTL_NONE; }
   return v;
+}
+
+/* ---- blocks ---- */
+
+static void lupe_block_parts(const pm_node_t *n, const pm_constant_id_list_t **locals, const pm_node_t **params,
+                             const pm_node_t **body) {
+  if (PM_NODE_TYPE_P(n, PM_LAMBDA_NODE)) {
+    const pm_lambda_node_t *l = (const pm_lambda_node_t *)n;
+    *locals = &l->locals, *params = l->parameters, *body = l->body;
+  } else {
+    const pm_block_node_t *b = (const pm_block_node_t *)n;
+    *locals = &b->locals, *params = b->parameters, *body = b->body;
+  }
+}
+
+/* Calls a block with the arguments. A next ends the block call; a break
+   ends the call that passed the block; a return ends the method that
+   holds the block, or the lambda. */
+static sp_RbVal lupe_yield(const LupeBlock *b, int argc, sp_RbVal *argv) {
+  if (!b->node) {
+    if (argc < 1) sp_raise_cls("ArgumentError", "no receiver given");
+    return lupe_send(argv[0], sp_sym_to_s(b->sym), argc - 1, argv + 1);
+  }
+  LupeFrame *h = b->home;
+  if (h->serial != b->serial) lupe_gap("a call of a block whose scope has returned");
+  SP_GC_SAVE();
+  const pm_constant_id_list_t *locals;
+  const pm_node_t *params, *body;
+  lupe_block_parts(b->node, &locals, &params, &body);
+  LUPE_FRAME(bf, locals, h->self, h->cref);
+  bf.method = h->method;
+  bf.parent = h;
+  bf.block = h->block;
+  bf.lambda = b->lambda;
+  lupe_bind_block(&bf, params, argc, argv, b->lambda);
+  sp_RbVal v = body ? lupe_eval(&bf, body) : sp_box_nil();
+  switch (L.ctl) {
+  case LUPE_CTL_NEXT:
+    L.ctl = LUPE_CTL_NONE;
+    return L.ctl_val;
+  case LUPE_CTL_BREAK:
+    if (b->lambda) { L.ctl = LUPE_CTL_NONE; return L.ctl_val; }
+    if (!b->site) {
+      L.ctl = LUPE_CTL_NONE;
+      sp_raise_cls("LocalJumpError", "break from proc-closure");
+    }
+    L.ctl = LUPE_CTL_BREAK_BLOCK;
+    L.ctl_target = b->site;
+    return sp_box_nil();
+  case LUPE_CTL_RETURN:
+    if (L.ctl_target == &bf) { L.ctl = LUPE_CTL_NONE; return L.ctl_val; }
+    return v;
+  default:
+    return v;
+  }
+}
+
+static int lupe_is_proc(sp_RbVal v) {
+  return v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_PROC && v.v.p;
+}
+
+/* A Proc value for a block. A block that a Proc carries answers that Proc. */
+static sp_RbVal lupe_block_proc(const LupeBlock *b) {
+  if (b->proc) return sp_box_obj(b->proc, SP_BUILTIN_PROC);
+  LupeProc *p = (LupeProc *)sp_gc_alloc(sizeof *p, NULL, NULL);
+  p->p.lambda_p = b->lambda ? TRUE : FALSE;
+  p->b = *b;
+  p->b.proc = p;
+  return sp_box_obj(p, SP_BUILTIN_PROC);
+}
+
+/* The block that a call passes: a block literal (into *lit), `&expr` or
+   `&`. *holder roots the Proc of `&expr`. Answers NULL for no block, and
+   also when a jump is pending. */
+static const LupeBlock *lupe_make_block(LupeFrame *f, const pm_node_t *bn, LupeBlock *lit, sp_RbVal *holder) {
+  if (!bn) return NULL;
+  if (PM_NODE_TYPE_P(bn, PM_BLOCK_NODE)) {
+    *lit = (LupeBlock){ .node = bn, .home = f, .serial = f->serial, .site = lit };
+    return lit;
+  }
+  const pm_node_t *e = ((const pm_block_argument_node_t *)bn)->expression;
+  if (!e) return f->block;   /* def m(&) ... n(&) */
+  sp_RbVal v = lupe_eval(f, e);
+  if (L.ctl != LUPE_CTL_NONE) return NULL;
+  *holder = v;
+  if (v.tag == SP_TAG_NIL) return NULL;
+  if (v.tag == SP_TAG_SYM) {
+    *lit = (LupeBlock){ .sym = (sp_sym)v.v.i, .lambda = 1 };
+    return lit;
+  }
+  if (lupe_is_proc(v)) return &((LupeProc *)v.v.p)->b;
+  lupe_unsupported(bn, "block argument that is not a Proc or a Symbol");
 }
 
 /* ---- calls ---- */
@@ -168,9 +372,17 @@ static int lupe_args(LupeFrame *f, const pm_arguments_node_t *args, int argc, sp
   return 1;
 }
 
+/* A call that passed the block lit ends here when the block breaks. */
+static sp_RbVal lupe_catch_break(const LupeBlock *lit, sp_RbVal v) {
+  if (L.ctl == LUPE_CTL_BREAK_BLOCK && L.ctl_target == lit) {
+    L.ctl = LUPE_CTL_NONE;
+    return L.ctl_val;
+  }
+  return v;
+}
+
 static sp_RbVal lupe_call(LupeFrame *f, const pm_call_node_t *c) {
   SP_GC_SAVE();
-  if (c->block) lupe_unsupported((const pm_node_t *)c, "block");
   const char *name = sp_sym_to_s(lupe_sym(c->name));
   sp_RbVal recv = sp_box_nil();
   SP_GC_ROOT_RBVAL(recv);
@@ -183,26 +395,64 @@ static sp_RbVal lupe_call(LupeFrame *f, const pm_call_node_t *c) {
   int argc = lupe_argc(c->arguments);
   sp_RbVal argv[argc ? argc : 1];
   if (!lupe_args(f, c->arguments, argc, argv)) return sp_box_nil();
-  if (!c->receiver) return lupe_call_self(f, name, argc, argv);
-  sp_RbVal v = lupe_send(recv, name, argc, argv);
+  LupeBlock lit;
+  sp_RbVal holder = sp_box_nil();
+  SP_GC_ROOT_RBVAL(holder);
+  const LupeBlock *blk = lupe_make_block(f, c->block, &lit, &holder);
+  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+  if (!c->receiver) return lupe_catch_break(&lit, lupe_call_self(f, name, argc, argv, blk));
+  sp_RbVal v = lupe_catch_break(&lit, lupe_send_b(recv, name, argc, argv, blk));
   /* `obj.x = v` answers v, whatever x= returns */
   if (PM_NODE_FLAG_P((const pm_node_t *)c, PM_CALL_NODE_FLAGS_ATTRIBUTE_WRITE) && argc > 0) return argv[argc - 1];
   return v;
 }
 
+/* The Kernel methods that take the block of the call. Answers 1 and sets
+   *out when it handles the call. */
+static int lupe_kernel_block(LupeFrame *f, const char *name, int argc, const LupeBlock *blk, sp_RbVal *out) {
+  if (argc == 0 && (!strcmp(name, "block_given?") || !strcmp(name, "iterator?"))) {
+    *out = sp_box_bool(f->block != NULL);
+    return 1;
+  }
+  if (!blk) return 0;
+  if (argc == 0 && (!strcmp(name, "proc") || !strcmp(name, "lambda"))) {
+    /* a break in the Proc of a literal has no call to end */
+    if (blk->node && !blk->proc) {
+      LupeBlock l = *blk;
+      l.lambda = name[0] == 'l';
+      l.site = NULL;
+      *out = lupe_block_proc(&l);
+    } else {
+      *out = lupe_block_proc(blk);
+    }
+    return 1;
+  }
+  if (argc == 0 && !strcmp(name, "loop")) {
+    for (;;) {
+      lupe_yield(blk, 0, NULL);
+      if (L.ctl != LUPE_CTL_NONE) break;
+    }
+    *out = sp_box_nil();
+    return 1;
+  }
+  return 0;
+}
+
 /* A call with no receiver: a method of self, then Kernel, then a builtin
    method of self. In a class body or a class method, self is the class. */
-static sp_RbVal lupe_call_self(LupeFrame *f, const char *name, int argc, sp_RbVal *argv) {
+static sp_RbVal lupe_call_self(LupeFrame *f, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk) {
   sp_sym s = sp_sym_intern(name);
   sp_RbVal self = f->self, out;
   if (self.tag == SP_TAG_CLASS) {
     LupeClass *k = lupe_class_value(self);
     LupeMethod *m = k ? lupe_find_smethod(k, s) : NULL;
-    if (m) return lupe_invoke(m, self, argc, argv);
-    if (lupe_class_core(f, self, name, argc, argv, &out)) return out;
+    if (m) return lupe_invoke_b(m, self, argc, argv, blk);
+    if (lupe_class_core(f, self, name, argc, argv, blk, &out)) return out;
   }
   LupeMethod *m = lupe_find_method(lupe_class_of(self), s);
-  if (m) return lupe_invoke(m, self, argc, argv);
+  if (m) return lupe_invoke_b(m, self, argc, argv, blk);
+  if (lupe_kernel_block(f, name, argc, blk, &out)) return out;
+  if (blk) return lupe_send_b(self, name, argc, argv, blk);
   if (lupe_kernel(name, argc, argv, &out)) return out;
   if (lupe_object_core(self, name, argc, argv, &out)) return out;
   if (!lupe_is_lupe_object(self) && self.tag != SP_TAG_CLASS) return lupe_send(self, name, argc, argv);
@@ -217,6 +467,7 @@ static sp_RbVal lupe_call_self(LupeFrame *f, const char *name, int argc, sp_RbVa
    parameters, in order, with *rest spread. Answers the count; with argv
    NULL, it only counts. */
 static int lupe_zsuper_args(LupeFrame *f, const pm_node_t *n, sp_RbVal *argv) {
+  while (f->parent) f = f->parent;   /* a super in a block reads the method's parameters */
   const pm_parameters_node_t *ps = f->method->def ? f->method->def->parameters : NULL;
   if (!ps) return 0;
   int k = 0;
@@ -243,10 +494,26 @@ static int lupe_zsuper_args(LupeFrame *f, const pm_node_t *n, sp_RbVal *argv) {
   return k;
 }
 
-/* super, and super with no arguments, which passes the parameters. */
-static sp_RbVal lupe_super(LupeFrame *f, const pm_node_t *n, const pm_arguments_node_t *args, int forward) {
+static sp_RbVal lupe_super_call(LupeFrame *f, const pm_node_t *n, const pm_arguments_node_t *args, int forward,
+                                const LupeBlock *blk);
+
+/* super, and super with no arguments, which passes the parameters. Both
+   pass the block of the method, unless the super has its own. */
+static sp_RbVal lupe_super(LupeFrame *f, const pm_node_t *n, const pm_arguments_node_t *args, int forward,
+                           const pm_node_t *bnode) {
   SP_GC_SAVE();
   if (!f->method) lupe_unsupported(n, "super outside a method");
+  LupeBlock lit;
+  sp_RbVal holder = sp_box_nil();
+  SP_GC_ROOT_RBVAL(holder);
+  const LupeBlock *blk = bnode ? lupe_make_block(f, bnode, &lit, &holder) : f->block;
+  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+  return lupe_catch_break(&lit, lupe_super_call(f, n, args, forward, blk));
+}
+
+static sp_RbVal lupe_super_call(LupeFrame *f, const pm_node_t *n, const pm_arguments_node_t *args, int forward,
+                                const LupeBlock *blk) {
+  SP_GC_SAVE();
   int argc = forward ? lupe_zsuper_args(f, n, NULL) : lupe_argc(args);
   sp_RbVal argv[argc ? argc : 1];
   if (forward) {
@@ -261,11 +528,12 @@ static sp_RbVal lupe_super(LupeFrame *f, const pm_node_t *n, const pm_arguments_
     s = m->owner->super ? lupe_find_smethod(m->owner->super, m->name) : NULL;
   else
     s = lupe_find_super(lupe_class_of(f->self), m);
-  if (s) return lupe_invoke(s, f->self, argc, argv);
+  if (s) return lupe_invoke_b(s, f->self, argc, argv, blk);
   const char *name = sp_sym_to_s(m->name);
   sp_RbVal out;
   if (!strcmp(name, "initialize")) return sp_box_nil();
-  if (f->self.tag == SP_TAG_CLASS && lupe_class_core(NULL, f->self, name, argc, argv, &out)) return out;
+  if (f->self.tag == SP_TAG_CLASS && lupe_class_core(NULL, f->self, name, argc, argv, blk, &out)) return out;
+  if (blk) lupe_gap(sp_sprintf("super with a block to the builtin %s", name));
   if (lupe_object_core(f->self, name, argc, argv, &out)) return out;
   lupe_trace_missing("super", name, argc);
   sp_raise_cls("NoMethodError", sp_sprintf("super: no superclass method '%s'", name));
@@ -310,6 +578,12 @@ static sp_RbVal lupe_jump(LupeFrame *f, LupeCtl kind, const pm_arguments_node_t 
   if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
   L.ctl_val = v;
   L.ctl = kind;
+  if (kind == LUPE_CTL_RETURN) {
+    /* a return in a block leaves the method that holds it, or the lambda */
+    LupeFrame *t = f;
+    while (t->parent && !t->lambda) t = t->parent;
+    L.ctl_target = t;
+  }
   return sp_box_nil();
 }
 
@@ -364,6 +638,20 @@ static sp_RbVal lupe_array(LupeFrame *f, const pm_array_node_t *n) {
     sp_PolyArray_push(a, v);
   }
   return sp_box_poly_array(a);
+}
+
+/* A Range of Integers. A missing end makes a beginless or endless one. */
+static sp_RbVal lupe_range(LupeFrame *f, const pm_range_node_t *n) {
+  sp_RbVal lo = n->left ? lupe_eval(f, n->left) : sp_box_nil();
+  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+  sp_RbVal hi = n->right ? lupe_eval(f, n->right) : sp_box_nil();
+  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+  if ((lo.tag != SP_TAG_INT && lo.tag != SP_TAG_NIL) || (hi.tag != SP_TAG_INT && hi.tag != SP_TAG_NIL) ||
+      (lo.tag == SP_TAG_NIL && hi.tag == SP_TAG_NIL))
+    lupe_unsupported((const pm_node_t *)n, "Range of values other than Integer");
+  sp_oint first = { lo.tag == SP_TAG_INT ? lo.v.i : 0, lo.tag == SP_TAG_NIL };
+  sp_oint last = { hi.tag == SP_TAG_INT ? hi.v.i : 0, hi.tag == SP_TAG_NIL };
+  return sp_box_range(sp_range_new_o(first, last, PM_NODE_FLAG_P((const pm_node_t *)n, PM_RANGE_FLAGS_EXCLUDE_END)));
 }
 
 /* ---- classes, modules and constants ---- */
@@ -605,12 +893,27 @@ static sp_RbVal lupe_eval(LupeFrame *f, const pm_node_t *n) {
     return lupe_index_op_write(f, (const pm_index_operator_write_node_t *)n);
   case PM_SUPER_NODE: {
     const pm_super_node_t *s = (const pm_super_node_t *)n;
-    if (s->block) lupe_unsupported(n, "block");
-    return lupe_super(f, n, s->arguments, 0);
+    return lupe_super(f, n, s->arguments, 0, s->block);
   }
   case PM_FORWARDING_SUPER_NODE:
-    if (((const pm_forwarding_super_node_t *)n)->block) lupe_unsupported(n, "block");
-    return lupe_super(f, n, NULL, 1);
+    return lupe_super(f, n, NULL, 1, (const pm_node_t *)((const pm_forwarding_super_node_t *)n)->block);
+  case PM_YIELD_NODE: {
+    SP_GC_SAVE();
+    const pm_arguments_node_t *args = ((const pm_yield_node_t *)n)->arguments;
+    if (!f->block) sp_raise_cls("LocalJumpError", "no block given (yield)");
+    int argc = lupe_argc(args);
+    sp_RbVal argv[argc ? argc : 1];
+    if (!lupe_args(f, args, argc, argv)) return sp_box_nil();
+    return lupe_yield(f->block, argc, argv);
+  }
+  case PM_LAMBDA_NODE: {
+    LupeBlock b = { .node = n, .home = f, .serial = f->serial, .lambda = 1 };
+    return lupe_block_proc(&b);
+  }
+  case PM_IT_LOCAL_VARIABLE_READ_NODE:
+    return *f->it;
+  case PM_RANGE_NODE:
+    return lupe_range(f, (const pm_range_node_t *)n);
   case PM_SELF_NODE:
     return f->self;
   case PM_CLASS_NODE: {

@@ -642,7 +642,8 @@ static void lupe_attr(LupeClass *k, int reader, int writer, int singleton, int a
   }
 }
 
-static int lupe_class_core(LupeFrame *f, sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+static int lupe_class_core(LupeFrame *f, sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
+                           const LupeBlock *blk, sp_RbVal *out) {
   LupeClass *k = lupe_class_value(r);
   if (!k) return 0;
   if (!strcmp(name, "new") || !strcmp(name, "allocate")) {
@@ -658,7 +659,7 @@ static int lupe_class_core(LupeFrame *f, sp_RbVal r, const char *name, int argc,
     SP_GC_ROOT_RBVAL(obj);
     if (name[0] == 'n') {
       LupeMethod *init = lupe_find_method(k, sp_sym_intern("initialize"));
-      if (init) lupe_invoke(init, obj, argc, argv);
+      if (init) lupe_invoke_b(init, obj, argc, argv, blk);
       else if (argc > 0)
         sp_raise_cls("ArgumentError", sp_sprintf("wrong number of arguments (given %d, expected 0)", argc));
     }

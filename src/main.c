@@ -11,6 +11,7 @@
 #include "object.c"
 #include "walk.c"
 #include "builtin.c"
+#include "iter.c"
 
 static char *lupe_read_file(const char *path, size_t *len) {
   FILE *fp = fopen(path, "rb");
@@ -46,6 +47,8 @@ static void lupe_body(void) {
   const pm_program_node_t *prog = (const pm_program_node_t *)root;
   LUPE_FRAME(top, &prog->locals, L.main, L.object);
   lupe_eval_stmts(&top, prog->statements);
+  /* a break of a Proc whose call has returned reaches the top */
+  if (L.ctl == LUPE_CTL_BREAK_BLOCK) lupe_gap("break from a block whose call has returned");
   sp_fin_run_exit();
 }
 

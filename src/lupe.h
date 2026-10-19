@@ -66,20 +66,52 @@ typedef struct {
    the classes of an AOT program (0, 1, ...). */
 #define LUPE_CLS_BASE 0x100000
 
-/* The local variables and the context of one scope: the program, a class
-   body or a method call. locals[i] holds the variable names->ids[i]; each
-   slot is a GC root. */
+struct LupeFrame;
+
+/* A block that a call passes: a block literal, a lambda, `&:sym` or the
+   block of a Proc. A block literal lives in the C frame of its call. */
+typedef struct LupeBlock {
+  const pm_node_t *node;          /* a block or a lambda node; NULL for &:sym */
+  struct LupeFrame *home;         /* the frame where the block was written */
+  uint64_t serial;                /* home->serial then; another value means home returned */
+  const struct LupeBlock *site;   /* the call that break leaves; NULL for none */
+  sp_sym sym;                     /* &:sym */
+  int lambda;
+  void *proc;                     /* the LupeProc that carries the block, or NULL */
+} LupeBlock;
+
+/* A Proc value. It starts with a spinel sp_Proc, so that the runtime reads
+   the fields that it knows (lambda?, frozen?). The runtime cannot call it:
+   fn is NULL, and Lupe answers every call of a Proc itself. */
 typedef struct {
+  sp_Proc p;
+  LupeBlock b;
+} LupeProc;
+
+/* The local variables and the context of one scope: the program, a class
+   body, a method call or a block call. locals[i] holds the variable
+   names->ids[i]; each slot is a GC root. */
+typedef struct LupeFrame {
   sp_RbVal *locals;
   const pm_constant_id_list_t *names;
   sp_RbVal self;              /* rooted by the caller */
   LupeClass *cref;            /* the lexical class: def target and constant scope */
   const LupeMethod *method;   /* the running method, for super; NULL outside one */
   int singleton_defs;         /* 1: inside class << self; 2: after module_function */
+  struct LupeFrame *parent;   /* a block frame: the frame of the enclosing scope */
+  const LupeBlock *block;     /* the block of the method, for yield; NULL for none */
+  sp_RbVal *it;               /* the slot of `it` (a rooted slot after the locals) */
+  uint64_t serial;            /* unique to this frame, for LupeBlock.serial */
+  int lambda;                 /* a lambda frame: return leaves it */
 } LupeFrame;
 
-/* A pending jump out of the statement under evaluation. */
-typedef enum { LUPE_CTL_NONE, LUPE_CTL_RETURN, LUPE_CTL_BREAK, LUPE_CTL_NEXT } LupeCtl;
+/* A pending jump out of the statement under evaluation. A break in a
+   block becomes LUPE_CTL_BREAK_BLOCK at the block boundary; it ends the
+   call that passed the block (L.ctl_target). A return ends the frame
+   L.ctl_target. */
+typedef enum {
+  LUPE_CTL_NONE, LUPE_CTL_RETURN, LUPE_CTL_BREAK, LUPE_CTL_NEXT, LUPE_CTL_BREAK_BLOCK
+} LupeCtl;
 
 typedef struct {
   const char *path;
@@ -92,13 +124,21 @@ typedef struct {
   sp_RbVal main;         /* the top-level self; a GC root */
   LupeCtl ctl;
   sp_RbVal ctl_val;      /* the value that the jump carries; a GC root */
+  const void *ctl_target;   /* LUPE_CTL_RETURN: a LupeFrame; LUPE_CTL_BREAK_BLOCK: a LupeBlock */
+  uint64_t serial;       /* the last LupeFrame.serial */
 } Lupe;
 
 static Lupe L;
 
 static sp_RbVal lupe_eval(LupeFrame *f, const pm_node_t *n);
 static sp_RbVal lupe_send(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv);
-static sp_RbVal lupe_call_self(LupeFrame *f, const char *name, int argc, sp_RbVal *argv);
+static sp_RbVal lupe_send_b(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk);
+static sp_RbVal lupe_call_self(LupeFrame *f, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk);
+static sp_RbVal lupe_yield(const LupeBlock *b, int argc, sp_RbVal *argv);
+static int lupe_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk, sp_RbVal *out);
+static int lupe_proc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int lupe_range_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int lupe_is_proc(sp_RbVal v);
 static int lupe_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static void lupe_trace_missing(const char *cls, const char *name, int argc);
 static int lupe_builtin_responds(sp_RbVal r, const char *name);
@@ -114,8 +154,10 @@ static LupeMethod *lupe_find_method(const LupeClass *c, sp_sym name);
 static LupeMethod *lupe_find_smethod(const LupeClass *c, sp_sym name);
 static LupeMethod *lupe_find_super(const LupeClass *c, const LupeMethod *m);
 static sp_RbVal lupe_invoke(const LupeMethod *m, sp_RbVal self, int argc, sp_RbVal *argv);
+static sp_RbVal lupe_invoke_b(const LupeMethod *m, sp_RbVal self, int argc, sp_RbVal *argv, const LupeBlock *blk);
 static int lupe_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
-static int lupe_class_core(LupeFrame *f, sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int lupe_class_core(LupeFrame *f, sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
+                           const LupeBlock *blk, sp_RbVal *out);
 static int lupe_is_lupe_object(sp_RbVal v);
 static int lupe_unknown_builtin(const char *name);
 
