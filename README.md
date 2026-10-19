@@ -16,4 +16,18 @@ Lupe has two purposes:
 Lupe does not modify spinel. It links against `libspinel_rt` and pins one
 spinel commit.
 
+## Build
+
+Lupe needs a built spinel checkout (`make deps && make` in spinel) and Ruby
+for the build tools.
+
+```sh
+make SPINEL=/path/to/spinel
+build/lupe program.rb
+make test
+```
+
+`make test` runs each program in `test/m2` under CRuby and Lupe and
+compares stdout and the exit status.
+
 See [docs/design.md](docs/design.md) for the design.

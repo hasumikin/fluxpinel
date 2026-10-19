@@ -14,7 +14,7 @@
 require "open3"
 
 SPINEL = ENV.fetch("SPINEL", File.expand_path("~/work/spinel"))
-TU_DIR = ENV.fetch("LUPE_TU_DIR", File.expand_path("../poc/m0", __dir__))
+TU_DIR = ENV.fetch("LUPE_TU_DIR", File.expand_path("../src", __dir__))
 # A type mismatch that C only warns about is a wrong wrapper (a String
 # boxed from an sp_StrArray *), so these warnings are errors here.
 CFLAGS = %W[-std=gnu11 -O0 -fmax-errors=0 -DSP_INT_OVERFLOW_MODE_RAISE
@@ -44,21 +44,26 @@ rows = File.readlines(File.join(dir, "manifest.tsv"), chomp: true).map do |l|
 end
 find = wrapper_at_line(File.readlines(gen))
 
+# The generated file expects lupe_tu.c in front of it (one TU).
+unit = File.join(dir, "gen_unit.c")
+File.write(unit, "#include \"lupe_tu.c\"\n#include \"bop_gen_out.c\"\n")
+
 # 1. compile errors
-log, = run("cc", *CFLAGS, "-c", gen, "-o", File.join(dir, "gen.o"))
+log, = run("cc", *CFLAGS, "-I#{dir}", "-c", unit, "-o", File.join(dir, "gen.o"))
 File.write(File.join(dir, "compile.log"), log)
 compile_fail = log.scan(/bop_gen_out\.c:(\d+):\d+: error:/).map { |(l)| find.(l.to_i) }.compact.uniq
 
 # 2. link errors, with the failed wrappers off
 main_c = File.join(dir, "main.c")
 File.write(main_c, <<~C)
-  typedef struct { const char *recv, *name, *variant; int argc_min, argc_max; void *fn; } LupeBop;
+  typedef struct { const char *recv, *name, *variant; int argc_min, argc_max;
+                   unsigned long long arg0, arg1; void *fn; } LupeBop;
   extern const int lupe_bop_count;
   extern const LupeBop lupe_bop_table[];
   int main(void) { int n = 0; for (int i = 0; i < lupe_bop_count; i++) n += lupe_bop_table[i].fn != 0; return n == 0; }
 C
 offs = compile_fail.map { |id| "-DLUPE_BOP_OFF_#{id}" }
-log, ok = run("cc", *CFLAGS, *offs, "-o", File.join(dir, "link_test"), gen, main_c,
+log, ok = run("cc", *CFLAGS, "-I#{dir}", *offs, "-o", File.join(dir, "link_test"), unit, main_c,
               "#{SPINEL}/lib/libspinel_rt.a", "-lm", "-lcrypt")
 File.write(File.join(dir, "link.log"), log)
 link_fail = log.scan(/in function `lupe_bop_(\d+)'/).map { |(id)| id.to_i }.uniq

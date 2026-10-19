@@ -4,6 +4,7 @@
    receiver, name, variant and argument count, so it does not depend on the
    wrapper numbers. */
 
+#include "lupe_tu.c"
 #include "bop_gen_out.c"
 
 static int failures = 0;

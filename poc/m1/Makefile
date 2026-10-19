@@ -8,7 +8,7 @@ SPINEL ?= $(HOME)/work/spinel
 CC ?= cc
 BUILD = build
 TOOLS = ../../tools
-TU_DIR = ../m0
+TU_DIR = ../../src
 RT_CFLAGS = -std=gnu11 -O1 -DSP_INT_OVERFLOW_MODE_RAISE \
             -I$(TU_DIR) -I$(BUILD) -I$(SPINEL)/lib -I$(SPINEL)/lib/regexp
 RT_LIBS = $(SPINEL)/lib/libspinel_rt.a -lm -lcrypt

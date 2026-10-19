@@ -100,7 +100,38 @@ outside the table. Lupe writes these methods by hand:
 - bang methods on String (`sub!`, `upcase!`). They change the receiver
   through the STRBUF handle.
 
-### 3.3 User classes
+The walker tries four sources in order (`src/builtin.c`):
+
+1. the core methods, written by hand. Most of them call one `sp_poly_*`
+   function, for example `sp_poly_add` for `+`.
+2. the `sp_poly_*` helpers that answer one method as a whole, for example
+   `sp_poly_floor` for `floor`. A table maps the method name to the helper.
+3. the generated wrappers.
+4. `NoMethodError`.
+
+A hand-written core method follows the C that codegen emits for the same
+call. For example, `String#split(sep)` calls `sp_str_split_drop_trailing`,
+as `src/codegen_call_recv.c` does.
+
+### 3.3 Walker
+
+The walker evaluates the prism AST directly (`src/walk.c`).
+
+- **Frames.** A scope (the program or one method call) keeps its locals in
+  a C array on the stack. Prism gives each scope a list of local names. The
+  index in that list is the slot. Each slot is a GC root.
+- **Temporaries.** A C local that holds a value across a call that can
+  allocate is rooted with `SP_GC_ROOT_RBVAL`, as generated code is.
+- **Jumps.** `return`, `break` and `next` set a pending jump and its value.
+  Each statement list stops when a jump is pending. A loop or a method call
+  takes the jump that belongs to it.
+- **Methods.** A top-level `def` adds the method to a table of the walker.
+  A call with no receiver looks in that table first, then in the Kernel
+  methods (`puts`, `print`, `p`).
+- **One TU.** `src/main.c` includes `lupe_tu.c`, the generated wrappers,
+  `walk.c` and `builtin.c`.
+
+### 3.4 User classes
 
 Spinel compiles each user class to a C struct. The `cls_id` of a class
 indexes per-program tables that codegen emits (`sp_class_names[]` and
@@ -112,13 +143,13 @@ Lupe gives walker classes their own object kind:
 - a generic ivar table per object,
 - a method table per class.
 
-### 3.4 Containers
+### 3.5 Containers
 
 Spinel has 12 typed containers, for example `sp_IntArray`, `sp_StrIntHash`
 and `sp_PolyArray`. The walker creates only the poly forms. A value from AOT
 code can hold any of the 12 forms. The walker reads all 12 forms.
 
-### 3.5 Boundary to AOT code
+### 3.6 Boundary to AOT code
 
 - **Walker to AOT.** Spinel exports a method with `--ext-init NAME` and
   `--ext-entry Mod.m`. Lupe registers each export in its method table.
@@ -188,7 +219,7 @@ These facts apply to spinel commit `ffac8340d`.
 - Spinel has no mode that forces every slot to poly.
 - `libspinel_rt.a` links with no generated TU. A hand-written TU supplies
   the symbol table, the builtin class names, the user exception table and
-  the init hooks (`poc/m0/lupe_tu.c`).
+  the init hooks (`src/lupe_tu.c`).
 - `spinel_rt.h` declares hooks such as `sp_class_to_s` and `sp_sym_to_s`
   as `static`. Each TU that includes the header must define them. Thus all
   Lupe code that uses the runtime is one TU (a unity build).
@@ -226,6 +257,20 @@ These facts apply to spinel commit `ffac8340d`.
 - Some runtime helpers answer `sp_oint` where the row says Integer
   (`IO#getbyte`). The wrapper boxes by the C type with `_Generic`.
 - `String#crypt` needs `-lcrypt` at link time.
+- Some core methods have no row in `bop_rows[]` at all. `Float#floor`,
+  `Integer#gcd` and `Array#sum` are examples. Codegen writes them, and a
+  `sp_poly_*` helper answers them on a boxed value.
+- `spinel_rt.h` defines 75 `sp_poly_*` helpers of the form
+  `sp_RbVal f(sp_RbVal)` and 49 of the form `sp_RbVal f(sp_RbVal, sp_RbVal)`.
+  Their names do not always equal the method name (`sp_poly_int_gcd` for
+  `gcd`).
+- The GC modes of spinel catch a missing root in the walker. With the root
+  of an Array literal removed, `test/m2/gc_stress.rb` gives the correct
+  output in a plain run. It gives a wrong output with `SPINEL_GC_STRESS=1`,
+  and it aborts with `SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1`.
+- The M2 walker runs `fib(32)` in 0.85 s. CRuby 4.0.6 runs it in 0.24 s,
+  and CRuby with YJIT in 0.06 s. The walker compares each method name with
+  `strcmp` and looks up methods by a linear search.
 
 ## 8. Open questions
 
@@ -237,8 +282,23 @@ These facts apply to spinel commit `ffac8340d`.
   build per program, or one shared build?
 - How much of the 1.4 MB text does a walker keep after the linker drops
   unused code? The answer decides whether Lupe fits a microcontroller.
-- Does the GC test in `poc/m0` detect a missing root? A negative test must
-  show that an unrooted value does not survive.
+- Can a generator map the `sp_poly_*` helpers to method names, as
+  `tools/bop_gen.c` does for `bop_rows[]`? Codegen names the helper that it
+  emits for each method, so the map exists in the codegen source.
+- How does the walker dispatch fast? Candidates are interned method names
+  (`sp_sym`) and an inline cache per call node.
+- How does Lupe hold its spinel dependency? Lupe uses the spinel source
+  (`bop_rows[]`, `ty_traits[]`), `libspinel_rt.a` and `libprism.a` from
+  `$(SPINEL)`, an external checkout. The two uses want different things:
+  - The oracle checks the spinel tree under test, at any commit. An
+    external path fits it.
+  - The embedded REPL links with one application. It needs a fixed spinel
+    commit and a reproducible build. On a microcontroller, it also builds
+    the runtime and prism from source with the target toolchain.
+
+  A candidate: a spinel submodule as the default, and `make SPINEL=...` to
+  use another tree. The oracle (M3) needs at least a recorded commit. The
+  device REPL (M4) needs the source build.
 
 ## 9. Plan
 
@@ -248,8 +308,10 @@ These facts apply to spinel commit `ffac8340d`.
 2. **M1: template survey.** `poc/m1` generates the wrappers, compiles and
    links them, and reports the coverage. A smoke test calls a sample.
    Run it with `make -C poc/m1`.
-3. **M2: minimal walker.** Parse with libprism. Evaluate literals, locals,
-   `def`, calls and `if`/`while` on Integer, String and Array.
+3. **M2: minimal walker.** `build/lupe FILE.rb` evaluates literals,
+   locals, `def`, calls, `if`/`unless`, `while`/`until`, `return`, `break`
+   and `next` on Integer, Float, String, Symbol and Array. `make test` runs
+   `test/m2` under CRuby and Lupe, in a plain run and in the GC stress run.
 4. **M3: oracle harness.** Run the spinel test suite under CRuby, Lupe and
    AOT. Report the table in section 4.
 5. **M4: embedded REPL.** Link Lupe into an AOT binary on a host. Then move
