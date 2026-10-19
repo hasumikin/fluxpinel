@@ -34,6 +34,8 @@ static int lupe_kind_of(sp_RbVal v, const char **family, const char **variant) {
     case SP_BUILTIN_STR_ARRAY: fam = "ANY_ARRAY"; var = "str_array"; kind = LUPE_TY_STR_ARRAY; break;
     case SP_BUILTIN_RANGE: fam = var = "range"; kind = LUPE_TY_RANGE; break;
     case SP_BUILTIN_EXCEPTION: fam = var = "exception"; break;
+    case SP_BUILTIN_REGEX: fam = var = "regex"; kind = LUPE_TY_REGEX; break;
+    case SP_BUILTIN_MATCHDATA: fam = var = "matchdata"; kind = LUPE_TY_MATCHDATA; break;
     case SP_BUILTIN_STR_INT_HASH: fam = "ANY_HASH"; var = "str_int_hash"; kind = LUPE_TY_STR_INT_HASH; break;
     case SP_BUILTIN_STR_STR_HASH: fam = "ANY_HASH"; var = "str_str_hash"; kind = LUPE_TY_STR_STR_HASH; break;
     case SP_BUILTIN_INT_INT_HASH: fam = "ANY_HASH"; var = "int_int_hash"; kind = LUPE_TY_INT_INT_HASH; break;
@@ -286,6 +288,7 @@ static int lupe_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal
   if (lupe_hash_core(recv, name, argc, argv, blk, out)) return 1;
   if (!blk && lupe_array_hash(recv, name, argc, out)) return 1;
   if (lupe_exc_core(recv, name, argc, argv, out)) return 1;
+  if (lupe_re_call(recv, name, argc, argv, blk, out)) return 1;
   if (lupe_iter(recv, name, argc, argv, blk, out)) return 1;
   if (blk) {
     if (argc >= 1 && (!strcmp(name, "send") || !strcmp(name, "__send__") || !strcmp(name, "public_send"))) return 0;

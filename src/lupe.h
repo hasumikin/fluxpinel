@@ -20,6 +20,7 @@ typedef struct {
   const pm_def_node_t *def;   /* LUPE_M_DEF */
   sp_sym ivar;                /* LUPE_M_READER / LUPE_M_WRITER: "@name" */
   struct LupeClass *owner;    /* the class or module that defines it */
+  int matches;                /* whether the body can set $~: 0 not known yet, 1 no, 2 yes */
 } LupeMethod;
 
 typedef struct {
@@ -169,6 +170,16 @@ static void lupe_exc_init(sp_RbVal v, int argc, sp_RbVal *argv);
 static int lupe_exc_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int lupe_exc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int lupe_exc_matches(const char *cls, sp_RbVal ev, sp_RbVal target);
+
+/* re.c */
+static sp_RbVal lupe_re_literal(LupeFrame *f, const pm_node_t *n);
+static sp_RbVal lupe_re_last(void);
+static sp_RbVal lupe_re_nth(int n);
+static sp_RbVal lupe_re_backref(const char *g);
+static sp_RbVal lupe_re_match_write(LupeFrame *f, const pm_match_write_node_t *w);
+static int lupe_re_frame_enter(const LupeMethod *m, sp_re_frame *rf);
+static int lupe_re_call(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
+                        sp_RbVal *out);
 static int lupe_is_proc(sp_RbVal v);
 static int lupe_is_range(sp_RbVal v);
 static int lupe_is_hash(sp_RbVal v);

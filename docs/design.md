@@ -200,6 +200,30 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   method that Lupe lacks. The oracle still sees the trace of the missing
   method when the output differs.
 
+### 3.3.3 Regexp
+
+- **Value.** A Regexp is a compiled pattern of the runtime
+  (`mrb_regexp_pattern`), boxed with `SP_BUILTIN_REGEX`. The runtime
+  allocates it with `malloc` and never frees it, as in AOT code. A literal
+  compiles once, at its first evaluation, and a table keyed by the node
+  keeps the pattern (`src/re.c`). An interpolated literal compiles at each
+  evaluation, but once with `/o`.
+- **Methods.** spinel emits the String methods that take a Regexp from
+  codegen code, so Lupe writes them on the runtime helpers:
+  - `=~`, `!~`, `match`, `match?` and `===`.
+  - `sub`, `gsub` and their bang forms, with a String, a Hash or a block.
+  - `scan`, `split`, `index`, `rindex`, `[]`, `slice!`, `[]=`,
+    `partition`, `rpartition` and `start_with?`.
+
+  A MatchData answers most methods through the generated wrappers.
+- **Registers.** `$~`, `$1` and the other match globals read the registers
+  of the runtime. A method whose body has a Regexp literal or a call of the
+  match family saves the registers of its caller and puts them back on
+  exit (`sp_re_frame`). Lupe finds these methods by a walk of the body at
+  the first call.
+- **Subject.** A match reads a copy of a String that can change. `$~`
+  keeps the subject, so a later `slice!` or `gsub!` does not change it.
+
 ### 3.4 User classes
 
 Spinel compiles each user class to a C struct. The `cls_id` of a class
@@ -497,7 +521,7 @@ These facts apply to spinel commit `ffac8340d`.
   | a `rescue` modifier | 149 |
   | a multiple assignment | 145 |
 
-- The oracle on spinel `6ab3b2e20` (7910 tests), with exceptions: Lupe
+- The oracle on spinel `b5d3820ad` (7910 tests), with exceptions: Lupe
   runs 2023 tests and 1909 agree. 111 differ; about 30 of them check
   `private` or `freeze`, which Lupe does not model. The largest blockers
   now:
@@ -511,6 +535,25 @@ These facts apply to spinel commit `ffac8340d`.
   | `case` / `when` | 132 |
   | a Range of values other than Integer | 101 |
 
+- The oracle on spinel `b5d3820ad`, with Regexp: Lupe runs 2210 tests and
+  2095 agree. 112 differ. The largest blockers now:
+
+  | blocker | tests |
+  |---|---|
+  | a global variable write | 191 |
+  | `Class#new` with a block | 184 |
+  | a multiple assignment | 151 |
+  | `case` / `when` | 138 |
+  | a Range of values other than Integer | 102 |
+  | `case` / `in` | 73 |
+
+- `sp_re_matchdata` sets the captures of a match but not the positions
+  (`sp_re_caps`) that `sp_re_last_matchdata` reads. Lupe sets the
+  registers again from the MatchData, so `$~` after `str.match(re)` reads
+  this match.
+- Lupe makes a mutable String for each String literal. Thus
+  `"ab12".slice!(/\d+/)` changes a String in Lupe, but CRuby and AOT raise
+  FrozenError (`string_slice_bang_regexp_arm`).
 - `rescue` lets a program reach two old defects of Lupe. A generated
   wrapper whose row has no argument kinds takes any argument: `"s".include?(:x)`
   passes a Symbol to `sp_str_include`, which crashes
@@ -575,6 +618,7 @@ These facts apply to spinel commit `ffac8340d`.
    - Hash and keyword arguments (section 3.5): `test/m3`.
    - Exceptions: `raise`, `begin`/`rescue`/`else`/`ensure`, `retry` and
      the `rescue` modifier (section 3.3.2): `test/m3`.
+   - Regexp, MatchData and the match globals (section 3.3.3): `test/m3`.
    - Next: the largest blockers of the oracle report.
 6. **M4: embedded REPL.** Link Lupe into an AOT binary on a host. Then move
    to a microcontroller board.

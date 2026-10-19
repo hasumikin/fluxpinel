@@ -336,12 +336,16 @@ static sp_RbVal lupe_invoke_b(const LupeMethod *m, sp_RbVal self, int argc, sp_R
   sp_RbVal me = self;
   SP_GC_ROOT_RBVAL(me);
   const pm_def_node_t *def = m->def;
+  /* $~ is local to the method: the caller's registers come back on exit */
+  sp_re_frame rf;
+  int rx = lupe_re_frame_enter(m, &rf);
   LUPE_FRAME(f, &def->locals, me, m->owner);
   f.method = m;
   f.block = blk;
   lupe_bind_params(&f, def->parameters, argc, argv);
   sp_RbVal v = def->body ? lupe_eval(&f, def->body) : sp_box_nil();
   if (L.ctl == LUPE_CTL_RETURN && L.ctl_target == &f) { v = L.ctl_val; L.ctl = LUPE_CTL_NONE; }
+  if (rx) sp_re_frame_pop(&rf);
   return v;
 }
 
@@ -1494,11 +1498,21 @@ static sp_RbVal lupe_eval(LupeFrame *f, const pm_node_t *n) {
     L.ctl_val = sp_box_nil();
     return sp_box_nil();
   case PM_GLOBAL_VARIABLE_READ_NODE: {
-    /* $!: the exception that a rescue handles */
-    sp_sym g = lupe_sym(((const pm_global_variable_read_node_t *)n)->name);
-    if (strcmp(sp_sym_to_s(g), "$!")) lupe_unsupported(n, "node");
+    /* $!: the exception that a rescue handles; $~: the last match */
+    const char *g = sp_sym_to_s(lupe_sym(((const pm_global_variable_read_node_t *)n)->name));
+    if (!strcmp(g, "$~")) return lupe_re_last();
+    if (strcmp(g, "$!")) lupe_unsupported(n, "node");
     return sp_rescue_sp > 0 ? lupe_exc_box((sp_Exception *)sp_exc_handling[sp_rescue_sp - 1]) : sp_box_nil();
   }
+  case PM_REGULAR_EXPRESSION_NODE:
+  case PM_INTERPOLATED_REGULAR_EXPRESSION_NODE:
+    return lupe_re_literal(f, n);
+  case PM_MATCH_WRITE_NODE:
+    return lupe_re_match_write(f, (const pm_match_write_node_t *)n);
+  case PM_NUMBERED_REFERENCE_READ_NODE:
+    return lupe_re_nth((int)((const pm_numbered_reference_read_node_t *)n)->number);
+  case PM_BACK_REFERENCE_READ_NODE:
+    return lupe_re_backref(sp_sym_to_s(lupe_sym(((const pm_back_reference_read_node_t *)n)->name)));
   default:
     lupe_unsupported(n, "node");
   }

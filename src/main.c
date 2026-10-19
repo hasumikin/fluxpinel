@@ -14,6 +14,7 @@
 #include "iter.c"
 #include "hash.c"
 #include "exc.c"
+#include "re.c"
 
 static char *lupe_read_file(const char *path, size_t *len) {
   FILE *fp = fopen(path, "rb");
@@ -37,6 +38,7 @@ static void lupe_body(void) {
   lupe_object_init();
   lupe_hash_init();
   lupe_exc_hooks();
+  lupe_re_init();
 
   size_t len;
   char *src = lupe_read_file(L.path, &len);
