@@ -166,11 +166,26 @@ These facts apply to spinel commit `ffac8340d`.
 - The runtime has function-pointer hooks into generated code, for example
   `sp_class_name_fn` and `sp_exc_bivar_copy_fn`.
 - Spinel has no mode that forces every slot to poly.
+- `libspinel_rt.a` links with no generated TU. A hand-written TU supplies
+  the symbol table, the builtin class names, the user exception table and
+  the init hooks (`poc/m0/lupe_tu.c`).
+- `spinel_rt.h` declares hooks such as `sp_class_to_s` and `sp_sym_to_s`
+  as `static`. Each TU that includes the header must define them. Thus all
+  Lupe code that uses the runtime is one TU (a unity build).
+- A poly String has two forms. A literal is `SP_TAG_STR`. A new String is a
+  mutable handle: `SP_TAG_OBJ` with `cls_id` `SP_BUILTIN_STRBUF` (-40). The
+  walker treats both forms as String.
+- The integer overflow mode is a compile-time macro
+  (`SP_INT_OVERFLOW_MODE_RAISE`, `_WRAP` or `_PROMOTE`). The default is
+  `raise`. Lupe uses the mode of the AOT build that it runs with.
+- Exceptions use the `setjmp` frame that spinel emits for `begin`/`rescue`
+  (`sp_exc_stack`, `sp_exc_top`, `sp_last_exc_cls`). Lupe code can use the
+  same frame.
+- A host binary of the runtime alone is about 1.4 MB of text (x86_64,
+  `-O2`). Most of it is `static inline` code from `spinel_rt.h`.
 
 ## 8. Open questions
 
-- Does `libspinel_rt` link without a generated TU? Some symbols, such as
-  `sp_exc_subclass_ids`, come from the generated TU.
 - What fraction of the `BOPE_TEMPLATE` rows can a generator convert with no
   manual work?
 - How does a template refer to compiler state beyond `$r` and the
@@ -179,12 +194,16 @@ These facts apply to spinel commit `ffac8340d`.
   reach a builtin that yields?
 - Which AOT build of a test program serves as the oracle reference: one
   build per program, or one shared build?
+- How much of the 1.4 MB text does a walker keep after the linker drops
+  unused code? The answer decides whether Lupe fits a microcontroller.
+- Does the GC test in `poc/m0` detect a missing root? A negative test must
+  show that an unrooted value does not survive.
 
 ## 9. Plan
 
-1. **M0: runtime alone.** Write a C program that links only
-   `libspinel_rt`. Make Integer, String and Array values. Call
-   `sp_poly_add` and Array operations. Run the GC.
+1. **M0: runtime alone.** `poc/m0` links only `libspinel_rt`. It makes
+   boxed values, calls `sp_poly_*` operations, rescues an exception and
+   runs the GC. Run it with `make -C poc/m0 run`.
 2. **M1: template survey.** Count the `BOPE_TEMPLATE` rows that a generator
    converts with no manual work.
 3. **M2: minimal walker.** Parse with libprism. Evaluate literals, locals,
