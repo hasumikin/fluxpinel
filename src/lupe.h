@@ -39,6 +39,7 @@ static Lupe L;
 static sp_RbVal lupe_eval(LupeFrame *f, const pm_node_t *n);
 static sp_RbVal lupe_send(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv);
 static int lupe_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static void lupe_trace_missing(const char *cls, const char *name, int argc);
 static __attribute__((noreturn)) void lupe_unsupported(const pm_node_t *n, const char *what);
 
 #endif

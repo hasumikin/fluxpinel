@@ -4,6 +4,7 @@ p 9_000_000_000
 p 1.5
 p "hello"
 p :sym
+p :""
 p true
 p false
 p nil

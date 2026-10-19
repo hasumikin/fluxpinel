@@ -176,6 +176,55 @@ each program that Lupe cannot run. That list measures the coverage of Lupe.
 `spinel bisect` searches the optimization decisions inside one compile.
 The oracle sits outside that: it gives a result with no decisions at all.
 
+### 4.1 The harness
+
+`make oracle` runs `tools/oracle.rb` on `$(SPINEL)/test/*.rb`.
+
+- The CRuby answer is the `.expected` file of each test. Spinel snapshots it
+  from CRuby.
+- Lupe runs first. Spinel compiles a test only when Lupe runs it, so a run
+  of the whole corpus costs little while the coverage of Lupe is low.
+- The harness compares stdout. It does not compare stderr or the exit
+  status, as `.expected` holds stdout only.
+- `LUPE_TRACE_MISSING=1` makes Lupe report a missing builtin method. The
+  harness then counts the test as a gap of Lupe, not as a wrong answer.
+- The report (`build/oracle/report.md`) names the spinel commit of the tree
+  and of the Lupe build. It warns when they differ.
+
+Classes beyond the table above: `lupe_only` (spinel refuses the program,
+Lupe gives the CRuby answer), `lupe_unsupported`, `lupe_missing` and
+`lupe_crash`.
+
+### 4.2 The overflow mode
+
+The oracle runs Lupe and AOT in promote mode. Spinel's raise mode is not a
+property of the runtime alone: the analysis still promotes an Integer where
+it sees growth, for example `10 ** 30`. A walker has no analysis, so it
+cannot make the same choice. In raise mode, 56 tests that Lupe ran gave
+`RangeError` where AOT gave a Bignum.
+
+The corpus follows spinel's own promote lane: it leaves out the tests in
+`RAISE_MODE_PINS` of spinel's Makefile.
+
+### 4.3 A defect only Lupe reaches
+
+`"%c" % s` answers `""` when `s` is a mutable String handle in a poly slot.
+CRuby answers the first character. The `%c` branch of
+`sp_str_format_polyarr` (`lib/sp_poly_cold.c`) tests `SP_TAG_STR` only and
+does not dereference a STRBUF handle. The AOT tests pass a literal there,
+which is `SP_TAG_STR`. Lupe makes every String literal a new handle, so it
+takes the handle path on every run.
+
+Lupe does not work around such a defect, as the oracle must show it.
+`tools/oracle_known.tsv` lists the known defects. The oracle counts a
+listed test as `known` while it differs, and as `known_fixed` when it
+agrees again, so that the line can go.
+
+Thus a difference in the `lupe_differs` class is not always a defect of
+Lupe. Lupe holds every value in its most general form, and a runtime path
+for that form can have a defect that the specialized AOT code never
+reaches.
+
 ## 5. Use 1: embedded REPL
 
 Requirements beyond the oracle:
@@ -268,6 +317,22 @@ These facts apply to spinel commit `ffac8340d`.
   of an Array literal removed, `test/m2/gc_stress.rb` gives the correct
   output in a plain run. It gives a wrong output with `SPINEL_GC_STRESS=1`,
   and it aborts with `SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1`.
+- The oracle on spinel `7ea20089b` (7824 tests, promote mode): Lupe runs
+  96 tests. 95 agree with CRuby and AOT, and 1 differs (section 4.3). The
+  largest blockers, by tests:
+
+  | blocker | tests |
+  |---|---|
+  | `class` | 2457 |
+  | a call with a block | 1032 |
+  | a constant read | 618 |
+  | `module` | 546 |
+  | a constant write | 385 |
+  | a Hash literal | 361 |
+  | `Kernel#require` | 335 |
+  | `String#+@` | 219 |
+  | `begin` / `rescue` | 204 |
+
 - The M2 walker runs `fib(32)` in 0.85 s. CRuby 4.0.6 runs it in 0.24 s,
   and CRuby with YJIT in 0.06 s. The walker compares each method name with
   `strcmp` and looks up methods by a linear search.
@@ -312,7 +377,11 @@ These facts apply to spinel commit `ffac8340d`.
    locals, `def`, calls, `if`/`unless`, `while`/`until`, `return`, `break`
    and `next` on Integer, Float, String, Symbol and Array. `make test` runs
    `test/m2` under CRuby and Lupe, in a plain run and in the GC stress run.
-4. **M3: oracle harness.** Run the spinel test suite under CRuby, Lupe and
-   AOT. Report the table in section 4.
-5. **M4: embedded REPL.** Link Lupe into an AOT binary on a host. Then move
+4. **M3: oracle harness.** `make oracle` runs the spinel corpus under
+   CRuby, Lupe and AOT in promote mode, and reports the classes of
+   section 4 and the blockers of Lupe.
+5. **M3+: coverage.** Take the blockers in the order of the oracle report:
+   classes and modules, blocks, constants, Hash, `begin`/`rescue`. Each
+   step runs the oracle again.
+6. **M4: embedded REPL.** Link Lupe into an AOT binary on a host. Then move
    to a microcontroller board.

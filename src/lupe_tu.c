@@ -35,10 +35,11 @@ static const char *sp_sym_to_s(sp_sym id) {
   return sp_str_empty;
 }
 
+/* s may be NULL when n is 0: prism gives no bytes for the empty symbol. */
 static sp_sym sp_sym_intern_n(const char *s, size_t n) {
   for (int i = 0; i < sp_ndyn; i++) {
     const char *c = sp_dyn_syms[i];
-    if (c[0] == s[0] && sp_str_byte_len(c) == n && memcmp(c, s, n) == 0) return (sp_sym)i;
+    if (sp_str_byte_len(c) == n && (n == 0 || memcmp(c, s, n) == 0)) return (sp_sym)i;
   }
   if (sp_ndyn >= sp_dyn_cap) sp_dyn_syms_grow();
   char *d = sp_str_alloc_nogc(n);

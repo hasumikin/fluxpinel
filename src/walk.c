@@ -111,6 +111,7 @@ static sp_RbVal lupe_call(LupeFrame *f, const pm_call_node_t *c) {
   if (def) return lupe_invoke(def, argc, argv);
   sp_RbVal out;
   if (lupe_kernel(name, argc, argv, &out)) return out;
+  lupe_trace_missing("Kernel", name, argc);
   sp_raise_cls("NoMethodError", sp_sprintf("undefined method '%s' for main", name));
 }
 

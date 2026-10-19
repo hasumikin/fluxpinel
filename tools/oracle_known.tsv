@@ -1,0 +1,4 @@
+# Known defects that the oracle finds. One per line, tab-separated:
+# test name, what is wrong, the upstream report (or -).
+# A listed test that agrees again is reported as known_fixed: remove its line.
+issue_3083	%c ignores a String handle in a poly slot (lib/sp_poly_cold.c)	-

@@ -68,6 +68,11 @@ static int lupe_is_array(sp_RbVal v) {
   return v.tag == SP_TAG_OBJ && sp_poly_is_array_kind(v.cls_id);
 }
 
+/* An Integer has two forms: a machine word and a Bignum. */
+static int lupe_is_integer(sp_RbVal v) {
+  return v.tag == SP_TAG_INT || v.tag == SP_TAG_BIGINT;
+}
+
 /* A String has two forms: a literal (SP_TAG_STR) and a mutable handle. */
 static int lupe_is_string(sp_RbVal v) {
   return v.tag == SP_TAG_STR || (v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_STRBUF);
@@ -119,6 +124,20 @@ static int lupe_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_
     if (!strcmp(name, "/")) { *out = sp_poly_div(r, a); return 1; }
     if (!strcmp(name, "%")) { *out = sp_poly_mod(r, a); return 1; }
     if (!strcmp(name, "**")) { *out = sp_poly_pow(r, a); return 1; }
+    /* the bit operators of Integer, which answer a Bignum too */
+    if (lupe_is_integer(r)) {
+      if (!strcmp(name, "&")) { *out = sp_poly_band(r, a); return 1; }
+      if (!strcmp(name, "|")) { *out = sp_poly_bor(r, a); return 1; }
+      if (!strcmp(name, "^")) { *out = sp_poly_bxor(r, a); return 1; }
+      if (!strcmp(name, "<<")) { *out = sp_poly_shl(r, a); return 1; }
+      if (!strcmp(name, ">>")) { *out = sp_poly_shr(r, a); return 1; }
+    }
+    if (r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_POLY_ARRAY &&
+        (!strcmp(name, "<<") || !strcmp(name, "push"))) {
+      sp_PolyArray_push((sp_PolyArray *)r.v.p, a);
+      *out = r;
+      return 1;
+    }
     if (!strcmp(name, "==")) { *out = sp_poly_eq_value(r, a, 0); return 1; }
     if (!strcmp(name, "!=")) { *out = sp_poly_eq_value(r, a, 1); return 1; }
     if (!strcmp(name, "<") || !strcmp(name, "<=") || !strcmp(name, ">") || !strcmp(name, ">=")) {
@@ -145,12 +164,6 @@ static int lupe_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_
       *out = sp_box_nullable_obj((void *)parts, SP_BUILTIN_STR_ARRAY);
       return 1;
     }
-    if (r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_POLY_ARRAY &&
-        (!strcmp(name, "<<") || !strcmp(name, "push"))) {
-      sp_PolyArray_push((sp_PolyArray *)r.v.p, a);
-      *out = r;
-      return 1;
-    }
     return 0;
   }
   if (argc == 2 && lupe_is_array(r) && !strcmp(name, "[]=") && argv[0].tag == SP_TAG_INT) {
@@ -161,14 +174,24 @@ static int lupe_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_
   return 0;
 }
 
+/* LUPE_TRACE_MISSING=1 reports each method that Lupe cannot find, before
+   it raises NoMethodError. The oracle (tools/oracle.rb) reads the report
+   to tell a gap of Lupe from a NoMethodError that the program expects. */
+static void lupe_trace_missing(const char *cls, const char *name, int argc) {
+  static int on = -1;
+  if (on < 0) { const char *e = getenv("LUPE_TRACE_MISSING"); on = e && *e && *e != '0'; }
+  if (on) fprintf(stderr, "lupe: missing builtin %s#%s/%d\n", cls, name, argc);
+}
+
 static sp_RbVal lupe_send(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv) {
   sp_RbVal out;
   if (lupe_core(recv, name, argc, argv, &out)) return out;
   if (lupe_poly_helper(recv, name, argc, argv, &out)) return out;
   lupe_bop_fn fn = lupe_bop_find(recv, name, argc, argv);
   if (fn) return fn(recv, argv);
-  sp_raise_cls("NoMethodError", sp_sprintf("undefined method '%s' for an instance of %s", name,
-                                           sp_poly_class_name(recv)));
+  const char *cls = sp_poly_class_name(recv);
+  lupe_trace_missing(cls, name, argc);
+  sp_raise_cls("NoMethodError", sp_sprintf("undefined method '%s' for an instance of %s", name, cls));
 }
 
 /* Kernel methods. Answers 1 and sets *out when it handles the call. */
