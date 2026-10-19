@@ -138,6 +138,14 @@ static int lupe_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_
       *out = r;
       return 1;
     }
+    if (!strcmp(name, "<=>")) {
+      sp_bool comparable = FALSE;
+      sp_int c = sp_poly_cmp(r, a, &comparable);
+      /* Object#<=>: 0 for the same object or an == one, else nil */
+      if (comparable) *out = sp_box_int(c);
+      else *out = sp_poly_truthy(sp_poly_eq_value(r, a, 0)) ? sp_box_int(0) : sp_box_nil();
+      return 1;
+    }
     if (!strcmp(name, "==")) { *out = sp_poly_eq_value(r, a, 0); return 1; }
     if (!strcmp(name, "!=")) { *out = sp_poly_eq_value(r, a, 1); return 1; }
     if (!strcmp(name, "<") || !strcmp(name, "<=") || !strcmp(name, ">") || !strcmp(name, ">=")) {
@@ -174,6 +182,39 @@ static int lupe_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_
   return 0;
 }
 
+/* Whether a builtin value answers a method, for respond_to?: a core
+   method, a helper or a row of the generated table. It knows only the
+   methods that Lupe can call, so it answers false for a method of CRuby
+   that Lupe lacks. */
+static int lupe_builtin_responds(sp_RbVal r, const char *name) {
+  static const char *const any[] = { "!", "nil?", "to_s", "inspect", "==", "!=", "class", "is_a?", "kind_of?",
+                                     "instance_of?", "respond_to?", "send", "frozen?", "freeze", "itself", NULL };
+  static const char *const num[] = { "+", "-", "*", "/", "%", "**", "<", "<=", ">", ">=", "-@", NULL };
+  static const char *const bits[] = { "&", "|", "^", "<<", ">>", NULL };
+  static const char *const str[] = { "+", "*", "%", "length", "size", "start_with?", "end_with?", "split", NULL };
+  static const char *const ary[] = { "length", "size", "first", "last", "include?", "[]", "[]=", "<<", "push", "+",
+                                     NULL };
+  const char *const *lists[4] = { any, NULL, NULL, NULL };
+  int nl = 1;
+  if (lupe_is_integer(r) || r.tag == SP_TAG_FLT) lists[nl++] = num;
+  if (lupe_is_integer(r)) lists[nl++] = bits;
+  if (lupe_is_string(r)) lists[nl++] = str;
+  if (lupe_is_array(r)) lists[nl++] = ary;
+  for (int l = 0; l < nl; l++)
+    for (int i = 0; lists[l][i]; i++)
+      if (!strcmp(lists[l][i], name)) return 1;
+  for (size_t i = 0; i < sizeof lupe_poly_helpers / sizeof lupe_poly_helpers[0]; i++)
+    if (!strcmp(lupe_poly_helpers[i].name, name)) return 1;
+  const char *fam, *var;
+  lupe_kind_of(r, &fam, &var);
+  if (!fam) return 0;
+  for (int i = 0; i < lupe_bop_count; i++) {
+    const LupeBop *b = &lupe_bop_table[i];
+    if (b->fn && !strcmp(b->name, name) && !strcmp(b->recv, fam) && !strcmp(b->variant, var)) return 1;
+  }
+  return 0;
+}
+
 /* LUPE_TRACE_MISSING=1 reports each method that Lupe cannot find, before
    it raises NoMethodError. The oracle (tools/oracle.rb) reads the report
    to tell a gap of Lupe from a NoMethodError that the program expects. */
@@ -183,12 +224,29 @@ static void lupe_trace_missing(const char *cls, const char *name, int argc) {
   if (on) fprintf(stderr, "lupe: missing builtin %s#%s/%d\n", cls, name, argc);
 }
 
+/* A call on a receiver. A method that the program defines comes first: on
+   a Lupe object, on a class (a class method), or on a reopened builtin
+   class. A top-level def is a private method of Object, so an explicit
+   receiver does not reach it. */
 static sp_RbVal lupe_send(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv) {
   sp_RbVal out;
+  if (lupe_is_lupe_object(recv)) {
+    LupeMethod *m = lupe_find_method(lupe_class_of(recv), sp_sym_intern(name));
+    if (m) return lupe_invoke(m, recv, argc, argv);
+  } else if (recv.tag == SP_TAG_CLASS) {
+    LupeClass *k = lupe_class_value(recv);
+    LupeMethod *m = k ? lupe_find_smethod(k, sp_sym_intern(name)) : NULL;
+    if (m) return lupe_invoke(m, recv, argc, argv);
+    if (lupe_class_core(NULL, recv, name, argc, argv, &out)) return out;
+  } else if (lupe_reopened_builtins) {
+    LupeMethod *m = lupe_find_method(lupe_class_of(recv), sp_sym_intern(name));
+    if (m && m->owner != L.object) return lupe_invoke(m, recv, argc, argv);
+  }
   if (lupe_core(recv, name, argc, argv, &out)) return out;
   if (lupe_poly_helper(recv, name, argc, argv, &out)) return out;
   lupe_bop_fn fn = lupe_bop_find(recv, name, argc, argv);
   if (fn) return fn(recv, argv);
+  if (lupe_object_core(recv, name, argc, argv, &out)) return out;
   const char *cls = sp_poly_class_name(recv);
   lupe_trace_missing(cls, name, argc);
   sp_raise_cls("NoMethodError", sp_sprintf("undefined method '%s' for an instance of %s", name, cls));

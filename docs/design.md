@@ -137,11 +137,35 @@ Spinel compiles each user class to a C struct. The `cls_id` of a class
 indexes per-program tables that codegen emits (`sp_class_names[]` and
 others). A class that the walker defines has no place in those tables.
 
-Lupe gives walker classes their own object kind:
+Lupe gives walker classes their own object kind (`src/object.c`):
 
-- a `cls_id` range that the AOT tables do not use,
-- a generic ivar table per object,
-- a method table per class.
+- **Class.** A `LupeClass` holds the method table, the singleton method
+  table, the included and extended modules, the constants and the ivar
+  slot names. Its runtime id starts at `LUPE_CLS_BASE` (0x100000), far
+  above the ids of AOT classes. A builtin class (Integer, Object,
+  StandardError, ...) gets a `LupeClass` on first use, with the builtin
+  hierarchy, so that a program can reopen it.
+- **Object.** A `LupeObject` is `{ cls_id, sp_PolyArray *iv }` on the spinel
+  heap, allocated with `sp_gc_alloc` and a scan function. It starts with
+  the class id, as an AOT object does. An instance of Object (`main`,
+  `Object.new`) carries an alias id in the Lupe range, so that the runtime
+  sees a user object.
+- **Hooks.** The runtime reaches a user object through function pointers.
+  Lupe sets `sp_obj_to_s_fn`, `sp_obj_inspect_fn`, `sp_obj_cls_name_fn`,
+  `sp_class_is_module_fn`, `sp_user_binop_hook` and `sp_user_coerce_hook`.
+  Thus `puts obj`, `p obj`, `[a, b].include?(c)` and `5 * money` call the
+  methods of the program.
+- **Constants.** A bare name looks in the lexical scopes, then in the
+  ancestors of the innermost one, then in Object, then in the builtin
+  classes. A top-level `def` defines a method of Object.
+- **Gaps.** A semantics that Lupe does not model stops the program as an
+  unsupported node does (`lupe_gap`): an instance of a subclass of a
+  builtin class other than Object, an ivar on a builtin value, `extend` on
+  an object, and the reopening of a CRuby core class that spinel's class
+  table does not name (Random, Set, ...).
+
+`sp_cext_dispatch_fn` sends a method by name to a foreign object. It is a
+candidate for the AOT to walker direction of section 3.6.
 
 ### 3.5 Containers
 
@@ -333,6 +357,21 @@ These facts apply to spinel commit `ffac8340d`.
   | `String#+@` | 219 |
   | `begin` / `rescue` | 204 |
 
+- The oracle on spinel `1b789548d` (7840 tests, promote mode), with
+  classes and modules: Lupe runs 491 tests and 474 agree. The largest
+  blockers now:
+
+  | blocker | tests |
+  |---|---|
+  | a call with a block | 1924 |
+  | a Hash literal | 702 |
+  | `begin` / `rescue` | 361 |
+  | `String#+@` | 362 |
+  | `Kernel#require` | 338 |
+  | `ARGV` | 220 |
+
+  One test times out: 2^24 calls of class methods
+  (`cmethod_chain_reachability`).
 - The M2 walker runs `fib(32)` in 0.85 s. CRuby 4.0.6 runs it in 0.24 s,
   and CRuby with YJIT in 0.06 s. The walker compares each method name with
   `strcmp` and looks up methods by a linear search.
@@ -380,8 +419,9 @@ These facts apply to spinel commit `ffac8340d`.
 4. **M3: oracle harness.** `make oracle` runs the spinel corpus under
    CRuby, Lupe and AOT in promote mode, and reports the classes of
    section 4 and the blockers of Lupe.
-5. **M3+: coverage.** Take the blockers in the order of the oracle report:
-   classes and modules, blocks, constants, Hash, `begin`/`rescue`. Each
-   step runs the oracle again.
+5. **M3+: coverage.** Take the blockers in the order of the oracle report.
+   Each step runs the oracle again.
+   - Classes, modules and constants (section 3.4): `test/m3`.
+   - Next: blocks, Hash, `begin`/`rescue`.
 6. **M4: embedded REPL.** Link Lupe into an AOT binary on a host. Then move
    to a microcontroller board.

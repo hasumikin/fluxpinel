@@ -44,9 +44,11 @@ $(BUILD)/lupe: src/*.c src/*.h $(BUILD)/bop_gen_out.c $(BUILD)/off.flags
 # A missing GC root passes the plain run and fails the stress run: the
 # collector runs at each allocation, and the verify mode aborts on a freed
 # object that is still referenced.
+TEST_DIRS = test/m2 test/m3
+
 test: $(BUILD)/lupe
-	ruby test/run.rb $(BUILD)/lupe test/m2
-	SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1 ruby test/run.rb $(BUILD)/lupe test/m2
+	ruby test/run.rb $(BUILD)/lupe $(TEST_DIRS)
+	SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1 ruby test/run.rb $(BUILD)/lupe $(TEST_DIRS)
 
 # The oracle: the spinel test corpus under CRuby (.expected), Lupe and AOT,
 # in promote mode on both sides. In raise mode, spinel's analysis still

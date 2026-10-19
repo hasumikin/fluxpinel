@@ -73,9 +73,13 @@ static const char *const lupe_builtin_class_names[] = {
 };
 #define LUPE_NBUILTIN_CLASSES ((int)(sizeof lupe_builtin_class_names / sizeof lupe_builtin_class_names[0]))
 
+/* The walker names its own classes (ids >= 0) through this hook. */
+static const char *(*lupe_class_name_hook)(sp_int cls_id);
+
 static const char *sp_class_to_s(sp_Class c) {
   if (sp_class_nil_p(c)) return SPL("nil");
   if (c.name) return c.name;
+  if (c.cls_id >= 0 && lupe_class_name_hook) return lupe_class_name_hook(c.cls_id);
   if (sp_class_sclass_p(c)) {
     sp_Class b = { sp_sclass_base_id(c.cls_id), NULL };
     return sp_sprintf(SPL("#<Class:%s>"), sp_class_display_fn ? sp_class_display_fn(b) : sp_class_to_s(b));
@@ -92,9 +96,13 @@ const sp_int sp_exc_subclass_ids[] = { 0 };
 
 /* ---- init ---- */
 
+/* The walker marks its own globals (constants, class ivars) here. */
+static void (*lupe_mark_hook)(void);
+
 static void sp_mark_user_globals(void) {
   sp_re_mark_globals();
   sp_mark_dyn_syms();
+  if (lupe_mark_hook) lupe_mark_hook();
 }
 
 void lupe_tu_init(void) {

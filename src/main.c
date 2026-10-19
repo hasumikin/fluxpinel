@@ -8,6 +8,7 @@
 #include "lupe_tu.c"
 #include "bop_gen_out.c"
 #include "lupe.h"
+#include "object.c"
 #include "walk.c"
 #include "builtin.c"
 
@@ -30,6 +31,7 @@ static void lupe_body(void) {
   lupe_tu_init();
   L.ctl_val = sp_box_nil();
   _sp_gc_root_push((void **)((uintptr_t)&L.ctl_val | (uintptr_t)1));
+  lupe_object_init();
 
   size_t len;
   char *src = lupe_read_file(L.path, &len);
@@ -42,7 +44,7 @@ static void lupe_body(void) {
     exit(1);
   }
   const pm_program_node_t *prog = (const pm_program_node_t *)root;
-  LUPE_FRAME(top, &prog->locals);
+  LUPE_FRAME(top, &prog->locals, L.main, L.object);
   lupe_eval_stmts(&top, prog->statements);
   sp_fin_run_exit();
 }
