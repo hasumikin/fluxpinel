@@ -52,7 +52,7 @@ static int lupe_hash_class(sp_RbVal r, const char *name, int argc, sp_RbVal *arg
   LupeClass *k = lupe_class_value(r);
   if (!k || strcmp(k->name, "Hash") || !LUPE_IS("new")) return 0;
   /* Hash.new(capacity: n) sizes the table; the size is not visible */
-  if (argc == 1 && lupe_is_hash(argv[0])) argc = 0;
+  if (argc >= 1 && lupe_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash) argc--;
   if (argc > 1) return 0;
   sp_PolyPolyHash *h = sp_PolyPolyHash_new();
   SP_GC_ROOT(h);

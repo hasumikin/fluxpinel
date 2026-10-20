@@ -15,6 +15,7 @@
 #include "hash.c"
 #include "exc.c"
 #include "re.c"
+#include "global.c"
 
 static char *lupe_read_file(const char *path, size_t *len) {
   FILE *fp = fopen(path, "rb");

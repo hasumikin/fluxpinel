@@ -545,6 +545,7 @@ static void lupe_hook_mark(void) {
   for (int i = 0; i < L.nbuiltins; i++)
     for (int j = 0; j < L.builtins[i]->nconsts; j++) sp_mark_rbval(L.builtins[i]->consts[j].value);
   if (lupe_class_ivars) sp_gc_mark(lupe_class_ivars);
+  for (int i = 0; i < L.nglobals; i++) sp_mark_rbval(L.globals[i].value);
 }
 
 static void lupe_object_init(void) {

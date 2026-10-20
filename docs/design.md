@@ -224,6 +224,29 @@ The walker evaluates the prism AST directly (`src/walk.c`).
 - **Subject.** A match reads a copy of a String that can change. `$~`
   keeps the subject, so a later `slice!` or `gsub!` does not change it.
 
+### 3.3.4 Global variables
+
+- **Store.** A global variable of the program lives in a table of Lupe
+  (`L.globals`), and the mark hook marks it. A global that no code has
+  assigned reads nil (`src/global.c`).
+- **Special globals.** A special global reads the state of the runtime, as
+  the code that spinel emits does:
+  - `$stdin`, `$stdout` and `$stderr` read the IO handles of the runtime.
+  - `$?`, `$$`, `$0`, `$/`, `$LOAD_PATH` and `$LOADED_FEATURES` read
+    their runtime values.
+  - `$VERBOSE` and `$DEBUG` read false until the program assigns them.
+
+  An alias (`$-v`, `$PROGRAM_NAME`, `$:`, ...) names the same global. An
+  assignment to a writable special global goes into the table, and a read
+  prefers the table.
+- **Output.** After `$stdout = obj`, Kernel#puts, #print and #p write to
+  obj, as in CRuby. An assignment of an object with no `write` method
+  raises TypeError.
+- **IO methods.** spinel emits `IO#puts`, `#print`, `#write` and `#<<`
+  from codegen code, so Lupe writes them on `sp_File_puts_val` and
+  `sp_File_write_poly`. The other IO methods go through the generated
+  wrappers.
+
 ### 3.4 User classes
 
 Spinel compiles each user class to a C struct. The `cls_id` of a class
@@ -547,6 +570,18 @@ These facts apply to spinel commit `ffac8340d`.
   | a Range of values other than Integer | 102 |
   | `case` / `in` | 73 |
 
+- The oracle on spinel `b5d3820ad`, with global variables: Lupe runs 2311
+  tests and 2188 agree. 120 differ. The largest blockers now:
+
+  | blocker | tests |
+  |---|---|
+  | `Class#new` with a block | 189 |
+  | a multiple assignment | 155 |
+  | `case` / `when` | 140 |
+  | a Range of values other than Integer | 103 |
+  | `case` / `in` | 75 |
+  | a call of a block whose scope has returned | 65 |
+
 - `sp_re_matchdata` sets the captures of a match but not the positions
   (`sp_re_caps`) that `sp_re_last_matchdata` reads. Lupe sets the
   registers again from the MatchData, so `$~` after `str.match(re)` reads
@@ -619,6 +654,7 @@ These facts apply to spinel commit `ffac8340d`.
    - Exceptions: `raise`, `begin`/`rescue`/`else`/`ensure`, `retry` and
      the `rescue` modifier (section 3.3.2): `test/m3`.
    - Regexp, MatchData and the match globals (section 3.3.3): `test/m3`.
+   - Global variables and the standard streams (section 3.3.4): `test/m3`.
    - Next: the largest blockers of the oracle report.
 6. **M4: embedded REPL.** Link Lupe into an AOT binary on a host. Then move
    to a microcontroller board.

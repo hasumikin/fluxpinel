@@ -142,6 +142,9 @@ typedef struct {
                             frame pops its entry when it ends; a rescue cuts the
                             entries of the frames that a raise unwound */
   int fdepth, fcap;
+  LupeConst *globals;    /* the global variables that the program assigned;
+                            marked by the mark hook */
+  int nglobals, globals_cap;
 } Lupe;
 
 static Lupe L;
@@ -180,6 +183,11 @@ static sp_RbVal lupe_re_match_write(LupeFrame *f, const pm_match_write_node_t *w
 static int lupe_re_frame_enter(const LupeMethod *m, sp_re_frame *rf);
 static int lupe_re_call(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
                         sp_RbVal *out);
+
+/* global.c */
+static sp_RbVal lupe_gvar_eval(LupeFrame *f, const pm_node_t *n);
+static int lupe_gvar_stdout(sp_RbVal *out);
+static int lupe_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int lupe_is_proc(sp_RbVal v);
 static int lupe_is_range(sp_RbVal v);
 static int lupe_is_hash(sp_RbVal v);

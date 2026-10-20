@@ -36,6 +36,7 @@ static int lupe_kind_of(sp_RbVal v, const char **family, const char **variant) {
     case SP_BUILTIN_EXCEPTION: fam = var = "exception"; break;
     case SP_BUILTIN_REGEX: fam = var = "regex"; kind = LUPE_TY_REGEX; break;
     case SP_BUILTIN_MATCHDATA: fam = var = "matchdata"; kind = LUPE_TY_MATCHDATA; break;
+    case SP_BUILTIN_IO: fam = var = "io"; kind = LUPE_TY_IO; break;
     case SP_BUILTIN_STR_INT_HASH: fam = "ANY_HASH"; var = "str_int_hash"; kind = LUPE_TY_STR_INT_HASH; break;
     case SP_BUILTIN_STR_STR_HASH: fam = "ANY_HASH"; var = "str_str_hash"; kind = LUPE_TY_STR_STR_HASH; break;
     case SP_BUILTIN_INT_INT_HASH: fam = "ANY_HASH"; var = "int_int_hash"; kind = LUPE_TY_INT_INT_HASH; break;
@@ -289,6 +290,7 @@ static int lupe_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal
   if (!blk && lupe_array_hash(recv, name, argc, out)) return 1;
   if (lupe_exc_core(recv, name, argc, argv, out)) return 1;
   if (lupe_re_call(recv, name, argc, argv, blk, out)) return 1;
+  if (!blk && lupe_io_core(recv, name, argc, argv, out)) return 1;
   if (lupe_iter(recv, name, argc, argv, blk, out)) return 1;
   if (blk) {
     if (argc >= 1 && (!strcmp(name, "send") || !strcmp(name, "__send__") || !strcmp(name, "public_send"))) return 0;
@@ -325,6 +327,23 @@ static sp_RbVal lupe_send_b(sp_RbVal recv, const char *name, int argc, sp_RbVal 
   sp_raise_cls("NoMethodError", sp_sprintf("undefined method '%s' for an instance of %s", name, cls));
 }
 
+/* p v to the object that $stdout holds: its write takes the inspect and a
+   newline, or each of them when it is a write of the program, as CRuby
+   calls a write of one argument. */
+static void lupe_p_to(sp_RbVal so, sp_RbVal v) {
+  sp_RbVal line[2] = { sp_box_nil(), sp_box_nil() };
+  SP_GC_ROOT_RBVAL(line[0]);
+  SP_GC_ROOT_RBVAL(line[1]);
+  line[0] = sp_box_str_new(sp_str_dup(sp_poly_inspect(v)));
+  line[1] = lupe_new_string((const uint8_t *)"\n", 1);
+  if (lupe_is_lupe_object(so)) {
+    lupe_send(so, "write", 1, &line[0]);
+    lupe_send(so, "write", 1, &line[1]);
+  } else {
+    lupe_send(so, "write", 2, line);
+  }
+}
+
 /* Kernel methods. Answers 1 and sets *out when it handles the call. */
 static int lupe_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   /* Integer(v), Integer(s, base) and exception: false */
@@ -344,6 +363,13 @@ static int lupe_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out
     *out = sp_box_float(sp_poly_Float(argv[0]));
     return 1;
   }
+  /* after `$stdout = obj`, puts, print and p write to obj */
+  sp_RbVal so;
+  if ((!strcmp(name, "puts") || !strcmp(name, "print")) && lupe_gvar_stdout(&so)) {
+    lupe_send(so, name, argc, argv);
+    *out = sp_box_nil();
+    return 1;
+  }
   if (!strcmp(name, "puts")) {
     if (argc == 0) sp_puts_str_line(sp_str_empty);
     for (int i = 0; i < argc; i++) sp_poly_puts(argv[i]);
@@ -356,7 +382,12 @@ static int lupe_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out
     return 1;
   }
   if (!strcmp(name, "p")) {
-    for (int i = 0; i < argc; i++) sp_puts_str_line(sp_poly_inspect(argv[i]));
+    if (lupe_gvar_stdout(&so)) {
+      SP_GC_ROOT_RBVAL(so);
+      for (int i = 0; i < argc; i++) lupe_p_to(so, argv[i]);
+    } else {
+      for (int i = 0; i < argc; i++) sp_puts_str_line(sp_poly_inspect(argv[i]));
+    }
     if (argc == 0) *out = sp_box_nil();
     else if (argc == 1) *out = argv[0];
     else {

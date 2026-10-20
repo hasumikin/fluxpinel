@@ -1501,9 +1501,14 @@ static sp_RbVal lupe_eval(LupeFrame *f, const pm_node_t *n) {
     /* $!: the exception that a rescue handles; $~: the last match */
     const char *g = sp_sym_to_s(lupe_sym(((const pm_global_variable_read_node_t *)n)->name));
     if (!strcmp(g, "$~")) return lupe_re_last();
-    if (strcmp(g, "$!")) lupe_unsupported(n, "node");
+    if (strcmp(g, "$!")) return lupe_gvar_eval(f, n);
     return sp_rescue_sp > 0 ? lupe_exc_box((sp_Exception *)sp_exc_handling[sp_rescue_sp - 1]) : sp_box_nil();
   }
+  case PM_GLOBAL_VARIABLE_WRITE_NODE:
+  case PM_GLOBAL_VARIABLE_OPERATOR_WRITE_NODE:
+  case PM_GLOBAL_VARIABLE_OR_WRITE_NODE:
+  case PM_GLOBAL_VARIABLE_AND_WRITE_NODE:
+    return lupe_gvar_eval(f, n);
   case PM_REGULAR_EXPRESSION_NODE:
   case PM_INTERPOLATED_REGULAR_EXPRESSION_NODE:
     return lupe_re_literal(f, n);
