@@ -292,6 +292,7 @@ static sp_RbVal lupe_send(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
    one, since the generated wrappers would drop the block. */
 static int lupe_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
                              sp_RbVal *out) {
+  if (lupe_env_core(recv, name, argc, argv, blk, out)) return 1;
   if (lupe_record_core(recv, name, argc, argv, blk, out)) return 1;
   if (lupe_is_proc(recv) && lupe_proc_core(recv, name, argc, argv, out)) return 1;
   if (!blk && lupe_range_core(recv, name, argc, argv, out)) return 1;

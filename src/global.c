@@ -132,10 +132,113 @@ static sp_RbVal lupe_gvar_eval(LupeFrame *f, const pm_node_t *n) {
 }
 
 /* STDIN, STDOUT and STDERR: the streams that $stdin and the others start as. */
+/* ---- ENV ---- */
+
+/* ENV: an Object whose methods read and write the environment of the
+   process, as the ENV arms of spinel codegen do. Any other method reads a
+   Hash snapshot of the environment, as spinel desugars it (sp_env_to_h).
+   The constant ENV keeps the object alive. */
+static sp_RbVal lupe_env;
+
+static int lupe_is_env(sp_RbVal r) {
+  return r.tag == SP_TAG_OBJ && r.v.p && r.v.p == lupe_env.v.p;
+}
+
+static const char *lupe_env_key(sp_RbVal k) {
+  return sp_env_chk(sp_poly_arg_str_chk(k), 0);
+}
+
+static sp_RbVal lupe_env_get(const char *k) {
+  const char *v = getenv(k);
+  return v ? sp_box_str(sp_env_str(v)) : sp_box_nil();
+}
+
+/* A Hash of the environment, in the order of environ. */
+static sp_RbVal lupe_env_hash(void) {
+  sp_StrStrHash *s = sp_env_to_h();
+  SP_GC_ROOT(s);
+  sp_PolyPolyHash *h = sp_PolyPolyHash_new();
+  SP_GC_ROOT(h);
+  for (sp_int i = 0; i < s->len; i++)
+    sp_PolyPolyHash_set(h, sp_box_str(s->order[i]), sp_box_str(sp_StrStrHash_get(s, s->order[i])));
+  return lupe_hash_box(h);
+}
+
+/* ENV.update, merge! and replace with a Hash. replace then deletes each
+   variable that the Hash does not name. */
+static void lupe_env_update(sp_RbVal hv, int replace) {
+  sp_PolyPolyHash *h = sp_poly_as_poly_poly_hash(hv);
+  SP_GC_ROOT(h);
+  for (sp_int i = 0; i < h->len; i++)
+    sp_env_aset(lupe_env_key(h->keys[h->order[i]]), h->vals[h->order[i]]);
+  if (!replace) return;
+  sp_StrStrHash *s = sp_env_to_h();
+  SP_GC_ROOT(s);
+  for (sp_int i = 0; i < s->len; i++)
+    if (!sp_PolyPolyHash_has_key(h, sp_box_str(s->order[i]))) unsetenv(s->order[i]);
+}
+
+static int lupe_env_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
+                         sp_RbVal *out) {
+  if (!lupe_is_env(r)) return 0;
+  if (argc == 1 && LUPE_IS("[]")) { *out = lupe_env_get(lupe_env_key(argv[0])); return 1; }
+  if ((argc == 1 || argc == 2) && LUPE_IS("fetch")) {
+    *out = lupe_env_get(lupe_env_key(argv[0]));
+    if (out->tag != SP_TAG_NIL) return 1;
+    if (blk) { *out = lupe_yield(blk, 1, argv); return 1; }
+    if (argc == 2) { *out = argv[1]; return 1; }
+    sp_raise_cls("KeyError", sp_sprintf("key not found: %s", sp_poly_inspect(argv[0])));
+  }
+  if (argc == 2 && (LUPE_IS("[]=") || LUPE_IS("store"))) {
+    sp_env_aset(lupe_env_key(argv[0]), argv[1]);
+    *out = argv[1];
+    return 1;
+  }
+  if (argc == 1 && (LUPE_IS("key?") || LUPE_IS("has_key?") || LUPE_IS("include?") || LUPE_IS("member?"))) {
+    *out = sp_box_bool(getenv(lupe_env_key(argv[0])) != NULL);
+    return 1;
+  }
+  if (argc == 1 && LUPE_IS("delete")) {
+    const char *k = lupe_env_key(argv[0]);
+    SP_GC_ROOT_STR(k);
+    *out = lupe_env_get(k);
+    if (out->tag == SP_TAG_NIL) {
+      if (blk) *out = lupe_yield(blk, 1, argv);
+      return 1;
+    }
+    unsetenv(k);
+    return 1;
+  }
+  if (argc == 1 && !blk && lupe_is_hash(argv[0]) &&
+      (LUPE_IS("update") || LUPE_IS("merge!") || LUPE_IS("replace"))) {
+    lupe_env_update(argv[0], LUPE_IS("replace"));
+    *out = r;
+    return 1;
+  }
+  if (argc == 0 && !blk) {
+    if (LUPE_IS("to_s")) { *out = sp_box_str_new(sp_str_dup("ENV")); return 1; }
+    if (LUPE_IS("size") || LUPE_IS("length")) { *out = sp_box_int(sp_env_size()); return 1; }
+    if (LUPE_IS("empty?")) { *out = sp_box_bool(sp_env_size() == 0); return 1; }
+    if (LUPE_IS("clear")) { sp_env_clear(); *out = r; return 1; }
+  }
+  /* what an Object answers for itself */
+  if (LUPE_IS("class") || LUPE_IS("is_a?") || LUPE_IS("kind_of?") || LUPE_IS("instance_of?") ||
+      LUPE_IS("equal?") || LUPE_IS("object_id") || LUPE_IS("nil?") || LUPE_IS("frozen?"))
+    return 0;
+  sp_RbVal snap = lupe_env_hash();
+  SP_GC_ROOT_RBVAL(snap);
+  *out = lupe_send_b(snap, name, argc, argv, blk);
+  /* each and its kin answer ENV itself */
+  if (!strncmp(name, "each", 4) && blk) *out = r;
+  return 1;
+}
+
 static void lupe_global_init(void) {
   lupe_const_set(L.object, sp_sym_intern("STDIN"), lupe_io_box(sp_io_stdin()));
   lupe_const_set(L.object, sp_sym_intern("STDOUT"), lupe_io_box(sp_io_stdout()));
   lupe_const_set(L.object, sp_sym_intern("STDERR"), lupe_io_box(sp_io_stderr()));
+  lupe_env = lupe_new_object(L.object);
+  lupe_const_set(L.object, sp_sym_intern("ENV"), lupe_env);
 }
 
 /* ---- IO ---- */

@@ -269,6 +269,8 @@ static int lupe_autoload(sp_sym name);
 static sp_RbVal lupe_gvar_eval(LupeFrame *f, const pm_node_t *n);
 static int lupe_gvar_stdout(sp_RbVal *out);
 static int lupe_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int lupe_env_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
+                         sp_RbVal *out);
 static int lupe_is_proc(sp_RbVal v);
 static int lupe_is_range(sp_RbVal v);
 static int lupe_is_hash(sp_RbVal v);
