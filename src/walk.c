@@ -364,9 +364,13 @@ static void lupe_block_parts(const pm_node_t *n, const pm_constant_id_list_t **l
 
 /* Calls a block with the arguments. A next ends the block call; a break
    ends the call that passed the block; a return ends the method that
-   holds the block, or the lambda. strict is set for Proc#call. */
-static sp_RbVal lupe_yield_x(const LupeBlock *b, int argc, sp_RbVal *argv, int strict) {
+   holds the block, or the lambda. strict is set for Proc#call. self and
+   cref replace those of the home frame when they are set (the body of
+   Class.new); the caller roots *self. */
+static sp_RbVal lupe_yield_in(const LupeBlock *b, int argc, sp_RbVal *argv, int strict, const sp_RbVal *self,
+                              LupeClass *cref) {
   if (!b->node) {
+    if (self) lupe_gap("a Symbol block as a class body");
     if (argc < 1) sp_raise_cls("ArgumentError", "no receiver given");
     return lupe_send(argv[0], sp_sym_to_s(b->sym), argc - 1, argv + 1);
   }
@@ -376,7 +380,7 @@ static sp_RbVal lupe_yield_x(const LupeBlock *b, int argc, sp_RbVal *argv, int s
   const pm_constant_id_list_t *locals;
   const pm_node_t *params, *body;
   lupe_block_parts(b->node, &locals, &params, &body);
-  LUPE_FRAME(bf, locals, h->self, h->cref);
+  LUPE_FRAME(bf, locals, self ? *self : h->self, cref ? cref : h->cref);
   bf.method = h->method;
   bf.parent = h;
   bf.block = h->block;
@@ -404,8 +408,19 @@ static sp_RbVal lupe_yield_x(const LupeBlock *b, int argc, sp_RbVal *argv, int s
   }
 }
 
+static sp_RbVal lupe_yield_x(const LupeBlock *b, int argc, sp_RbVal *argv, int strict) {
+  return lupe_yield_in(b, argc, argv, strict, NULL, NULL);
+}
+
 static sp_RbVal lupe_yield(const LupeBlock *b, int argc, sp_RbVal *argv) {
   return lupe_yield_x(b, argc, argv, 0);
+}
+
+/* Calls a block with self and the definee replaced: a def in it defines a
+   method of cref. */
+static sp_RbVal lupe_yield_under(const LupeBlock *b, sp_RbVal self, LupeClass *cref, int argc, sp_RbVal *argv) {
+  SP_GC_ROOT_RBVAL(self);
+  return lupe_yield_in(b, argc, argv, 0, &self, cref);
 }
 
 static int lupe_is_proc(sp_RbVal v) {
@@ -756,9 +771,11 @@ static sp_RbVal lupe_super_call(LupeFrame *f, const pm_node_t *n, const pm_argum
   if (s) return lupe_invoke_b(s, f->self, argc, argv, blk);
   const char *name = sp_sym_to_s(m->name);
   sp_RbVal out;
-  /* the builtin initialize: an exception takes its message */
+  /* the builtin initialize: an exception takes its message, a Struct or a
+     Data its members */
   if (!strcmp(name, "initialize")) {
     if (lupe_is_exc(f->self)) lupe_exc_init(f->self, argc, argv);
+    else if (lupe_is_lupe_object(f->self) && lupe_record_of(lupe_class_of(f->self))) lupe_record_init(f->self, argc, argv);
     return sp_box_nil();
   }
   if (f->self.tag == SP_TAG_CLASS && lupe_class_core(NULL, f->self, name, argc, argv, blk, &out)) return out;
@@ -964,7 +981,9 @@ static sp_RbVal lupe_class_def(LupeFrame *f, const pm_node_t *path, const pm_nod
         sp_RbVal sv = lupe_eval(f, super_node);
         if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
         super = lupe_class_value(sv);
-        if (!super || super->is_module) sp_raise_cls("TypeError", "superclass must be an instance of Class");
+        if (!super || super->is_module)
+          sp_raise_cls("TypeError", sp_sprintf("superclass must be an instance of Class (given an instance of %s)",
+                                               super ? "Module" : lupe_class_of(sv)->name));
       }
     }
     const char *full = scope == L.object ? cname : sp_sprintf("%s::%s", scope->name, cname);

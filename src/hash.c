@@ -318,8 +318,9 @@ static sp_int lupe_hook_hash(int cls_id, void *p) {
   if (!lupe_is_lupe_object(obj)) return (sp_int)(uintptr_t)p;
   SP_GC_ROOT_RBVAL(obj);
   LupeMethod *m = lupe_find_method(lupe_class_of(obj), sp_sym_intern("hash"));
-  if (!m) return (sp_int)(uintptr_t)p;
-  sp_RbVal h = lupe_invoke(m, obj, 0, NULL);
+  int rec = !m && lupe_record_of(lupe_class_of(obj));   /* a Struct hashes by its members */
+  if (!m && !rec) return (sp_int)(uintptr_t)p;
+  sp_RbVal h = rec ? lupe_send(obj, "hash", 0, NULL) : lupe_invoke(m, obj, 0, NULL);
   if (h.tag == SP_TAG_INT) return h.v.i;
   return sp_rbval_hash_key(h);
 }
@@ -332,6 +333,7 @@ static sp_bool lupe_hook_eql(int cls_id, void *a, void *b) {
   SP_GC_ROOT_RBVAL(x);
   SP_GC_ROOT_RBVAL(y);
   LupeMethod *m = lupe_find_method(lupe_class_of(x), sp_sym_intern("eql?"));
+  if (!m && lupe_record_of(lupe_class_of(x))) return sp_poly_truthy(lupe_send(x, "eql?", 1, &y)) ? TRUE : FALSE;
   if (!m) return FALSE;
   return sp_poly_truthy(lupe_invoke(m, x, 1, &y)) ? TRUE : FALSE;
 }

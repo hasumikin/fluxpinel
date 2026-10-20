@@ -90,10 +90,12 @@ static const struct {
   { "Rational", "Numeric", NULL, 0 },
   { "Complex", "Numeric", NULL, 0 },
   { "String", "Object", "Comparable", 0 },
+  { "Symbol", "Object", "Comparable", 0 },
   { "Array", "Object", "Enumerable", 0 },
   { "Hash", "Object", "Enumerable", 0 },
   { "Range", "Object", "Enumerable", 0 },
   { "Struct", "Object", "Enumerable", 0 },
+  { "Enumerator", "Object", "Enumerable", 0 },
   { "Exception", "Object", NULL, 0 },
   { "ScriptError", "Exception", NULL, 0 },
   { "NotImplementedError", "ScriptError", NULL, 0 },
@@ -294,6 +296,12 @@ static LupeConst *lupe_const_own(const LupeClass *c, sp_sym name) {
 }
 
 static void lupe_const_set(LupeClass *c, sp_sym name, sp_RbVal v) {
+  /* an anonymous class takes the name of the first constant that holds it */
+  LupeClass *anon = lupe_class_value(v);
+  if (anon && anon->anon) {
+    anon->anon = 0;
+    anon->name = c == L.object ? sp_sym_to_s(name) : strdup(sp_sprintf("%s::%s", c->name, sp_sym_to_s(name)));
+  }
   LupeConst *k = lupe_const_own(c, name);
   if (k) { k->value = v; return; }
   if (c->nconsts == c->consts_cap) {
@@ -320,10 +328,10 @@ static int lupe_const_scoped(const LupeClass *scope, sp_sym name, sp_RbVal *out)
   return 0;
 }
 
-/* A constant as a bare name reads it: the lexical scopes from cref out,
-   then the ancestors of cref, then Object. */
+/* A constant as a bare name reads it: the lexical scopes from cref out
+   (but the top level), then the ancestors of cref, then Object. */
 static int lupe_const_lookup(const LupeClass *cref, sp_sym name, sp_RbVal *out) {
-  for (const LupeClass *k = cref; k; k = k->lexical) {
+  for (const LupeClass *k = cref; k && k != L.object; k = k->lexical) {
     LupeConst *c = lupe_const_own(k, name);
     if (c) { *out = c->value; return 1; }
   }
@@ -401,6 +409,12 @@ static void lupe_ivar_set(sp_RbVal self, sp_sym name, sp_RbVal v) {
   if (!lupe_is_lupe_object(h)) lupe_gap(sp_sprintf("ivar on a %s", sp_poly_class_name(self)));
   SP_GC_ROOT_RBVAL(h);
   LupeObject *o = (LupeObject *)h.v.p;
+  /* a frozen object: an ivar, an attr writer or a Struct member */
+  if (lupe_is_lupe_object(self) && sp_gc_is_frozen(self.v.p)) {
+    const char *msg = sp_sprintf("can't modify frozen %s: %s", lupe_class_of(self)->name, sp_poly_inspect(self));
+    sp_exc_stage_recv(self);
+    sp_raise_cls("FrozenError", msg);
+  }
   int slot = lupe_ivar_slot(lupe_class_by_id(o->cls_id), name, 1);
   if (!o->iv) {
     sp_PolyArray *iv = sp_PolyArray_new();
@@ -433,12 +447,14 @@ static const char *lupe_user_string(sp_RbVal obj, const char *name) {
 /* Object#to_s and Object#inspect, in the format of CRuby and spinel. */
 static const char *lupe_default_to_s(int cls_id, void *p) {
   if (p == L.main.v.p) return SPL("main");
+  if (lupe_record_of(lupe_class_by_id(cls_id))) return lupe_record_inspect(sp_box_obj(p, cls_id));
   return sp_sprintf("#<%s:0x%016llx>", lupe_hook_class_name(cls_id), (unsigned long long)(uintptr_t)p);
 }
 
 static const char *lupe_default_inspect(int cls_id, void *p) {
   if (p == L.main.v.p) return SPL("main");
   LupeClass *c = lupe_class_by_id(cls_id);
+  if (lupe_record_of(c)) return lupe_record_inspect(sp_box_obj(p, cls_id));
   LupeObject *o = (LupeObject *)p;
   if (sp_poly_recur_seen(SP_POLY_RECUR_INSPECT, p, NULL))
     return sp_sprintf("#<%s:0x%016llx ...>", c->name, (unsigned long long)(uintptr_t)p);
@@ -506,6 +522,11 @@ static sp_RbVal lupe_hook_binop(const char *op, sp_RbVal a, sp_RbVal b, sp_bool 
   SP_GC_ROOT_RBVAL(b);
   LupeMethod *m = lupe_find_method(lupe_class_of(a), sp_sym_intern(op));
   sp_RbVal out;
+  /* a Struct or a Data compares by its members */
+  if (!m && !strcmp(op, "==") && lupe_record_of(lupe_class_of(a))) {
+    *handled = TRUE;
+    return lupe_send(a, op, 1, &b);
+  }
   if (!m) {
     if (!lupe_comparable(op, a, b, &out)) return sp_box_nil();
     *handled = TRUE;
@@ -580,13 +601,22 @@ static int lupe_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
       *out = lupe_class_box(k);
       return 1;
     }
-    /* an immediate value is frozen; a heap value carries the flag */
+    /* an immediate value is frozen; a heap value carries the flag, and a
+       class keeps its own */
     if (!strcmp(name, "frozen?")) {
       int heap = r.tag == SP_TAG_OBJ && r.v.p;
-      *out = sp_box_bool(lupe_is_lupe_object(r) ? 0 : heap ? sp_gc_is_frozen(r.v.p) : 1);
+      LupeClass *k = lupe_class_value(r);
+      *out = sp_box_bool(k ? k->frozen : heap ? sp_gc_is_frozen(r.v.p) : 1);
       return 1;
     }
-    if (!strcmp(name, "freeze") || !strcmp(name, "itself")) { *out = r; return 1; }
+    if (!strcmp(name, "freeze")) {
+      LupeClass *k = lupe_class_value(r);
+      if (k) k->frozen = 1;
+      else if (lupe_is_lupe_object(r)) sp_gc_freeze(r.v.p);
+      *out = r;
+      return 1;
+    }
+    if (!strcmp(name, "itself")) { *out = r; return 1; }
     if (!strcmp(name, "nil?")) { *out = sp_box_bool(r.tag == SP_TAG_NIL); return 1; }
     /* the defaults, also for super from a user to_s or inspect */
     if (lupe_is_lupe_object(r) && !strcmp(name, "to_s")) {
@@ -604,7 +634,9 @@ static int lupe_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
       if (lupe_is_lupe_object(h)) {
         LupeObject *o = (LupeObject *)h.v.p;
         LupeClass *c = lupe_class_by_id(o->cls_id);
-        for (int i = 0; o->iv && i < c->nivars && i < o->iv->len; i++) sp_PolyArray_push(a, sp_box_sym(c->ivars[i]));
+        /* the members of a Struct have slots too, under names with no @ */
+        for (int i = 0; o->iv && i < c->nivars && i < o->iv->len; i++)
+          if (sp_sym_to_s(c->ivars[i])[0] == '@') sp_PolyArray_push(a, sp_box_sym(c->ivars[i]));
       }
       *out = sp_box_poly_array(a);
       return 1;
@@ -636,7 +668,7 @@ static int lupe_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
       sp_sym s = sp_sym_intern(mn);
       int yes = lupe_find_method(lupe_class_of(r), s) != NULL;
       if (!yes && r.tag == SP_TAG_CLASS) yes = lupe_find_smethod(lupe_class_value(r), s) != NULL;
-      if (!yes) yes = lupe_builtin_responds(r, mn);
+      if (!yes) yes = lupe_builtin_responds(r, mn) || lupe_record_responds(r, mn);
       *out = sp_box_bool(yes);
       return 1;
     }
@@ -683,6 +715,8 @@ static int lupe_class_core(LupeFrame *f, sp_RbVal r, const char *name, int argc,
                            const LupeBlock *blk, sp_RbVal *out) {
   LupeClass *k = lupe_class_value(r);
   if (!k) return 0;
+  /* Class.new, Module.new, Struct.new, Data.define and a record class */
+  if (lupe_struct_class(f, k, name, argc, argv, blk, out)) return 1;
   if (!strcmp(name, "new") || !strcmp(name, "allocate")) {
     if (k->is_module) return 0;
     /* an exception is a runtime sp_Exception, for a builtin class too */

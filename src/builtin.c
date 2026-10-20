@@ -222,7 +222,8 @@ static int lupe_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_
    that Lupe lacks. */
 static int lupe_builtin_responds(sp_RbVal r, const char *name) {
   static const char *const any[] = { "!", "nil?", "to_s", "inspect", "==", "!=", "class", "is_a?", "kind_of?",
-                                     "instance_of?", "respond_to?", "send", "frozen?", "freeze", "itself", NULL };
+                                     "instance_of?", "respond_to?", "send", "__send__", "public_send", "frozen?",
+                                     "freeze", "itself", NULL };
   static const char *const num[] = { "+", "-", "*", "/", "%", "**", "<", "<=", ">", ">=", "-@", NULL };
   static const char *const bits[] = { "&", "|", "^", "<<", ">>", NULL };
   static const char *const str[] = { "+", "*", "%", "length", "size", "start_with?", "end_with?", "split", NULL };
@@ -284,6 +285,7 @@ static sp_RbVal lupe_send(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
    one, since the generated wrappers would drop the block. */
 static int lupe_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
                              sp_RbVal *out) {
+  if (lupe_record_core(recv, name, argc, argv, blk, out)) return 1;
   if (lupe_is_proc(recv) && lupe_proc_core(recv, name, argc, argv, out)) return 1;
   if (!blk && lupe_range_core(recv, name, argc, argv, out)) return 1;
   if (lupe_hash_core(recv, name, argc, argv, blk, out)) return 1;

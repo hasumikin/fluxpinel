@@ -271,18 +271,39 @@ Lupe gives walker classes their own object kind (`src/object.c`):
   `sp_class_is_module_fn`, `sp_user_binop_hook` and `sp_user_coerce_hook`.
   Thus `puts obj`, `p obj`, `[a, b].include?(c)` and `5 * money` call the
   methods of the program.
-- **Constants.** A bare name looks in the lexical scopes, then in the
-  ancestors of the innermost one, then in Object, then in the builtin
-  classes. A top-level `def` defines a method of Object.
+- **Constants.** A bare name looks in the lexical scopes but the top
+  level, then in the ancestors of the innermost one, then in Object, then
+  in the builtin classes. A top-level `def` defines a method of Object.
+- **Freeze.** `freeze` on an object sets the frozen bit of its heap
+  header, and an ivar write to a frozen object raises FrozenError. A class
+  keeps its own frozen flag.
 - **Gaps.** A semantics that Lupe does not model stops the program as an
   unsupported node does (`lupe_gap`): an instance of a subclass of a
-  builtin class other than Object and Exception, an ivar on a builtin
-  value other than an exception, `extend` on
-  an object, and the reopening of a CRuby core class that spinel's class
-  table does not name (Random, Set, ...).
+  builtin class other than Object, Exception, Struct and Data, an ivar on
+  a builtin value other than an exception, `extend` on an object, and the
+  reopening of a CRuby core class that spinel's class table does not name
+  (Random, Set, ...).
 
 `sp_cext_dispatch_fn` sends a method by name to a foreign object. It is a
 candidate for the AOT to walker direction of section 3.6.
+
+### 3.4.1 Struct, Data and anonymous classes
+
+- **Record class.** spinel compiles `Struct.new` and `Data.define` to a
+  class of the program. Lupe makes a `LupeClass` at run time, with the
+  members, the kind (Struct or Data) and `keyword_init` (`src/struct.c`).
+  The block of `Struct.new` runs as the class body.
+- **Members.** An instance keeps each member in an ivar slot whose name
+  has no `@`, so `instance_variables` does not list it. An accessor is an
+  attr method on that slot. Thus a `def` of the program can replace an
+  accessor, and `super` from its `initialize` reaches the builtin one.
+- **Data.** `Data.new` turns positional arguments into keywords before it
+  calls `initialize`, as CRuby does. A missing keyword raises before an
+  unknown one, and the builtin `initialize` freezes the instance.
+- **Anonymous class.** `Class.new(Super) { }` and `Module.new { }` run the
+  block with the new class as self and as the definee. A class from
+  `Class.new` or `Struct.new` takes the name of the first constant that
+  holds it.
 
 ### 3.5 Containers
 
@@ -582,6 +603,26 @@ These facts apply to spinel commit `ffac8340d`.
   | `case` / `in` | 75 |
   | a call of a block whose scope has returned | 65 |
 
+- The oracle on spinel `b5d3820ad`, with Struct, Data and anonymous
+  classes: Lupe runs 2509 tests and 2386 agree. 120 differ. The largest
+  blockers now:
+
+  | blocker | tests |
+  |---|---|
+  | a multiple assignment | 160 |
+  | `case` / `when` | 146 |
+  | `Thread.new`, `Fiber.new` or `Enumerator.new` with a block | 145 |
+  | a Range of values other than Integer | 109 |
+  | `case` / `in` | 90 |
+  | a call of a block whose scope has returned | 67 |
+
+- A class keeps one lexical parent, the scope of its first definition.
+  In CRuby, the lexical scope belongs to each class body: the body of
+  `class A::B` does not search `A`. Lupe searches `A` there
+  (`class_new_superclass_order`).
+- The runtime shows a class value by its name, through
+  `lupe_class_name_hook`. Thus `p K` for a Struct class with
+  `keyword_init: true` shows `K`, but CRuby shows `K(keyword_init: true)`.
 - `sp_re_matchdata` sets the captures of a match but not the positions
   (`sp_re_caps`) that `sp_re_last_matchdata` reads. Lupe sets the
   registers again from the MatchData, so `$~` after `str.match(re)` reads
@@ -655,6 +696,7 @@ These facts apply to spinel commit `ffac8340d`.
      the `rescue` modifier (section 3.3.2): `test/m3`.
    - Regexp, MatchData and the match globals (section 3.3.3): `test/m3`.
    - Global variables and the standard streams (section 3.3.4): `test/m3`.
+   - Struct, Data and anonymous classes (section 3.4.1): `test/m3`.
    - Next: the largest blockers of the oracle report.
 6. **M4: embedded REPL.** Link Lupe into an AOT binary on a host. Then move
    to a microcontroller board.

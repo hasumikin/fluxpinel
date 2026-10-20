@@ -578,14 +578,9 @@ static int lupe_re_md_core(sp_RbVal r, const char *name, int argc, sp_RbVal *arg
     SP_GC_ROOT(a);
     for (int i = 0; i < argc; i++) {
       if (!lupe_is_range(argv[i])) { sp_PolyArray_push(a, sp_poly_md_group(m, argv[i])); continue; }
-      /* a Range of groups, as CRuby's rb_range_beg_len with err = 1 reads it:
-         a begin before group 0 raises, and a group past the last is nil */
-      const sp_Range *g = (const sp_Range *)argv[i].v.p;
-      sp_int n = m->ncap, beg = g->nobeg ? 0 : g->first, end = g->noend ? -1 : g->last;
-      if (beg < 0 && (beg += n) < 0)
-        sp_raise_cls("RangeError", sp_sprintf("%s out of range", sp_poly_inspect(argv[i])));
-      if (end < 0) end += n;
-      if (g->noend || !g->excl) end++;
+      /* a Range of groups; a group past the last is nil */
+      sp_int beg, end;
+      lupe_range_span(argv[i], m->ncap, &beg, &end);
       for (sp_int j = beg; j < end; j++) sp_PolyArray_push(a, lupe_re_str(sp_MatchData_aref(m, j)));
     }
     *out = sp_box_poly_array(a);

@@ -54,7 +54,18 @@ typedef struct LupeClass {
   int nconsts, consts_cap;
   sp_sym *ivars;                    /* the slot names of an instance */
   int nivars, ivars_cap;
+  int anon;                         /* made by Class.new or Struct.new and not yet
+                                       assigned to a constant: name is "#<Class:0x...>" */
+  int record;                       /* a class that Struct.new or Data.define made:
+                                       LUPE_REC_STRUCT or LUPE_REC_DATA, else 0 */
+  int keyword_init;                 /* Struct keyword_init: 1 true, -1 false, 0 nil */
+  int frozen;                       /* the class value is frozen (C.freeze) */
+  sp_sym *members;                  /* the members of a record class */
+  int nmembers;
 } LupeClass;
+
+#define LUPE_REC_STRUCT 1
+#define LUPE_REC_DATA 2
 
 /* An instance of a Lupe class. It starts like a spinel object (cls_id
    first), so the runtime reads its class id as it reads an AOT object's. */
@@ -183,6 +194,16 @@ static sp_RbVal lupe_re_match_write(LupeFrame *f, const pm_match_write_node_t *w
 static int lupe_re_frame_enter(const LupeMethod *m, sp_re_frame *rf);
 static int lupe_re_call(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
                         sp_RbVal *out);
+
+/* struct.c */
+static const LupeClass *lupe_record_of(const LupeClass *k);
+static void lupe_record_init(sp_RbVal self, int argc, sp_RbVal *argv);
+static const char *lupe_record_inspect(sp_RbVal self);
+static int lupe_struct_class(LupeFrame *f, LupeClass *k, const char *name, int argc, sp_RbVal *argv,
+                             const LupeBlock *blk, sp_RbVal *out);
+static int lupe_record_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
+                            sp_RbVal *out);
+static int lupe_record_responds(sp_RbVal r, const char *name);
 
 /* global.c */
 static sp_RbVal lupe_gvar_eval(LupeFrame *f, const pm_node_t *n);

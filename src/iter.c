@@ -583,6 +583,19 @@ static int lupe_proc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
 
 /* ---- Range ---- */
 
+/* The indexes [*beg, *end) that values_at reads for an Integer Range over
+   n values, as CRuby's rb_range_beg_len with err = 1 reads them: a begin
+   before index 0 raises, and an index past the last reads nil. */
+static void lupe_range_span(sp_RbVal r, sp_int n, sp_int *beg, sp_int *end) {
+  const sp_Range *g = (const sp_Range *)r.v.p;
+  sp_int b = g->nobeg ? 0 : g->first, e = g->noend ? -1 : g->last;
+  if (b < 0 && (b += n) < 0) sp_raise_cls("RangeError", sp_sprintf("%s out of range", sp_poly_inspect(r)));
+  if (e < 0) e += n;
+  if (g->noend || !g->excl) e++;
+  *beg = b;
+  *end = e;
+}
+
 /* The methods of an Integer Range with no block. */
 static int lupe_range_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (!lupe_is_range(r)) return 0;
