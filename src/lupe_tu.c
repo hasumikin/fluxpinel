@@ -86,6 +86,9 @@ static const char *sp_class_to_s(sp_Class c) {
   }
   int i = -100 - (int)c.cls_id;
   if (i >= 0 && i < LUPE_NBUILTIN_CLASSES) return lupe_builtin_class_names[i];
+  /* an exception class that only the runtime names (LoadError): the walker
+     gave it an id below the table */
+  if (lupe_class_name_hook) return lupe_class_name_hook(c.cls_id);
   return sp_str_empty;
 }
 

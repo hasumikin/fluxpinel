@@ -6,12 +6,22 @@
 
 #include "lupe.h"
 
+/* The source file that holds node n, by the bytes it points into. */
+static LupeSource *lupe_source_of(const pm_node_t *n) {
+  for (int i = L.nsources - 1; i >= 0; i--) {
+    LupeSource *s = L.sources[i];
+    if (n->location.start >= s->start && n->location.start <= s->end) return s;
+  }
+  return L.sources[0];
+}
+
 static int lupe_line(const pm_node_t *n) {
-  return pm_newline_list_line_column(&L.parser.newline_list, n->location.start, L.parser.start_line).line;
+  const pm_parser_t *p = &lupe_source_of(n)->parser;
+  return pm_newline_list_line_column(&p->newline_list, n->location.start, p->start_line).line;
 }
 
 static void lupe_unsupported(const pm_node_t *n, const char *what) {
-  fprintf(stderr, "lupe: %s:%d: unsupported %s (%s)\n", L.path, lupe_line(n), what,
+  fprintf(stderr, "lupe: %s:%d: unsupported %s (%s)\n", lupe_source_of(n)->path, lupe_line(n), what,
           pm_node_type_to_str(PM_NODE_TYPE(n)));
   exit(2);
 }
@@ -29,7 +39,7 @@ static void lupe_gap(const char *what) {
 }
 
 static sp_sym lupe_sym(pm_constant_id_t id) {
-  const pm_constant_t *c = pm_constant_pool_id_to_constant(&L.parser.constant_pool, id);
+  const pm_constant_t *c = pm_constant_pool_id_to_constant(&L.pool, id);
   return sp_sym_intern_n((const char *)c->start, c->length);
 }
 
@@ -319,7 +329,7 @@ static void lupe_bind_params(LupeFrame *f, const pm_parameters_node_t *ps, int a
 /* The slot of the numbered parameter _i (1..9) of a block frame. */
 static sp_RbVal *lupe_numbered(LupeFrame *f, const pm_node_t *n, int i) {
   char name[3] = { '_', (char)('0' + i), 0 };
-  pm_constant_id_t id = pm_constant_pool_find(&L.parser.constant_pool, (const uint8_t *)name, 2);
+  pm_constant_id_t id = pm_constant_pool_find(&L.pool, (const uint8_t *)name, 2);
   if (!id) lupe_unsupported(n, "numbered parameter");
   return lupe_local(f, n, id, 0);
 }
@@ -671,7 +681,14 @@ static sp_RbVal lupe_call(LupeFrame *f, const pm_call_node_t *c) {
   /* the callee's binder takes the keyword Hash; a builtin leaves it, so
      it is cleared after the call, before its address can be reused */
   L.kwhash = kw;
-  sp_RbVal v = c->receiver ? lupe_send_b(recv, name, argc, argv, blk) : lupe_call_self(f, name, argc, argv, blk);
+  sp_RbVal v;
+  /* require_relative and __dir__ answer from the file of the call, unless
+     the program defines its own */
+  if (!c->receiver && !blk && lupe_load_call((const pm_node_t *)c, f->self, name, argc, argv, &v)) {
+  } else {
+    L.vcall = PM_NODE_FLAG_P((const pm_node_t *)c, PM_CALL_NODE_FLAGS_VARIABLE_CALL);
+    v = c->receiver ? lupe_send_b(recv, name, argc, argv, blk) : lupe_call_self(f, name, argc, argv, blk);
+  }
   L.kwhash = NULL;
   v = lupe_catch_break(&lit, v);
   if (!c->receiver) return v;
@@ -712,6 +729,9 @@ static int lupe_kernel_block(LupeFrame *f, const char *name, int argc, const Lup
 /* A call with no receiver: a method of self, then Kernel, then a builtin
    method of self. In a class body or a class method, self is the class. */
 static sp_RbVal lupe_call_self(LupeFrame *f, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk) {
+  /* lupe_call marks a call with no arguments and no parentheses */
+  int vcall = L.vcall;
+  L.vcall = 0;
   sp_sym s = sp_sym_intern(name);
   sp_RbVal self = f->self, out;
   if (self.tag == SP_TAG_CLASS) {
@@ -730,10 +750,12 @@ static sp_RbVal lupe_call_self(LupeFrame *f, const char *name, int argc, sp_RbVa
   if (lupe_object_core(self, name, argc, argv, &out)) return out;
   if (!lupe_is_lupe_object(self) && self.tag != SP_TAG_CLASS) return lupe_send(self, name, argc, argv);
   lupe_trace_missing("Kernel", name, argc);
+  /* a bare name that could be a local variable is a NameError */
+  const char *cls = vcall ? "NameError" : "NoMethodError";
+  const char *what = vcall ? "undefined local variable or method" : "undefined method";
   if (lupe_is_lupe_object(self) && self.v.p == L.main.v.p)
-    sp_raise_cls("NoMethodError", sp_sprintf("undefined method '%s' for main", name));
-  sp_raise_cls("NoMethodError", sp_sprintf("undefined method '%s' for an instance of %s", name,
-                                           sp_poly_class_name(self)));
+    sp_raise_cls(cls, sp_sprintf("%s '%s' for main", what, name));
+  sp_raise_cls(cls, sp_sprintf("%s '%s' for an instance of %s", what, name, sp_poly_class_name(self)));
 }
 
 /* The arguments that a bare super passes, into out: the current values of
@@ -1611,6 +1633,12 @@ static sp_RbVal lupe_eval(LupeFrame *f, const pm_node_t *n) {
   case PM_REGULAR_EXPRESSION_NODE:
   case PM_INTERPOLATED_REGULAR_EXPRESSION_NODE:
     return lupe_re_literal(f, n);
+  case PM_SOURCE_FILE_NODE: {
+    const pm_string_t *s = &((const pm_source_file_node_t *)n)->filepath;
+    return lupe_new_string(pm_string_source(s), pm_string_length(s));
+  }
+  case PM_SOURCE_LINE_NODE:
+    return sp_box_int(lupe_line(n));
   case PM_MATCH_WRITE_NODE:
     return lupe_re_match_write(f, (const pm_match_write_node_t *)n);
   case PM_NUMBERED_REFERENCE_READ_NODE:

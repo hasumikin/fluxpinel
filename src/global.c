@@ -131,6 +131,13 @@ static sp_RbVal lupe_gvar_eval(LupeFrame *f, const pm_node_t *n) {
   }
 }
 
+/* STDIN, STDOUT and STDERR: the streams that $stdin and the others start as. */
+static void lupe_global_init(void) {
+  lupe_const_set(L.object, sp_sym_intern("STDIN"), lupe_io_box(sp_io_stdin()));
+  lupe_const_set(L.object, sp_sym_intern("STDOUT"), lupe_io_box(sp_io_stdout()));
+  lupe_const_set(L.object, sp_sym_intern("STDERR"), lupe_io_box(sp_io_stderr()));
+}
+
 /* ---- IO ---- */
 
 /* The writes of an IO that spinel emits from codegen code. */

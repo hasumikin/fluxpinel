@@ -145,9 +145,24 @@ typedef enum {
   LUPE_CTL_NONE, LUPE_CTL_RETURN, LUPE_CTL_BREAK, LUPE_CTL_NEXT, LUPE_CTL_BREAK_BLOCK, LUPE_CTL_RETRY
 } LupeCtl;
 
+/* A source file that Lupe parsed: the main program or a file that
+   require_relative loaded. Its AST and its bytes live until the end, since
+   methods keep its nodes. */
+typedef struct {
+  const char *path;          /* as given for the main program; real path otherwise */
+  const char *real;          /* the real path, by which a file loads once */
+  const uint8_t *start, *end;   /* the bytes, to find the file of a node */
+  pm_options_t options;      /* the parser reads its filepath from here */
+  pm_parser_t parser;
+  pm_node_t *root;
+} LupeSource;
+
 typedef struct {
   const char *path;
-  pm_parser_t parser;
+  pm_constant_pool_t pool;   /* the constants of every file: a node's
+                                constant id indexes this one pool */
+  LupeSource **sources;      /* the parsed files; sources[0] is the main one */
+  int nsources, sources_cap;
   LupeClass **classes;   /* Lupe classes; classes[i] has cls_id LUPE_CLS_BASE + i */
   int nclasses, classes_cap;
   LupeClass **builtins;  /* builtin classes made so far */
@@ -160,6 +175,8 @@ typedef struct {
   uint64_t serial;       /* the last LupeFrame.serial */
   const void *kwhash;    /* the Hash that a call passes as keywords (`m(a: 1)`), so
                             that a Hash literal in the last place stays positional */
+  int vcall;             /* the next lupe_call_self is a bare name (`foo`), whose
+                            miss is a NameError */
   LupeFrameStack *fs;    /* the frame stack of the running fiber. A frame pops
                             its entry when it ends; a rescue cuts the entries of
                             the frames that a raise unwound */
@@ -223,6 +240,10 @@ static int lupe_fiber_core(sp_RbVal r, const char *name, int argc, sp_RbVal *arg
                            sp_RbVal *out);
 static int lupe_fiber_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static void lupe_sched_end(void);
+
+/* load.c */
+static int lupe_load_call(const pm_node_t *n, sp_RbVal self, const char *name, int argc, sp_RbVal *argv,
+                          sp_RbVal *out);
 
 /* global.c */
 static sp_RbVal lupe_gvar_eval(LupeFrame *f, const pm_node_t *n);

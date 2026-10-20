@@ -107,7 +107,9 @@ def check(test, opts)
   name = File.basename(test, ".rb")
   rel = File.join("test", File.basename(test))
   return Result.new(name, :skipped, "has .args") if File.exist?("#{test}.args")
-  stdin = File.exist?("#{test}.stdin") ? File.binread("#{test}.stdin") : nil
+  # a test that spinel has not snapshot yet (work in progress in its tree)
+  return Result.new(name, :skipped, "no .expected") unless File.exist?("#{test}.expected")
+  stdin =File.exist?("#{test}.stdin") ? File.binread("#{test}.stdin") : nil
   want = norm(File.binread("#{test}.expected"))
 
   lout, lerr, lst = run([LUPE, rel], timeout: opts[:timeout], stdin: stdin, env: { "LUPE_TRACE_MISSING" => "1" })

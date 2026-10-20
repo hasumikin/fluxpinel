@@ -291,6 +291,30 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   method that returns before it runs stops as a gap: for example
   `3.times.map { Thread.new { } }`.
 
+### 3.3.6 Source files
+
+- **Load at run time.** spinel splices a required file into one source at
+  compile time. Lupe loads it at run time, as CRuby does: the file runs
+  once, at the first `require_relative`, as a top-level program of its
+  own. Self is main, the definee is Object, and its locals are its own
+  (`src/load.c`).
+- **One constant pool.** Each file has a prism parser of its own. A node
+  names a local, a method or a constant by an id in the constant pool of
+  its parser, so all the parsers share one pool (`L.pool`). The pool only
+  grows, and an id stays valid.
+- **File of a node.** A source keeps its bytes, and a node points into
+  them. Thus Lupe finds the file of a node by the address. `__FILE__`,
+  `__LINE__`, `__dir__`, `require_relative` and the message of an
+  unsupported node read it.
+- **Paths.** `require_relative` resolves from the real path of the file of
+  the call, and adds `.rb`. A file with a real path that is loaded already
+  answers false. `require` of a path (`./x`, `../x`, `/x`) resolves from the
+  current directory.
+- **Library names.** spinel resolves `require "socket"` at compile time,
+  to a bundled package or to a feature of its runtime. Lupe stops at such
+  a literal name as a gap for now. A name that the program computes at
+  run time and that names no package is a LoadError, as in AOT code.
+
 ### 3.4 User classes
 
 Spinel compiles each user class to a C struct. The `cls_id` of a class
@@ -769,10 +793,13 @@ These facts apply to spinel commit `ffac8340d`.
    - Struct, Data and anonymous classes (section 3.4.1): `test/m3`.
    - Fiber, Thread and Enumerator.new on the threaded runtime (section
      3.3.5): `test/m3`.
+   - `require_relative`, `require` of a path, `__FILE__`, `__LINE__` and
+     `__dir__` (section 3.3.6): `test/m3`.
    - Next, toward the Spinel output of Roundhouse (a Rails app lowered to
      Ruby that spinel compiles):
-     - `require` and `require_relative`, for a project of many files.
-     - FFI (`ffi_func`, `ffi_lib`, `ffi_const`), for SQLite.
+     - FFI (`ffi_func`, `ffi_lib`, `ffi_const`, `native_func`), for SQLite
+       and for the bundled packages of spinel (`set`, `stringio`, ...),
+       which `require` of a library name then loads.
      - A heap frame for a scope that a block outlives.
      - The tests of a Roundhouse output (`spin test`) under Lupe and AOT.
    - Then the largest blockers of the oracle report.

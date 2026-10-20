@@ -18,20 +18,7 @@
 #include "global.c"
 #include "struct.c"
 #include "fiber.c"
-
-static char *lupe_read_file(const char *path, size_t *len) {
-  FILE *fp = fopen(path, "rb");
-  if (!fp) { fprintf(stderr, "lupe: cannot open %s\n", path); exit(1); }
-  fseek(fp, 0, SEEK_END);
-  long n = ftell(fp);
-  fseek(fp, 0, SEEK_SET);
-  char *buf = malloc((size_t)n + 1);
-  if (!buf || fread(buf, 1, (size_t)n, fp) != (size_t)n) { fprintf(stderr, "lupe: cannot read %s\n", path); exit(1); }
-  fclose(fp);
-  buf[n] = 0;
-  *len = (size_t)n;
-  return buf;
-}
+#include "load.c"
 
 static void lupe_body(void) {
   SP_GC_SAVE();
@@ -42,6 +29,7 @@ static void lupe_body(void) {
   lupe_hash_init();
   lupe_exc_hooks();
   lupe_re_init();
+  lupe_global_init();
   /* a fiber runs the walker, whose frames are larger than those of AOT
      code: the size that codegen asks for an unoptimised build */
   sp_fiber_stack_hint((size_t)1 << 20);
@@ -53,19 +41,7 @@ static void lupe_body(void) {
   lupe_sched_start();
   lupe_fs_init();
 
-  size_t len;
-  char *src = lupe_read_file(L.path, &len);
-  pm_parser_init(&L.parser, (const uint8_t *)src, len, NULL);
-  pm_node_t *root = pm_parse(&L.parser);
-  if (L.parser.error_list.size) {
-    const pm_diagnostic_t *d = (const pm_diagnostic_t *)L.parser.error_list.head;
-    int line = pm_newline_list_line_column(&L.parser.newline_list, d->location.start, L.parser.start_line).line;
-    fprintf(stderr, "lupe: %s:%d: syntax error: %s\n", L.path, line, d->message);
-    exit(1);
-  }
-  const pm_program_node_t *prog = (const pm_program_node_t *)root;
-  LUPE_FRAME(top, &prog->locals, L.main, L.object);
-  lupe_eval_stmts(&top, prog->statements);
+  lupe_load_main(L.path);
   /* a break of a Proc whose call has returned reaches the top */
   if (L.ctl == LUPE_CTL_BREAK_BLOCK) lupe_gap("break from a block whose call has returned");
   lupe_sched_end();
