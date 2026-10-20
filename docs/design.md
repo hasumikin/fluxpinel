@@ -310,10 +310,20 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   the call, and adds `.rb`. A file with a real path that is loaded already
   answers false. `require` of a path (`./x`, `../x`, `/x`) resolves from the
   current directory.
-- **Library names.** spinel resolves `require "socket"` at compile time,
-  to a bundled package or to a feature of its runtime. Lupe stops at such
-  a literal name as a gap for now. A name that the program computes at
-  run time and that names no package is a LoadError, as in AOT code.
+- **Library names.** spinel resolves `require "json"` at compile time
+  (`src/spinel_parse.c`). Lupe resolves the name at run time in the same
+  order:
+  - `packages/<first>/<name>.rb` of spinel is the package. The first
+    segment of the name selects the package. The file runs once, and its
+    `<name>.share.rb` follows it when that file exists.
+  - A feature of the runtime (`socket`, `ostruct`, `monitor`, `time`,
+    `io/console`) and a core capability (`thread`, `fiber`, `rbconfig`,
+    ...) load nothing. The require answers false.
+  - Any other name is a LoadError. spinel refuses it at compile time under
+    `--require-gate`, and ignores it with a warning otherwise.
+- **Set.** CRuby loads Set before the program starts, and spinel loads
+  its package when a program names `Set`. Lupe loads the package at the
+  first lookup of the constant `Set`. Thus `require "set"` answers false.
 
 ### 3.3.7 FFI
 
@@ -334,10 +344,24 @@ The walker evaluates the prism AST directly (`src/walk.c`).
 - **Runtime functions.** An `ffi_func` with no `ffi_lib` can name a
   function of the runtime (`sp_net_shell_capture`). Lupe links with
   `-rdynamic`, so `dlsym` finds the runtime functions in the binary.
+- **native_func.** A package binds a C function with `native_func :name,
+  [types], ret, "csym"`. Lupe calls it through libffi, as it calls an
+  `ffi_func`. The types follow `native_c_type` in `codegen_util.c` of
+  spinel:
+  - `:any` passes and returns an `sp_RbVal` by value, as a libffi struct.
+  - `:string` is a String of the runtime, and `:string?` is one or NULL.
+  - A `:cstring` or `:cbinstr` return is a buffer of the callee. Lupe
+    copies it, and a `:cbinstr` copy is binary.
+  - `:int` is an `sp_int`, `:float` a double and `:bool` an `sp_bool`.
+- **Package objects.** The Makefile links the object of each package
+  (`sp_json_mt.o`, ...) and the libraries of its `ffi_lib`. It also keeps
+  each bound function of the runtime archive in the link with `-Wl,-u`.
+  `tools/native_link.rb` reads these from the packages.
 - **Limits.** `ffi_callback`, `ffi_struct`, `ffi_source`, a variadic
-  function and an `IO::Buffer` argument are gaps. `native_func`, which
-  the bundled packages of spinel use, is a later step. `FFI=0` builds
-  Lupe with no libffi, and then every FFI declaration is a gap.
+  function and an `IO::Buffer` argument are gaps. The native classes of a
+  package (`native_struct`, `native_method` and their kin, which StringIO
+  and StringScanner use) are gaps too. `FFI=0` builds Lupe with no libffi,
+  and then every FFI declaration and every `native_func` is a gap.
 
 ### 3.4 User classes
 
@@ -821,10 +845,10 @@ These facts apply to spinel commit `ffac8340d`.
      `__dir__` (section 3.3.6): `test/m3`.
    - The FFI at run time through libffi (section 3.3.7): `test/m3`, whose
      `.expected` is the output of AOT code.
+   - `require` of a library name, the packages of spinel and their
+     `native_func` bindings (sections 3.3.6 and 3.3.7): `test/m3`.
    - Next, toward the Spinel output of Roundhouse (a Rails app lowered to
      Ruby that spinel compiles):
-     - `native_func` and the bundled packages of spinel (`set`,
-       `stringio`, ...), which `require` of a library name then loads.
      - A heap frame for a scope that a block outlives.
      - The tests of a Roundhouse output (`spin test`) under Lupe and AOT.
    - Then the largest blockers of the oracle report.

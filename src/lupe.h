@@ -205,6 +205,7 @@ static int lupe_array_hash(sp_RbVal r, const char *name, int argc, sp_RbVal *out
 static int lupe_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
                              sp_RbVal *out);
 static LupeClass *lupe_class_named(const char *name);
+static int lupe_is_string(sp_RbVal v);
 
 /* exc.c */
 static int lupe_is_exc(sp_RbVal v);
@@ -249,6 +250,7 @@ static sp_RbVal lupe_ffi_invoke(const struct LupeFfi *x, int argc, sp_RbVal *arg
 /* load.c */
 static int lupe_load_call(const pm_node_t *n, sp_RbVal self, const char *name, int argc, sp_RbVal *argv,
                           sp_RbVal *out);
+static int lupe_autoload(sp_sym name);
 
 /* global.c */
 static sp_RbVal lupe_gvar_eval(LupeFrame *f, const pm_node_t *n);

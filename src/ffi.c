@@ -6,6 +6,11 @@
    dlopen, finds each function with dlsym at its first call, and calls it
    through libffi with the C types that the declaration names.
 
+   A package of spinel binds a C function of the runtime or of its own
+   object with native_func. Lupe calls it the same way: the Makefile links
+   the objects of the packages, and keeps each bound function of the
+   runtime in the link (tools/native_link.rb).
+
    A declared function is a singleton method of the module (LUPE_M_FFI),
    so a call, respond_to? and method lookup find it as they find a def.
 
@@ -25,7 +30,9 @@
 typedef enum {
   LUPE_FT_INT, LUPE_FT_UINT32, LUPE_FT_INT32, LUPE_FT_UINT16, LUPE_FT_INT16, LUPE_FT_UINT8, LUPE_FT_INT8,
   LUPE_FT_SIZE_T, LUPE_FT_LONG, LUPE_FT_INT64, LUPE_FT_UINT64, LUPE_FT_FLOAT, LUPE_FT_DOUBLE, LUPE_FT_BOOL,
-  LUPE_FT_STR, LUPE_FT_BINSTR, LUPE_FT_PTR, LUPE_FT_FLOAT_ARRAY, LUPE_FT_INT_ARRAY, LUPE_FT_VOID
+  LUPE_FT_STR, LUPE_FT_BINSTR, LUPE_FT_PTR, LUPE_FT_FLOAT_ARRAY, LUPE_FT_INT_ARRAY, LUPE_FT_VOID,
+  /* the types of native_func only */
+  LUPE_FT_ANY, LUPE_FT_RTSTR, LUPE_FT_NRTSTR, LUPE_FT_CSTR, LUPE_FT_CBINSTR, LUPE_FT_SPINT, LUPE_FT_SPBOOL
 } LupeFfiType;
 
 /* The type specs of docs/FFI.md, and the names of the ffi gem for them. */
@@ -44,8 +51,34 @@ static const struct {
   { "buffer_out", LUPE_FT_PTR }, { "buffer_inout", LUPE_FT_PTR },
 };
 
+/* The type specs of native_func, a binding to a C function of the runtime
+   or of a package (native_c_type in codegen_util.c of spinel):
+   - :any is an sp_RbVal, by value.
+   - :string is a String of the runtime, and string? (nstring) is one or
+     NULL for nil.
+   - A :cstring or :cbinstr return is the buffer of the callee, which the
+     caller copies (the bytes of a :cbinstr are sp_ffi_bin_len).
+   - :int is an sp_int, :float a double and :bool an sp_bool. */
+static const struct {
+  const char *name;
+  LupeFfiType type;
+} lupe_native_types[] = {
+  { "any", LUPE_FT_ANY }, { "string", LUPE_FT_RTSTR }, { "string?", LUPE_FT_NRTSTR },
+  { "nstring", LUPE_FT_NRTSTR }, { "cstring", LUPE_FT_CSTR }, { "cbinstr", LUPE_FT_CBINSTR },
+  { "int", LUPE_FT_SPINT }, { "float", LUPE_FT_DOUBLE }, { "bool", LUPE_FT_SPBOOL },
+  { "ptr", LUPE_FT_PTR }, { "nil", LUPE_FT_VOID }, { "void", LUPE_FT_VOID },
+};
+
+/* sp_RbVal as libffi passes it: the tag, the class id and the union, which
+   holds no member wider than 8 bytes. */
+static ffi_type *lupe_rbval_elements[] = { &ffi_type_sint32, &ffi_type_sint32, &ffi_type_sint64, NULL };
+static ffi_type lupe_rbval_type = { 0, 0, FFI_TYPE_STRUCT, lupe_rbval_elements };
+
 static ffi_type *lupe_ffi_ctype(LupeFfiType t) {
   switch (t) {
+  case LUPE_FT_ANY: return &lupe_rbval_type;
+  case LUPE_FT_SPINT: return &ffi_type_sint64;
+  case LUPE_FT_SPBOOL: return &ffi_type_uint8;
   case LUPE_FT_INT: case LUPE_FT_INT32: case LUPE_FT_BOOL: return &ffi_type_sint32;
   case LUPE_FT_UINT32: return &ffi_type_uint32;
   case LUPE_FT_INT16: return &ffi_type_sint16;
@@ -67,6 +100,7 @@ enum { LUPE_FFI_FUNC, LUPE_FFI_BUFFER, LUPE_FFI_READ, LUPE_FFI_WRITE };
 
 typedef struct LupeFfi {
   int kind;
+  int native;             /* declared by native_func */
   const char *name;       /* the C symbol of a function */
   void *fn;               /* found at the first call */
   int nargs;
@@ -87,6 +121,16 @@ static LupeFfiType lupe_ffi_type(sp_RbVal v) {
     lupe_gap(sp_sprintf("the FFI type :%s", s));
   }
   sp_raise_cls("TypeError", sp_sprintf("%s is not an FFI type", sp_poly_inspect(v)));
+}
+
+static LupeFfiType lupe_native_type(sp_RbVal v) {
+  if (v.tag == SP_TAG_SYM) {
+    const char *s = sp_sym_to_s((sp_sym)v.v.i);
+    for (size_t i = 0; i < sizeof lupe_native_types / sizeof lupe_native_types[0]; i++)
+      if (!strcmp(lupe_native_types[i].name, s)) return lupe_native_types[i].type;
+    lupe_gap(sp_sprintf("the native_func type :%s", s));
+  }
+  sp_raise_cls("TypeError", sp_sprintf("%s is not a native_func type", sp_poly_inspect(v)));
 }
 
 static sp_RbVal lupe_ptr_box(void *p) {
@@ -138,21 +182,29 @@ static int lupe_ffi_width(const char *suffix, int *width, int *sign) {
 /* The declarations of a module body. Answers 1 and sets *out when it
    handles the call. */
 static int lupe_ffi_class(LupeClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
-  if (strncmp(name, "ffi_", 4) && !LUPE_IS("native_func")) return 0;
+  if (strncmp(name, "ffi_", 4) && strncmp(name, "native_", 7)) return 0;
   *out = sp_box_nil();
   if (LUPE_IS("ffi_lib")) {
     for (int i = 0; i < argc; i++) lupe_ffi_open(sp_poly_recv_s(argv[i], name));
     return 1;
   }
-  if (LUPE_IS("ffi_cflags")) return 1;
+  /* what the build of spinel reads: the flags of the C compiler, and the
+     objects of a package, which the Makefile links into Lupe */
+  if (LUPE_IS("ffi_cflags") || LUPE_IS("native_lib") || LUPE_IS("native_obj") || LUPE_IS("native_obj_reflect"))
+    return 1;
   if (LUPE_IS("ffi_const") && argc == 2 && argv[0].tag == SP_TAG_SYM) {
     lupe_const_set(k, (sp_sym)argv[0].v.i, argv[1]);
     return 1;
   }
-  if (LUPE_IS("ffi_func") && argc >= 3 && argv[0].tag == SP_TAG_SYM && lupe_is_array(argv[1])) {
-    if (argc == 4 && !lupe_is_kwhash(argv[3])) return 0;   /* blocking: has no effect on one worker */
+  /* ffi_func :csym, [types], ret and native_func :name, [types], ret, "csym" */
+  int native = LUPE_IS("native_func");
+  if ((native || LUPE_IS("ffi_func")) && argc >= 3 && argv[0].tag == SP_TAG_SYM && lupe_is_array(argv[1])) {
+    if (native ? argc != 4 || !lupe_is_string(argv[3]) : argc == 4 && !lupe_is_kwhash(argv[3]))
+      return 0;   /* the blocking: of ffi_func has no effect on one worker */
+    LupeFfiType (*type)(sp_RbVal) = native ? lupe_native_type : lupe_ffi_type;
     LupeFfi *x = lupe_ffi_new(LUPE_FFI_FUNC);
-    x->name = sp_sym_to_s((sp_sym)argv[0].v.i);
+    x->native = native;
+    x->name = native ? strdup(sp_poly_recv_s(argv[3], name)) : sp_sym_to_s((sp_sym)argv[0].v.i);
     x->nargs = (int)sp_poly_length(argv[1]);
     x->args = calloc((size_t)x->nargs + 1, sizeof *x->args);
     x->atypes = calloc((size_t)x->nargs + 1, sizeof *x->atypes);
@@ -160,13 +212,13 @@ static int lupe_ffi_class(LupeClass *k, const char *name, int argc, sp_RbVal *ar
       sp_RbVal t = sp_poly_arr_get(argv[1], i);
       if (t.tag == SP_TAG_SYM && !strcmp(sp_sym_to_s((sp_sym)t.v.i), "..."))
         lupe_gap("a variadic FFI function");
-      x->args[i] = lupe_ffi_type(t);
+      x->args[i] = type(t);
       x->atypes[i] = lupe_ffi_ctype(x->args[i]);
     }
-    x->ret = lupe_ffi_type(argv[2]);
+    x->ret = type(argv[2]);
     if (ffi_prep_cif(&x->cif, FFI_DEFAULT_ABI, (unsigned)x->nargs, lupe_ffi_ctype(x->ret), x->atypes) != FFI_OK)
-      sp_raise_cls("ArgumentError", sp_sprintf("ffi_func :%s: no call interface for its types", x->name));
-    lupe_ffi_define(k, x->name, x);
+      sp_raise_cls("ArgumentError", sp_sprintf("%s :%s: no call interface for its types", name, x->name));
+    lupe_ffi_define(k, sp_sym_to_s((sp_sym)argv[0].v.i), x);
     *out = argv[0];
     return 1;
   }
@@ -188,7 +240,11 @@ static int lupe_ffi_class(LupeClass *k, const char *name, int argc, sp_RbVal *ar
     *out = argv[0];
     return 1;
   }
-  if (LUPE_IS("ffi_struct") || LUPE_IS("ffi_callback") || LUPE_IS("ffi_source") || LUPE_IS("native_func"))
+  /* gaps: ffi_struct and its kin, and the native classes of a package
+     (StringIO, StringScanner, ...) */
+  if (LUPE_IS("ffi_struct") || LUPE_IS("ffi_callback") || LUPE_IS("ffi_source") || LUPE_IS("native_struct") ||
+      LUPE_IS("native_new") || LUPE_IS("native_method") || LUPE_IS("native_share") ||
+      LUPE_IS("native_subclass") || LUPE_IS("native_type"))
     lupe_gap(sp_sprintf("%s", name));
   return 0;
 }
@@ -218,7 +274,17 @@ typedef union {
   float f;
   double d;
   const void *p;
+  bool b;
+  sp_RbVal v;
 } LupeFfiSlot;
+
+/* The String that a :string argument of native_func passes. */
+static const char *lupe_native_str(sp_RbVal v) {
+  if (!lupe_is_string(v))
+    sp_raise_cls("TypeError", sp_sprintf("no implicit conversion of %s into String",
+                                         v.tag == SP_TAG_NIL ? "nil" : sp_poly_class_name(v)));
+  return sp_poly_recv_s(v, "native_func");
+}
 
 static void lupe_ffi_arg(LupeFfiType t, sp_RbVal v, LupeFfiSlot *s, void **heap) {
   switch (t) {
@@ -242,6 +308,11 @@ static void lupe_ffi_arg(LupeFfiType t, sp_RbVal v, LupeFfiSlot *s, void **heap)
     s->p = sp_poly_recv_s(v, "ffi");
     break;
   case LUPE_FT_PTR: s->p = lupe_ptr_arg(v); break;
+  case LUPE_FT_ANY: s->v = v; break;
+  case LUPE_FT_RTSTR: s->p = lupe_native_str(v); break;
+  case LUPE_FT_NRTSTR: s->p = v.tag == SP_TAG_NIL ? NULL : lupe_native_str(v); break;
+  case LUPE_FT_SPINT: s->i64 = lupe_ffi_int(v); break;
+  case LUPE_FT_SPBOOL: s->b = sp_poly_truthy(v); break;
   case LUPE_FT_INT_ARRAY: case LUPE_FT_FLOAT_ARRAY: {
     if (!lupe_is_array(v)) sp_raise_cls("TypeError", sp_sprintf("no implicit conversion of %s into Array",
                                                                 sp_poly_class_name(v)));
@@ -288,11 +359,31 @@ static sp_RbVal lupe_ffi_ret(LupeFfiType t, const void *r) {
     return s ? lupe_new_string((const uint8_t *)s, (size_t)sp_ffi_bin_len) : sp_box_nil();
   }
   case LUPE_FT_PTR: return lupe_ptr_box(*(void *const *)r);
+  case LUPE_FT_ANY: return *(const sp_RbVal *)r;
+  case LUPE_FT_SPINT: return sp_box_int((sp_int)w);
+  case LUPE_FT_SPBOOL: return sp_box_bool((uint8_t)w != 0);
+  /* a String of the runtime, which the callee made */
+  case LUPE_FT_RTSTR: case LUPE_FT_NRTSTR: return sp_box_str_new(*(const char *const *)r);
+  case LUPE_FT_CSTR: return sp_box_str_new(sp_str_dup_external(*(const char *const *)r));
+  case LUPE_FT_CBINSTR: {
+    const char *s = *(const char *const *)r;
+    return sp_box_str_new(sp_str_as_binary(sp_str_from_bytes(s, (size_t)(sp_ffi_bin_len < 0 ? 0 : sp_ffi_bin_len))));
+  }
   default: return sp_box_nil();
   }
 }
 
 static sp_RbVal lupe_ffi_call(LupeFfi *x, int argc, sp_RbVal *argv) {
+  /* AOT code passes the declared arguments of a native_func and drops the
+     rest, but for JSON.parse(s, symbolize_names: true) (codegen_call_class.c) */
+  int symbolize = 0;
+  if (x->native && argc > x->nargs) {
+    if (!strcmp(x->name, "sp_json_parse") && argc == 2 && lupe_is_kwhash(argv[1])) {
+      sp_RbVal key = sp_box_sym(sp_sym_intern("symbolize_names"));
+      symbolize = sp_poly_truthy(lupe_send(argv[1], "[]", 1, &key));
+    }
+    argc = x->nargs;
+  }
   if (argc != x->nargs)
     sp_raise_cls("ArgumentError", sp_sprintf("wrong number of arguments (given %d, expected %d)", argc, x->nargs));
   if (!x->fn) {
@@ -307,11 +398,12 @@ static sp_RbVal lupe_ffi_call(LupeFfi *x, int argc, sp_RbVal *argv) {
     lupe_ffi_arg(x->args[i], argv[i], &slots[i], &heap[i]);
     values[i] = &slots[i];
   }
-  union { ffi_arg w; float f; double d; void *p; } r;
+  union { ffi_arg w; float f; double d; void *p; sp_RbVal v; } r;
   sp_ffi_bin_len = 0;
   ffi_call(&x->cif, FFI_FN(x->fn), &r, values);
   for (int i = 0; i < x->nargs; i++) free(heap[i]);
-  return lupe_ffi_ret(x->ret, &r);
+  sp_RbVal v = lupe_ffi_ret(x->ret, &r);
+  return symbolize ? sp_json_symbolize(v) : v;
 }
 
 /* Module.name(buf) of ffi_read_*, and Module.name(buf, v) of ffi_write_*. */

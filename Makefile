@@ -31,8 +31,12 @@ ifeq ($(FFI),1)
 # -rdynamic: an ffi_func with no ffi_lib can name a function of the runtime
 # (sp_net_shell_capture), which dlsym finds only in the dynamic symbols
 FFI_LIBS = -lffi -ldl -rdynamic
+# the objects of the packages and the runtime functions that their
+# native_func bindings name (tools/native_link.rb)
+NATIVE_FLAGS = $(BUILD)/native.flags
 else
 FFI_LIBS =
+NATIVE_FLAGS =
 endif
 CFLAGS = -O2 -g -std=gnu11 -ffp-contract=off -DSP_INT_OVERFLOW_MODE_$(INT_OVERFLOW) $(RT_CFLAGS) \
          -DLUPE_PACKAGES_DIR='"$(SPINEL)/packages"' -DLUPE_FFI=$(FFI) \
@@ -61,8 +65,13 @@ $(BUILD)/off.flags: $(BUILD)/bop_gen_out.c tools/bop_report.rb
 
 # spinel.rev records the spinel commit that the binary was built from. The
 # oracle compares it with the spinel tree it tests.
-$(BUILD)/lupe: src/*.c src/*.h $(BUILD)/bop_gen_out.c $(BUILD)/off.flags
-	$(CC) $(CFLAGS) $$(cat $(BUILD)/off.flags) -o $@ src/main.c $(LIBS)
+$(BUILD)/native.flags: tools/native_link.rb $(wildcard $(SPINEL)/packages/*/*.rb)
+	mkdir -p $(BUILD)
+	ruby tools/native_link.rb $(SPINEL) $(THREADS) $(FFI) > $@
+
+$(BUILD)/lupe: src/*.c src/*.h $(BUILD)/bop_gen_out.c $(BUILD)/off.flags $(NATIVE_FLAGS)
+	$(CC) $(CFLAGS) $$(cat $(BUILD)/off.flags) -o $@ src/main.c $(if $(NATIVE_FLAGS),$$(cat $(NATIVE_FLAGS))) \
+	  $(LIBS)
 	git -C $(SPINEL) rev-parse HEAD > $(BUILD)/spinel.rev
 	echo $(INT_OVERFLOW) > $(BUILD)/int_overflow
 

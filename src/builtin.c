@@ -188,6 +188,7 @@ static int lupe_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_
     }
     if (!strcmp(name, "==")) { *out = sp_poly_eq_value(r, a, 0); return 1; }
     if (!strcmp(name, "!=")) { *out = sp_poly_eq_value(r, a, 1); return 1; }
+    if (!strcmp(name, "eql?")) { *out = sp_box_bool(sp_poly_eql(r, a)); return 1; }
     if (!strcmp(name, "<") || !strcmp(name, "<=") || !strcmp(name, ">") || !strcmp(name, ">=")) {
       *out = sp_poly_relop_v(name, r, a);
       return 1;
@@ -296,6 +297,15 @@ static int lupe_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal
   if (!blk && lupe_range_core(recv, name, argc, argv, out)) return 1;
   if (lupe_hash_core(recv, name, argc, argv, blk, out)) return 1;
   if (!blk && lupe_array_hash(recv, name, argc, out)) return 1;
+  /* Array#to_a: the Array itself (spinel types it away, with no wrapper) */
+  if (!blk && argc == 0 && lupe_is_array(recv) && !strcmp(name, "to_a")) { *out = recv; return 1; }
+  /* Array#join: to_s of each element, and a nested Array joined in turn */
+  if (!blk && argc <= 1 && lupe_is_array(recv) && !strcmp(name, "join")) {
+    const char *sep = argc && argv[0].tag != SP_TAG_NIL ? sp_poly_arg_str_chk(argv[0]) : "";
+    SP_GC_ROOT_STR(sep);
+    *out = sp_box_str_new(sp_poly_join(recv, sep));
+    return 1;
+  }
   if (lupe_exc_core(recv, name, argc, argv, out)) return 1;
   if (lupe_re_call(recv, name, argc, argv, blk, out)) return 1;
   if (lupe_fiber_core(recv, name, argc, argv, blk, out)) return 1;

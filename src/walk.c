@@ -1046,6 +1046,7 @@ static sp_RbVal lupe_class_def(LupeFrame *f, const pm_node_t *path, const pm_nod
   const char *cname = sp_sym_to_s(name);
   LupeClass *k = NULL;
   LupeConst *own = lupe_const_own(scope, name);
+  if (!own && scope == L.object && lupe_autoload(name)) own = lupe_const_own(scope, name);
   if (own) {
     k = lupe_class_value(own->value);
     if (!k) sp_raise_cls("TypeError", sp_sprintf("%s is not a %s", cname, is_module ? "module" : "class"));
@@ -1503,6 +1504,14 @@ static sp_RbVal lupe_eval(LupeFrame *f, const pm_node_t *n) {
     const pm_def_node_t *d = (const pm_def_node_t *)n;
     lupe_define(f, d);
     return sp_box_sym(lupe_sym(d->name));
+  }
+  case PM_ALIAS_METHOD_NODE: {
+    const pm_alias_method_node_t *a = (const pm_alias_method_node_t *)n;
+    if (!PM_NODE_TYPE_P(a->new_name, PM_SYMBOL_NODE) || !PM_NODE_TYPE_P(a->old_name, PM_SYMBOL_NODE))
+      lupe_unsupported(n, "alias of an interpolated name");
+    sp_RbVal to = lupe_eval(f, a->new_name), from = lupe_eval(f, a->old_name);
+    lupe_alias(f->cref, f->singleton_defs == 1, (sp_sym)to.v.i, (sp_sym)from.v.i);
+    return sp_box_nil();
   }
   case PM_CALL_NODE:
     return lupe_call(f, (const pm_call_node_t *)n);

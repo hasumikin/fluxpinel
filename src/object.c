@@ -48,6 +48,17 @@ static void lupe_define_method(LupeClass *c, LupeMethod *m, int singleton) {
   }
 }
 
+/* alias and alias_method: a copy of the method from under the name to. A
+   builtin method has no entry to copy, which is a gap. */
+static void lupe_alias(LupeClass *k, int singleton, sp_sym to, sp_sym from) {
+  LupeMethod *m = singleton ? lupe_find_smethod(k, from) : lupe_find_method(k, from);
+  if (!m) lupe_gap(sp_sprintf("an alias of the builtin method %s", sp_sym_to_s(from)));
+  LupeMethod *c = malloc(sizeof *c);
+  *c = *m;
+  c->name = to;
+  lupe_define_method(k, c, singleton);
+}
+
 /* ---- classes ---- */
 
 static void lupe_push_class(LupeClass ***arr, int *n, int *cap, LupeClass *c) {
@@ -132,7 +143,7 @@ static const struct {
 /* Core classes of CRuby that spinel's class table does not name. A class
    body for one of them reopens the builtin in CRuby; Lupe cannot. */
 static int lupe_unknown_builtin(const char *name) {
-  static const char *const names[] = { "Random", "Set", "Encoding", "Method", "UnboundMethod", "Binding",
+  static const char *const names[] = { "Random", "Encoding", "Method", "UnboundMethod", "Binding",
                                        "Mutex", "Queue", "SizedQueue", "ConditionVariable", "ObjectSpace",
                                        "GC", "Process", "Marshal", "Warning", "RubyVM", NULL };
   for (int i = 0; names[i]; i++)
@@ -330,6 +341,7 @@ static int lupe_const_scoped(const LupeClass *scope, sp_sym name, sp_RbVal *out)
     if (k) { *out = k->value; return 1; }
     LupeClass *b = lupe_builtin(sp_sym_to_s(name));
     if (b) { *out = lupe_class_box(b); return 1; }
+    if (lupe_autoload(name)) return lupe_const_scoped(scope, name, out);
   }
   /* a builtin class nested in a builtin one: Thread::Queue */
   if (scope->cls_id < 0 && scope != L.object) {
@@ -777,6 +789,17 @@ static int lupe_class_core(LupeFrame *f, sp_RbVal r, const char *name, int argc,
     sp_PolyArray *a = sp_PolyArray_new();
     for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
     *out = sp_box_poly_array(a);
+    return 1;
+  }
+  if (!strcmp(name, "alias_method") && argc == 2) {
+    sp_sym s[2];
+    for (int i = 0; i < 2; i++) {
+      if (argv[i].tag != SP_TAG_SYM && !lupe_is_string(argv[i]))
+        sp_raise_cls("TypeError", sp_sprintf("%s is not a symbol nor a string", sp_poly_inspect(argv[i])));
+      s[i] = argv[i].tag == SP_TAG_SYM ? (sp_sym)argv[i].v.i : sp_sym_intern(sp_poly_recv_s(argv[i], name));
+    }
+    lupe_alias(k, f && f->singleton_defs == 1, s[0], s[1]);
+    *out = sp_box_sym(s[0]);
     return 1;
   }
   if (!strcmp(name, "include") || !strcmp(name, "extend")) {

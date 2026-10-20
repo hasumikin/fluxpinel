@@ -142,6 +142,33 @@ static const char *lupe_path_clean(const char *path) {
   return out;
 }
 
+/* Runs the file at real (an absolute path from realpath, which the source
+   keeps) once, with the text of the file extra after it when extra is not
+   NULL. Answers 0, and runs nothing, for a file that is loaded already. */
+static int lupe_load_once(char *real, const char *extra) {
+  for (int i = 0; i < L.nsources; i++)
+    if (!strcmp(L.sources[i]->real, real)) {
+      free(real);
+      return 0;
+    }
+  size_t len, xlen = 0;
+  char *buf = lupe_read_file(real, &len);
+  if (!buf) sp_raise_cls("LoadError", sp_sprintf("cannot load such file -- %s", real));
+  char *xbuf = extra ? lupe_read_file(extra, &xlen) : NULL;
+  if (xbuf) {
+    buf = realloc(buf, len + 1 + xlen + 1);
+    buf[len++] = '\n';
+    memcpy(buf + len, xbuf, xlen + 1);
+    len += xlen;
+    free(xbuf);
+  }
+  LupeSource *s;
+  const char *err = lupe_parse(real, real, buf, len, &s);
+  if (err) sp_raise_cls("SyntaxError", err);
+  lupe_run_source(s);
+  return 1;
+}
+
 /* require_relative "x", and require "./x" or require "/x". Answers true
    after it runs the file, and false for a file that is loaded already. */
 static sp_RbVal lupe_require(const pm_node_t *n, const char *arg, int rel) {
@@ -173,19 +200,59 @@ static sp_RbVal lupe_require(const pm_node_t *n, const char *arg, int rel) {
     if (sl > 3 && !strcmp(shown + sl - 3, ".rb")) shown = sp_sprintf("%.*s", (int)(sl - 3), shown);
     sp_raise_cls("LoadError", sp_sprintf("cannot load such file -- %s", shown));
   }
-  for (int i = 0; i < L.nsources; i++)
-    if (!strcmp(L.sources[i]->real, real)) {
-      free(real);
-      return sp_box_bool(0);
-    }
-  size_t len;
-  char *buf = lupe_read_file(real, &len);
-  if (!buf) sp_raise_cls("LoadError", sp_sprintf("cannot load such file -- %s", real));
-  LupeSource *s;
-  const char *err = lupe_parse(real, real, buf, len, &s);
-  if (err) sp_raise_cls("SyntaxError", err);
-  lupe_run_source(s);
+  if (!lupe_load_once(real, NULL)) return sp_box_bool(0);
   return L.ctl == LUPE_CTL_NONE ? sp_box_bool(1) : sp_box_nil();
+}
+
+static int lupe_lib_in(const char *name, const char *const *list) {
+  for (int i = 0; list[i]; i++)
+    if (!strcmp(list[i], name)) return 1;
+  return 0;
+}
+
+/* require "name" of a library, as spinel_parse.c resolves it:
+   - packages/<first>/<name>.rb, the package of the first segment of the
+     name, runs once, with <name>.share.rb after it when that exists.
+   - A feature of the runtime (socket, ostruct, ...) and a core capability
+     (thread, fiber, ...) load nothing, and the require answers false.
+   - Any other name is a LoadError. (spinel refuses it at compile time.)
+   A require of set answers false, as Set is loaded before the program in
+   CRuby. */
+static sp_RbVal lupe_require_lib(const char *name) {
+  static const char *const builtin[] = { "io/console", "monitor", "time", "socket", "ostruct",
+                                         "thread", "enumerator", "fiber", "ffi", "rational", "complex",
+                                         "io/wait", "rbconfig", "rubygems", NULL };
+  static const char *const preloaded[] = { "set", NULL };
+  const char *path = NULL, *extra = NULL;
+  SP_GC_ROOT_STR(path);
+  SP_GC_ROOT_STR(extra);
+  size_t nl = strlen(name), first = strcspn(name, "/");
+  if (nl > 3 && !strcmp(name + nl - 3, ".rb")) nl -= 3;
+  if (first > nl) first = nl;
+  /* the ffi package and fiddle over it need libffi, as in spinel */
+  int pkg = LUPE_FFI || !((first == 3 && !strncmp(name, "ffi", 3)) || (first == 6 && !strncmp(name, "fiddle", 6)));
+  path = sp_sprintf("%s/%.*s/%.*s", LUPE_PACKAGES_DIR, (int)first, name, (int)nl, name);
+  char *real = pkg ? realpath(sp_sprintf("%s.rb", path), NULL) : NULL;
+  if (real) {
+    struct stat st;
+    extra = sp_sprintf("%s.share.rb", path);
+    int ran = lupe_load_once(real, stat(extra, &st) ? NULL : extra);
+    if (!ran || lupe_lib_in(name, preloaded)) return sp_box_bool(0);
+    return L.ctl == LUPE_CTL_NONE ? sp_box_bool(1) : sp_box_nil();
+  }
+  if (lupe_lib_in(name, builtin)) return sp_box_bool(0);
+  sp_raise_cls("LoadError", sp_sprintf("cannot load such file -- %s", name));
+}
+
+/* A constant that spinel loads the package of when a program names it,
+   with no require (sp_require_preloaded of spinel_parse.c): Set. Answers 1
+   when it loaded the package, so that the caller looks again. */
+static int lupe_autoload(sp_sym name) {
+  static int set_done;
+  if (set_done || strcmp(sp_sym_to_s(name), "Set")) return 0;
+  set_done = 1;
+  lupe_require_lib("set");
+  return 1;
 }
 
 /* require_relative, require of a path, and __dir__: the calls that answer
@@ -207,19 +274,10 @@ static int lupe_load_call(const pm_node_t *n, sp_RbVal self, const char *name, i
     sp_raise_cls("TypeError", sp_sprintf("no implicit conversion of %s into String",
                                          argv[0].tag == SP_TAG_NIL ? "nil" : sp_poly_class_name(argv[0])));
   const char *arg = sp_poly_recv_s(argv[0], name);
-  /* A library name. spinel resolves a literal one at compile time, to a
-     package or a feature of its runtime (socket, ostruct, ...): a gap of
-     Lupe for now. A name computed at run time that names no package is a
-     LoadError, as in AOT code. */
-  if (!rel && !(arg[0] == '/' || !strncmp(arg, "./", 2) || !strncmp(arg, "../", 3))) {
-    const pm_arguments_node_t *args = ((const pm_call_node_t *)n)->arguments;
-    if (PM_NODE_TYPE_P(args->arguments.nodes[0], PM_STRING_NODE)) return 0;
-    size_t stem = strcspn(arg, "/.");
-    struct stat st;
-    if (!stat(sp_sprintf("%s/%.*s", LUPE_PACKAGES_DIR, (int)stem, arg), &st) && S_ISDIR(st.st_mode)) return 0;
-    sp_raise_cls("LoadError", sp_sprintf("cannot load such file -- %s", arg));
-  }
-  *out = lupe_require(n, arg, rel);
+  if (!rel && !(arg[0] == '/' || !strncmp(arg, "./", 2) || !strncmp(arg, "../", 3)))
+    *out = lupe_require_lib(arg);
+  else
+    *out = lupe_require(n, arg, rel);
   return 1;
 }
 
