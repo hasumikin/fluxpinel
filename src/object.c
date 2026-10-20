@@ -728,6 +728,8 @@ static int lupe_class_core(LupeFrame *f, sp_RbVal r, const char *name, int argc,
   if (!k) return 0;
   /* Class.new, Module.new, Struct.new, Data.define and a record class */
   if (lupe_struct_class(f, k, name, argc, argv, blk, out)) return 1;
+  /* ffi_func and its kin in a module body */
+  if (!blk && lupe_ffi_class(k, name, argc, argv, out)) return 1;
   if (!strcmp(name, "new") || !strcmp(name, "allocate")) {
     if (k->is_module) return 0;
     /* an exception is a runtime sp_Exception, for a builtin class too */

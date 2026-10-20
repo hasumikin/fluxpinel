@@ -12,7 +12,7 @@
 struct LupeClass;
 
 /* What a method does when it is called. */
-typedef enum { LUPE_M_DEF, LUPE_M_READER, LUPE_M_WRITER } LupeMethodKind;
+typedef enum { LUPE_M_DEF, LUPE_M_READER, LUPE_M_WRITER, LUPE_M_FFI } LupeMethodKind;
 
 typedef struct {
   sp_sym name;
@@ -21,6 +21,7 @@ typedef struct {
   sp_sym ivar;                /* LUPE_M_READER / LUPE_M_WRITER: "@name" */
   struct LupeClass *owner;    /* the class or module that defines it */
   int matches;                /* whether the body can set $~: 0 not known yet, 1 no, 2 yes */
+  struct LupeFfi *ffi;        /* LUPE_M_FFI: what ffi_func and its kin declared */
 } LupeMethod;
 
 typedef struct {
@@ -240,6 +241,10 @@ static int lupe_fiber_core(sp_RbVal r, const char *name, int argc, sp_RbVal *arg
                            sp_RbVal *out);
 static int lupe_fiber_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static void lupe_sched_end(void);
+
+/* ffi.c */
+static int lupe_ffi_class(LupeClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static sp_RbVal lupe_ffi_invoke(const struct LupeFfi *x, int argc, sp_RbVal *argv);
 
 /* load.c */
 static int lupe_load_call(const pm_node_t *n, sp_RbVal self, const char *name, int argc, sp_RbVal *argv,

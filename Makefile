@@ -24,10 +24,20 @@ RT_ARCHIVE = $(SPINEL)/lib/libspinel_rt.a
 RT_CFLAGS =
 RT_LIBS =
 endif
+# 1: the FFI of spinel (ffi_func and its kin) at run time, through libffi.
+# 0: no libffi, and an FFI declaration is a gap.
+FFI ?= 1
+ifeq ($(FFI),1)
+# -rdynamic: an ffi_func with no ffi_lib can name a function of the runtime
+# (sp_net_shell_capture), which dlsym finds only in the dynamic symbols
+FFI_LIBS = -lffi -ldl -rdynamic
+else
+FFI_LIBS =
+endif
 CFLAGS = -O2 -g -std=gnu11 -ffp-contract=off -DSP_INT_OVERFLOW_MODE_$(INT_OVERFLOW) $(RT_CFLAGS) \
-         -DLUPE_PACKAGES_DIR='"$(SPINEL)/packages"' \
+         -DLUPE_PACKAGES_DIR='"$(SPINEL)/packages"' -DLUPE_FFI=$(FFI) \
          -Isrc -I$(BUILD) -I$(SPINEL)/lib -I$(SPINEL)/lib/regexp -I$(SPINEL)/vendor/prism/include
-LIBS = $(RT_ARCHIVE) $(SPINEL)/build/libprism.a -lm -lcrypt $(RT_LIBS)
+LIBS = $(RT_ARCHIVE) $(SPINEL)/build/libprism.a -lm -lcrypt $(RT_LIBS) $(FFI_LIBS)
 
 all: $(BUILD)/lupe
 

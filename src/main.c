@@ -19,6 +19,7 @@
 #include "struct.c"
 #include "fiber.c"
 #include "load.c"
+#include "ffi.c"
 
 static void lupe_body(void) {
   SP_GC_SAVE();

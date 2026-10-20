@@ -3,7 +3,8 @@
 # Usage: ruby test/run.rb LUPE DIR...
 #
 # A test passes when stdout and the exit status are the same. stderr is not
-# compared: the two report an uncaught exception in different words.
+# compared: the two report an uncaught exception in different words. A
+# test with a FILE.expected compares with it instead of CRuby (status 0).
 
 require "open3"
 
@@ -17,7 +18,9 @@ end
 
 files = dirs.flat_map { |d| Dir.glob(File.join(d, "*.rb")).sort }
 failed = files.reject do |f|
-  want = run("ruby", f)
+  # A program in the dialect of spinel (ffi_func) has no CRuby answer: its
+  # answer is FILE.expected, the output of the program that spinel compiles.
+  want = File.exist?("#{f}.expected") ? [File.read("#{f}.expected"), 0] : run("ruby", f)
   got = run(lupe, f)
   ok = want == got
   puts "#{ok ? 'ok' : 'NG'} #{f}"

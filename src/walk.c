@@ -397,6 +397,7 @@ static sp_RbVal lupe_invoke_b(const LupeMethod *m, sp_RbVal self, int argc, sp_R
     lupe_ivar_set(self, m->ivar, argv[0]);
     return argv[0];
   }
+  if (m->kind == LUPE_M_FFI) return lupe_ffi_invoke(m->ffi, argc, argv);
   SP_GC_SAVE();
   sp_RbVal me = self;
   SP_GC_ROOT_RBVAL(me);
