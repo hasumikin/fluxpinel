@@ -158,13 +158,24 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   (`LupeFrameStack`). Each fiber that runs walker code has its own stack
   (section 3.3.5). A block keeps the stack, the serial and the depth of
   its home frame. A frame pops its entry when its C scope ends (a
-  `cleanup` attribute). A call of a block whose home frame has returned
-  stops as a gap. The check reads only the heap stack, never the stack
-  memory of a frame that ended. A raise skips the cleanup with `longjmp`,
-  so a rescue cuts the heap stack back to its own depth. Thus a Proc works
-  while its scope runs, but `define_method` and a Proc that a method
-  returns do not. A heap frame for a scope that a Proc outlives is a
-  later step.
+  `cleanup` attribute). The check reads only the heap stack, never the
+  stack memory of a frame that ended. A raise skips the cleanup with
+  `longjmp`, so a rescue cuts the heap stack back to its own depth.
+- **Heap frames.** A Proc can outlive the scope of its block, and every
+  Proc comes from `lupe_block_proc`. There the home frame moves to the
+  heap (`LupeEnv`), as an env of mruby does:
+  - The env takes a copy of the frame and of its slots.
+  - The frame on the C stack runs on with the slots of the env. Thus the
+    scope and the Proc see one set of variables.
+  - The parent frames move too, since a block reads their locals.
+  - The block of the frame moves as a Proc, so `yield` in the Proc works
+    after the method returns.
+  - The collector is generational, so a store into a slot of an env takes
+    the write barrier (`lupe_local`).
+- **Dead homes.** A Proc runs after its scope ends. A `return` or a
+  `break` in it then raises LocalJumpError, as in CRuby. A block literal
+  that is not a Proc never outlives its call. A call of one whose home
+  frame on the C stack has ended is still a gap, as a safety net.
 - **Builtins with a block.** No runtime function calls a block, because
   codegen emits each builtin with a block as an inline C loop. `src/iter.c`
   writes these methods on the poly API: the Enumerable methods of Array
@@ -286,9 +297,9 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   runtime (`sp_enum_walker_boxed`). Thus `find` on an endless generator
   stops at the hit. `loop` ends at a StopIteration and answers its
   result.
-- **Limit.** A block that runs on a fiber still reads its home frame on
-  the stack of its creator. A Thread or a generator made in a block or a
-  method that returns before it runs stops as a gap: for example
+- **Home frames.** A fiber runs a Proc of its block, so the home frame is
+  on the heap (section 3.3.1). A Thread or a generator made in a block or
+  a method that returns before it runs works: for example
   `3.times.map { Thread.new { } }`.
 
 ### 3.3.6 Source files
@@ -789,9 +800,6 @@ These facts apply to spinel commit `ffac8340d`.
 
 - The smoke test in `poc/m1` checks 6 wrappers. How does Lupe check the
   other wrappers? The oracle (M3) is one answer.
-- How does a Proc outlive its scope? Candidates are a heap frame for each
-  scope that holds a block literal, and a copy of the frame when a Proc
-  escapes.
 - Which AOT build of a test program serves as the oracle reference: one
   build per program, or one shared build?
 - How much of the 1.4 MB text does a walker keep after the linker drops
@@ -847,10 +855,10 @@ These facts apply to spinel commit `ffac8340d`.
      `.expected` is the output of AOT code.
    - `require` of a library name, the packages of spinel and their
      `native_func` bindings (sections 3.3.6 and 3.3.7): `test/m3`.
-   - Next, toward the Spinel output of Roundhouse (a Rails app lowered to
-     Ruby that spinel compiles):
-     - A heap frame for a scope that a block outlives.
-     - The tests of a Roundhouse output (`spin test`) under Lupe and AOT.
+   - Heap frames for a scope that a Proc outlives (section 3.3.1):
+     `test/m3`.
+   - Next, the tests of a Roundhouse output (`spin test`) under Lupe and
+     AOT. Roundhouse lowers a Rails app to Ruby that spinel compiles.
    - Then the largest blockers of the oracle report.
 6. **M4: embedded REPL.** Link Lupe into an AOT binary on a host. Then move
    to a microcontroller board.

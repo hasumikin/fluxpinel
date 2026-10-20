@@ -136,7 +136,20 @@ typedef struct LupeFrame {
   int lambda;                 /* a lambda frame: return leaves it */
   int depth;                  /* the index of this frame in its frame stack */
   LupeFrameStack *fs;         /* the frame stack of the fiber that runs it */
+  int heap;                   /* the frame of a LupeEnv */
+  struct LupeEnv *env;        /* a frame on the C stack: its heap copy, once a
+                                 Proc keeps it; a GC root */
 } LupeFrame;
+
+/* A frame that a Proc keeps, on the heap, since the Proc can outlive the
+   scope. The frame on the C stack moves its slots here when the first Proc
+   takes it, and runs on with them, so both see one set of variables. */
+typedef struct LupeEnv {
+  LupeFrame frame;            /* first: a pointer to the frame is one to the env */
+  LupeFrame *stack;           /* the frame on the C stack; valid while that is live */
+  size_t nslots;
+  sp_RbVal slots[];           /* the locals, `it` and the two anonymous slots */
+} LupeEnv;
 
 /* A pending jump out of the statement under evaluation. A break in a
    block becomes LUPE_CTL_BREAK_BLOCK at the block boundary; it ends the

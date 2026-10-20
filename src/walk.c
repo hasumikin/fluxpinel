@@ -43,11 +43,21 @@ static sp_sym lupe_sym(pm_constant_id_t id) {
   return sp_sym_intern_n((const char *)c->start, c->length);
 }
 
+/* The write barrier of a frame whose slots are on the heap (LupeEnv): the
+   collector is generational, and an env that is old already must join the
+   remembered set before a slot of it takes a young value. */
+static void lupe_frame_wb(const LupeFrame *f) {
+  if (f->heap) sp_gc_wb((void *)f);
+  else if (f->env) sp_gc_wb(f->env);
+}
+
 /* The slot of a local variable. depth counts the block scopes between the
-   reference and the scope that owns the variable. */
+   reference and the scope that owns the variable. The caller can store
+   into the slot, so the frame takes the write barrier. */
 static sp_RbVal *lupe_local(LupeFrame *f, const pm_node_t *n, pm_constant_id_t name, uint32_t depth) {
   for (uint32_t d = 0; d < depth; d++)
     if (!(f = f->parent)) lupe_unsupported(n, "local variable of an outer scope");
+  lupe_frame_wb(f);
   for (size_t i = 0; i < f->names->size; i++)
     if (f->names->ids[i] == name) return &f->locals[i];
   lupe_unsupported(n, "local variable with no slot");
@@ -56,7 +66,8 @@ static sp_RbVal *lupe_local(LupeFrame *f, const pm_node_t *n, pm_constant_id_t n
 /* Declares the slots of a frame on the C stack and roots each one, and
    sets the self and the lexical class of the scope. Three slots follow
    the locals: `it`, the anonymous *rest and the anonymous **kwrest. The
-   roots stay until the enclosing SP_GC_SAVE scope ends. */
+   heap copy of the frame (env) is a root too. The roots stay until the
+   enclosing SP_GC_SAVE scope ends. */
 #define LUPE_FRAME(f, namelist, self_, cref_)                                     \
   size_t f##_n = (namelist)->size;                                                \
   sp_RbVal f##_slots[f##_n + 3];                                                  \
@@ -67,7 +78,8 @@ static sp_RbVal *lupe_local(LupeFrame *f, const pm_node_t *n, pm_constant_id_t n
   LupeFrame f __attribute__((cleanup(lupe_frame_exit))) = {                       \
     .locals = f##_slots, .names = (namelist), .self = (self_), .cref = (cref_),   \
     .it = &f##_slots[f##_n], .anon = &f##_slots[f##_n + 1], .serial = ++L.serial, \
-    .depth = lupe_frame_enter(L.serial), .fs = lupe_fs() }
+    .depth = lupe_frame_enter(L.serial), .fs = lupe_fs() };                       \
+  _sp_gc_root_push((void **)&f.env)
 
 /* The frame stacks tell whether the home frame of a block is live. They
    are on the heap, so a check never reads the stack memory of a frame
@@ -140,6 +152,60 @@ static void lupe_frame_exit(LupeFrame *f) {
 
 static int lupe_frame_live(const LupeBlock *b) {
   return b->depth < b->fs->depth && b->fs->serial[b->depth] == b->serial;
+}
+
+/* Whether the frame on the C stack of a heap frame f is live. */
+static int lupe_env_live(const LupeFrame *f) {
+  return f->depth < f->fs->depth && f->fs->serial[f->depth] == f->serial;
+}
+
+static void lupe_env_scan(void *p) {
+  LupeEnv *e = (LupeEnv *)p;
+  for (size_t i = 0; i < e->nslots; i++) sp_mark_rbval(e->slots[i]);
+  sp_mark_rbval(e->frame.self);
+  if (e->frame.parent) sp_gc_mark(e->frame.parent);
+  if (e->frame.block && e->frame.block->proc) sp_gc_mark(e->frame.block->proc);
+}
+
+static sp_RbVal lupe_block_proc(const LupeBlock *b);
+
+/* The heap copy of the frame f, which a Proc keeps (LupeEnv). The first
+   call for a frame on the C stack copies its slots to the heap, and the
+   frame runs on with the heap slots. The parent frames move too, since a
+   block reads their locals, and so does the block of the frame, which
+   yield calls: a block literal of the caller becomes a Proc. */
+static LupeFrame *lupe_frame_heap(LupeFrame *f) {
+  if (f->heap) return f;
+  if (f->env) return &f->env->frame;
+  size_t n = f->names->size + 3;
+  LupeEnv *e = (LupeEnv *)sp_gc_alloc(sizeof *e + sizeof(sp_RbVal) * n, NULL, lupe_env_scan);
+  memcpy(e->slots, f->locals, sizeof(sp_RbVal) * n);
+  e->nslots = n;
+  e->frame = *f;
+  e->frame.locals = e->slots;
+  e->frame.it = &e->slots[n - 3];
+  e->frame.anon = &e->slots[n - 2];
+  e->frame.heap = 1;
+  e->frame.env = NULL;
+  e->frame.parent = NULL;
+  e->frame.block = NULL;
+  e->stack = f;
+  f->env = e;   /* the root of e */
+  f->locals = e->slots;
+  f->it = e->frame.it;
+  f->anon = e->frame.anon;
+  /* each can collect, and e can be old by the store */
+  if (f->parent) {
+    LupeFrame *parent = lupe_frame_heap(f->parent);
+    sp_gc_wb(e);
+    e->frame.parent = parent;
+  }
+  if (f->block) {
+    const LupeBlock *blk = f->block->proc ? f->block : &((LupeProc *)lupe_block_proc(f->block).v.p)->b;
+    sp_gc_wb(e);
+    e->frame.block = blk;
+  }
+  return &e->frame;
 }
 
 /* ---- methods ---- */
@@ -232,14 +298,15 @@ static void lupe_bind_keywords(LupeFrame *f, const pm_parameters_node_t *ps, sp_
     pm_constant_id_t name = req ? ((const pm_required_keyword_parameter_node_t *)p)->name
                                 : ((const pm_optional_keyword_parameter_node_t *)p)->name;
     sp_RbVal key = sp_box_sym(lupe_sym(name));
-    sp_RbVal *slot = lupe_local(f, p, name, 0);
     if (h && sp_PolyPolyHash_has_key(h, key)) {
-      *slot = sp_PolyPolyHash_get(h, key);
+      *lupe_local(f, p, name, 0) = sp_PolyPolyHash_get(h, key);
       sp_PolyArray_push(used, key);
     } else if (req) {
       sp_PolyArray_push(missing, key);
     } else {
-      *slot = lupe_eval(f, ((const pm_optional_keyword_parameter_node_t *)p)->value);
+      /* the default can make a Proc, which moves the slots: look up after */
+      sp_RbVal v = lupe_eval(f, ((const pm_optional_keyword_parameter_node_t *)p)->value);
+      *lupe_local(f, p, name, 0) = v;
     }
   }
   if (missing->len)
@@ -254,10 +321,12 @@ static void lupe_bind_keywords(LupeFrame *f, const pm_parameters_node_t *ps, sp_
   const pm_node_t *kr = ps->keyword_rest;
   if (kr && PM_NODE_TYPE_P(kr, PM_KEYWORD_REST_PARAMETER_NODE)) {
     pm_constant_id_t rn = ((const pm_keyword_rest_parameter_node_t *)kr)->name;
+    lupe_frame_wb(f);   /* a default above can have moved the slots */
     *(rn ? lupe_local(f, kr, rn, 0) : &f->anon[1]) = sp_box_obj(rest, SP_BUILTIN_POLY_POLY_HASH);
     return;
   }
   if (kr && PM_NODE_TYPE_P(kr, PM_FORWARDING_PARAMETER_NODE)) {
+    lupe_frame_wb(f);
     f->anon[1] = sp_box_obj(rest, SP_BUILTIN_POLY_POLY_HASH);
     return;
   }
@@ -300,15 +369,16 @@ static void lupe_bind_list(LupeFrame *f, const pm_parameters_node_t *ps, int arg
   int nfill = argc - npre - npost;
   for (int i = 0; i < nopt; i++) {
     const pm_optional_parameter_node_t *p = (const pm_optional_parameter_node_t *)ps->optionals.nodes[i];
-    sp_RbVal *slot = lupe_local(f, (const pm_node_t *)p, p->name, 0);
-    if (i < nfill) *slot = argv[ai++];
-    else *slot = lupe_eval(f, p->value);
+    /* the default can make a Proc, which moves the slots: look up after */
+    sp_RbVal v = i < nfill ? argv[ai++] : lupe_eval(f, p->value);
+    *lupe_local(f, (const pm_node_t *)p, p->name, 0) = v;
   }
   if (fwd || (ps->rest && PM_NODE_TYPE_P(ps->rest, PM_REST_PARAMETER_NODE))) {
     sp_PolyArray *a = sp_PolyArray_new();
     SP_GC_ROOT(a);
     while (ai < argc - npost) sp_PolyArray_push(a, argv[ai++]);
     pm_constant_id_t rn = ps->rest ? ((const pm_rest_parameter_node_t *)ps->rest)->name : 0;
+    lupe_frame_wb(f);   /* a default above can have moved the slots */
     *(rn ? lupe_local(f, ps->rest, rn, 0) : &f->anon[0]) = sp_box_poly_array(a);
   } else if (ps->rest && !PM_NODE_TYPE_P(ps->rest, PM_IMPLICIT_REST_NODE)) {
     lupe_unsupported(ps->rest, "rest parameter");
@@ -440,8 +510,10 @@ static sp_RbVal lupe_yield_in(const LupeBlock *b, int argc, sp_RbVal *argv, int 
     if (argc < 1) sp_raise_cls("ArgumentError", "no receiver given");
     return lupe_send(argv[0], sp_sym_to_s(b->sym), argc - 1, argv + 1);
   }
+  /* a home on the heap outlives its scope; one on the C stack does not */
   LupeFrame *h = b->home;
-  if (!lupe_frame_live(b)) lupe_gap("a call of a block whose scope has returned");
+  int live = lupe_frame_live(b);
+  if (!live && !h->heap) lupe_gap("a call of a block whose scope has returned");
   SP_GC_SAVE();
   const pm_constant_id_list_t *locals;
   const pm_node_t *params, *body;
@@ -460,7 +532,8 @@ static sp_RbVal lupe_yield_in(const LupeBlock *b, int argc, sp_RbVal *argv, int 
     return L.ctl_val;
   case LUPE_CTL_BREAK:
     if (b->lambda) { L.ctl = LUPE_CTL_NONE; return L.ctl_val; }
-    if (!b->site) {
+    /* the call that a break leaves is in the home scope */
+    if (!b->site || !live) {
       L.ctl = LUPE_CTL_NONE;
       sp_raise_cls("LocalJumpError", "break from proc-closure");
     }
@@ -494,12 +567,22 @@ static int lupe_is_proc(sp_RbVal v) {
   return v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_PROC && v.v.p;
 }
 
-/* A Proc value for a block. A block that a Proc carries answers that Proc. */
+static void lupe_proc_scan(void *p) {
+  const LupeBlock *b = &((LupeProc *)p)->b;
+  if (b->home && b->home->heap) sp_gc_mark(b->home);
+}
+
+/* A Proc value for a block. A block that a Proc carries answers that Proc.
+   The Proc can outlive the scope of the block, so its home frame moves to
+   the heap. */
 static sp_RbVal lupe_block_proc(const LupeBlock *b) {
   if (b->proc) return sp_box_obj(b->proc, SP_BUILTIN_PROC);
-  LupeProc *p = (LupeProc *)sp_gc_alloc(sizeof *p, NULL, NULL);
+  /* the env of a home on the C stack stays a root of that frame here */
+  LupeFrame *home = b->node && lupe_frame_live(b) ? lupe_frame_heap(b->home) : b->home;
+  LupeProc *p = (LupeProc *)sp_gc_alloc(sizeof *p, NULL, lupe_proc_scan);
   p->p.lambda_p = b->lambda ? TRUE : FALSE;
   p->b = *b;
+  p->b.home = home;
   p->b.proc = p;
   return sp_box_obj(p, SP_BUILTIN_PROC);
 }
@@ -914,6 +997,15 @@ static sp_RbVal lupe_jump(LupeFrame *f, LupeCtl kind, const pm_arguments_node_t 
     /* a return in a block leaves the method that holds it, or the lambda */
     LupeFrame *t = f;
     while (t->parent && !t->lambda) t = t->parent;
+    /* a heap frame returns from its frame on the C stack, which a Proc can
+       outlive (CRuby: LocalJumpError) */
+    if (t->heap) {
+      if (!lupe_env_live(t)) {
+        L.ctl = LUPE_CTL_NONE;
+        sp_raise_cls("LocalJumpError", "unexpected return");
+      }
+      t = ((LupeEnv *)t)->stack;
+    }
     L.ctl_target = t;
   }
   return sp_box_nil();
@@ -1449,12 +1541,12 @@ static sp_RbVal lupe_eval(LupeFrame *f, const pm_node_t *n) {
   }
   case PM_LOCAL_VARIABLE_OPERATOR_WRITE_NODE: {
     const pm_local_variable_operator_write_node_t *w = (const pm_local_variable_operator_write_node_t *)n;
-    sp_RbVal *slot = lupe_local(f, n, w->name, w->depth);
+    /* the operand can make a Proc, which moves the slots: look up after */
     sp_RbVal v = lupe_eval(f, w->value);
     if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
     SP_GC_ROOT_RBVAL(v);
-    *slot = lupe_send(*slot, sp_sym_to_s(lupe_sym(w->binary_operator)), 1, &v);
-    return *slot;
+    sp_RbVal r = lupe_send(*lupe_local(f, n, w->name, w->depth), sp_sym_to_s(lupe_sym(w->binary_operator)), 1, &v);
+    return *lupe_local(f, n, w->name, w->depth) = r;
   }
   case PM_AND_NODE: {
     const pm_and_node_t *a = (const pm_and_node_t *)n;
@@ -1613,11 +1705,11 @@ static sp_RbVal lupe_eval(LupeFrame *f, const pm_node_t *n) {
   }
   case PM_LOCAL_VARIABLE_OR_WRITE_NODE: {
     const pm_local_variable_or_write_node_t *w = (const pm_local_variable_or_write_node_t *)n;
-    sp_RbVal *slot = lupe_local(f, n, w->name, w->depth);
-    if (sp_poly_truthy(*slot)) return *slot;
+    sp_RbVal cur = *lupe_local(f, n, w->name, w->depth);
+    if (sp_poly_truthy(cur)) return cur;
     sp_RbVal v = lupe_eval(f, w->value);
     if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-    *slot = v;
+    *lupe_local(f, n, w->name, w->depth) = v;   /* after: the slots can move */
     return v;
   }
   case PM_BEGIN_NODE:
