@@ -239,6 +239,14 @@ static void lupe_global_init(void) {
   lupe_const_set(L.object, sp_sym_intern("STDERR"), lupe_io_box(sp_io_stderr()));
   lupe_env = lupe_new_object(L.object);
   lupe_const_set(L.object, sp_sym_intern("ENV"), lupe_env);
+  /* ARGV: the arguments after the path, as frozen Strings (CRuby 4.0) */
+  sp_PolyArray *argv = sp_PolyArray_new();
+  SP_GC_ROOT(argv);
+  for (int i = 0; i < L.nargs; i++) {
+    sp_RbVal s = lupe_new_string((const uint8_t *)L.args[i], strlen(L.args[i]));
+    sp_PolyArray_push(argv, lupe_send(s, "freeze", 0, NULL));
+  }
+  lupe_const_set(L.object, sp_sym_intern("ARGV"), sp_box_poly_array(argv));
   /* the modules that a nonblocking error includes, which the class table
      of the runtime does not name */
   LupeClass *io = lupe_builtin("IO");

@@ -457,6 +457,15 @@ code can hold any of the 12 forms. The walker reads all 12 forms.
   `LupeProc` through `dproc_self` (`src/hash.c`).
 - **Typed Hash.** A method that reads a typed Hash takes a poly copy
   (`sp_poly_as_poly_poly_hash`). A method that changes one stops as a gap.
+- **Array.** Codegen emits most methods of Array at the call site, so the
+  table has no wrapper for them. `src/array.c` calls the helpers that the
+  AOT code calls on a boxed Array (`sp_poly_sort`, `sp_poly_splice` and
+  others). A mutator works on a poly array and writes the result back
+  into a typed one (`sp_poly_arr_writeback`).
+- **User objects in an Array.** The helpers reach the program through
+  hooks: `sp_obj_cmp_hook` calls `<=>`, and `sp_obj_to_ary_fn`,
+  `sp_obj_to_a_fn`, `sp_obj_to_int_fn` and `sp_obj_to_str_fn` call the
+  conversion methods.
 - **Enumerable.** `src/iter.c` reads a Hash as a sequence of `[key, value]`
   pairs. A block with two parameters spreads each pair. `select`,
   `reject`, `transform_values` and the mutators answer a Hash, so

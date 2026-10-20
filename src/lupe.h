@@ -176,6 +176,8 @@ typedef struct {
 
 typedef struct {
   const char *path;
+  char **args;           /* the arguments after the path, for ARGV */
+  int nargs;
   pm_constant_pool_t pool;   /* the constants of every file: a node's
                                 constant id indexes this one pool */
   LupeSource **sources;      /* the parsed files; sources[0] is the main one */
@@ -218,6 +220,8 @@ static int lupe_range_core(sp_RbVal r, const char *name, int argc, sp_RbVal *arg
 static int lupe_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
                           sp_RbVal *out);
 static int lupe_array_hash(sp_RbVal r, const char *name, int argc, sp_RbVal *out);
+static int lupe_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
+                           sp_RbVal *out);
 static int lupe_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
                              sp_RbVal *out);
 static LupeClass *lupe_class_named(const char *name);

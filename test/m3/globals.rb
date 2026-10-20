@@ -105,3 +105,6 @@ begin
 rescue TypeError => e
   puts e.message
 end
+
+# ARGV: the arguments after the path, none here
+p ARGV, ARGV.class

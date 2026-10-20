@@ -234,8 +234,14 @@ static int lupe_builtin_responds(sp_RbVal r, const char *name) {
   static const char *const num[] = { "+", "-", "*", "/", "%", "**", "<", "<=", ">", ">=", "-@", NULL };
   static const char *const bits[] = { "&", "|", "^", "<<", ">>", NULL };
   static const char *const str[] = { "+", "*", "%", "length", "size", "start_with?", "end_with?", "split", NULL };
+  /* and the methods of array.c */
   static const char *const ary[] = { "length", "size", "first", "last", "include?", "[]", "[]=", "<<", "push", "+",
-                                     NULL };
+                                     "empty?", "to_ary", "entries", "pop", "shift", "uniq", "flatten", "minmax",
+                                     "transpose", "tally", "sort!", "compact!", "flatten!", "slice", "at",
+                                     "member?", "index", "find_index", "rindex", "sample", "replace", "intersect?",
+                                     "|", "&", "assoc", "rassoc", "delete", "fetch", "fill", "append", "unshift",
+                                     "prepend", "insert", "concat", "union", "intersection", "difference", "dig",
+                                     "values_at", "zip", "product", NULL };
   /* the Enumerable methods of iter.c, and the methods of hash.c */
   static const char *const enm[] = { "each", "each_with_index", "each_with_object", "map", "collect", "flat_map",
                                      "select", "filter", "reject", "filter_map", "find", "detect", "count", "any?",
@@ -307,6 +313,7 @@ static int lupe_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal
     *out = sp_box_str_new(sp_poly_join(recv, sep));
     return 1;
   }
+  if (lupe_array_core(recv, name, argc, argv, blk, out)) return 1;
   if (lupe_exc_core(recv, name, argc, argv, out)) return 1;
   if (lupe_re_call(recv, name, argc, argv, blk, out)) return 1;
   if (lupe_fiber_core(recv, name, argc, argv, blk, out)) return 1;

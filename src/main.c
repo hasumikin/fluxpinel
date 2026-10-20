@@ -13,6 +13,7 @@
 #include "builtin.c"
 #include "iter.c"
 #include "hash.c"
+#include "array.c"
 #include "exc.c"
 #include "re.c"
 #include "global.c"
@@ -28,6 +29,7 @@ static void lupe_body(void) {
   _sp_gc_root_push((void **)((uintptr_t)&L.ctl_val | (uintptr_t)1));
   lupe_object_init();
   lupe_hash_init();
+  lupe_array_init();
   lupe_exc_hooks();
   lupe_re_init();
   lupe_global_init();
@@ -50,8 +52,10 @@ static void lupe_body(void) {
 }
 
 int main(int argc, char **argv) {
-  if (argc != 2) { fprintf(stderr, "usage: lupe FILE.rb\n"); return 2; }
+  if (argc < 2) { fprintf(stderr, "usage: lupe FILE.rb [ARG...]\n"); return 2; }
   L.path = argv[1];
+  L.args = argv + 2;
+  L.nargs = argc - 2;
   sp_main_stack_run(lupe_body);
   return 0;
 }
