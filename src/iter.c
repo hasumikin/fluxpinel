@@ -15,11 +15,16 @@ static sp_RbVal lupe_pair(sp_RbVal a, sp_RbVal b);
 /* ---- sequences: the elements of an Array, an Integer Range or a Hash ---- */
 
 typedef struct {
-  sp_RbVal src;           /* rooted by the caller */
+  sp_RbVal src;           /* rooted by the caller: the receiver, the items of a
+                             finite Enumerator, or a walker over a generator */
   int range;
+  int walk;               /* src is a walker (sp_enum_walker_boxed) */
   sp_PolyPolyHash *hash;  /* a Hash: src itself, or a poly copy of a typed one */
   sp_int i, last;
 } LupeSeq;
+
+/* The caller roots a LupeSeq with this, after lupe_seq_open. */
+#define LUPE_SEQ_ROOT(s) SP_GC_ROOT((s).hash); SP_GC_ROOT_RBVAL((s).src)
 
 static int lupe_is_range(sp_RbVal v) {
   return v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_RANGE && v.v.p;
@@ -31,12 +36,32 @@ static int lupe_is_hash(sp_RbVal v) {
 
 /* The caller roots s->src. A typed Hash gives a poly copy, which the
    caller must root through s->hash when it allocates. */
+/* What each { } answers: the receiver, or for an Enumerator made from a
+   value (`4.times`) that value. A generator would run again, so it answers
+   itself. */
+static sp_RbVal lupe_each_answer(sp_RbVal r) {
+  if (r.tag != SP_TAG_OBJ || r.cls_id != SP_BUILTIN_ENUMERATOR || !r.v.p) return r;
+  const sp_Enumerator *e = (const sp_Enumerator *)r.v.p;
+  return !e->gen && e->has_src ? e->source : r;
+}
+
 static int lupe_seq_open(sp_RbVal r, LupeSeq *s) {
   s->src = r;
   s->i = 0;
   s->range = 0;
+  s->walk = 0;
   s->hash = NULL;
   if (lupe_is_array(r)) return 1;
+  /* an Enumerator: its items, or one item at a time from a generator, so
+     that an endless one stops where the block breaks */
+  if (r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_ENUMERATOR && r.v.p) {
+    sp_PolyArray *items = sp_enum_finite_items(r);
+    if (items) { s->src = sp_box_poly_array(items); return 1; }
+    s->src = sp_enum_walker_boxed(r);
+    if (s->src.tag == SP_TAG_NIL) s->src = sp_box_poly_array(sp_Enumerator_to_a((sp_Enumerator *)r.v.p));
+    else s->walk = 1;
+    return 1;
+  }
   if (lupe_is_hash(r)) {
     s->hash = sp_poly_as_poly_poly_hash(r);
     return 1;
@@ -59,6 +84,11 @@ static int lupe_seq_next(LupeSeq *s, sp_RbVal *v) {
     else s->i++;
     return 1;
   }
+  if (s->walk) {
+    if (s->i >= sp_enum_walk_len(s->src)) return 0;
+    *v = sp_enum_walk_at(s->src, s->i++);
+    return 1;
+  }
   if (s->hash) {
     if (s->i >= s->hash->len) return 0;
     sp_int slot = s->hash->order[s->i++];
@@ -77,7 +107,12 @@ static sp_PolyArray *lupe_seq_array(sp_RbVal r) {
   LupeSeq s;
   sp_RbVal v;
   lupe_seq_open(r, &s);
-  while (lupe_seq_next(&s, &v)) sp_PolyArray_push(a, v);
+  LUPE_SEQ_ROOT(s);
+  while (lupe_seq_next(&s, &v)) {
+    /* a generator step that yielded several values is an Array as a value */
+    if (SP_UNLIKELY(sp_poly_is_pack(v))) v = sp_box_poly_array(sp_PolyArray_dup((sp_PolyArray *)v.v.p));
+    sp_PolyArray_push(a, v);
+  }
   return a;
 }
 
@@ -85,6 +120,9 @@ static sp_PolyArray *lupe_seq_array(sp_RbVal r) {
 
 static sp_RbVal lupe_y1(const LupeBlock *b, sp_RbVal v) {
   SP_GC_ROOT_RBVAL(v);
+  /* the item of a generator step that yielded several values: the block
+     takes them as several arguments */
+  if (SP_UNLIKELY(sp_poly_is_pack(v))) return lupe_yield(b, (int)sp_poly_length(v), ((sp_PolyArray *)v.v.p)->data);
   return lupe_yield(b, 1, &v);
 }
 
@@ -198,15 +236,18 @@ static int lupe_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     return 1;
   }
   if (!lupe_seq_open(r, &s)) return 0;
-  SP_GC_ROOT(s.hash);
-  if (argc == 0 && (LUPE_IS("each") || (s.hash && LUPE_IS("each_pair")))) {
+  LUPE_SEQ_ROOT(s);
+  if (argc == 0 && (LUPE_IS("each") || LUPE_IS("each_entry") || (s.hash && LUPE_IS("each_pair")))) {
     while (lupe_seq_next(&s, &v)) { lupe_y1(blk, v); LUPE_STOP(); }
-    *out = r;
+    *out = lupe_each_answer(r);
     return 1;
   }
-  if (argc == 0 && LUPE_IS("each_with_index")) {
-    for (sp_int i = 0; lupe_seq_next(&s, &v); i++) { lupe_y2(blk, v, sp_box_int(i)); LUPE_STOP(); }
-    *out = r;
+  /* each_with_index, and Enumerator#with_index(offset) */
+  if ((argc == 0 && LUPE_IS("each_with_index")) ||
+      (LUPE_IS("with_index") && (argc == 0 || (argc == 1 && argv[0].tag == SP_TAG_INT)))) {
+    sp_int from = argc == 1 ? argv[0].v.i : 0;
+    for (sp_int i = from; lupe_seq_next(&s, &v); i++) { lupe_y2(blk, v, sp_box_int(i)); LUPE_STOP(); }
+    *out = lupe_each_answer(r);
     return 1;
   }
   if (argc == 0 && LUPE_IS("reverse_each")) {
@@ -404,13 +445,22 @@ static int lupe_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
   if (argc == 1 && (LUPE_IS("each_slice") || LUPE_IS("each_cons")) && argv[0].tag == SP_TAG_INT) {
     sp_int n = argv[0].v.i;
     if (n <= 0) sp_raise_cls("ArgumentError", sp_sprintf("invalid %s", name[5] == 's' ? "slice size" : "size"));
-    sp_PolyArray *all = lupe_seq_array(r);
-    SP_GC_ROOT(all);
+    /* one item at a time, so that an endless generator stops at a break */
     int cons = name[5] == 'c';
-    for (sp_int i = 0; cons ? i + n <= all->len : i < all->len; i += cons ? 1 : n) {
-      acc = sp_PolyArray_new();
-      for (sp_int j = i; j < i + n && j < all->len; j++) sp_PolyArray_push(acc, all->data[j]);
+    sp_PolyArray *win = sp_PolyArray_new();
+    SP_GC_ROOT(win);
+    while (lupe_seq_next(&s, &v)) {
+      sp_PolyArray_push(win, v);
+      if (win->len < n) continue;
+      acc = win;
+      win = sp_PolyArray_new();
+      /* each_cons keeps the last n - 1 items for the next window */
+      for (sp_int j = 1; cons && j < acc->len; j++) sp_PolyArray_push(win, acc->data[j]);
       lupe_y1(blk, sp_box_poly_array(acc));
+      LUPE_STOP();
+    }
+    if (!cons && win->len) {
+      lupe_y1(blk, sp_box_poly_array(win));
       LUPE_STOP();
     }
     *out = r;
@@ -456,12 +506,25 @@ static int lupe_int_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
   } else {
     return 0;
   }
+  /* with no block: an Enumerator over the values */
+  sp_PolyArray *a = blk ? NULL : sp_PolyArray_new();
+  SP_GC_ROOT(a);
   for (sp_int i = from; step > 0 ? i <= to : i >= to; i += step) {
-    lupe_y1(blk, sp_box_int(i));
-    LUPE_STOP();
+    if (a) {
+      sp_PolyArray_push(a, sp_box_int(i));
+    } else {
+      lupe_y1(blk, sp_box_int(i));
+      LUPE_STOP();
+    }
     if ((step > 0 && i > INT64_MAX - step) || (step < 0 && i < INT64_MIN - step)) break;
   }
-  *out = r;
+  if (!a) { *out = r; return 1; }
+  /* each on the Enumerator answers the Integer, as `4.times.each { }` does */
+  sp_Enumerator *e = sp_Enumerator_new_from_items(a);
+  sp_gc_wb(e);
+  e->source = r;
+  e->has_src = TRUE;
+  *out = sp_box_obj(e, SP_BUILTIN_ENUMERATOR);
   return 1;
 }
 
@@ -491,6 +554,7 @@ static int lupe_inject_sym(sp_RbVal r, const char *name, int argc, sp_RbVal *arg
   if (argv[argc - 1].tag != SP_TAG_SYM) return 0;
   LupeSeq s;
   if (!lupe_seq_open(r, &s)) return 0;
+  LUPE_SEQ_ROOT(s);
   const char *op = sp_sym_to_s((sp_sym)argv[argc - 1].v.i);
   sp_RbVal a = argc == 2 ? argv[0] : sp_box_nil(), v = sp_box_nil();
   SP_GC_ROOT_RBVAL(a);
@@ -506,7 +570,7 @@ static int lupe_inject_sym(sp_RbVal r, const char *name, int argc, sp_RbVal *arg
 
 /* The builtin methods that take a block, and inject with a Symbol. */
 static int lupe_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk, sp_RbVal *out) {
-  if (!blk) return lupe_inject_sym(r, name, argc, argv, out);
+  if (!blk) return lupe_inject_sym(r, name, argc, argv, out) || lupe_int_iter(r, name, argc, argv, NULL, out);
   if (argc == 0 && LUPE_IS("tap")) {
     lupe_y1(blk, r);
     LUPE_STOP();
@@ -642,6 +706,7 @@ static int lupe_range_core(sp_RbVal r, const char *name, int argc, sp_RbVal *arg
     LupeSeq s;
     sp_RbVal v;
     lupe_seq_open(r, &s);
+    LUPE_SEQ_ROOT(s);
     for (sp_int i = 0; i < argv[0].v.i && lupe_seq_next(&s, &v); i++) sp_PolyArray_push(a, v);
     *out = sp_box_poly_array(a);
     return 1;

@@ -154,13 +154,14 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   every call of a Proc. `proc`, `lambda`, `->`, `Proc.new` and a `&b`
   parameter make one. `&proc`, `&:sym` and an anonymous `&` pass a block.
 - **Lifetime.** The home frame is on the C stack. Each frame has a serial
-  number and an entry in a stack of serials on the heap (`L.fserial`). A
-  block keeps the serial and the depth of its home frame. A frame pops
-  its entry when its C scope ends (a `cleanup` attribute). A call of a
-  block whose home frame has returned stops as a gap. The check reads
-  only the heap stack, never the stack memory of a frame that ended. A
-  raise skips the cleanup with `longjmp`, so a rescue cuts the heap stack
-  back to its own depth. Thus a Proc works
+  number and an entry in a stack of serials on the heap
+  (`LupeFrameStack`). Each fiber that runs walker code has its own stack
+  (section 3.3.5). A block keeps the stack, the serial and the depth of
+  its home frame. A frame pops its entry when its C scope ends (a
+  `cleanup` attribute). A call of a block whose home frame has returned
+  stops as a gap. The check reads only the heap stack, never the stack
+  memory of a frame that ended. A raise skips the cleanup with `longjmp`,
+  so a rescue cuts the heap stack back to its own depth. Thus a Proc works
   while its scope runs, but `define_method` and a Proc that a method
   returns do not. A heap frame for a scope that a Proc outlives is a
   later step.
@@ -246,6 +247,49 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   from codegen code, so Lupe writes them on `sp_File_puts_val` and
   `sp_File_write_poly`. The other IO methods go through the generated
   wrappers.
+
+### 3.3.5 Fibers, threads and generators
+
+- **One body.** The runtime runs a fiber body on a C stack of its own,
+  and a green thread and a generator Enumerator are fibers too. Lupe
+  gives all of them one body, `lupe_fiber_body`, which calls a block of
+  the program on that stack (`src/fiber.c`). The fiber carries the block
+  in its `user_data`, which the collector marks.
+- **Arguments.** A Fiber block takes what the first `resume` passes. A
+  Thread block takes the arguments of `Thread.new`. A generator block
+  takes the yielder of the runtime (`SP_BUILTIN_YIELDER`), whose `<<` is
+  `Fiber.yield`.
+- **Frame stacks.** Fibers interleave their frames, so each fiber that
+  runs walker code has its own frame stack. `lupe_fiber_body` makes it,
+  and `lupe_fs` finds it again after a switch, by the running fiber
+  (`sp_fiber_current`). A fiber that Lupe did not start is a root fiber,
+  and it shares the frame stack of the main program. The runtime swaps
+  the GC roots and the rescue handlers itself.
+- **Stack size.** Lupe asks the runtime for fiber stacks of 1 MB, the size
+  that codegen asks for an unoptimised build. The walker uses more C stack
+  for each Ruby call than AOT code does.
+- **Runtime variant.** spinel links a program that uses threads with the
+  threaded runtime (`libspinel_rt_mt.a`, `-DSP_THREADS`). Only that
+  variant has the full scheduler: `sleep` and I/O park a green thread,
+  and `Thread#wakeup` and `Mutex#sleep` exist. Lupe links it by default
+  (`THREADS=1`); `THREADS=0` links the single-threaded runtime.
+- **Scheduling.** Lupe starts the scheduler at startup, since the threaded
+  runtime needs its root fiber before any fiber runs, and drains it at the
+  end of the program. Lupe sets `SPINEL_WORKERS=1`: the state of the
+  walker is not shared between OS threads, so green threads take turns on
+  one worker. A `while` back-edge and a block call poll the safepoint
+  flag, as AOT code does at a back-edge. A thread switch thus comes only
+  where no jump is pending.
+- **Iteration.** A generator Enumerator is the runtime's, so the generated
+  wrappers answer `next`, `peek`, `take`, `size` and `rewind`. A method
+  with a block reads the items one at a time through a walker of the
+  runtime (`sp_enum_walker_boxed`). Thus `find` on an endless generator
+  stops at the hit. `loop` ends at a StopIteration and answers its
+  result.
+- **Limit.** A block that runs on a fiber still reads its home frame on
+  the stack of its creator. A Thread or a generator made in a block or a
+  method that returns before it runs stops as a gap: for example
+  `3.times.map { Thread.new { } }`.
 
 ### 3.4 User classes
 
@@ -616,6 +660,32 @@ These facts apply to spinel commit `ffac8340d`.
   | `case` / `in` | 90 |
   | a call of a block whose scope has returned | 67 |
 
+- The oracle on spinel `89f0f421b` (7933 tests), with Fiber, Thread and
+  Enumerator.new on the threaded runtime: Lupe runs 2636 tests and 2503
+  agree. A run of the previous Lupe on the same corpus agreed on 2379. 133
+  differ. The largest blockers now:
+
+  | blocker | tests |
+  |---|---|
+  | a multiple assignment | 172 |
+  | `case` / `when` | 149 |
+  | a call of a block whose scope has returned | 112 |
+  | a Range of values other than Integer | 110 |
+  | `case` / `in` | 90 |
+  | `alias` | 62 |
+
+  The block whose scope has returned went from 67 to 112 tests: a Thread
+  or a generator that a block makes (`3.times.map { Thread.new { } }`)
+  now runs far enough to meet it.
+- The single-threaded runtime archive lacks the parts of the scheduler
+  that park a green thread: `sp_sched_sleep`, `sp_Thread_stop` and
+  `sp_Mutex_sleep`. Only `libspinel_rt_mt.a` has them.
+- A Thread name that is a heap String is freed by a minor collection when
+  the Thread is the main one: `Thread.current.name = "main-" + x` and a
+  collection, then `Thread.current.name` reads a freed slot. AOT code and
+  Lupe both fail under `SPINEL_GC_STRESS=2`. AOT code meets it less often,
+  since a literal there is a static String (`gc_minor_thread_local_slot`
+  passes AOT and fails Lupe under the stress mode).
 - A class keeps one lexical parent, the scope of its first definition.
   In CRuby, the lexical scope belongs to each class body: the body of
   `class A::B` does not search `A`. Lupe searches `A` there
@@ -697,6 +767,14 @@ These facts apply to spinel commit `ffac8340d`.
    - Regexp, MatchData and the match globals (section 3.3.3): `test/m3`.
    - Global variables and the standard streams (section 3.3.4): `test/m3`.
    - Struct, Data and anonymous classes (section 3.4.1): `test/m3`.
-   - Next: the largest blockers of the oracle report.
+   - Fiber, Thread and Enumerator.new on the threaded runtime (section
+     3.3.5): `test/m3`.
+   - Next, toward the Spinel output of Roundhouse (a Rails app lowered to
+     Ruby that spinel compiles):
+     - `require` and `require_relative`, for a project of many files.
+     - FFI (`ffi_func`, `ffi_lib`, `ffi_const`), for SQLite.
+     - A heap frame for a scope that a block outlives.
+     - The tests of a Roundhouse output (`spin test`) under Lupe and AOT.
+   - Then the largest blockers of the oracle report.
 6. **M4: embedded REPL.** Link Lupe into an AOT binary on a host. Then move
    to a microcontroller board.

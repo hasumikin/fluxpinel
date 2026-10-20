@@ -10,17 +10,22 @@
 #   3. prints the counts per receiver family.
 #
 # Set SPINEL (spinel checkout) and LUPE_TU_DIR (the directory of lupe_tu.c).
+# RT_ARCHIVE, RT_CFLAGS and RT_LIBS name the runtime archive that Lupe
+# links and its flags (the threaded one needs -DSP_THREADS and -lpthread).
 
 require "open3"
 
 SPINEL = ENV.fetch("SPINEL", File.expand_path("~/work/spinel"))
 TU_DIR = ENV.fetch("LUPE_TU_DIR", File.expand_path("../src", __dir__))
+RT_ARCHIVE = ENV.fetch("RT_ARCHIVE", "#{SPINEL}/lib/libspinel_rt.a")
+RT_CFLAGS = ENV.fetch("RT_CFLAGS", "").split
+RT_LIBS = ENV.fetch("RT_LIBS", "").split
 # A type mismatch that C only warns about is a wrong wrapper (a String
 # boxed from an sp_StrArray *), so these warnings are errors here.
 CFLAGS = %W[-std=gnu11 -O0 -fmax-errors=0 -DSP_INT_OVERFLOW_MODE_RAISE
             -Werror=incompatible-pointer-types -Werror=int-conversion
             -Werror=implicit-function-declaration
-            -I#{TU_DIR} -I#{SPINEL}/lib -I#{SPINEL}/lib/regexp]
+            -I#{TU_DIR} -I#{SPINEL}/lib -I#{SPINEL}/lib/regexp] + RT_CFLAGS
 
 Row = Struct.new(:id, :row, :recv, :name, :variant, :status, :reason)
 
@@ -64,7 +69,7 @@ File.write(main_c, <<~C)
 C
 offs = compile_fail.map { |id| "-DLUPE_BOP_OFF_#{id}" }
 log, ok = run("cc", *CFLAGS, "-I#{dir}", *offs, "-o", File.join(dir, "link_test"), unit, main_c,
-              "#{SPINEL}/lib/libspinel_rt.a", "-lm", "-lcrypt")
+              RT_ARCHIVE, "-lm", "-lcrypt", *RT_LIBS)
 File.write(File.join(dir, "link.log"), log)
 link_fail = log.scan(/in function `lupe_bop_(\d+)'/).map { |(id)| id.to_i }.uniq
 abort "link failed for another reason; see #{dir}/link.log" if !ok && link_fail.empty?

@@ -21,7 +21,11 @@ static void lupe_unsupported(const pm_node_t *n, const char *what) {
    test as a gap of Lupe, not as a wrong answer. */
 static void lupe_gap(const char *what) {
   fprintf(stderr, "lupe: %s: unsupported %s (runtime)\n", L.path, what);
-  exit(2);
+  /* a gap can come on a green thread: end at once, without the exit
+     handlers of the runtime, which expect the main thread */
+  fflush(stdout);
+  fflush(stderr);
+  _exit(2);
 }
 
 static sp_sym lupe_sym(pm_constant_id_t id) {
@@ -53,28 +57,79 @@ static sp_RbVal *lupe_local(LupeFrame *f, const pm_node_t *n, pm_constant_id_t n
   LupeFrame f __attribute__((cleanup(lupe_frame_exit))) = {                       \
     .locals = f##_slots, .names = (namelist), .self = (self_), .cref = (cref_),   \
     .it = &f##_slots[f##_n], .anon = &f##_slots[f##_n + 1], .serial = ++L.serial, \
-    .depth = lupe_frame_enter(L.serial) }
+    .depth = lupe_frame_enter(L.serial), .fs = lupe_fs() }
 
-/* The frame stack in L.fserial tells whether the home frame of a block is
-   live. It is on the heap, so a check never reads the stack memory of a
-   frame that has ended. */
-static int lupe_frame_enter(uint64_t serial) {
-  if (L.fdepth == L.fcap) {
-    L.fcap = L.fcap ? L.fcap * 2 : 256;
-    L.fserial = realloc(L.fserial, sizeof *L.fserial * (size_t)L.fcap);
+/* The frame stacks tell whether the home frame of a block is live. They
+   are on the heap, so a check never reads the stack memory of a frame
+   that has ended. */
+
+static LupeFrameStack *lupe_fs_new(const void *fiber) {
+  LupeFrameStack *s = calloc(1, sizeof *s);
+  s->fiber = fiber;
+  return s;
+}
+
+/* The table slot of a fiber, in a table with open addressing. */
+static int lupe_fs_slot(const void *fiber) {
+  int mask = L.fstacks_cap - 1, i = (int)(((uintptr_t)fiber >> 4) & (uintptr_t)mask);
+  while (L.fstacks[i].fiber && L.fstacks[i].fiber != fiber) i = (i + 1) & mask;
+  return i;
+}
+
+static void lupe_fs_put(const void *fiber, LupeFrameStack *s) {
+  if (2 * (L.nfstacks + 1) > L.fstacks_cap) {
+    int ocap = L.fstacks_cap;
+    __typeof__(L.fstacks) old = L.fstacks;
+    L.fstacks_cap = ocap ? ocap * 2 : 64;
+    L.fstacks = calloc((size_t)L.fstacks_cap, sizeof *L.fstacks);
+    for (int i = 0; i < ocap; i++)
+      if (old[i].fiber) L.fstacks[lupe_fs_slot(old[i].fiber)] = old[i];
+    free(old);
   }
-  L.fserial[L.fdepth] = serial;
-  return L.fdepth++;
+  int i = lupe_fs_slot(fiber);
+  if (!L.fstacks[i].fiber) L.nfstacks++;
+  L.fstacks[i].fiber = fiber;
+  L.fstacks[i].fs = s;
+}
+
+/* The frame stack of the running fiber. A fiber that Lupe started got one
+   in lupe_fiber_body; any other is a root fiber (the main program, or a
+   root that the scheduler adopted), whose frames are the main ones. */
+static LupeFrameStack *lupe_fs(void) {
+  const void *cur = sp_fiber_current;
+  if (L.fs->fiber == cur) return L.fs;
+  int i = L.fstacks_cap ? lupe_fs_slot(cur) : 0;
+  if (L.fstacks_cap && L.fstacks[i].fiber) {
+    L.fs = L.fstacks[i].fs;
+  } else {
+    lupe_fs_put(cur, L.main_fs);
+    L.fs = L.main_fs;
+  }
+  return L.fs;
+}
+
+static void lupe_fs_init(void) {
+  L.main_fs = L.fs = lupe_fs_new(sp_fiber_current);
+}
+
+static int lupe_frame_enter(uint64_t serial) {
+  LupeFrameStack *s = lupe_fs();
+  if (s->depth == s->cap) {
+    s->cap = s->cap ? s->cap * 2 : 256;
+    s->serial = realloc(s->serial, sizeof *s->serial * (size_t)s->cap);
+  }
+  s->serial[s->depth] = serial;
+  return s->depth++;
 }
 
 /* A frame that ends pops its entry. A raise skips this cleanup; the
    rescue that lands cuts the stack back to its own depth. */
 static void lupe_frame_exit(LupeFrame *f) {
-  L.fdepth = f->depth;
+  f->fs->depth = f->depth;
 }
 
 static int lupe_frame_live(const LupeBlock *b) {
-  return b->depth < L.fdepth && L.fserial[b->depth] == b->serial;
+  return b->depth < b->fs->depth && b->fs->serial[b->depth] == b->serial;
 }
 
 /* ---- methods ---- */
@@ -380,6 +435,7 @@ static sp_RbVal lupe_yield_in(const LupeBlock *b, int argc, sp_RbVal *argv, int 
   const pm_constant_id_list_t *locals;
   const pm_node_t *params, *body;
   lupe_block_parts(b->node, &locals, &params, &body);
+  if (SP_UNLIKELY(SP_SAFEPOINT_POLL())) sp_safepoint();
   LUPE_FRAME(bf, locals, self ? *self : h->self, cref ? cref : h->cref);
   bf.method = h->method;
   bf.parent = h;
@@ -443,7 +499,7 @@ static sp_RbVal lupe_block_proc(const LupeBlock *b) {
 static const LupeBlock *lupe_make_block(LupeFrame *f, const pm_node_t *bn, LupeBlock *lit, sp_RbVal *holder) {
   if (!bn) return NULL;
   if (PM_NODE_TYPE_P(bn, PM_BLOCK_NODE)) {
-    *lit = (LupeBlock){ .node = bn, .home = f, .serial = f->serial, .depth = f->depth, .site = lit };
+    *lit = (LupeBlock){ .node = bn, .home = f, .serial = f->serial, .fs = f->fs, .depth = f->depth, .site = lit };
     return lit;
   }
   const pm_node_t *e = ((const pm_block_argument_node_t *)bn)->expression;
@@ -624,6 +680,8 @@ static sp_RbVal lupe_call(LupeFrame *f, const pm_call_node_t *c) {
   return v;
 }
 
+static sp_RbVal lupe_loop(const LupeBlock *blk);   /* the exceptions section */
+
 /* The Kernel methods that take the block of the call. Answers 1 and sets
    *out when it handles the call. */
 static int lupe_kernel_block(LupeFrame *f, const char *name, int argc, const LupeBlock *blk, sp_RbVal *out) {
@@ -645,11 +703,7 @@ static int lupe_kernel_block(LupeFrame *f, const char *name, int argc, const Lup
     return 1;
   }
   if (argc == 0 && !strcmp(name, "loop")) {
-    for (;;) {
-      lupe_yield(blk, 0, NULL);
-      if (L.ctl != LUPE_CTL_NONE) break;
-    }
-    *out = sp_box_nil();
+    *out = lupe_loop(blk);
     return 1;
   }
   return 0;
@@ -671,6 +725,7 @@ static sp_RbVal lupe_call_self(LupeFrame *f, const char *name, int argc, sp_RbVa
   if (lupe_kernel_block(f, name, argc, blk, &out)) return out;
   if (blk) return lupe_send_b(self, name, argc, argv, blk);
   if (lupe_exc_kernel(name, argc, argv, &out)) return out;
+  if (lupe_fiber_kernel(name, argc, argv, &out)) return out;
   if (lupe_kernel(name, argc, argv, &out)) return out;
   if (lupe_object_core(self, name, argc, argv, &out)) return out;
   if (!lupe_is_lupe_object(self) && self.tag != SP_TAG_CLASS) return lupe_send(self, name, argc, argv);
@@ -805,6 +860,8 @@ static sp_RbVal lupe_eval_stmts(LupeFrame *f, const pm_statements_node_t *s) {
 
 static sp_RbVal lupe_while(LupeFrame *f, const pm_node_t *pred, const pm_statements_node_t *body, int until) {
   for (;;) {
+    /* a back-edge lets another green thread run, as in AOT code */
+    if (SP_UNLIKELY(SP_SAFEPOINT_POLL())) sp_safepoint();
     sp_RbVal c = lupe_eval(f, pred);
     if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
     if (sp_poly_truthy(c) == until) return sp_box_nil();
@@ -1116,11 +1173,11 @@ static sp_RbVal lupe_index_logic_write(LupeFrame *f, const pm_node_t *n) {
   sp_exc_msg[sp_exc_top] = 0;                                                          \
   sp_exc_obj[sp_exc_top] = 0;                                                          \
   sp_exc_top++
-#define LUPE_TRY_LANDED(depth)                                                         \
+#define LUPE_TRY_LANDED(d)                                                             \
   sp_exc_top--;                                                                        \
   sp_gc_nroots = sp_exc_rootmark[sp_exc_top];                                          \
   sp_rescue_sp = sp_rescue_mark[sp_exc_top];                                           \
-  L.fdepth = (depth);                                                                  \
+  lupe_fs()->depth = (d);                                                              \
   L.kwhash = NULL
 
 /* The exception that a handler caught: its class name, message and object
@@ -1169,6 +1226,8 @@ static void lupe_rescue_bind(LupeFrame *f, const pm_node_t *t, sp_RbVal v) {
 /* Whether a rescue clause takes the exception ev of class cls. A clause
    with no class takes a StandardError. */
 static int lupe_rescue_takes(LupeFrame *f, const pm_rescue_node_t *r, const char *cls, sp_RbVal ev) {
+  /* Fiber#kill unwinds with this: ensure clauses run, no rescue takes it */
+  if (!strcmp(cls, "FiberKillSignal")) return 0;
   if (r->exceptions.size == 0) return sp_exc_is_standard_error(cls);
   sp_RbVal t = sp_box_nil();
   SP_GC_ROOT_RBVAL(t);
@@ -1216,7 +1275,7 @@ static sp_RbVal lupe_rescue(LupeFrame *f, const pm_begin_node_t *b) {
   SP_GC_SAVE();
   sp_RbVal v = sp_box_nil();
   SP_GC_ROOT_RBVAL(v);
-  const int depth = L.fdepth;
+  const int depth = lupe_fs()->depth;
 retry:
   LUPE_TRY_PUSH();
   if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
@@ -1243,7 +1302,7 @@ static sp_RbVal lupe_begin(LupeFrame *f, const pm_begin_node_t *b) {
   SP_GC_SAVE();
   sp_RbVal v = sp_box_nil();
   SP_GC_ROOT_RBVAL(v);
-  const int depth = L.fdepth;
+  const int depth = lupe_fs()->depth;
   LupeCaught c = { NULL, NULL, NULL };
   sp_Exception *exc = NULL;
   SP_GC_ROOT(exc);
@@ -1278,12 +1337,33 @@ static sp_RbVal lupe_begin(LupeFrame *f, const pm_begin_node_t *b) {
   return v;
 }
 
+/* Kernel#loop: a StopIteration ends the loop, as Enumerator#next raises
+   it at the end, and the loop answers its result. Any other exception
+   goes on. */
+static sp_RbVal lupe_loop(const LupeBlock *blk) {
+  SP_GC_SAVE();
+  const int depth = lupe_fs()->depth;
+  LUPE_TRY_PUSH();
+  if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
+    for (;;) {
+      lupe_yield(blk, 0, NULL);
+      if (L.ctl != LUPE_CTL_NONE) break;
+    }
+    sp_exc_top--;
+    return sp_box_nil();
+  }
+  LUPE_TRY_LANDED(depth);
+  LupeCaught c = lupe_caught();
+  if (!sp_exc_cls_matches(c.cls, "StopIteration")) lupe_reraise(c);
+  return sp_exc_result(lupe_caught_obj(c));
+}
+
 /* expr rescue fallback: a StandardError from expr gives fallback. */
 static sp_RbVal lupe_rescue_modifier(LupeFrame *f, const pm_rescue_modifier_node_t *n) {
   SP_GC_SAVE();
   sp_RbVal v = sp_box_nil();
   SP_GC_ROOT_RBVAL(v);
-  const int depth = L.fdepth;
+  const int depth = lupe_fs()->depth;
   LUPE_TRY_PUSH();
   if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
     v = lupe_eval(f, n->expression);
@@ -1293,7 +1373,7 @@ static sp_RbVal lupe_rescue_modifier(LupeFrame *f, const pm_rescue_modifier_node
   LUPE_TRY_LANDED(depth);
   if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
   LupeCaught c = lupe_caught();
-  if (!sp_exc_is_standard_error(c.cls)) lupe_reraise(c);
+  if (!sp_exc_is_standard_error(c.cls) || !strcmp(c.cls, "FiberKillSignal")) lupe_reraise(c);
   /* $! is the exception while the fallback runs */
   sp_Exception *e = lupe_caught_obj(c);
   SP_GC_ROOT(e);
@@ -1425,7 +1505,7 @@ static sp_RbVal lupe_eval(LupeFrame *f, const pm_node_t *n) {
     return v;
   }
   case PM_LAMBDA_NODE: {
-    LupeBlock b = { .node = n, .home = f, .serial = f->serial, .depth = f->depth, .lambda = 1 };
+    LupeBlock b = { .node = n, .home = f, .serial = f->serial, .fs = f->fs, .depth = f->depth, .lambda = 1 };
     return lupe_block_proc(&b);
   }
   case PM_IT_LOCAL_VARIABLE_READ_NODE:

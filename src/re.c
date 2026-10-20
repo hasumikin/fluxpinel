@@ -607,7 +607,7 @@ static int lupe_re_grep(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
   LupeSeq s;
   SP_GC_ROOT_RBVAL(r);
   if (!lupe_seq_open(r, &s)) return 0;
-  SP_GC_ROOT(s.hash);
+  LUPE_SEQ_ROOT(s);
   int keep = name[4] == 0;
   sp_PolyArray *a = sp_PolyArray_new();
   SP_GC_ROOT(a);

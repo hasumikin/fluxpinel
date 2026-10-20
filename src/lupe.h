@@ -84,14 +84,24 @@ typedef struct {
 
 struct LupeFrame;
 
+/* The frames of one fiber that are live, outermost first, by serial. Each
+   fiber that runs walker code has its own, since fibers interleave their
+   frames. A stack is never freed: a block may still name it. */
+typedef struct LupeFrameStack {
+  const void *fiber;              /* the sp_Fiber that runs these frames */
+  uint64_t *serial;
+  int depth, cap;
+} LupeFrameStack;
+
 /* A block that a call passes: a block literal, a lambda, `&:sym` or the
    block of a Proc. A block literal lives in the C frame of its call. */
 typedef struct LupeBlock {
   const pm_node_t *node;          /* a block or a lambda node; NULL for &:sym */
   struct LupeFrame *home;         /* the frame where the block was written */
   uint64_t serial;                /* home->serial then */
+  LupeFrameStack *fs;             /* the frame stack of home */
   int depth;                      /* home->depth; the home is live while
-                                     L.fserial[depth] == serial */
+                                     fs->serial[depth] == serial */
   const struct LupeBlock *site;   /* the call that break leaves; NULL for none */
   sp_sym sym;                     /* &:sym */
   int lambda;
@@ -123,7 +133,8 @@ typedef struct LupeFrame {
                                  what `...` takes (rooted slots after `it`) */
   uint64_t serial;            /* unique to this frame, for LupeBlock.serial */
   int lambda;                 /* a lambda frame: return leaves it */
-  int depth;                  /* the index of this frame in L.fserial */
+  int depth;                  /* the index of this frame in its frame stack */
+  LupeFrameStack *fs;         /* the frame stack of the fiber that runs it */
 } LupeFrame;
 
 /* A pending jump out of the statement under evaluation. A break in a
@@ -149,10 +160,12 @@ typedef struct {
   uint64_t serial;       /* the last LupeFrame.serial */
   const void *kwhash;    /* the Hash that a call passes as keywords (`m(a: 1)`), so
                             that a Hash literal in the last place stays positional */
-  uint64_t *fserial;     /* the serials of the live frames, outermost first. A
-                            frame pops its entry when it ends; a rescue cuts the
-                            entries of the frames that a raise unwound */
-  int fdepth, fcap;
+  LupeFrameStack *fs;    /* the frame stack of the running fiber. A frame pops
+                            its entry when it ends; a rescue cuts the entries of
+                            the frames that a raise unwound */
+  LupeFrameStack *main_fs;   /* the stack of the frames of a root fiber */
+  struct { const void *fiber; LupeFrameStack *fs; } *fstacks;   /* by fiber */
+  int nfstacks, fstacks_cap;
   LupeConst *globals;    /* the global variables that the program assigned;
                             marked by the mark hook */
   int nglobals, globals_cap;
@@ -204,6 +217,12 @@ static int lupe_struct_class(LupeFrame *f, LupeClass *k, const char *name, int a
 static int lupe_record_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
                             sp_RbVal *out);
 static int lupe_record_responds(sp_RbVal r, const char *name);
+
+/* fiber.c */
+static int lupe_fiber_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
+                           sp_RbVal *out);
+static int lupe_fiber_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static void lupe_sched_end(void);
 
 /* global.c */
 static sp_RbVal lupe_gvar_eval(LupeFrame *f, const pm_node_t *n);

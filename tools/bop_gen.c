@@ -226,7 +226,8 @@ int main(int argc, char **argv) {
     { "INT_INT_HASH", TY_INT_INT_HASH }, { "INT_STR_HASH", TY_INT_STR_HASH },
     { "SYM_POLY_HASH", TY_SYM_POLY_HASH }, { "STR_POLY_HASH", TY_STR_POLY_HASH },
     { "POLY_POLY_HASH", TY_POLY_POLY_HASH }, { "REGEX", TY_REGEX }, { "MATCHDATA", TY_MATCHDATA },
-    { "IO", TY_IO },
+    { "IO", TY_IO }, { "FIBER", TY_FIBER }, { "THREAD", TY_THREAD }, { "ENUMERATOR", TY_ENUMERATOR },
+    { "QUEUE", TY_QUEUE }, { "MUTEX", TY_MUTEX }, { "CONDVAR", TY_CONDVAR },
   };
   for (size_t k = 0; k < sizeof kinds / sizeof kinds[0]; k++)
     fprintf(out, "#define LUPE_TY_%s %d\n", kinds[k].name, (int)kinds[k].kind);

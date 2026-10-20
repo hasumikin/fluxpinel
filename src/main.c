@@ -17,6 +17,7 @@
 #include "re.c"
 #include "global.c"
 #include "struct.c"
+#include "fiber.c"
 
 static char *lupe_read_file(const char *path, size_t *len) {
   FILE *fp = fopen(path, "rb");
@@ -41,6 +42,16 @@ static void lupe_body(void) {
   lupe_hash_init();
   lupe_exc_hooks();
   lupe_re_init();
+  /* a fiber runs the walker, whose frames are larger than those of AOT
+     code: the size that codegen asks for an unoptimised build */
+  sp_fiber_stack_hint((size_t)1 << 20);
+  /* The threaded runtime runs green threads on one OS worker: the state of
+     the walker (L) is not shared between OS threads, and a thread switch
+     comes only at a safepoint of the walker. It also needs its root fiber
+     before any fiber runs. */
+  setenv("SPINEL_WORKERS", "1", 1);
+  lupe_sched_start();
+  lupe_fs_init();
 
   size_t len;
   char *src = lupe_read_file(L.path, &len);
@@ -57,6 +68,7 @@ static void lupe_body(void) {
   lupe_eval_stmts(&top, prog->statements);
   /* a break of a Proc whose call has returned reaches the top */
   if (L.ctl == LUPE_CTL_BREAK_BLOCK) lupe_gap("break from a block whose call has returned");
+  lupe_sched_end();
   sp_fin_run_exit();
 }
 

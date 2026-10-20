@@ -11,9 +11,22 @@ CC ?= cc
 BUILD = build
 # RAISE, WRAP or PROMOTE: match spinel --int-overflow of the AOT side.
 INT_OVERFLOW ?= RAISE
-CFLAGS = -O2 -g -std=gnu11 -ffp-contract=off -DSP_INT_OVERFLOW_MODE_$(INT_OVERFLOW) \
+# 1: the threaded runtime, which spinel links for a program that uses
+# threads; its scheduler parks a green thread at sleep and at I/O. 0: the
+# single-threaded runtime. Run `make clean` after a change.
+THREADS ?= 1
+ifeq ($(THREADS),1)
+RT_ARCHIVE = $(SPINEL)/lib/libspinel_rt_mt.a
+RT_CFLAGS = -DSP_THREADS -ftls-model=initial-exec
+RT_LIBS = -lpthread
+else
+RT_ARCHIVE = $(SPINEL)/lib/libspinel_rt.a
+RT_CFLAGS =
+RT_LIBS =
+endif
+CFLAGS = -O2 -g -std=gnu11 -ffp-contract=off -DSP_INT_OVERFLOW_MODE_$(INT_OVERFLOW) $(RT_CFLAGS) \
          -Isrc -I$(BUILD) -I$(SPINEL)/lib -I$(SPINEL)/lib/regexp -I$(SPINEL)/vendor/prism/include
-LIBS = $(SPINEL)/lib/libspinel_rt.a $(SPINEL)/build/libprism.a -lm -lcrypt
+LIBS = $(RT_ARCHIVE) $(SPINEL)/build/libprism.a -lm -lcrypt $(RT_LIBS)
 
 all: $(BUILD)/lupe
 
@@ -32,7 +45,8 @@ $(BUILD)/bop_gen_out.c: $(BUILD)/bop_gen
 
 # off.flags turns off each wrapper that does not compile or link.
 $(BUILD)/off.flags: $(BUILD)/bop_gen_out.c tools/bop_report.rb
-	SPINEL=$(SPINEL) ruby tools/bop_report.rb $(BUILD) > $(BUILD)/bop_report.txt
+	SPINEL=$(SPINEL) RT_ARCHIVE=$(RT_ARCHIVE) RT_CFLAGS="$(RT_CFLAGS)" RT_LIBS="$(RT_LIBS)" \
+	  ruby tools/bop_report.rb $(BUILD) > $(BUILD)/bop_report.txt
 
 # spinel.rev records the spinel commit that the binary was built from. The
 # oracle compares it with the spinel tree it tests.

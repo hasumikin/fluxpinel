@@ -129,6 +129,7 @@ static int lupe_exc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
   if (argc == 0 && LUPE_IS("to_s")) { *out = sp_box_str_new(sp_str_dup(sp_exc_message(e))); return 1; }
   if (argc == 0 && LUPE_IS("cause")) { *out = e->cause ? lupe_exc_box(e->cause) : sp_box_nil(); return 1; }
   if (argc == 0 && LUPE_IS("exception")) { *out = r; return 1; }
+  if (argc == 0 && LUPE_IS("result")) { *out = sp_exc_result(e); return 1; }
   if (argc == 0 && LUPE_IS("full_message")) {
     *out = sp_box_str_new(sp_sprintf("%s (%s)", sp_exc_message(e), e->cls_name));
     return 1;

@@ -149,6 +149,12 @@ static sp_int lupe_builtin_id(const char *name) {
 
 /* The LupeClass of a builtin class name, made on first use, or NULL. */
 static LupeClass *lupe_builtin(const char *name) {
+  /* the top-level names of the thread classes */
+  static const char *const alias[][2] = { { "Queue", "Thread::Queue" }, { "SizedQueue", "Thread::SizedQueue" },
+                                          { "Mutex", "Thread::Mutex" },
+                                          { "ConditionVariable", "Thread::ConditionVariable" } };
+  for (size_t i = 0; i < sizeof alias / sizeof alias[0]; i++)
+    if (!strcmp(name, alias[i][0])) name = alias[i][1];
   for (int i = 0; i < L.nbuiltins; i++)
     if (!strcmp(L.builtins[i]->name, name)) return L.builtins[i];
   sp_int id = lupe_builtin_id(name);
@@ -323,6 +329,11 @@ static int lupe_const_scoped(const LupeClass *scope, sp_sym name, sp_RbVal *out)
     LupeConst *k = lupe_const_own(L.object, name);
     if (k) { *out = k->value; return 1; }
     LupeClass *b = lupe_builtin(sp_sym_to_s(name));
+    if (b) { *out = lupe_class_box(b); return 1; }
+  }
+  /* a builtin class nested in a builtin one: Thread::Queue */
+  if (scope->cls_id < 0 && scope != L.object) {
+    LupeClass *b = lupe_builtin(sp_sprintf("%s::%s", scope->name, sp_sym_to_s(name)));
     if (b) { *out = lupe_class_box(b); return 1; }
   }
   return 0;
