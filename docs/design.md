@@ -368,11 +368,24 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   (`sp_json_mt.o`, ...) and the libraries of its `ffi_lib`. It also keeps
   each bound function of the runtime archive in the link with `-Wl,-u`.
   `tools/native_link.rb` reads these from the packages.
+- **Native classes.** A package binds a C struct as a class with
+  `native_struct` (StringIO, StringScanner, `OpenSSL::X509::Store`):
+  - The struct starts with the class id, so an instance is an object of
+    the class for the dispatch of Lupe. It has no ivars.
+  - `native_new` binds a constructor, which takes the class id first.
+    `native_method` binds a method, which takes the struct first.
+  - The bindings of one name form one method of the class. A call takes
+    the binding that spinel would pick at compile time: of the bindings
+    of its arity, the first that takes each argument as is, else the
+    first of the arity, else one with a `:rest`.
+  - A subclass of a native class (`native_subclass`) is a gap at its
+    first call. `native_share` has no effect: a StringIO does not write
+    into the String that it was made on, as it does under
+    `--share-strings`.
 - **Limits.** `ffi_callback`, `ffi_struct`, `ffi_source`, a variadic
-  function and an `IO::Buffer` argument are gaps. The native classes of a
-  package (`native_struct`, `native_method` and their kin, which StringIO
-  and StringScanner use) are gaps too. `FFI=0` builds Lupe with no libffi,
-  and then every FFI declaration and every `native_func` is a gap.
+  function and an `IO::Buffer` argument are gaps. `FFI=0` builds Lupe
+  with no libffi, and then every FFI declaration and every native binding
+  is a gap.
 
 ### 3.4 User classes
 

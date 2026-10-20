@@ -47,3 +47,22 @@ end
 p Greeter.build.hi, Greeter.new.hey
 p [1, [2, [3]], "a", :b, nil].join("-")
 p [1, 2].to_a, 1.eql?(1), 1.eql?(1.0)
+
+# native classes: StringIO and StringScanner
+require "stringio"
+io = StringIO.new
+io.puts "hello"
+io.print 1, :a
+io << "x" << 2
+io.write("w", 3)
+p io.string, io.pos
+r = StringIO.new("line1\nline2\n")
+p r.gets, r.read, r.eof?
+p StringIO.new("abc").read(2)
+p io.class, io.is_a?(StringIO), io.respond_to?(:puts)
+p IO::WaitReadable.class
+require "strscan"
+sc = StringScanner.new("3 + 42")
+p sc.scan(/\d+/), sc.scan(/\s*\+\s*/), sc.scan(/\d+/), sc.eos?
+sc = StringScanner.new("abc")
+p sc.scan("ab"), sc.pos, sc.rest

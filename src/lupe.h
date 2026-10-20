@@ -63,6 +63,9 @@ typedef struct LupeClass {
   int frozen;                       /* the class value is frozen (C.freeze) */
   sp_sym *members;                  /* the members of a record class */
   int nmembers;
+  int native;                       /* a native class of a package (native_struct): an
+                                       instance is a C struct of the package, not a
+                                       LupeObject, and has no ivars */
 } LupeClass;
 
 #define LUPE_REC_STRUCT 1
@@ -258,7 +261,7 @@ static void lupe_sched_end(void);
 
 /* ffi.c */
 static int lupe_ffi_class(LupeClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
-static sp_RbVal lupe_ffi_invoke(const struct LupeFfi *x, int argc, sp_RbVal *argv);
+static sp_RbVal lupe_ffi_invoke(const struct LupeFfi *x, sp_RbVal self, int argc, sp_RbVal *argv);
 
 /* load.c */
 static int lupe_load_call(const pm_node_t *n, sp_RbVal self, const char *name, int argc, sp_RbVal *argv,

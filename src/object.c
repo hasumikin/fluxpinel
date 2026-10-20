@@ -224,6 +224,14 @@ static int lupe_is_lupe_object(sp_RbVal v) {
   return v.tag == SP_TAG_OBJ && v.cls_id >= LUPE_CLS_BASE && v.v.p;
 }
 
+/* An instance of a native class (native_struct): a C struct of a package,
+   which is no LupeObject. */
+static int lupe_is_native_obj(sp_RbVal v) {
+  if (!lupe_is_lupe_object(v)) return 0;
+  LupeClass *c = lupe_class_by_id(v.cls_id);
+  return c && c->native;
+}
+
 /* The class of the program with this full name ("A::B"), or NULL. */
 static LupeClass *lupe_class_named(const char *name) {
   for (int i = 0; i < L.nclasses; i++)
@@ -418,7 +426,7 @@ static sp_RbVal lupe_ivar_holder(sp_RbVal self) {
 
 static sp_RbVal lupe_ivar_get(sp_RbVal self, sp_sym name) {
   sp_RbVal h = lupe_ivar_holder(self);
-  if (!lupe_is_lupe_object(h)) return sp_box_nil();
+  if (!lupe_is_lupe_object(h) || lupe_is_native_obj(h)) return sp_box_nil();
   LupeObject *o = (LupeObject *)h.v.p;
   int slot = lupe_ivar_slot(lupe_class_by_id(o->cls_id), name, 0);
   if (slot < 0 || !o->iv || slot >= o->iv->len) return sp_box_nil();
@@ -429,7 +437,7 @@ static void lupe_ivar_set(sp_RbVal self, sp_sym name, sp_RbVal v) {
   SP_GC_ROOT_RBVAL(self);
   SP_GC_ROOT_RBVAL(v);
   sp_RbVal h = lupe_ivar_holder(self);
-  if (!lupe_is_lupe_object(h)) lupe_gap(sp_sprintf("ivar on a %s", sp_poly_class_name(self)));
+  if (!lupe_is_lupe_object(h) || lupe_is_native_obj(h)) lupe_gap(sp_sprintf("ivar on a %s", sp_poly_class_name(self)));
   SP_GC_ROOT_RBVAL(h);
   LupeObject *o = (LupeObject *)h.v.p;
   /* a frozen object: an ivar, an attr writer or a Struct member */
@@ -478,6 +486,7 @@ static const char *lupe_default_inspect(int cls_id, void *p) {
   if (p == L.main.v.p) return SPL("main");
   LupeClass *c = lupe_class_by_id(cls_id);
   if (lupe_record_of(c)) return lupe_record_inspect(sp_box_obj(p, cls_id));
+  if (c->native) return lupe_default_to_s(cls_id, p);
   LupeObject *o = (LupeObject *)p;
   if (sp_poly_recur_seen(SP_POLY_RECUR_INSPECT, p, NULL))
     return sp_sprintf("#<%s:0x%016llx ...>", c->name, (unsigned long long)(uintptr_t)p);
@@ -654,7 +663,7 @@ static int lupe_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
       sp_PolyArray *a = sp_PolyArray_new();
       SP_GC_ROOT(a);
       sp_RbVal h = lupe_ivar_holder(r);
-      if (lupe_is_lupe_object(h)) {
+      if (lupe_is_lupe_object(h) && !lupe_is_native_obj(h)) {
         LupeObject *o = (LupeObject *)h.v.p;
         LupeClass *c = lupe_class_by_id(o->cls_id);
         /* the members of a Struct have slots too, under names with no @ */

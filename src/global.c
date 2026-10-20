@@ -239,6 +239,14 @@ static void lupe_global_init(void) {
   lupe_const_set(L.object, sp_sym_intern("STDERR"), lupe_io_box(sp_io_stderr()));
   lupe_env = lupe_new_object(L.object);
   lupe_const_set(L.object, sp_sym_intern("ENV"), lupe_env);
+  /* the modules that a nonblocking error includes, which the class table
+     of the runtime does not name */
+  LupeClass *io = lupe_builtin("IO");
+  const char *const waits[] = { "WaitReadable", "WaitWritable" };
+  for (int i = 0; i < 2; i++) {
+    LupeClass *m = lupe_class_new(strdup(sp_sprintf("IO::%s", waits[i])), 1, NULL, io);
+    lupe_const_set(io, sp_sym_intern(waits[i]), lupe_class_box(m));
+  }
 }
 
 /* ---- IO ---- */
