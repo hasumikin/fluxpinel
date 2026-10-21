@@ -31,4 +31,13 @@ make test
 `make test` runs each program in `test/m2` under CRuby and Lupe and
 compares stdout and the exit status.
 
+```sh
+make host KERNEL=app.rb KERNEL_ENTRIES=App.add,App.greet
+make test-host
+```
+
+`make host` builds `build/host/lupe`: Lupe and an AOT program (the
+kernel) in one binary. `make test-host` runs the tests on that build, with
+`test/kernel/app.rb` as the kernel.
+
 See [docs/design.md](docs/design.md) for the design.

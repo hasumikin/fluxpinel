@@ -512,14 +512,34 @@ Spinel emits a program as a library with `--ext-init NAME` and
 `--ext-entry Mod.m,...` (with `-c`). The output has two parts:
 
 - The C file is the **kernel**. It holds the global state of the runtime
-  (the exception stack, `ARGV`, the signal state), the symbol table and
-  the class names of the program. Its `NAME()` takes the place of `main`.
+  (`ARGV`, the signal state), the symbol table and the class names of the
+  program. Its `NAME()` takes the place of `main`.
 - The header is the contract for a **host**: C code that calls into the
   kernel. A host is built with `SPINEL_EXT_HOST`, so that `spinel_rt.h`
-  declares that global state `extern` and does not define it. The two
-  parts link one `libspinel_rt`, so they have one heap.
+  declares that global state `extern` and does not define it.
 
 Lupe is the host of use 1. The program that a user compiles is the kernel.
+Lupe does not use the header form of a host. `spinel_rt.h` keeps much state
+`static` in each TU: the exception stack, the catch and break stacks and
+the state of `ensure`. A raise of the kernel jumps to the handlers of the
+kernel's TU, so a walker in another TU never catches it. Thus the host
+build (`make host`) puts the kernel and Lupe into one TU:
+
+```
+src/kernel_prelude.h   spinel_rt.h, with sp_class_to_s renamed
+build/host/kernel.c    the kernel (spinel -c --ext-init lupe_kernel_init)
+src/main.c             Lupe, with LUPE_KERNEL=lupe_kernel_init
+```
+
+- **One state.** The walker and the kernel use the same handler stacks,
+  the same symbol table and the same heap.
+- **The class names.** The runtime names a class value through
+  `sp_class_to_s`, and the kernel defines it for its own classes only.
+  `kernel_prelude.h` includes `spinel_rt.h` with that name changed to
+  `lupe_class_to_s_any`. The calls inside the runtime thus go to Lupe,
+  which calls the function of the kernel for a class of the kernel.
+- **The types.** The struct of each class of the kernel is in the TU, so
+  Lupe can read an ivar of an AOT object by its field.
 
 - **The entries.** Each export is a C function, for example
   `sp_App_s_add`. A parameter with no caller in the program is an
@@ -531,19 +551,21 @@ Lupe is the host of use 1. The program that a user compiles is the kernel.
   boxes it as an `sp_RbVal`.
 - **Exceptions.** `NAME_try(fn, ctx, &cls, &msg)` runs `fn` under a rescue
   handler. It answers 0, or 1 and the class name and message of a raise.
-- **The hooks.** The kernel sets the hooks of the runtime (`sp_obj_inspect_fn`
-  and its kin) to the functions that know its classes. The host keeps each
-  hook of the kernel and sets its own. The hook of the host handles a
-  class of Lupe (`cls_id >= LUPE_CLS_BASE`) and calls the hook of the
-  kernel for the other classes.
+- **The hooks.** The kernel sets the hooks of the runtime (`sp_obj_inspect_fn`,
+  `sp_obj_cmp_hook` and their kin) to the functions that know its classes.
+  Lupe keeps each hook of the kernel and sets its own. The hook of Lupe
+  handles a class of Lupe (`cls_id >= LUPE_CLS_BASE`) and calls the hook
+  of the kernel for a class of the kernel (`0 <= cls_id < LUPE_CLS_BASE`).
+  With no kernel, the kept hooks are NULL, so one source serves both
+  builds.
 - **Limits of the exports.** Lupe works around them, and the spinel
   maintainer gets them as issues after a demo:
   - An entry that answers a String and has no caller in the program
     answers `NULL`.
-  - The header does not declare the type of an object that an entry
-    answers (`sp_Counter`).
   - Only the singleton methods of a module export. A method of an instance
     does not.
+  - The kernel names only its own classes in `sp_class_to_s`.
+    `kernel_prelude.h` works around this.
 
 The other direction is AOT to walker. The candidate path is the FFI of
 spinel: an `ffi_func` with no `ffi_lib` names a C function of the same
@@ -647,8 +669,9 @@ with the same walker and keeps the locals from one line to the next.
 
 - **Object layout.** The console reads an ivar of an AOT object through the
   `inspect` hook of the kernel. A read or a write of one ivar by name needs
-  the struct layout of the class. The generated C has it, and spinel does
-  not give it in another form.
+  the struct layout of the class. The struct is in the TU of the host
+  build (section 3.6), so a generated table can map each ivar name to its
+  field.
 - **Redefinition.** A script replaces a method only through a method table.
   AOT code that calls a method directly keeps the old method.
 
@@ -977,12 +1000,13 @@ These facts apply to spinel commit `ffac8340d`.
    - Next, the tests of a Roundhouse output (`spin test`) under Lupe and
      AOT. Roundhouse lowers a Rails app to Ruby that spinel compiles.
    - Then the largest blockers of the oracle report.
-6. **M4: Lupe as a host.** Build Lupe with `SPINEL_EXT_HOST` and link it
-   with a kernel (section 3.6). Lupe uses the symbol table and the class
-   names of the kernel, and chains each hook to the hook of the kernel.
-   `make test` passes with the host build too.
-7. **M5: walker to AOT.** A tool reads the header of a kernel and
-   generates a wrapper for each entry. The wrapper boxes the result.
+6. **M4: Lupe as a host.** Build the kernel and Lupe in one TU (section
+   3.6). Lupe uses the symbol table and the class names of the kernel, and
+   chains each hook to the hook of the kernel. `make test-host` runs
+   `test/m2` and `test/m3` on the host build, with `test/kernel/app.rb` as
+   the kernel.
+7. **M5: walker to AOT.** A tool reads the entries of a kernel and
+   generates a wrapper for each one. The wrapper boxes the result.
    A script calls an entry as a singleton method of its module, and holds
    an AOT object as a value. Lupe works around the limits of the exports.
 8. **M6: scripts.** Confirm the FFI path from AOT code to Lupe (section

@@ -28,11 +28,12 @@ static int lupe_is_exc_class(const LupeClass *k) {
   return 0;
 }
 
-/* The runtime asks for the superclass of a class of the program by name. */
+/* The runtime asks for the superclass of a class of the program by name:
+   a class of Lupe, else a class of the kernel. */
 static const char *lupe_exc_parent(const char *name) {
   LupeClass *k = lupe_class_named(name);
-  if (!k || k->cls_id < LUPE_CLS_BASE || !k->super) return NULL;
-  return k->super->name;
+  if (k && k->cls_id >= LUPE_CLS_BASE) return k->super ? k->super->name : NULL;
+  return lupe_kernel_hooks.exc_parent ? lupe_kernel_hooks.exc_parent(name) : NULL;
 }
 
 /* The message of e: nil gives none (#message then answers the class name);

@@ -40,7 +40,7 @@ static void lupe_gap(const char *what) {
 
 static sp_sym lupe_sym(pm_constant_id_t id) {
   const pm_constant_t *c = pm_constant_pool_id_to_constant(&L.pool, id);
-  return sp_sym_intern_n((const char *)c->start, c->length);
+  return lupe_sym_intern_n((const char *)c->start, c->length);
 }
 
 /* The write barrier of a frame whose slots are on the heap (LupeEnv): the
@@ -1528,7 +1528,7 @@ static sp_RbVal lupe_eval(LupeFrame *f, const pm_node_t *n) {
     return lupe_interpolate(f, &((const pm_interpolated_string_node_t *)n)->parts);
   case PM_SYMBOL_NODE: {
     const pm_string_t *s = &((const pm_symbol_node_t *)n)->unescaped;
-    return sp_box_sym(sp_sym_intern_n((const char *)pm_string_source(s), pm_string_length(s)));
+    return sp_box_sym(lupe_sym_intern_n((const char *)pm_string_source(s), pm_string_length(s)));
   }
   case PM_TRUE_NODE: return sp_box_bool(1);
   case PM_FALSE_NODE: return sp_box_bool(0);

@@ -471,7 +471,11 @@ static const char *lupe_hook_class_name(sp_int cls_id) {
   return c ? c->name : sp_str_empty;
 }
 
+/* Each hook below calls the hook of the kernel for a class of the kernel
+   (lupe_tu.c). */
 static const char *lupe_hook_obj_cls_name(int cls_id) {
+  if (lupe_kernel_cls(cls_id) && lupe_kernel_hooks.obj_cls_name)
+    return lupe_kernel_hooks.obj_cls_name(cls_id);
   return lupe_hook_class_name(cls_id);
 }
 
@@ -515,6 +519,8 @@ static const char *lupe_default_inspect(int cls_id, void *p) {
 }
 
 static const char *lupe_hook_obj_to_s(int cls_id, void *p) {
+  if (lupe_kernel_cls(cls_id) && lupe_kernel_hooks.obj_to_s)
+    return lupe_kernel_hooks.obj_to_s(cls_id, p);
   sp_RbVal obj = sp_box_obj(p, cls_id);
   SP_GC_ROOT_RBVAL(obj);
   const char *s = p == L.main.v.p ? NULL : lupe_user_string(obj, "to_s");
@@ -522,6 +528,8 @@ static const char *lupe_hook_obj_to_s(int cls_id, void *p) {
 }
 
 static const char *lupe_hook_obj_inspect(int cls_id, void *p) {
+  if (lupe_kernel_cls(cls_id) && lupe_kernel_hooks.obj_inspect)
+    return lupe_kernel_hooks.obj_inspect(cls_id, p);
   sp_RbVal obj = sp_box_obj(p, cls_id);
   SP_GC_ROOT_RBVAL(obj);
   const char *s = p == L.main.v.p ? NULL : lupe_user_string(obj, "inspect");
@@ -557,6 +565,8 @@ static int lupe_comparable(const char *op, sp_RbVal a, sp_RbVal b, sp_RbVal *out
 
 static sp_RbVal lupe_hook_binop(const char *op, sp_RbVal a, sp_RbVal b, sp_bool *handled) {
   *handled = FALSE;
+  if (a.tag == SP_TAG_OBJ && lupe_kernel_cls(a.cls_id) && lupe_kernel_hooks.binop)
+    return lupe_kernel_hooks.binop(op, a, b, handled);
   if (!lupe_is_lupe_object(a)) return sp_box_nil();
   SP_GC_ROOT_RBVAL(a);
   SP_GC_ROOT_RBVAL(b);
@@ -579,6 +589,8 @@ static sp_RbVal lupe_hook_binop(const char *op, sp_RbVal a, sp_RbVal b, sp_bool 
 /* The coerce protocol: `5 * obj` is `x, y = obj.coerce(5); x * y`. */
 static sp_RbVal lupe_hook_coerce(const char *op, sp_RbVal num, sp_RbVal obj, sp_bool *handled) {
   *handled = FALSE;
+  if (obj.tag == SP_TAG_OBJ && lupe_kernel_cls(obj.cls_id) && lupe_kernel_hooks.coerce)
+    return lupe_kernel_hooks.coerce(op, num, obj, handled);
   if (!lupe_is_lupe_object(obj)) return sp_box_nil();
   SP_GC_ROOT_RBVAL(num);
   SP_GC_ROOT_RBVAL(obj);
@@ -596,6 +608,8 @@ static sp_RbVal lupe_hook_coerce(const char *op, sp_RbVal num, sp_RbVal obj, sp_
 }
 
 static int lupe_hook_class_is_module(sp_Class c) {
+  if (lupe_kernel_cls(c.cls_id) && lupe_kernel_hooks.class_is_module)
+    return lupe_kernel_hooks.class_is_module(c);
   LupeClass *k = lupe_class_by_id(c.cls_id);
   return k && k->is_module;
 }

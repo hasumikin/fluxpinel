@@ -84,6 +84,35 @@ test: $(BUILD)/lupe
 	ruby test/run.rb $(BUILD)/lupe $(TEST_DIRS)
 	SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1 ruby test/run.rb $(BUILD)/lupe $(TEST_DIRS)
 
+# The host build (docs/design.md, section 3.6): a kernel, a program that
+# spinel emits as a library, and Lupe in one TU. The runtime keeps its
+# exception stack and other state static in each TU, so the walker and the
+# kernel must share the TU to share that state. KERNEL names the program
+# and KERNEL_ENTRIES the methods that it exports.
+KERNEL ?= test/kernel/app.rb
+KERNEL_ENTRIES ?= LupeKernel.ping
+HOST = $(BUILD)/host
+KERNEL_OVERFLOW = $(shell echo $(INT_OVERFLOW) | tr A-Z a-z)
+
+$(HOST)/kernel.c: $(KERNEL) src/kernel_prelude.h
+	mkdir -p $(HOST)
+	$(SPINEL)/spinel $(KERNEL) -c -o $@ --force --int-overflow $(KERNEL_OVERFLOW) \
+	  --ext-init lupe_kernel_init --ext-entry $(KERNEL_ENTRIES)
+	# each define of the kernel before spinel_rt.h is in kernel_prelude.h
+	sed '/^#include "spinel_rt.h"/q' $@ | grep '^#define' | while read -r d; do \
+	  grep -qxF "$$d" src/kernel_prelude.h || { echo "kernel_prelude.h lacks: $$d"; rm -f $@; exit 1; }; \
+	done
+
+$(HOST)/lupe: src/*.c src/*.h $(HOST)/kernel.c $(BUILD)/bop_gen_out.c $(BUILD)/off.flags $(NATIVE_FLAGS)
+	$(CC) $(CFLAGS) -DLUPE_KERNEL=lupe_kernel_init -include src/kernel_prelude.h -include $(HOST)/kernel.c \
+	  $$(cat $(BUILD)/off.flags) -o $@ src/main.c $(if $(NATIVE_FLAGS),$$(cat $(NATIVE_FLAGS))) $(LIBS)
+
+host: $(HOST)/lupe
+
+test-host: $(HOST)/lupe
+	ruby test/run.rb $(HOST)/lupe $(TEST_DIRS)
+	SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1 ruby test/run.rb $(HOST)/lupe $(TEST_DIRS)
+
 # The oracle: the spinel test corpus under CRuby (.expected), Lupe and AOT,
 # in promote mode on both sides. In raise mode, spinel's analysis still
 # promotes an Integer where it sees growth (10 ** 30), and a walker with no
@@ -96,4 +125,4 @@ oracle:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test oracle clean
+.PHONY: all test host test-host oracle clean

@@ -78,14 +78,6 @@ typedef struct {
   sp_PolyArray *iv;   /* slot i holds the ivar cls->ivars[i] */
 } LupeObject;
 
-/* Lupe class ids start here, far above the ids that spinel codegen gives
-   the classes of an AOT program (0, 1, ...). */
-#define LUPE_CLS_BASE 0x100000
-
-/* The ids of the exception classes that only the runtime names (LoadError,
-   Math::DomainError, ...) count down from here, below the builtin table. */
-#define LUPE_EXC_CLS_BASE (-1000)
-
 struct LupeFrame;
 
 /* The frames of one fiber that are live, outermost first, by serial. Each

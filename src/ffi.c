@@ -209,7 +209,7 @@ static LupeClass *lupe_native_class(const char *path) {
   for (const char *p = path;;) {
     const char *sep = strstr(p, "::");
     size_t n = sep ? (size_t)(sep - p) : strlen(p);
-    sp_sym s = sp_sym_intern_n(p, n);
+    sp_sym s = lupe_sym_intern_n(p, n);
     sp_RbVal v;
     LupeClass *c = NULL;
     if (lupe_const_scoped(scope, s, &v) && !(c = lupe_class_value(v)))

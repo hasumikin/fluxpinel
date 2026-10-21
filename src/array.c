@@ -312,6 +312,8 @@ static LupeMethod *lupe_hook_method(sp_RbVal v, const char *name) {
 /* a <=> b, for sort, min, max and their kin with no block. With no <=> in
    the program, the default of Object: 0 for the same object, else nil. */
 static sp_int lupe_hook_cmp(sp_RbVal a, sp_RbVal b, sp_bool *comparable) {
+  if (a.tag == SP_TAG_OBJ && lupe_kernel_cls(a.cls_id) && lupe_kernel_hooks.cmp)
+    return lupe_kernel_hooks.cmp(a, b, comparable);
   LupeMethod *m = lupe_hook_method(a, "<=>");
   *comparable = !m && a.tag == b.tag && a.v.p == b.v.p;
   if (!m || !a.v.p) return 0;
@@ -325,6 +327,8 @@ static sp_int lupe_hook_cmp(sp_RbVal a, sp_RbVal b, sp_bool *comparable) {
 /* to_ary and to_a: the Array, or nil for a class with no such method. To
    the question with no object, to_ary answers true for a class with it. */
 static sp_RbVal lupe_hook_to_ary(sp_RbVal v) {
+  if (v.tag == SP_TAG_OBJ && lupe_kernel_cls(v.cls_id) && lupe_kernel_hooks.to_ary)
+    return lupe_kernel_hooks.to_ary(v);
   LupeMethod *m = lupe_hook_method(v, "to_ary");
   if (!m) return sp_box_nil();
   if (!v.v.p) return sp_box_bool(1);
@@ -333,6 +337,8 @@ static sp_RbVal lupe_hook_to_ary(sp_RbVal v) {
 }
 
 static sp_RbVal lupe_hook_to_a(sp_RbVal v) {
+  if (v.tag == SP_TAG_OBJ && lupe_kernel_cls(v.cls_id) && lupe_kernel_hooks.to_a)
+    return lupe_kernel_hooks.to_a(v);
   LupeMethod *m = lupe_hook_method(v, "to_a");
   if (!m || !v.v.p) return sp_box_nil();
   SP_GC_ROOT_RBVAL(v);
@@ -341,6 +347,7 @@ static sp_RbVal lupe_hook_to_a(sp_RbVal v) {
 
 /* to_int and to_str, for an implicit conversion of an argument */
 static sp_int lupe_hook_to_int(int cls_id, void *p, int *ok) {
+  if (lupe_kernel_cls(cls_id) && lupe_kernel_hooks.to_int) return lupe_kernel_hooks.to_int(cls_id, p, ok);
   sp_RbVal v = sp_box_obj(p, cls_id);
   LupeMethod *m = lupe_hook_method(v, "to_int");
   *ok = 0;
@@ -352,6 +359,7 @@ static sp_int lupe_hook_to_int(int cls_id, void *p, int *ok) {
 }
 
 static const char *lupe_hook_to_str(int cls_id, void *p) {
+  if (lupe_kernel_cls(cls_id) && lupe_kernel_hooks.to_str) return lupe_kernel_hooks.to_str(cls_id, p);
   sp_RbVal v = sp_box_obj(p, cls_id);
   LupeMethod *m = lupe_hook_method(v, "to_str");
   if (!m) return NULL;
@@ -363,6 +371,7 @@ static const char *lupe_hook_to_str(int cls_id, void *p) {
 /* to_path, for a path argument (sp_poly_arg_path): NULL for a class with
    no to_path, which then takes to_str. */
 static const char *lupe_hook_to_path(int cls_id, void *p) {
+  if (lupe_kernel_cls(cls_id) && lupe_kernel_hooks.to_path) return lupe_kernel_hooks.to_path(cls_id, p);
   sp_RbVal v = sp_box_obj(p, cls_id);
   LupeMethod *m = lupe_hook_method(v, "to_path");
   if (!m) return NULL;
