@@ -1,31 +1,31 @@
-# oracle.rb -- run the spinel test corpus under CRuby, Lupe and AOT.
+# oracle.rb -- run the spinel test corpus under CRuby, Fluxpinel and AOT.
 #
-# Usage: ruby tools/oracle.rb --spinel DIR --lupe BIN --out DIR
+# Usage: ruby tools/oracle.rb --spinel DIR --fluxpinel BIN --out DIR
 #                             [--int-overflow promote|raise] [--jobs N] [FILE...]
 #
-# Both sides run in one integer overflow mode (default promote). Lupe must
+# Both sides run in one integer overflow mode (default promote). Fluxpinel must
 # be built in that mode. The corpus follows spinel's own lane for the mode:
 # promote leaves out RAISE_MODE_PINS (from spinel's Makefile), raise leaves
 # out promote_*.rb.
 #
 # CRuby's answer is the .expected file of each test (spinel snapshots it from
-# CRuby). Lupe runs first. When Lupe runs the program, spinel compiles it and
+# CRuby). Fluxpinel runs first. When Fluxpinel runs the program, spinel compiles it and
 # the AOT binary runs too. The three stdouts then classify the test:
 #
-#   agree          Lupe and AOT both give the CRuby answer
-#   aot_differs    Lupe gives the CRuby answer, AOT does not: a suspect in
+#   agree          Fluxpinel and AOT both give the CRuby answer
+#   aot_differs    Fluxpinel gives the CRuby answer, AOT does not: a suspect in
 #                  the analysis or the codegen of spinel
-#   lupe_only      Lupe gives the CRuby answer, spinel refuses the program
-#   shared_differs Lupe and AOT give the same wrong answer: a suspect in the
+#   fx_only      Fluxpinel gives the CRuby answer, spinel refuses the program
+#   shared_differs Fluxpinel and AOT give the same wrong answer: a suspect in the
 #                  shared runtime, or a deviation that spinel accepts
-#   lupe_differs   AOT gives the CRuby answer (or spinel refuses), Lupe does not
+#   fx_differs   AOT gives the CRuby answer (or spinel refuses), Fluxpinel does not
 #   all_differ     all three answers differ
 #
-# Tests that Lupe cannot run are counted by reason:
+# Tests that Fluxpinel cannot run are counted by reason:
 #
-#   lupe_unsupported  the walker has no case for a node (exit status 2)
-#   lupe_missing      a builtin method is missing (LUPE_TRACE_MISSING)
-#   lupe_crash        a signal or a timeout
+#   fx_unsupported  the walker has no case for a node (exit status 2)
+#   fx_missing      a builtin method is missing (FX_TRACE_MISSING)
+#   fx_crash        a signal or a timeout
 #
 # tools/oracle_known.tsv lists the known defects. A listed test that still
 # differs is counted as known, not in its class above. A listed test that
@@ -43,14 +43,14 @@ opts = { jobs: Etc.nprocessors, timeout: 10, compile_timeout: 120, mode: "promot
 OptionParser.new do |o|
   o.on("--spinel DIR") { |v| opts[:spinel] = File.expand_path(v) }
   o.on("--int-overflow MODE", %w[promote raise]) { |v| opts[:mode] = v }
-  o.on("--lupe BIN") { |v| opts[:lupe] = File.expand_path(v) }
+  o.on("--fluxpinel BIN") { |v| opts[:fluxpinel] = File.expand_path(v) }
   o.on("--out DIR") { |v| opts[:out] = File.expand_path(v) }
   o.on("--jobs N", Integer) { |v| opts[:jobs] = v }
 end.parse!
-%i[spinel lupe out].each { |k| abort "oracle: --#{k} is required" unless opts[k] }
+%i[spinel fluxpinel out].each { |k| abort "oracle: --#{k} is required" unless opts[k] }
 
 SPINEL_DIR = opts[:spinel]
-LUPE = opts[:lupe]
+FLUXPINEL = opts[:fluxpinel]
 OUT = opts[:out]
 FileUtils.rm_rf(OUT)
 FileUtils.mkdir_p(File.join(OUT, "bin"))
@@ -60,13 +60,13 @@ FileUtils.mkdir_p(File.join(OUT, "cases"))
 
 spinel_rev = `git -C #{SPINEL_DIR} rev-parse HEAD`.strip
 dirty = `git -C #{SPINEL_DIR} status --porcelain --untracked-files=no`.lines.size
-rev_file = File.join(File.dirname(LUPE), "spinel.rev")
-lupe_rev = File.exist?(rev_file) ? File.read(rev_file).strip : "(unknown)"
-rev_note = lupe_rev == spinel_rev ? "same commit" : "DIFFERENT commit: rebuild Lupe"
-warn "oracle: Lupe was built from #{lupe_rev[0, 12]}, the spinel tree is #{spinel_rev[0, 12]}" if lupe_rev != spinel_rev
-mode_file = File.join(File.dirname(LUPE), "int_overflow")
-lupe_mode = File.exist?(mode_file) ? File.read(mode_file).strip.downcase : "(unknown)"
-abort "oracle: Lupe is built in #{lupe_mode} mode, the oracle runs in #{opts[:mode]}" if lupe_mode != opts[:mode]
+rev_file = File.join(File.dirname(FLUXPINEL), "spinel.rev")
+fx_rev = File.exist?(rev_file) ? File.read(rev_file).strip : "(unknown)"
+rev_note = fx_rev == spinel_rev ? "same commit" : "DIFFERENT commit: rebuild Fluxpinel"
+warn "oracle: Fluxpinel was built from #{fx_rev[0, 12]}, the spinel tree is #{spinel_rev[0, 12]}" if fx_rev != spinel_rev
+mode_file = File.join(File.dirname(FLUXPINEL), "int_overflow")
+fx_mode = File.exist?(mode_file) ? File.read(mode_file).strip.downcase : "(unknown)"
+abort "oracle: Fluxpinel is built in #{fx_mode} mode, the oracle runs in #{opts[:mode]}" if fx_mode != opts[:mode]
 OVERFLOW_FLAG = "--int-overflow=#{opts[:mode]}"
 
 # ---- the corpus ----
@@ -112,14 +112,14 @@ def check(test, opts)
   stdin =File.exist?("#{test}.stdin") ? File.binread("#{test}.stdin") : nil
   want = norm(File.binread("#{test}.expected"))
 
-  lout, lerr, lst = run([LUPE, rel], timeout: opts[:timeout], stdin: stdin, env: { "LUPE_TRACE_MISSING" => "1" })
-  if lst == 2 && lerr =~ /^lupe: .*?: unsupported (.*)$/
-    return Result.new(name, :lupe_unsupported, $1)
+  lout, lerr, lst = run([FLUXPINEL, rel], timeout: opts[:timeout], stdin: stdin, env: { "FX_TRACE_MISSING" => "1" })
+  if lst == 2 && lerr =~ /^fluxpinel: .*?: unsupported (.*)$/
+    return Result.new(name, :fx_unsupported, $1)
   end
-  return Result.new(name, :lupe_crash, lst == 124 ? "timeout" : "status #{lst}") if lst >= 124
-  lupe_ok = lout == want
-  if !lupe_ok && lerr =~ /^lupe: missing builtin (\S+)$/
-    return Result.new(name, :lupe_missing, $1)
+  return Result.new(name, :fx_crash, lst == 124 ? "timeout" : "status #{lst}") if lst >= 124
+  fx_ok = lout == want
+  if !fx_ok && lerr =~ /^fluxpinel: missing builtin (\S+)$/
+    return Result.new(name, :fx_missing, $1)
   end
 
   bin = File.join(OUT, "bin", name)
@@ -134,19 +134,19 @@ def check(test, opts)
   aot_ok = aout == want
 
   klass, detail =
-    if lupe_ok && aot_ok then [:agree, ""]
-    elsif lupe_ok && aout.nil? then [:lupe_only, refusal]
-    elsif lupe_ok then [:aot_differs, first_diff(want, aout)]
+    if fx_ok && aot_ok then [:agree, ""]
+    elsif fx_ok && aout.nil? then [:fx_only, refusal]
+    elsif fx_ok then [:aot_differs, first_diff(want, aout)]
     elsif aout && aout == lout then [:shared_differs, first_diff(want, lout)]
-    elsif aot_ok || aout.nil? then [:lupe_differs, first_diff(want, lout)]
+    elsif aot_ok || aout.nil? then [:fx_differs, first_diff(want, lout)]
     else [:all_differ, first_diff(want, lout)]
     end
   unless %i[agree].include?(klass)
     dir = File.join(OUT, "cases", name)
     FileUtils.mkdir_p(dir)
     File.binwrite(File.join(dir, "expected"), want)
-    File.binwrite(File.join(dir, "lupe.out"), lout)
-    File.write(File.join(dir, "lupe.err"), lerr)
+    File.binwrite(File.join(dir, "fluxpinel.out"), lout)
+    File.write(File.join(dir, "fluxpinel.err"), lerr)
     File.binwrite(File.join(dir, "aot.out"), aout) if aout
     File.write(File.join(dir, "spinel.err"), cerr) if cst != 0
   end
@@ -183,31 +183,31 @@ results.sort_by!(&:test)
 
 File.write(File.join(OUT, "results.tsv"), results.map { |r| [r.test, r.klass, r.detail].join("\t") }.join("\n") + "\n")
 
-ORDER = %i[agree aot_differs lupe_only shared_differs lupe_differs all_differ known known_fixed
-           lupe_unsupported lupe_missing lupe_crash skipped].freeze
+ORDER = %i[agree aot_differs fx_only shared_differs fx_differs all_differ known known_fixed
+           fx_unsupported fx_missing fx_crash skipped].freeze
 by = results.group_by(&:klass)
 ran = results.count do |r|
-  %i[agree aot_differs lupe_only shared_differs lupe_differs all_differ known known_fixed].include?(r.klass)
+  %i[agree aot_differs fx_only shared_differs fx_differs all_differ known known_fixed].include?(r.klass)
 end
 
 md = +"# Oracle report\n\n"
 md << "- spinel: `#{spinel_rev[0, 12]}`#{dirty > 0 ? " (#{dirty} modified files)" : ""}\n"
-md << "- Lupe built from: `#{lupe_rev[0, 12]}` (#{rev_note})\n"
-md << "- integer overflow: #{opts[:mode]} (Lupe and AOT)\n"
-md << "- tests: #{results.size} (Lupe runs #{ran}, #{(100.0 * ran / results.size).round(1)}%)\n\n"
+md << "- Fluxpinel built from: `#{fx_rev[0, 12]}` (#{rev_note})\n"
+md << "- integer overflow: #{opts[:mode]} (Fluxpinel and AOT)\n"
+md << "- tests: #{results.size} (Fluxpinel runs #{ran}, #{(100.0 * ran / results.size).round(1)}%)\n\n"
 md << "| class | tests |\n|---|---|\n"
 ORDER.each { |k| md << "| #{k} | #{(by[k] || []).size} |\n" }
 
 top = lambda do |klass, title|
   rs = by[klass] || []
   return if rs.empty?
-  md << "\n## #{title}\n\n| count | #{klass == :lupe_missing ? 'method' : 'reason'} |\n|---|---|\n"
+  md << "\n## #{title}\n\n| count | #{klass == :fx_missing ? 'method' : 'reason'} |\n|---|---|\n"
   rs.group_by(&:detail).sort_by { |d, v| [-v.size, d] }.first(40).each { |d, v| md << "| #{v.size} | `#{d}` |\n" }
 end
-top.(:lupe_unsupported, "Unsupported in the walker (top 40)")
-top.(:lupe_missing, "Missing builtin methods (top 40)")
+top.(:fx_unsupported, "Unsupported in the walker (top 40)")
+top.(:fx_missing, "Missing builtin methods (top 40)")
 
-%i[aot_differs lupe_only shared_differs lupe_differs all_differ known known_fixed lupe_crash].each do |k|
+%i[aot_differs fx_only shared_differs fx_differs all_differ known known_fixed fx_crash].each do |k|
   rs = by[k] || []
   next if rs.empty?
   md << "\n## #{k} (#{rs.size})\n\n"

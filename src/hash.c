@@ -10,30 +10,30 @@
    value] pairs. This file has the methods that are special to Hash, and
    the hooks that hash a user object as a key. */
 
-#include "lupe.h"
+#include "fluxpinel.h"
 
-#define LUPE_IS(s) (!strcmp(name, (s)))
+#define FX_IS(s) (!strcmp(name, (s)))
 
-static sp_PolyPolyHash *lupe_hash_mut(sp_RbVal r, const char *name) {
-  if (r.cls_id != SP_BUILTIN_POLY_POLY_HASH) lupe_gap(sp_sprintf("Hash#%s on a typed Hash", name));
+static sp_PolyPolyHash *fx_hash_mut(sp_RbVal r, const char *name) {
+  if (r.cls_id != SP_BUILTIN_POLY_POLY_HASH) fx_gap(sp_sprintf("Hash#%s on a typed Hash", name));
   if (sp_gc_is_frozen(r.v.p)) sp_raise_frozen_hash_at(r.v.p, r.cls_id);
   return (sp_PolyPolyHash *)r.v.p;
 }
 
-static sp_RbVal lupe_hash_box(sp_PolyPolyHash *h) {
+static sp_RbVal fx_hash_box(sp_PolyPolyHash *h) {
   return sp_box_obj(h, SP_BUILTIN_POLY_POLY_HASH);
 }
 
-/* The default proc of Hash.new { |h, k| }: it calls the LupeProc in self. */
-static sp_RbVal lupe_hash_dproc(sp_PolyPolyHash *h, sp_RbVal k, void *self) {
-  sp_RbVal argv[2] = { lupe_hash_box(h), k };
+/* The default proc of Hash.new { |h, k| }: it calls the FxProc in self. */
+static sp_RbVal fx_hash_dproc(sp_PolyPolyHash *h, sp_RbVal k, void *self) {
+  sp_RbVal argv[2] = { fx_hash_box(h), k };
   SP_GC_ROOT_RBVAL(argv[0]);
   SP_GC_ROOT_RBVAL(argv[1]);
-  return lupe_yield(&((LupeProc *)self)->b, 2, argv);
+  return fx_yield(&((FxProc *)self)->b, 2, argv);
 }
 
 /* A copy of the Hash h with the same default. */
-static sp_PolyPolyHash *lupe_hash_dup(sp_PolyPolyHash *h) {
+static sp_PolyPolyHash *fx_hash_dup(sp_PolyPolyHash *h) {
   SP_GC_ROOT(h);
   sp_PolyPolyHash *o = sp_PolyPolyHash_new();
   SP_GC_ROOT(o);
@@ -47,12 +47,12 @@ static sp_PolyPolyHash *lupe_hash_dup(sp_PolyPolyHash *h) {
 }
 
 /* Hash.new, Hash.new(default) and Hash.new { |h, k| }. */
-static int lupe_hash_class(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
+static int fx_hash_class(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                            sp_RbVal *out) {
-  LupeClass *k = lupe_class_value(r);
-  if (!k || strcmp(k->name, "Hash") || !LUPE_IS("new")) return 0;
+  FxClass *k = fx_class_value(r);
+  if (!k || strcmp(k->name, "Hash") || !FX_IS("new")) return 0;
   /* Hash.new(capacity: n) sizes the table; the size is not visible */
-  if (argc >= 1 && lupe_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash) argc--;
+  if (argc >= 1 && fx_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash) argc--;
   if (argc > 1) return 0;
   sp_PolyPolyHash *h = sp_PolyPolyHash_new();
   SP_GC_ROOT(h);
@@ -60,60 +60,60 @@ static int lupe_hash_class(sp_RbVal r, const char *name, int argc, sp_RbVal *arg
   if (argc == 1) h->default_v = argv[0];
   if (blk) {
     if (argc) sp_raise_cls("ArgumentError", "wrong number of arguments (given 1, expected 0)");
-    LupeBlock b = *blk;
+    FxBlock b = *blk;
     b.site = NULL;
-    sp_RbVal p = lupe_block_proc(&b);
+    sp_RbVal p = fx_block_proc(&b);
     /* h can be old after the allocation of p */
     sp_gc_wb(h);
-    h->dproc = lupe_hash_dproc;
+    h->dproc = fx_hash_dproc;
     h->dproc_self = p.v.p;
   }
-  *out = lupe_hash_box(h);
+  *out = fx_hash_box(h);
   return 1;
 }
 
 /* The methods of a Hash. Answers 1 and sets *out when it handles the call. */
-static int lupe_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
+static int fx_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                           sp_RbVal *out) {
-  if (r.tag == SP_TAG_CLASS) return lupe_hash_class(r, name, argc, argv, blk, out);
-  if (!lupe_is_hash(r)) return 0;
+  if (r.tag == SP_TAG_CLASS) return fx_hash_class(r, name, argc, argv, blk, out);
+  if (!fx_is_hash(r)) return 0;
   SP_GC_ROOT_RBVAL(r);
   sp_PolyPolyHash *h = sp_poly_as_poly_poly_hash(r);
   SP_GC_ROOT(h);
   sp_RbVal v = sp_box_nil(), y = sp_box_nil();
   SP_GC_ROOT_RBVAL(v);
   SP_GC_ROOT_RBVAL(y);
-  if (argc == 1 && LUPE_IS("[]")) { *out = sp_PolyPolyHash_get(h, argv[0]); return 1; }
-  if (argc == 2 && (LUPE_IS("[]=") || LUPE_IS("store"))) {
-    sp_PolyPolyHash_set(lupe_hash_mut(r, name), argv[0], argv[1]);
+  if (argc == 1 && FX_IS("[]")) { *out = sp_PolyPolyHash_get(h, argv[0]); return 1; }
+  if (argc == 2 && (FX_IS("[]=") || FX_IS("store"))) {
+    sp_PolyPolyHash_set(fx_hash_mut(r, name), argv[0], argv[1]);
     *out = argv[1];
     return 1;
   }
-  if (argc == 1 && (LUPE_IS("key?") || LUPE_IS("has_key?") || LUPE_IS("include?") || LUPE_IS("member?"))) {
+  if (argc == 1 && (FX_IS("key?") || FX_IS("has_key?") || FX_IS("include?") || FX_IS("member?"))) {
     *out = sp_box_bool(sp_PolyPolyHash_has_key(h, argv[0]));
     return 1;
   }
-  if (argc == 1 && (LUPE_IS("value?") || LUPE_IS("has_value?"))) {
+  if (argc == 1 && (FX_IS("value?") || FX_IS("has_value?"))) {
     *out = sp_box_bool(sp_PolyPolyHash_has_value(h, argv[0]));
     return 1;
   }
-  if ((argc == 1 || argc == 2) && LUPE_IS("fetch")) {
+  if ((argc == 1 || argc == 2) && FX_IS("fetch")) {
     if (sp_PolyPolyHash_has_key(h, argv[0])) { *out = sp_PolyPolyHash_get(h, argv[0]); return 1; }
-    if (blk) { *out = lupe_y1(blk, argv[0]); return 1; }
+    if (blk) { *out = fx_y1(blk, argv[0]); return 1; }
     if (argc == 2) { *out = argv[1]; return 1; }
     sp_raise_cls("KeyError", sp_sprintf("key not found: %s", sp_poly_inspect(argv[0])));
   }
-  if (argc == 1 && LUPE_IS("delete")) {
-    sp_PolyPolyHash *m = lupe_hash_mut(r, name);
+  if (argc == 1 && FX_IS("delete")) {
+    sp_PolyPolyHash *m = fx_hash_mut(r, name);
     if (sp_PolyPolyHash_has_key(m, argv[0])) {
       *out = sp_PolyPolyHash_get(m, argv[0]);
       sp_PolyPolyHash_delete(m, argv[0]);
     } else {
-      *out = blk ? lupe_y1(blk, argv[0]) : sp_box_nil();
+      *out = blk ? fx_y1(blk, argv[0]) : sp_box_nil();
     }
     return 1;
   }
-  if (argc == 1 && LUPE_IS("key")) {
+  if (argc == 1 && FX_IS("key")) {
     for (sp_int i = 0; i < h->len; i++)
       if (sp_poly_truthy(sp_poly_eq_value(h->vals[h->order[i]], argv[0], 0))) {
         *out = h->keys[h->order[i]];
@@ -123,65 +123,65 @@ static int lupe_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     return 1;
   }
   if (argc == 0 && !blk) {
-    if (LUPE_IS("size") || LUPE_IS("length") || LUPE_IS("count")) { *out = sp_box_int(h->len); return 1; }
-    if (LUPE_IS("empty?")) { *out = sp_box_bool(h->len == 0); return 1; }
-    if (LUPE_IS("keys") || LUPE_IS("values")) {
+    if (FX_IS("size") || FX_IS("length") || FX_IS("count")) { *out = sp_box_int(h->len); return 1; }
+    if (FX_IS("empty?")) { *out = sp_box_bool(h->len == 0); return 1; }
+    if (FX_IS("keys") || FX_IS("values")) {
       sp_PolyArray *a = sp_PolyArray_new();
       SP_GC_ROOT(a);
       for (sp_int i = 0; i < h->len; i++) sp_PolyArray_push(a, name[0] == 'k' ? h->keys[h->order[i]] : h->vals[h->order[i]]);
       *out = sp_box_poly_array(a);
       return 1;
     }
-    if (LUPE_IS("to_a") || LUPE_IS("entries")) { *out = sp_box_poly_array(lupe_seq_array(r)); return 1; }
-    if (LUPE_IS("to_h") || LUPE_IS("to_hash")) { *out = r; return 1; }
-    if (LUPE_IS("dup") || LUPE_IS("clone")) { *out = lupe_hash_box(lupe_hash_dup(h)); return 1; }
-    if (LUPE_IS("default")) { *out = h->default_v; return 1; }
-    if (LUPE_IS("invert")) {
+    if (FX_IS("to_a") || FX_IS("entries")) { *out = sp_box_poly_array(fx_seq_array(r)); return 1; }
+    if (FX_IS("to_h") || FX_IS("to_hash")) { *out = r; return 1; }
+    if (FX_IS("dup") || FX_IS("clone")) { *out = fx_hash_box(fx_hash_dup(h)); return 1; }
+    if (FX_IS("default")) { *out = h->default_v; return 1; }
+    if (FX_IS("invert")) {
       sp_PolyPolyHash *o = sp_PolyPolyHash_new();
       SP_GC_ROOT(o);
       for (sp_int i = 0; i < h->len; i++) sp_PolyPolyHash_set(o, h->vals[h->order[i]], h->keys[h->order[i]]);
-      *out = lupe_hash_box(o);
+      *out = fx_hash_box(o);
       return 1;
     }
-    if (LUPE_IS("compact")) {
+    if (FX_IS("compact")) {
       /* a copy keeps the default and the default proc */
-      sp_PolyPolyHash *o = lupe_hash_dup(h);
+      sp_PolyPolyHash *o = fx_hash_dup(h);
       SP_GC_ROOT(o);
       for (sp_int i = 0; i < h->len; i++)
         if (h->vals[h->order[i]].tag == SP_TAG_NIL) sp_PolyPolyHash_delete(o, h->keys[h->order[i]]);
-      *out = lupe_hash_box(o);
+      *out = fx_hash_box(o);
       return 1;
     }
-    if (LUPE_IS("first")) {
-      *out = h->len ? lupe_pair(h->keys[h->order[0]], h->vals[h->order[0]]) : sp_box_nil();
+    if (FX_IS("first")) {
+      *out = h->len ? fx_pair(h->keys[h->order[0]], h->vals[h->order[0]]) : sp_box_nil();
       return 1;
     }
-    if (LUPE_IS("sort") || LUPE_IS("min") || LUPE_IS("max")) {
-      sp_RbVal s = lupe_sorted(lupe_seq_array(r), NULL, NULL);
+    if (FX_IS("sort") || FX_IS("min") || FX_IS("max")) {
+      sp_RbVal s = fx_sorted(fx_seq_array(r), NULL, NULL);
       sp_int n = sp_poly_length(s);
       *out = name[0] == 's' ? s : n == 0 ? sp_box_nil() : sp_poly_arr_get(s, name[1] == 'i' ? 0 : n - 1);
       return 1;
     }
-    if (LUPE_IS("clear")) {
-      sp_PolyPolyHash *m = lupe_hash_mut(r, name);
+    if (FX_IS("clear")) {
+      sp_PolyPolyHash *m = fx_hash_mut(r, name);
       while (m->len) sp_PolyPolyHash_delete(m, m->keys[m->order[0]]);
       *out = r;
       return 1;
     }
   }
-  if (argc == 1 && !blk && LUPE_IS("default=")) {
-    sp_PolyPolyHash *m = lupe_hash_mut(r, name);
+  if (argc == 1 && !blk && FX_IS("default=")) {
+    sp_PolyPolyHash *m = fx_hash_mut(r, name);
     sp_gc_wb(m);
     m->default_v = argv[0];
     *out = argv[0];
     return 1;
   }
-  if (argc == 1 && (LUPE_IS("==") || LUPE_IS("eql?"))) {
+  if (argc == 1 && (FX_IS("==") || FX_IS("eql?"))) {
     *out = sp_poly_eq_value(r, argv[0], 0);
     return 1;
   }
   /* a <= b: every entry of a is in b with an == value */
-  if (argc == 1 && (LUPE_IS("<=") || LUPE_IS("<") || LUPE_IS(">=") || LUPE_IS(">"))) {
+  if (argc == 1 && (FX_IS("<=") || FX_IS("<") || FX_IS(">=") || FX_IS(">"))) {
     sp_PolyPolyHash *o = sp_poly_as_poly_poly_hash(argv[0]);
     if (!o) sp_raise_cls("TypeError", sp_sprintf("no implicit conversion of %s into Hash", sp_poly_class_name(argv[0])));
     SP_GC_ROOT(o);
@@ -195,20 +195,20 @@ static int lupe_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     *out = sp_box_bool(sub);
     return 1;
   }
-  if (argc >= 1 && LUPE_IS("dig")) {
+  if (argc >= 1 && FX_IS("dig")) {
     v = sp_PolyPolyHash_get(h, argv[0]);
-    *out = argc == 1 || v.tag == SP_TAG_NIL ? v : lupe_send(v, "dig", argc - 1, argv + 1);
+    *out = argc == 1 || v.tag == SP_TAG_NIL ? v : fx_send(v, "dig", argc - 1, argv + 1);
     return 1;
   }
-  if (LUPE_IS("values_at")) {
+  if (FX_IS("values_at")) {
     sp_PolyArray *a = sp_PolyArray_new();
     SP_GC_ROOT(a);
     for (int i = 0; i < argc; i++) sp_PolyArray_push(a, sp_PolyPolyHash_get(h, argv[i]));
     *out = sp_box_poly_array(a);
     return 1;
   }
-  if (LUPE_IS("slice") || LUPE_IS("except")) {
-    sp_PolyPolyHash *o = LUPE_IS("slice") ? sp_PolyPolyHash_new() : lupe_hash_dup(h);
+  if (FX_IS("slice") || FX_IS("except")) {
+    sp_PolyPolyHash *o = FX_IS("slice") ? sp_PolyPolyHash_new() : fx_hash_dup(h);
     SP_GC_ROOT(o);
     for (int i = 0; i < argc; i++) {
       if (name[0] == 'e') sp_PolyPolyHash_delete(o, argv[i]);
@@ -218,13 +218,13 @@ static int lupe_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     o->dproc = NULL;
     o->dproc_self = NULL;
     o->default_v = sp_box_nil();
-    *out = lupe_hash_box(o);
+    *out = fx_hash_box(o);
     return 1;
   }
   /* merge and update: a block picks the value of a key in both */
-  int bang = LUPE_IS("merge!") || LUPE_IS("update");
-  if (bang || LUPE_IS("merge")) {
-    sp_PolyPolyHash *o = bang ? lupe_hash_mut(r, name) : lupe_hash_dup(h);
+  int bang = FX_IS("merge!") || FX_IS("update");
+  if (bang || FX_IS("merge")) {
+    sp_PolyPolyHash *o = bang ? fx_hash_mut(r, name) : fx_hash_dup(h);
     SP_GC_ROOT(o);
     for (int a = 0; a < argc; a++) {
       sp_PolyPolyHash *x = sp_poly_as_poly_poly_hash(argv[a]);
@@ -238,22 +238,22 @@ static int lupe_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
           SP_GC_ROOT_RBVAL(args[0]);
           SP_GC_ROOT_RBVAL(args[1]);
           SP_GC_ROOT_RBVAL(args[2]);
-          v = lupe_yield(blk, 3, args);
-          if (L.ctl != LUPE_CTL_NONE) { *out = sp_box_nil(); return 1; }
+          v = fx_yield(blk, 3, args);
+          if (L.ctl != FX_CTL_NONE) { *out = sp_box_nil(); return 1; }
         }
         sp_PolyPolyHash_set(o, k, v);
       }
     }
-    *out = bang ? r : lupe_hash_box(o);
+    *out = bang ? r : fx_hash_box(o);
     return 1;
   }
   if (!blk) return 0;
   /* the methods with a block that answer a Hash */
-  int sel = LUPE_IS("select") || LUPE_IS("filter"), rej = LUPE_IS("reject");
-  int msel = LUPE_IS("select!") || LUPE_IS("filter!") || LUPE_IS("keep_if");
-  int mrej = LUPE_IS("reject!") || LUPE_IS("delete_if");
-  int tv = LUPE_IS("transform_values"), tk = LUPE_IS("transform_keys");
-  int tvb = LUPE_IS("transform_values!"), tkb = LUPE_IS("transform_keys!");
+  int sel = FX_IS("select") || FX_IS("filter"), rej = FX_IS("reject");
+  int msel = FX_IS("select!") || FX_IS("filter!") || FX_IS("keep_if");
+  int mrej = FX_IS("reject!") || FX_IS("delete_if");
+  int tv = FX_IS("transform_values"), tk = FX_IS("transform_keys");
+  int tvb = FX_IS("transform_values!"), tkb = FX_IS("transform_keys!");
   if (argc == 0 && (sel || rej || msel || mrej || tv || tk || tvb || tkb)) {
     sp_PolyPolyHash *o = sp_PolyPolyHash_new();
     SP_GC_ROOT(o);
@@ -261,14 +261,14 @@ static int lupe_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     for (sp_int i = 0; i < h->len; i++) {
       sp_RbVal k = h->keys[h->order[i]];
       v = h->vals[h->order[i]];
-      y = tv || tvb ? lupe_y1(blk, v) : tk || tkb ? lupe_y1(blk, k) : lupe_y2(blk, k, v);
-      if (L.ctl != LUPE_CTL_NONE) { *out = sp_box_nil(); return 1; }
+      y = tv || tvb ? fx_y1(blk, v) : tk || tkb ? fx_y1(blk, k) : fx_y2(blk, k, v);
+      if (L.ctl != FX_CTL_NONE) { *out = sp_box_nil(); return 1; }
       if (tv || tvb) sp_PolyPolyHash_set(o, k, y);
       else if (tk || tkb) sp_PolyPolyHash_set(o, y, v);
       else if (sp_poly_truthy(y) == (sel || msel)) sp_PolyPolyHash_set(o, k, v);
     }
-    if (sel || rej || tv || tk) { *out = lupe_hash_box(o); return 1; }
-    sp_PolyPolyHash *m = lupe_hash_mut(r, name);
+    if (sel || rej || tv || tk) { *out = fx_hash_box(o); return 1; }
+    sp_PolyPolyHash *m = fx_hash_mut(r, name);
     int changed = o->len != n || tvb || tkb;
     while (m->len) sp_PolyPolyHash_delete(m, m->keys[m->order[0]]);
     for (sp_int i = 0; i < o->len; i++) sp_PolyPolyHash_set(m, o->keys[o->order[i]], o->vals[o->order[i]]);
@@ -276,10 +276,10 @@ static int lupe_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     *out = bangname && !changed ? sp_box_nil() : r;
     return 1;
   }
-  if (argc == 0 && (LUPE_IS("each_key") || LUPE_IS("each_value"))) {
+  if (argc == 0 && (FX_IS("each_key") || FX_IS("each_value"))) {
     for (sp_int i = 0; i < h->len; i++) {
-      lupe_y1(blk, name[5] == 'k' ? h->keys[h->order[i]] : h->vals[h->order[i]]);
-      if (L.ctl != LUPE_CTL_NONE) { *out = sp_box_nil(); return 1; }
+      fx_y1(blk, name[5] == 'k' ? h->keys[h->order[i]] : h->vals[h->order[i]]);
+      if (L.ctl != FX_CTL_NONE) { *out = sp_box_nil(); return 1; }
     }
     *out = r;
     return 1;
@@ -288,9 +288,9 @@ static int lupe_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
 }
 
 /* tally and to_h with no block, on an Array. */
-static int lupe_array_hash(sp_RbVal r, const char *name, int argc, sp_RbVal *out) {
-  if (!lupe_is_array(r) || argc != 0) return 0;
-  if (!LUPE_IS("tally") && !LUPE_IS("to_h")) return 0;
+static int fx_array_hash(sp_RbVal r, const char *name, int argc, sp_RbVal *out) {
+  if (!fx_is_array(r) || argc != 0) return 0;
+  if (!FX_IS("tally") && !FX_IS("to_h")) return 0;
   SP_GC_ROOT_RBVAL(r);
   sp_PolyPolyHash *h = sp_PolyPolyHash_new();
   SP_GC_ROOT(h);
@@ -301,46 +301,46 @@ static int lupe_array_hash(sp_RbVal r, const char *name, int argc, sp_RbVal *out
       sp_PolyPolyHash_set(h, e, sp_box_int(c.tag == SP_TAG_INT ? c.v.i + 1 : 1));
       continue;
     }
-    if (!lupe_is_array(e) || sp_poly_length(e) != 2)
+    if (!fx_is_array(e) || sp_poly_length(e) != 2)
       sp_raise_cls("TypeError", sp_sprintf("wrong element type %s at %lld (expected array)", sp_poly_class_name(e),
                                            (long long)i));
     sp_PolyPolyHash_set(h, sp_poly_arr_get(e, 0), sp_poly_arr_get(e, 1));
   }
-  *out = lupe_hash_box(h);
+  *out = fx_hash_box(h);
   return 1;
 }
 
 /* ---- user objects as keys ---- */
 
 /* A user object hashes by its hash method, else by identity. */
-static sp_int lupe_hook_hash(int cls_id, void *p) {
+static sp_int fx_hook_hash(int cls_id, void *p) {
   sp_RbVal obj = sp_box_obj(p, cls_id);
-  if (!lupe_is_lupe_object(obj)) return (sp_int)(uintptr_t)p;
+  if (!fx_is_fx_object(obj)) return (sp_int)(uintptr_t)p;
   SP_GC_ROOT_RBVAL(obj);
-  LupeMethod *m = lupe_find_method(lupe_class_of(obj), sp_sym_intern("hash"));
-  int rec = !m && lupe_record_of(lupe_class_of(obj));   /* a Struct hashes by its members */
+  FxMethod *m = fx_find_method(fx_class_of(obj), sp_sym_intern("hash"));
+  int rec = !m && fx_record_of(fx_class_of(obj));   /* a Struct hashes by its members */
   if (!m && !rec) return (sp_int)(uintptr_t)p;
-  sp_RbVal h = rec ? lupe_send(obj, "hash", 0, NULL) : lupe_invoke(m, obj, 0, NULL);
+  sp_RbVal h = rec ? fx_send(obj, "hash", 0, NULL) : fx_invoke(m, obj, 0, NULL);
   if (h.tag == SP_TAG_INT) return h.v.i;
   return sp_rbval_hash_key(h);
 }
 
 /* A user object is eql? by its eql? method, else by identity. */
-static sp_bool lupe_hook_eql(int cls_id, void *a, void *b) {
+static sp_bool fx_hook_eql(int cls_id, void *a, void *b) {
   sp_RbVal x = sp_box_obj(a, cls_id), y = sp_box_obj(b, cls_id);
   if (a == b) return TRUE;
-  if (!lupe_is_lupe_object(x)) return FALSE;
+  if (!fx_is_fx_object(x)) return FALSE;
   SP_GC_ROOT_RBVAL(x);
   SP_GC_ROOT_RBVAL(y);
-  LupeMethod *m = lupe_find_method(lupe_class_of(x), sp_sym_intern("eql?"));
-  if (!m && lupe_record_of(lupe_class_of(x))) return sp_poly_truthy(lupe_send(x, "eql?", 1, &y)) ? TRUE : FALSE;
+  FxMethod *m = fx_find_method(fx_class_of(x), sp_sym_intern("eql?"));
+  if (!m && fx_record_of(fx_class_of(x))) return sp_poly_truthy(fx_send(x, "eql?", 1, &y)) ? TRUE : FALSE;
   if (!m) return FALSE;
-  return sp_poly_truthy(lupe_invoke(m, x, 1, &y)) ? TRUE : FALSE;
+  return sp_poly_truthy(fx_invoke(m, x, 1, &y)) ? TRUE : FALSE;
 }
 
-static void lupe_hash_init(void) {
-  SP_INSTALL_HOOK(sp_obj_hash_hook, lupe_hook_hash);
-  SP_INSTALL_HOOK(sp_obj_eql_hook, lupe_hook_eql);
+static void fx_hash_init(void) {
+  SP_INSTALL_HOOK(sp_obj_hash_hook, fx_hook_hash);
+  SP_INSTALL_HOOK(sp_obj_eql_hook, fx_hook_eql);
 }
 
-#undef LUPE_IS
+#undef FX_IS

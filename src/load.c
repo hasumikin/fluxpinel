@@ -1,7 +1,7 @@
 /* load.c -- the source files of a program: parsing, require_relative,
    __FILE__ and __dir__.
 
-   spinel splices a required file into one source at compile time. Lupe
+   spinel splices a required file into one source at compile time. Fluxpinel
    loads it at run time, as CRuby does: the file runs once, at the first
    require, as a top-level program of its own (self is main, and its locals
    are its own).
@@ -10,18 +10,18 @@
    constant pool (L.pool), so that a constant id names the same Symbol in
    any file. The pool only grows, so an id stays valid. */
 
-#include "lupe.h"
+#include "fluxpinel.h"
 #include <sys/stat.h>
 
 /* the bundled packages of spinel (set, json, ...), from the Makefile */
-#ifndef LUPE_PACKAGES_DIR
-#define LUPE_PACKAGES_DIR "packages"
+#ifndef FX_PACKAGES_DIR
+#define FX_PACKAGES_DIR "packages"
 #endif
 
-#define LUPE_IS(s) (!strcmp(name, (s)))
+#define FX_IS(s) (!strcmp(name, (s)))
 
 /* The bytes of a file, or NULL when it cannot be read. */
-static char *lupe_read_file(const char *path, size_t *len) {
+static char *fx_read_file(const char *path, size_t *len) {
   FILE *fp = fopen(path, "rb");
   if (!fp) return NULL;
   fseek(fp, 0, SEEK_END);
@@ -41,8 +41,8 @@ static char *lupe_read_file(const char *path, size_t *len) {
 
 /* Parses the bytes of a file into a new source. Answers the message of
    the first syntax error, or NULL. */
-static const char *lupe_parse(const char *path, const char *real, char *buf, size_t len, LupeSource **out) {
-  LupeSource *s = calloc(1, sizeof *s);
+static const char *fx_parse(const char *path, const char *real, char *buf, size_t len, FxSource **out) {
+  FxSource *s = calloc(1, sizeof *s);
   s->path = path;
   s->real = real;
   s->start = (const uint8_t *)buf;
@@ -71,35 +71,35 @@ static const char *lupe_parse(const char *path, const char *real, char *buf, siz
 
 /* Runs the top level of a source, as a program of its own. A return at
    its top level ends the file. */
-static sp_RbVal lupe_run_source(const LupeSource *s) {
+static sp_RbVal fx_run_source(const FxSource *s) {
   SP_GC_SAVE();
   const pm_program_node_t *prog = (const pm_program_node_t *)s->root;
-  LUPE_FRAME(top, &prog->locals, L.main, L.object);
-  sp_RbVal v = lupe_eval_stmts(&top, prog->statements);
-  if (L.ctl == LUPE_CTL_RETURN && L.ctl_target == &top) L.ctl = LUPE_CTL_NONE;
+  FX_FRAME(top, &prog->locals, L.main, L.object);
+  sp_RbVal v = fx_eval_stmts(&top, prog->statements);
+  if (L.ctl == FX_CTL_RETURN && L.ctl_target == &top) L.ctl = FX_CTL_NONE;
   return v;
 }
 
-/* The main program. A syntax error ends Lupe, as it ends ruby. */
-static void lupe_load_main(const char *path) {
+/* The main program. A syntax error ends Fluxpinel, as it ends ruby. */
+static void fx_load_main(const char *path) {
   size_t len;
-  char *buf = lupe_read_file(path, &len);
+  char *buf = fx_read_file(path, &len);
   if (!buf) {
-    fprintf(stderr, "lupe: cannot read %s\n", path);
+    fprintf(stderr, "fluxpinel: cannot read %s\n", path);
     exit(1);
   }
   char *real = realpath(path, NULL);
-  LupeSource *s;
-  const char *err = lupe_parse(path, real ? real : path, buf, len, &s);
+  FxSource *s;
+  const char *err = fx_parse(path, real ? real : path, buf, len, &s);
   if (err) {
-    fprintf(stderr, "lupe: syntax error: %s\n", err);
+    fprintf(stderr, "fluxpinel: syntax error: %s\n", err);
     exit(1);
   }
-  lupe_run_source(s);
+  fx_run_source(s);
 }
 
 /* The directory of a path, as a new C string. */
-static char *lupe_dirname(const char *path) {
+static char *fx_dirname(const char *path) {
   const char *slash = strrchr(path, '/');
   if (!slash) return strdup(".");
   if (slash == path) return strdup("/");
@@ -108,7 +108,7 @@ static char *lupe_dirname(const char *path) {
 
 /* path with its "." and ".." segments taken out by their text, as
    File.expand_path does, so that "a/b/.." is "a". */
-static const char *lupe_path_clean(const char *path) {
+static const char *fx_path_clean(const char *path) {
   /* the segments that stay, as (start, length) pairs */
   size_t n = strlen(path), nseg = 0;
   const char *seg[n / 2 + 1];
@@ -145,16 +145,16 @@ static const char *lupe_path_clean(const char *path) {
 /* Runs the file at real (an absolute path from realpath, which the source
    keeps) once, with the text of the file extra after it when extra is not
    NULL. Answers 0, and runs nothing, for a file that is loaded already. */
-static int lupe_load_once(char *real, const char *extra) {
+static int fx_load_once(char *real, const char *extra) {
   for (int i = 0; i < L.nsources; i++)
     if (!strcmp(L.sources[i]->real, real)) {
       free(real);
       return 0;
     }
   size_t len, xlen = 0;
-  char *buf = lupe_read_file(real, &len);
+  char *buf = fx_read_file(real, &len);
   if (!buf) sp_raise_cls("LoadError", sp_sprintf("cannot load such file -- %s", real));
-  char *xbuf = extra ? lupe_read_file(extra, &xlen) : NULL;
+  char *xbuf = extra ? fx_read_file(extra, &xlen) : NULL;
   if (xbuf) {
     buf = realloc(buf, len + 1 + xlen + 1);
     buf[len++] = '\n';
@@ -162,27 +162,27 @@ static int lupe_load_once(char *real, const char *extra) {
     len += xlen;
     free(xbuf);
   }
-  LupeSource *s;
-  const char *err = lupe_parse(real, real, buf, len, &s);
+  FxSource *s;
+  const char *err = fx_parse(real, real, buf, len, &s);
   if (err) sp_raise_cls("SyntaxError", err);
-  lupe_run_source(s);
+  fx_run_source(s);
   return 1;
 }
 
 /* require_relative "x", and require "./x" or require "/x". Answers true
    after it runs the file, and false for a file that is loaded already. */
-static sp_RbVal lupe_require(const pm_node_t *n, const char *arg, int rel) {
+static sp_RbVal fx_require(const pm_node_t *n, const char *arg, int rel) {
   const char *path = arg, *file = NULL, *shown = NULL;
   SP_GC_ROOT_STR(path);
   SP_GC_ROOT_STR(file);
   SP_GC_ROOT_STR(shown);
   if (rel) {
-    char *dir = lupe_dirname(lupe_source_of(n)->real);
+    char *dir = fx_dirname(fx_source_of(n)->real);
     path = sp_sprintf("%s/%s", dir, arg);
     free(dir);
   }
   /* `require_relative ".."` names the parent directory, plus .rb */
-  path = lupe_path_clean(path);
+  path = fx_path_clean(path);
   size_t plen = strlen(path);
   file = plen > 3 && !strcmp(path + plen - 3, ".rb") ? path : sp_sprintf("%s.rb", path);
   char *real = realpath(file, NULL);
@@ -191,7 +191,7 @@ static sp_RbVal lupe_require(const pm_node_t *n, const char *arg, int rel) {
        require, and absolute for require_relative */
     shown = arg;
     if (rel) {
-      char *dir = lupe_dirname(path), *abs = realpath(dir, NULL);
+      char *dir = fx_dirname(path), *abs = realpath(dir, NULL);
       shown = abs ? sp_sprintf("%s/%s", abs, path + strlen(dir) + 1) : path;
       free(dir);
       free(abs);
@@ -200,11 +200,11 @@ static sp_RbVal lupe_require(const pm_node_t *n, const char *arg, int rel) {
     if (sl > 3 && !strcmp(shown + sl - 3, ".rb")) shown = sp_sprintf("%.*s", (int)(sl - 3), shown);
     sp_raise_cls("LoadError", sp_sprintf("cannot load such file -- %s", shown));
   }
-  if (!lupe_load_once(real, NULL)) return sp_box_bool(0);
-  return L.ctl == LUPE_CTL_NONE ? sp_box_bool(1) : sp_box_nil();
+  if (!fx_load_once(real, NULL)) return sp_box_bool(0);
+  return L.ctl == FX_CTL_NONE ? sp_box_bool(1) : sp_box_nil();
 }
 
-static int lupe_lib_in(const char *name, const char *const *list) {
+static int fx_lib_in(const char *name, const char *const *list) {
   for (int i = 0; list[i]; i++)
     if (!strcmp(list[i], name)) return 1;
   return 0;
@@ -218,7 +218,7 @@ static int lupe_lib_in(const char *name, const char *const *list) {
    - Any other name is a LoadError. (spinel refuses it at compile time.)
    A require of set answers false, as Set is loaded before the program in
    CRuby. */
-static sp_RbVal lupe_require_lib(const char *name) {
+static sp_RbVal fx_require_lib(const char *name) {
   static const char *const builtin[] = { "io/console", "monitor", "time", "socket", "ostruct",
                                          "thread", "enumerator", "fiber", "ffi", "rational", "complex",
                                          "io/wait", "rbconfig", "rubygems", NULL };
@@ -230,55 +230,55 @@ static sp_RbVal lupe_require_lib(const char *name) {
   if (nl > 3 && !strcmp(name + nl - 3, ".rb")) nl -= 3;
   if (first > nl) first = nl;
   /* the ffi package and fiddle over it need libffi, as in spinel */
-  int pkg = LUPE_FFI || !((first == 3 && !strncmp(name, "ffi", 3)) || (first == 6 && !strncmp(name, "fiddle", 6)));
-  path = sp_sprintf("%s/%.*s/%.*s", LUPE_PACKAGES_DIR, (int)first, name, (int)nl, name);
+  int pkg = FX_FFI || !((first == 3 && !strncmp(name, "ffi", 3)) || (first == 6 && !strncmp(name, "fiddle", 6)));
+  path = sp_sprintf("%s/%.*s/%.*s", FX_PACKAGES_DIR, (int)first, name, (int)nl, name);
   char *real = pkg ? realpath(sp_sprintf("%s.rb", path), NULL) : NULL;
   if (real) {
     struct stat st;
     extra = sp_sprintf("%s.share.rb", path);
-    int ran = lupe_load_once(real, stat(extra, &st) ? NULL : extra);
-    if (!ran || lupe_lib_in(name, preloaded)) return sp_box_bool(0);
-    return L.ctl == LUPE_CTL_NONE ? sp_box_bool(1) : sp_box_nil();
+    int ran = fx_load_once(real, stat(extra, &st) ? NULL : extra);
+    if (!ran || fx_lib_in(name, preloaded)) return sp_box_bool(0);
+    return L.ctl == FX_CTL_NONE ? sp_box_bool(1) : sp_box_nil();
   }
-  if (lupe_lib_in(name, builtin)) return sp_box_bool(0);
+  if (fx_lib_in(name, builtin)) return sp_box_bool(0);
   sp_raise_cls("LoadError", sp_sprintf("cannot load such file -- %s", name));
 }
 
 /* A constant that spinel loads the package of when a program names it,
    with no require (sp_require_preloaded of spinel_parse.c): Set. Answers 1
    when it loaded the package, so that the caller looks again. */
-static int lupe_autoload(sp_sym name) {
+static int fx_autoload(sp_sym name) {
   static int set_done;
   if (set_done || strcmp(sp_sym_to_s(name), "Set")) return 0;
   set_done = 1;
-  lupe_require_lib("set");
+  fx_require_lib("set");
   return 1;
 }
 
 /* require_relative, require of a path, and __dir__: the calls that answer
    from the file of the call node n, unless the program defines a method of
    the name for self. Answers 1 and sets *out when it handles the call. */
-static int lupe_load_call(const pm_node_t *n, sp_RbVal self, const char *name, int argc, sp_RbVal *argv,
+static int fx_load_call(const pm_node_t *n, sp_RbVal self, const char *name, int argc, sp_RbVal *argv,
                           sp_RbVal *out) {
-  if (!LUPE_IS("__dir__") && !LUPE_IS("require_relative") && !LUPE_IS("require")) return 0;
-  if (lupe_find_method(lupe_class_of(self), sp_sym_intern(name))) return 0;
-  if (LUPE_IS("__dir__") && argc == 0) {
-    char *dir = lupe_dirname(lupe_source_of(n)->real);
-    *out = lupe_new_string((const uint8_t *)dir, strlen(dir));
+  if (!FX_IS("__dir__") && !FX_IS("require_relative") && !FX_IS("require")) return 0;
+  if (fx_find_method(fx_class_of(self), sp_sym_intern(name))) return 0;
+  if (FX_IS("__dir__") && argc == 0) {
+    char *dir = fx_dirname(fx_source_of(n)->real);
+    *out = fx_new_string((const uint8_t *)dir, strlen(dir));
     free(dir);
     return 1;
   }
-  int rel = LUPE_IS("require_relative");
-  if (!(rel || LUPE_IS("require")) || argc != 1) return 0;
-  if (!lupe_is_string(argv[0]))
+  int rel = FX_IS("require_relative");
+  if (!(rel || FX_IS("require")) || argc != 1) return 0;
+  if (!fx_is_string(argv[0]))
     sp_raise_cls("TypeError", sp_sprintf("no implicit conversion of %s into String",
                                          argv[0].tag == SP_TAG_NIL ? "nil" : sp_poly_class_name(argv[0])));
   const char *arg = sp_poly_recv_s(argv[0], name);
   if (!rel && !(arg[0] == '/' || !strncmp(arg, "./", 2) || !strncmp(arg, "../", 3)))
-    *out = lupe_require_lib(arg);
+    *out = fx_require_lib(arg);
   else
-    *out = lupe_require(n, arg, rel);
+    *out = fx_require(n, arg, rel);
   return 1;
 }
 
-#undef LUPE_IS
+#undef FX_IS

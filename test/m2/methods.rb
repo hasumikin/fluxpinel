@@ -26,7 +26,7 @@ def greet(name, times)
   out
 end
 
-puts greet("lupe", 3)
+puts greet("fluxpinel", 3)
 
 def two
   return 1, 2

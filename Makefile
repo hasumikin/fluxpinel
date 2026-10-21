@@ -1,10 +1,10 @@
-# Lupe: an interpreter on the spinel runtime.
+# Fluxpinel: an interpreter on the spinel runtime.
 # SPINEL points at a built spinel checkout (make deps && make).
 #
-#   make        build build/lupe
-#   make test   run test/*.rb under CRuby and Lupe and compare, once as is
+#   make        build build/fluxpinel
+#   make test   run test/*.rb under CRuby and Fluxpinel and compare, once as is
 #               and once under the GC stress and verify modes of spinel
-#   make oracle run the spinel test corpus under CRuby, Lupe and AOT
+#   make oracle run the spinel test corpus under CRuby, Fluxpinel and AOT
 
 SPINEL ?= $(HOME)/work/spinel
 CC ?= cc
@@ -39,11 +39,11 @@ FFI_LIBS =
 NATIVE_FLAGS =
 endif
 CFLAGS = -O2 -g -std=gnu11 -ffp-contract=off -DSP_INT_OVERFLOW_MODE_$(INT_OVERFLOW) $(RT_CFLAGS) \
-         -DLUPE_PACKAGES_DIR='"$(SPINEL)/packages"' -DLUPE_FFI=$(FFI) \
+         -DFX_PACKAGES_DIR='"$(SPINEL)/packages"' -DFX_FFI=$(FFI) \
          -Isrc -I$(BUILD) -I$(SPINEL)/lib -I$(SPINEL)/lib/regexp -I$(SPINEL)/vendor/prism/include
 LIBS = $(RT_ARCHIVE) $(SPINEL)/build/libprism.a -lm -lcrypt $(RT_LIBS) $(FFI_LIBS)
 
-all: $(BUILD)/lupe
+all: $(BUILD)/fluxpinel
 
 # The generator includes the table and the traits of the spinel source, so
 # a change there regenerates the wrappers.
@@ -69,7 +69,7 @@ $(BUILD)/native.flags: tools/native_link.rb $(wildcard $(SPINEL)/packages/*/*.rb
 	mkdir -p $(BUILD)
 	ruby tools/native_link.rb $(SPINEL) $(THREADS) $(FFI) > $@
 
-$(BUILD)/lupe: src/*.c src/*.h $(BUILD)/bop_gen_out.c $(BUILD)/off.flags $(NATIVE_FLAGS)
+$(BUILD)/fluxpinel: src/*.c src/*.h $(BUILD)/bop_gen_out.c $(BUILD)/off.flags $(NATIVE_FLAGS)
 	$(CC) $(CFLAGS) $$(cat $(BUILD)/off.flags) -o $@ src/main.c $(if $(NATIVE_FLAGS),$$(cat $(NATIVE_FLAGS))) \
 	  $(LIBS)
 	git -C $(SPINEL) rev-parse HEAD > $(BUILD)/spinel.rev
@@ -80,25 +80,25 @@ $(BUILD)/lupe: src/*.c src/*.h $(BUILD)/bop_gen_out.c $(BUILD)/off.flags $(NATIV
 # object that is still referenced.
 TEST_DIRS = test/m2 test/m3
 
-test: $(BUILD)/lupe
-	ruby test/run.rb $(BUILD)/lupe $(TEST_DIRS)
-	SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1 ruby test/run.rb $(BUILD)/lupe $(TEST_DIRS)
+test: $(BUILD)/fluxpinel
+	ruby test/run.rb $(BUILD)/fluxpinel $(TEST_DIRS)
+	SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1 ruby test/run.rb $(BUILD)/fluxpinel $(TEST_DIRS)
 
 # The host build (docs/design.md, section 3.6): a kernel, a program that
-# spinel emits as a library, and Lupe in one TU. The runtime keeps its
+# spinel emits as a library, and Fluxpinel in one TU. The runtime keeps its
 # exception stack and other state static in each TU, so the walker and the
 # kernel must share the TU to share that state. KERNEL names the program
 # and KERNEL_ENTRIES the methods that it exports.
 KERNEL ?= test/kernel/app.rb
-KERNEL_ENTRIES ?= LupeKernel.ping,LupeKernel.add,LupeKernel.make,LupeKernel.bump,LupeKernel.boom,LupeKernel.pair,$\
-                  LupeKernel.greet_all,LupeKernel.script,LupeKernel.rescue_script
+KERNEL_ENTRIES ?= FxKernel.ping,FxKernel.add,FxKernel.make,FxKernel.bump,FxKernel.boom,FxKernel.pair,$\
+                  FxKernel.greet_all,FxKernel.script,FxKernel.rescue_script
 HOST = $(BUILD)/host
 KERNEL_OVERFLOW = $(shell echo $(INT_OVERFLOW) | tr A-Z a-z)
 
-$(HOST)/kernel.c: $(KERNEL) kernel/lupe.rb src/kernel_prelude.h
+$(HOST)/kernel.c: $(KERNEL) kernel/fluxpinel.rb src/kernel_prelude.h
 	mkdir -p $(HOST)
 	$(SPINEL)/spinel $(KERNEL) -c -o $@ --force --int-overflow $(KERNEL_OVERFLOW) \
-	  --ext-init lupe_kernel_init --ext-entry $(KERNEL_ENTRIES)
+	  --ext-init fx_kernel_init --ext-entry $(KERNEL_ENTRIES)
 	# each define of the kernel before spinel_rt.h is in kernel_prelude.h
 	sed '/^#include "spinel_rt.h"/q' $@ | grep '^#define' | while read -r d; do \
 	  grep -qxF "$$d" src/kernel_prelude.h || { echo "kernel_prelude.h lacks: $$d"; rm -f $@; exit 1; }; \
@@ -108,27 +108,27 @@ $(HOST)/kernel.c: $(KERNEL) kernel/lupe.rb src/kernel_prelude.h
 $(HOST)/entries.c: $(HOST)/kernel.c tools/entry_gen.rb
 	ruby tools/entry_gen.rb $(KERNEL_ENTRIES) $(HOST)/kernel.h > $@
 
-$(HOST)/lupe: src/*.c src/*.h $(HOST)/kernel.c $(HOST)/entries.c $(BUILD)/bop_gen_out.c $(BUILD)/off.flags \
+$(HOST)/fluxpinel: src/*.c src/*.h $(HOST)/kernel.c $(HOST)/entries.c $(BUILD)/bop_gen_out.c $(BUILD)/off.flags \
               $(NATIVE_FLAGS)
-	$(CC) $(CFLAGS) -DLUPE_KERNEL=lupe_kernel_init -include src/kernel_prelude.h -include $(HOST)/kernel.c \
+	$(CC) $(CFLAGS) -DFX_KERNEL=fx_kernel_init -include src/kernel_prelude.h -include $(HOST)/kernel.c \
 	  -include $(HOST)/entries.c $$(cat $(BUILD)/off.flags) -o $@ src/main.c \
 	  $(if $(NATIVE_FLAGS),$$(cat $(NATIVE_FLAGS))) $(LIBS)
 
-host: $(HOST)/lupe
+host: $(HOST)/fluxpinel
 
-HOST_REQUIRES = --require kernel/lupe_cruby.rb --require $(KERNEL)
+HOST_REQUIRES = --require kernel/fluxpinel_cruby.rb --require $(KERNEL)
 
-test-host: $(HOST)/lupe
-	ruby test/run.rb $(HOST_REQUIRES) $(HOST)/lupe $(TEST_DIRS) test/host
-	SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1 ruby test/run.rb $(HOST_REQUIRES) $(HOST)/lupe $(TEST_DIRS) test/host
+test-host: $(HOST)/fluxpinel
+	ruby test/run.rb $(HOST_REQUIRES) $(HOST)/fluxpinel $(TEST_DIRS) test/host
+	SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1 ruby test/run.rb $(HOST_REQUIRES) $(HOST)/fluxpinel $(TEST_DIRS) test/host
 
-# The oracle: the spinel test corpus under CRuby (.expected), Lupe and AOT,
+# The oracle: the spinel test corpus under CRuby (.expected), Fluxpinel and AOT,
 # in promote mode on both sides. In raise mode, spinel's analysis still
 # promotes an Integer where it sees growth (10 ** 30), and a walker with no
 # analysis cannot make the same choice.
 oracle:
-	$(MAKE) BUILD=$(BUILD)/promote INT_OVERFLOW=PROMOTE $(BUILD)/promote/lupe
-	ruby tools/oracle.rb --spinel $(SPINEL) --lupe $(BUILD)/promote/lupe \
+	$(MAKE) BUILD=$(BUILD)/promote INT_OVERFLOW=PROMOTE $(BUILD)/promote/fluxpinel
+	ruby tools/oracle.rb --spinel $(SPINEL) --fluxpinel $(BUILD)/promote/fluxpinel \
 	  --int-overflow promote --out $(BUILD)/oracle
 
 clean:

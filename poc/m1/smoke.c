@@ -4,14 +4,14 @@
    receiver, name, variant and argument count, so it does not depend on the
    wrapper numbers. */
 
-#include "lupe_tu.c"
+#include "fx_tu.c"
 #include "bop_gen_out.c"
 
 static int failures = 0;
 
-static lupe_bop_fn find(const char *recv, const char *name, const char *variant, int argc) {
-  for (int i = 0; i < lupe_bop_count; i++) {
-    const LupeBop *b = &lupe_bop_table[i];
+static fx_bop_fn find(const char *recv, const char *name, const char *variant, int argc) {
+  for (int i = 0; i < fx_bop_count; i++) {
+    const FxBop *b = &fx_bop_table[i];
     if (b->fn && !strcmp(b->recv, recv) && !strcmp(b->name, name) && !strcmp(b->variant, variant) &&
         b->argc_min <= argc && argc <= b->argc_max)
       return b->fn;
@@ -21,7 +21,7 @@ static lupe_bop_fn find(const char *recv, const char *name, const char *variant,
 
 static void check(const char *what, const char *recv, const char *name, const char *variant,
                   sp_RbVal self, int argc, sp_RbVal *argv, const char *want) {
-  lupe_bop_fn fn = find(recv, name, variant, argc);
+  fx_bop_fn fn = find(recv, name, variant, argc);
   const char *got = fn ? sp_poly_inspect(fn(self, argv)) : "(no wrapper)";
   int ok = strcmp(got, want) == 0;
   printf("%s %-24s %s\n", ok ? "ok" : "NG", what, got);
@@ -30,7 +30,7 @@ static void check(const char *what, const char *recv, const char *name, const ch
 
 static void smoke_body(void) {
   SP_GC_SAVE();
-  lupe_tu_init();
+  fx_tu_init();
   sp_RbVal s = sp_box_str(SPL("abz"));
   sp_RbVal a[2];
   check("\"abz\".upcase", "string", "upcase", "string", s, 0, a, "\"ABZ\"");

@@ -1,42 +1,42 @@
-# Lupe design
+# Fluxpinel design
 
 ## 1. Goals
 
-Lupe adds a dynamic layer to an AOT spinel program. The interpreted code
+Fluxpinel adds a dynamic layer to an AOT spinel program. The interpreted code
 and the AOT code share one value representation, one heap and one set of
 builtin semantics. Thus a value crosses between them by reference.
 
-Lupe serves two uses:
+Fluxpinel serves two uses:
 
-- **Dynamic layer (use 1).** An AOT binary links Lupe. Section 5 gives the
+- **Dynamic layer (use 1).** An AOT binary links Fluxpinel. Section 5 gives the
   forms:
   - **Scripts.** The AOT program loads Ruby files at run time: plugins,
     configuration and glue code. A console is the interactive form: a user
     connects over a socket, reads live objects and calls AOT methods.
   - **eval.** AOT code evaluates a Ruby string.
-  - **Dynamic dispatch.** A call that AOT code cannot resolve goes to Lupe:
+  - **Dynamic dispatch.** A call that AOT code cannot resolve goes to Fluxpinel:
     `method_missing`, `define_method` and `send` with a computed name.
-- **Oracle (use 2).** Lupe runs a program as a reference. It does no type
-  inference and no optimization. A difference between Lupe and the AOT
+- **Oracle (use 2).** Fluxpinel runs a program as a reference. It does no type
+  inference and no optimization. A difference between Fluxpinel and the AOT
   binary points to the analysis or the codegen of spinel. The oracle also
   keeps the two sides of use 1 equal: a method gives the same answer in
-  Lupe and in AOT code.
+  Fluxpinel and in AOT code.
 
 The oracle needs no change to spinel, and it gives the walker a test
 harness. Use 1 reuses the same walker.
 
 ## 2. Constraints
 
-- Lupe does not modify spinel on its own. The spinel maintainer keeps a VM
+- Fluxpinel does not modify spinel on its own. The spinel maintainer keeps a VM
   and `eval` out of the spinel design (matz/spinel#41, matz/spinel#36).
-  Lupe lives outside that design, as a separate project. A change that
-  Lupe needs in spinel goes to the maintainer as an issue, after a demo
+  Fluxpinel lives outside that design, as a separate project. A change that
+  Fluxpinel needs in spinel goes to the maintainer as an issue, after a demo
   shows the use.
-- Lupe is a tool for a host. A microcontroller is not a target of the
+- Fluxpinel is a tool for a host. A microcontroller is not a target of the
   design.
-- Lupe pins one spinel commit. The runtime API of spinel is internal and
+- Fluxpinel pins one spinel commit. The runtime API of spinel is internal and
   changes often. The pin makes each update an explicit step.
-- Lupe links `libspinel_rt` (the C runtime in `spinel/lib/`). Lupe does not
+- Fluxpinel links `libspinel_rt` (the C runtime in `spinel/lib/`). Fluxpinel does not
   link the spinel compiler at run time.
 
 ## 3. Architecture
@@ -48,7 +48,7 @@ harness. Use 1 reuses the same walker.
                         |
                         v
             +---------------------------+
-            | Lupe walker               |
+            | Fluxpinel walker               |
             |  - AST evaluator          |
             |  - method tables          |
             |  - builtin dispatch (gen) |
@@ -78,24 +78,24 @@ The tags are INT, STR, FLT, BOOL, NIL, OBJ, SYM, CLASS, ENCODING and BIGINT
 The spinel runtime has no `send` by name. The compiler owns the map from a
 method name to C code. The map is `bop_rows[]` in `src/builtin_ops.c`.
 
-Lupe generates part of its builtin dispatch from that table at build time
+Fluxpinel generates part of its builtin dispatch from that table at build time
 (`tools/bop_gen.c`):
 
 - A `BOPE_TEMPLATE` row holds a C expression, for example
   `sp_str_center($r, $i0)`. The generator turns each such row into one
   wrapper per receiver variant:
-  `sp_RbVal lupe_bop_N(sp_RbVal recv, sp_RbVal *argv)`.
+  `sp_RbVal fx_bop_N(sp_RbVal recv, sp_RbVal *argv)`.
 - The wrapper unboxes and boxes with the spellings of `ty_traits[]`
   (`src/types.c`). This table gives the C type, the box and the unbox of
   each builtin kind. Thus the wrapper converts values as the AOT code does.
 - A row for every Array kind or every Hash kind gives one wrapper for each
   concrete kind (`sp_IntArray`, `sp_StrIntHash` and others).
 - A row with a special emitter (`BOPE_ARRAY_SORT` and others) or with no
-  emitter (`BOPE_NONE`) has its logic in the codegen C code. Lupe writes
+  emitter (`BOPE_NONE`) has its logic in the codegen C code. Fluxpinel writes
   these methods by hand.
 
 The generator reads the spinel source at the pinned commit. This keeps the
-builtin semantics of Lupe equal to the AOT output.
+builtin semantics of Fluxpinel equal to the AOT output.
 
 Several rows can share one receiver and one name. They differ in argument
 count or argument kinds (`arg0`, `arg1`). The dispatcher selects a row by
@@ -103,7 +103,7 @@ count or argument kinds (`arg0`, `arg1`). The dispatcher selects a row by
 
 The generated wrappers cover the long tail: Rational, Complex, Time, IO,
 MatchData, Range and others. The core of Array, Hash and String is mostly
-outside the table. Lupe writes these methods by hand:
+outside the table. Fluxpinel writes these methods by hand:
 
 - element access and operators (`[]`, `[]=`, `==`, `+`, `length`, `push`),
 - methods with a block (`each`, `map`, `select`, `inject`). The walker
@@ -139,12 +139,12 @@ The walker evaluates the prism AST directly (`src/walk.c`).
 - **Methods.** A top-level `def` adds the method to a table of the walker.
   A call with no receiver looks in that table first, then in the Kernel
   methods (`puts`, `print`, `p`).
-- **One TU.** `src/main.c` includes `lupe_tu.c`, the generated wrappers,
+- **One TU.** `src/main.c` includes `fx_tu.c`, the generated wrappers,
   `walk.c`, `builtin.c` and `iter.c`.
 
 ### 3.3.1 Blocks
 
-- **Block value.** A call passes a `LupeBlock` to the callee as a C
+- **Block value.** A call passes a `FxBlock` to the callee as a C
   argument. A block literal lives in the C frame of its call. The block
   keeps a pointer to its home frame, the frame where the program wrote it.
 - **Block frame.** A block call makes a frame whose parent is the home
@@ -156,25 +156,25 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   is dropped. A lambda checks the count, as a method does. Numbered
   parameters (`_1`) and `it` are supported.
 - **Jumps.** `next` ends the block call. `break` ends the call that passed
-  the block: the block boundary changes it to `LUPE_CTL_BREAK_BLOCK` with
+  the block: the block boundary changes it to `FX_CTL_BREAK_BLOCK` with
   that call as the target. `return` ends the method that holds the block,
   or the lambda. A loop or a method call takes only a jump with its own
   target.
-- **Proc.** A `LupeProc` starts with a spinel `sp_Proc`, so the runtime
-  reads `lambda?` and `frozen?` from it. Its `fn` is NULL: Lupe answers
+- **Proc.** A `FxProc` starts with a spinel `sp_Proc`, so the runtime
+  reads `lambda?` and `frozen?` from it. Its `fn` is NULL: Fluxpinel answers
   every call of a Proc. `proc`, `lambda`, `->`, `Proc.new` and a `&b`
   parameter make one. `&proc`, `&:sym` and an anonymous `&` pass a block.
 - **Lifetime.** The home frame is on the C stack. Each frame has a serial
   number and an entry in a stack of serials on the heap
-  (`LupeFrameStack`). Each fiber that runs walker code has its own stack
+  (`FxFrameStack`). Each fiber that runs walker code has its own stack
   (section 3.3.5). A block keeps the stack, the serial and the depth of
   its home frame. A frame pops its entry when its C scope ends (a
   `cleanup` attribute). The check reads only the heap stack, never the
   stack memory of a frame that ended. A raise skips the cleanup with
   `longjmp`, so a rescue cuts the heap stack back to its own depth.
 - **Heap frames.** A Proc can outlive the scope of its block, and every
-  Proc comes from `lupe_block_proc`. There the home frame moves to the
-  heap (`LupeEnv`), as an env of mruby does:
+  Proc comes from `fx_block_proc`. There the home frame moves to the
+  heap (`FxEnv`), as an env of mruby does:
   - The env takes a copy of the frame and of its slots.
   - The frame on the C stack runs on with the slots of the env. Thus the
     scope and the Proc see one set of variables.
@@ -182,7 +182,7 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   - The block of the frame moves as a Proc, so `yield` in the Proc works
     after the method returns.
   - The collector is generational, so a store into a slot of an env takes
-    the write barrier (`lupe_local`).
+    the write barrier (`fx_local`).
 - **Dead homes.** A Proc runs after its scope ends. A `return` or a
   `break` in it then raises LocalJumpError, as in CRuby. A block literal
   that is not a Proc never outlives its call. A call of one whose home
@@ -199,7 +199,7 @@ The walker evaluates the prism AST directly (`src/walk.c`).
 ### 3.3.2 Exceptions
 
 - **Value.** An exception is a spinel `sp_Exception`. It names its class
-  (`cls_name`). For a class of the program, the name is the `LupeClass`
+  (`cls_name`). For a class of the program, the name is the `FxClass`
   name, and `sp_user_exc_parent_fn` answers its superclass. Thus
   `sp_exc_cls_matches` and the report of an uncaught exception see the
   classes of the program (`src/exc.c`).
@@ -218,9 +218,9 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   takes the place of the passing jump or raise.
 - **Landing.** A landing restores the GC roots and the rescue stack from
   the marks of the handler, as generated code does. It also cuts the
-  frame stack of Lupe (section 3.3.1).
+  frame stack of Fluxpinel (section 3.3.1).
 - **Missing methods.** A program that rescues `NoMethodError` can hide a
-  method that Lupe lacks. The oracle still sees the trace of the missing
+  method that Fluxpinel lacks. The oracle still sees the trace of the missing
   method when the output differs.
 
 ### 3.3.3 Regexp
@@ -232,7 +232,7 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   keeps the pattern (`src/re.c`). An interpolated literal compiles at each
   evaluation, but once with `/o`.
 - **Methods.** spinel emits the String methods that take a Regexp from
-  codegen code, so Lupe writes them on the runtime helpers:
+  codegen code, so Fluxpinel writes them on the runtime helpers:
   - `=~`, `!~`, `match`, `match?` and `===`.
   - `sub`, `gsub` and their bang forms, with a String, a Hash or a block.
   - `scan`, `split`, `index`, `rindex`, `[]`, `slice!`, `[]=`,
@@ -242,14 +242,14 @@ The walker evaluates the prism AST directly (`src/walk.c`).
 - **Registers.** `$~`, `$1` and the other match globals read the registers
   of the runtime. A method whose body has a Regexp literal or a call of the
   match family saves the registers of its caller and puts them back on
-  exit (`sp_re_frame`). Lupe finds these methods by a walk of the body at
+  exit (`sp_re_frame`). Fluxpinel finds these methods by a walk of the body at
   the first call.
 - **Subject.** A match reads a copy of a String that can change. `$~`
   keeps the subject, so a later `slice!` or `gsub!` does not change it.
 
 ### 3.3.4 Global variables
 
-- **Store.** A global variable of the program lives in a table of Lupe
+- **Store.** A global variable of the program lives in a table of Fluxpinel
   (`L.globals`), and the mark hook marks it. A global that no code has
   assigned reads nil (`src/global.c`).
 - **Special globals.** A special global reads the state of the runtime, as
@@ -266,15 +266,15 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   obj, as in CRuby. An assignment of an object with no `write` method
   raises TypeError.
 - **IO methods.** spinel emits `IO#puts`, `#print`, `#write` and `#<<`
-  from codegen code, so Lupe writes them on `sp_File_puts_val` and
+  from codegen code, so Fluxpinel writes them on `sp_File_puts_val` and
   `sp_File_write_poly`. The other IO methods go through the generated
   wrappers.
 
 ### 3.3.5 Fibers, threads and generators
 
 - **One body.** The runtime runs a fiber body on a C stack of its own,
-  and a green thread and a generator Enumerator are fibers too. Lupe
-  gives all of them one body, `lupe_fiber_body`, which calls a block of
+  and a green thread and a generator Enumerator are fibers too. Fluxpinel
+  gives all of them one body, `fx_fiber_body`, which calls a block of
   the program on that stack (`src/fiber.c`). The fiber carries the block
   in its `user_data`, which the collector marks.
 - **Arguments.** A Fiber block takes what the first `resume` passes. A
@@ -282,22 +282,22 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   takes the yielder of the runtime (`SP_BUILTIN_YIELDER`), whose `<<` is
   `Fiber.yield`.
 - **Frame stacks.** Fibers interleave their frames, so each fiber that
-  runs walker code has its own frame stack. `lupe_fiber_body` makes it,
-  and `lupe_fs` finds it again after a switch, by the running fiber
-  (`sp_fiber_current`). A fiber that Lupe did not start is a root fiber,
+  runs walker code has its own frame stack. `fx_fiber_body` makes it,
+  and `fx_fs` finds it again after a switch, by the running fiber
+  (`sp_fiber_current`). A fiber that Fluxpinel did not start is a root fiber,
   and it shares the frame stack of the main program. The runtime swaps
   the GC roots and the rescue handlers itself.
-- **Stack size.** Lupe asks the runtime for fiber stacks of 1 MB, the size
+- **Stack size.** Fluxpinel asks the runtime for fiber stacks of 1 MB, the size
   that codegen asks for an unoptimised build. The walker uses more C stack
   for each Ruby call than AOT code does.
 - **Runtime variant.** spinel links a program that uses threads with the
   threaded runtime (`libspinel_rt_mt.a`, `-DSP_THREADS`). Only that
   variant has the full scheduler: `sleep` and I/O park a green thread,
-  and `Thread#wakeup` and `Mutex#sleep` exist. Lupe links it by default
+  and `Thread#wakeup` and `Mutex#sleep` exist. Fluxpinel links it by default
   (`THREADS=1`); `THREADS=0` links the single-threaded runtime.
-- **Scheduling.** Lupe starts the scheduler at startup, since the threaded
+- **Scheduling.** Fluxpinel starts the scheduler at startup, since the threaded
   runtime needs its root fiber before any fiber runs, and drains it at the
-  end of the program. Lupe sets `SPINEL_WORKERS=1`: the state of the
+  end of the program. Fluxpinel sets `SPINEL_WORKERS=1`: the state of the
   walker is not shared between OS threads, so green threads take turns on
   one worker. A `while` back-edge and a block call poll the safepoint
   flag, as AOT code does at a back-edge. A thread switch thus comes only
@@ -316,7 +316,7 @@ The walker evaluates the prism AST directly (`src/walk.c`).
 ### 3.3.6 Source files
 
 - **Load at run time.** spinel splices a required file into one source at
-  compile time. Lupe loads it at run time, as CRuby does: the file runs
+  compile time. Fluxpinel loads it at run time, as CRuby does: the file runs
   once, at the first `require_relative`, as a top-level program of its
   own. Self is main, the definee is Object, and its locals are its own
   (`src/load.c`).
@@ -325,7 +325,7 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   its parser, so all the parsers share one pool (`L.pool`). The pool only
   grows, and an id stays valid.
 - **File of a node.** A source keeps its bytes, and a node points into
-  them. Thus Lupe finds the file of a node by the address. `__FILE__`,
+  them. Thus Fluxpinel finds the file of a node by the address. `__FILE__`,
   `__LINE__`, `__dir__`, `require_relative` and the message of an
   unsupported node read it.
 - **Paths.** `require_relative` resolves from the real path of the file of
@@ -333,7 +333,7 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   answers false. `require` of a path (`./x`, `../x`, `/x`) resolves from the
   current directory.
 - **Library names.** spinel resolves `require "json"` at compile time
-  (`src/spinel_parse.c`). Lupe resolves the name at run time in the same
+  (`src/spinel_parse.c`). Fluxpinel resolves the name at run time in the same
   order:
   - `packages/<first>/<name>.rb` of spinel is the package. The first
     segment of the name selects the package. The file runs once, and its
@@ -344,17 +344,17 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   - Any other name is a LoadError. spinel refuses it at compile time under
     `--require-gate`, and ignores it with a warning otherwise.
 - **Set.** CRuby loads Set before the program starts, and spinel loads
-  its package when a program names `Set`. Lupe loads the package at the
+  its package when a program names `Set`. Fluxpinel loads the package at the
   first lookup of the constant `Set`. Thus `require "set"` answers false.
 
 ### 3.3.7 FFI
 
 - **Run time, not compile time.** spinel reads `ffi_func` and its kin at
-  compile time and emits a direct C call for each function. Lupe meets the
+  compile time and emits a direct C call for each function. Fluxpinel meets the
   same declarations in a module body at run time (`src/ffi.c`):
   - `ffi_lib` opens the library with `dlopen`: `libNAME.so`, or a
     versioned name when only that exists.
-  - `ffi_func` declares a singleton method of the module (`LUPE_M_FFI`).
+  - `ffi_func` declares a singleton method of the module (`FX_M_FFI`).
     Its first call finds the symbol with `dlsym`, and each call goes
     through libffi with the C types that the declaration names.
   - `ffi_const`, `ffi_buffer`, `ffi_read_<width>`, `ffi_read_ptr` and
@@ -364,15 +364,15 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   collector does not follow, and NULL is nil. An `:int_array` or a
   `:float_array` argument is a C copy of the Array for the call.
 - **Runtime functions.** An `ffi_func` with no `ffi_lib` can name a
-  function of the runtime (`sp_net_shell_capture`). Lupe links with
+  function of the runtime (`sp_net_shell_capture`). Fluxpinel links with
   `-rdynamic`, so `dlsym` finds the runtime functions in the binary.
 - **native_func.** A package binds a C function with `native_func :name,
-  [types], ret, "csym"`. Lupe calls it through libffi, as it calls an
+  [types], ret, "csym"`. Fluxpinel calls it through libffi, as it calls an
   `ffi_func`. The types follow `native_c_type` in `codegen_util.c` of
   spinel:
   - `:any` passes and returns an `sp_RbVal` by value, as a libffi struct.
   - `:string` is a String of the runtime, and `:string?` is one or NULL.
-  - A `:cstring` or `:cbinstr` return is a buffer of the callee. Lupe
+  - A `:cstring` or `:cbinstr` return is a buffer of the callee. Fluxpinel
     copies it, and a `:cbinstr` copy is binary.
   - `:int` is an `sp_int`, `:float` a double and `:bool` an `sp_bool`.
 - **Package objects.** The Makefile links the object of each package
@@ -382,7 +382,7 @@ The walker evaluates the prism AST directly (`src/walk.c`).
 - **Native classes.** A package binds a C struct as a class with
   `native_struct` (StringIO, StringScanner, `OpenSSL::X509::Store`):
   - The struct starts with the class id, so an instance is an object of
-    the class for the dispatch of Lupe. It has no ivars.
+    the class for the dispatch of Fluxpinel. It has no ivars.
   - `native_new` binds a constructor, which takes the class id first.
     `native_method` binds a method, which takes the struct first.
   - The bindings of one name form one method of the class. A call takes
@@ -394,7 +394,7 @@ The walker evaluates the prism AST directly (`src/walk.c`).
     into the String that it was made on, as it does under
     `--share-strings`.
 - **Limits.** `ffi_callback`, `ffi_struct`, `ffi_source`, a variadic
-  function and an `IO::Buffer` argument are gaps. `FFI=0` builds Lupe
+  function and an `IO::Buffer` argument are gaps. `FFI=0` builds Fluxpinel
   with no libffi, and then every FFI declaration and every native binding
   is a gap.
 
@@ -404,21 +404,21 @@ Spinel compiles each user class to a C struct. The `cls_id` of a class
 indexes per-program tables that codegen emits (`sp_class_names[]` and
 others). A class that the walker defines has no place in those tables.
 
-Lupe gives walker classes their own object kind (`src/object.c`):
+Fluxpinel gives walker classes their own object kind (`src/object.c`):
 
-- **Class.** A `LupeClass` holds the method table, the singleton method
+- **Class.** A `FxClass` holds the method table, the singleton method
   table, the included and extended modules, the constants and the ivar
-  slot names. Its runtime id starts at `LUPE_CLS_BASE` (0x100000), far
+  slot names. Its runtime id starts at `FX_CLS_BASE` (0x100000), far
   above the ids of AOT classes. A builtin class (Integer, Object,
-  StandardError, ...) gets a `LupeClass` on first use, with the builtin
+  StandardError, ...) gets a `FxClass` on first use, with the builtin
   hierarchy, so that a program can reopen it.
-- **Object.** A `LupeObject` is `{ cls_id, sp_PolyArray *iv }` on the spinel
+- **Object.** A `FxObject` is `{ cls_id, sp_PolyArray *iv }` on the spinel
   heap, allocated with `sp_gc_alloc` and a scan function. It starts with
   the class id, as an AOT object does. An instance of Object (`main`,
-  `Object.new`) carries an alias id in the Lupe range, so that the runtime
+  `Object.new`) carries an alias id in the Fluxpinel range, so that the runtime
   sees a user object.
 - **Hooks.** The runtime reaches a user object through function pointers.
-  Lupe sets `sp_obj_to_s_fn`, `sp_obj_inspect_fn`, `sp_obj_cls_name_fn`,
+  Fluxpinel sets `sp_obj_to_s_fn`, `sp_obj_inspect_fn`, `sp_obj_cls_name_fn`,
   `sp_class_is_module_fn`, `sp_user_binop_hook` and `sp_user_coerce_hook`.
   Thus `puts obj`, `p obj`, `[a, b].include?(c)` and `5 * money` call the
   methods of the program.
@@ -428,8 +428,8 @@ Lupe gives walker classes their own object kind (`src/object.c`):
 - **Freeze.** `freeze` on an object sets the frozen bit of its heap
   header, and an ivar write to a frozen object raises FrozenError. A class
   keeps its own frozen flag.
-- **Gaps.** A semantics that Lupe does not model stops the program as an
-  unsupported node does (`lupe_gap`): an instance of a subclass of a
+- **Gaps.** A semantics that Fluxpinel does not model stops the program as an
+  unsupported node does (`fx_gap`): an instance of a subclass of a
   builtin class other than Object, Exception, Struct and Data, an ivar on
   a builtin value other than an exception, `extend` on an object, and the
   reopening of a CRuby core class that spinel's class table does not name
@@ -441,7 +441,7 @@ candidate for the AOT to walker direction of section 3.6.
 ### 3.4.1 Struct, Data and anonymous classes
 
 - **Record class.** spinel compiles `Struct.new` and `Data.define` to a
-  class of the program. Lupe makes a `LupeClass` at run time, with the
+  class of the program. Fluxpinel makes a `FxClass` at run time, with the
   members, the kind (Struct or Data) and `keyword_init` (`src/struct.c`).
   The block of `Struct.new` runs as the class body.
 - **Members.** An instance keeps each member in an ivar slot whose name
@@ -465,7 +465,7 @@ code can hold any of the 12 forms. The walker reads all 12 forms.
 - **Hash.** A Hash literal makes an `sp_PolyPolyHash`. Its entries keep the
   insertion order. `Hash.new(v)` sets the default value. `Hash.new { }`
   sets a C default proc that calls the block, and the hash marks the
-  `LupeProc` through `dproc_self` (`src/hash.c`).
+  `FxProc` through `dproc_self` (`src/hash.c`).
 - **Typed Hash.** A method that reads a typed Hash takes a poly copy
   (`sp_poly_as_poly_poly_hash`). A method that changes one stops as a gap.
 - **Array.** Codegen emits most methods of Array at the call site, so the
@@ -518,17 +518,17 @@ Spinel emits a program as a library with `--ext-init NAME` and
   kernel. A host is built with `SPINEL_EXT_HOST`, so that `spinel_rt.h`
   declares that global state `extern` and does not define it.
 
-Lupe is the host of use 1. The program that a user compiles is the kernel.
-Lupe does not use the header form of a host. `spinel_rt.h` keeps much state
+Fluxpinel is the host of use 1. The program that a user compiles is the kernel.
+Fluxpinel does not use the header form of a host. `spinel_rt.h` keeps much state
 `static` in each TU: the exception stack, the catch and break stacks and
 the state of `ensure`. A raise of the kernel jumps to the handlers of the
 kernel's TU, so a walker in another TU never catches it. Thus the host
-build (`make host`) puts the kernel and Lupe into one TU:
+build (`make host`) puts the kernel and Fluxpinel into one TU:
 
 ```
 src/kernel_prelude.h   spinel_rt.h, with sp_class_to_s renamed
-build/host/kernel.c    the kernel (spinel -c --ext-init lupe_kernel_init)
-src/main.c             Lupe, with LUPE_KERNEL=lupe_kernel_init
+build/host/kernel.c    the kernel (spinel -c --ext-init fx_kernel_init)
+src/main.c             Fluxpinel, with FX_KERNEL=fx_kernel_init
 ```
 
 - **One state.** The walker and the kernel use the same handler stacks,
@@ -536,10 +536,10 @@ src/main.c             Lupe, with LUPE_KERNEL=lupe_kernel_init
 - **The class names.** The runtime names a class value through
   `sp_class_to_s`, and the kernel defines it for its own classes only.
   `kernel_prelude.h` includes `spinel_rt.h` with that name changed to
-  `lupe_class_to_s_any`. The calls inside the runtime thus go to Lupe,
+  `fx_class_to_s_any`. The calls inside the runtime thus go to Fluxpinel,
   which calls the function of the kernel for a class of the kernel.
 - **The types.** The struct of each class of the kernel is in the TU, so
-  Lupe can read an ivar of an AOT object by its field.
+  Fluxpinel can read an ivar of an AOT object by its field.
 
 - **The entries.** Each export is a C function, for example
   `sp_App_s_add`. A parameter with no caller in the program is an
@@ -553,20 +553,20 @@ src/main.c             Lupe, with LUPE_KERNEL=lupe_kernel_init
   handler. It answers 0, or 1 and the class name and message of a raise.
   In the host build, a raise of the kernel reaches the rescue of a script
   directly.
-- **In Lupe.** `tools/entry_gen.rb` reads the header and writes a wrapper
+- **In Fluxpinel.** `tools/entry_gen.rb` reads the header and writes a wrapper
   for each entry: it converts each argument to the C type of its parameter
-  and boxes the result. Each class of the kernel is a `LupeClass` with the
+  and boxes the result. Each class of the kernel is a `FxClass` with the
   id of the kernel, so a constant names it and an AOT object has it as its
-  class. An entry is a singleton method of its module (`LUPE_M_ENTRY`).
+  class. An entry is a singleton method of its module (`FX_M_ENTRY`).
   `new` of a class of the kernel is a gap, as the constructor is no entry.
 - **The hooks.** The kernel sets the hooks of the runtime (`sp_obj_inspect_fn`,
   `sp_obj_cmp_hook` and their kin) to the functions that know its classes.
-  Lupe keeps each hook of the kernel and sets its own. The hook of Lupe
-  handles a class of Lupe (`cls_id >= LUPE_CLS_BASE`) and calls the hook
-  of the kernel for a class of the kernel (`0 <= cls_id < LUPE_CLS_BASE`).
+  Fluxpinel keeps each hook of the kernel and sets its own. The hook of Fluxpinel
+  handles a class of Fluxpinel (`cls_id >= FX_CLS_BASE`) and calls the hook
+  of the kernel for a class of the kernel (`0 <= cls_id < FX_CLS_BASE`).
   With no kernel, the kept hooks are NULL, so one source serves both
   builds.
-- **Limits of the exports.** Lupe works around them, and the spinel
+- **Limits of the exports.** Fluxpinel works around them, and the spinel
   maintainer gets them as issues after a demo:
   - An entry that answers a String and has no caller in the program
     answers `NULL`.
@@ -577,33 +577,33 @@ src/main.c             Lupe, with LUPE_KERNEL=lupe_kernel_init
 
 The other direction is AOT to walker. A `native_func` of spinel binds a
 method of a module to a C function by its name, and an `:any` argument or
-result is an `sp_RbVal` as it is. AOT code thus calls a C function of Lupe
-in the same TU, with no change to spinel. `kernel/lupe.rb` declares these
+result is an `sp_RbVal` as it is. AOT code thus calls a C function of Fluxpinel
+in the same TU, with no change to spinel. `kernel/fluxpinel.rb` declares these
 functions (`src/host.c`), and a kernel does `require_relative` of it:
 
-- `Lupe.load(path)` runs a Ruby file at the top level and answers the
+- `Fluxpinel.load(path)` runs a Ruby file at the top level and answers the
   value of its last statement.
-- `Lupe.eval(src)` does the same for a String.
-- `Lupe.call(obj, name, args)` calls a method of a value of Lupe. The poly
-  dispatch of AOT code does not know the classes of Lupe.
+- `Fluxpinel.eval(src)` does the same for a String.
+- `Fluxpinel.call(obj, name, args)` calls a method of a value of Fluxpinel. The poly
+  dispatch of AOT code does not know the classes of Fluxpinel.
 
-A raise in Lupe reaches a rescue of AOT code, and the reverse, through the
-one exception stack. `kernel/lupe_cruby.rb` gives the same functions under
+A raise in Fluxpinel reaches a rescue of AOT code, and the reverse, through the
+one exception stack. `kernel/fluxpinel_cruby.rb` gives the same functions under
 CRuby, so the same program runs there for the answer of a test.
 
 ## 4. Use 2: oracle
 
 The oracle runs one program three ways and compares the output.
 
-| CRuby vs Lupe | Lupe vs AOT | Probable cause |
+| CRuby vs Fluxpinel | Fluxpinel vs AOT | Probable cause |
 |---|---|---|
 | same | same | no defect |
 | same | differ | spinel analysis or codegen |
 | differ | same | spinel runtime builtin |
-| differ | differ | Lupe, or more than one cause |
+| differ | differ | Fluxpinel, or more than one cause |
 
 The test programs come from the spinel test suite. The harness also reports
-each program that Lupe cannot run. That list measures the coverage of Lupe.
+each program that Fluxpinel cannot run. That list measures the coverage of Fluxpinel.
 
 `spinel bisect` searches the optimization decisions inside one compile.
 The oracle sits outside that: it gives a result with no decisions at all.
@@ -614,46 +614,46 @@ The oracle sits outside that: it gives a result with no decisions at all.
 
 - The CRuby answer is the `.expected` file of each test. Spinel snapshots it
   from CRuby.
-- Lupe runs first. Spinel compiles a test only when Lupe runs it, so a run
-  of the whole corpus costs little while the coverage of Lupe is low.
+- Fluxpinel runs first. Spinel compiles a test only when Fluxpinel runs it, so a run
+  of the whole corpus costs little while the coverage of Fluxpinel is low.
 - The harness compares stdout. It does not compare stderr or the exit
   status, as `.expected` holds stdout only.
-- `LUPE_TRACE_MISSING=1` makes Lupe report a missing builtin method. The
-  harness then counts the test as a gap of Lupe, not as a wrong answer.
+- `FX_TRACE_MISSING=1` makes Fluxpinel report a missing builtin method. The
+  harness then counts the test as a gap of Fluxpinel, not as a wrong answer.
 - The report (`build/oracle/report.md`) names the spinel commit of the tree
-  and of the Lupe build. It warns when they differ.
+  and of the Fluxpinel build. It warns when they differ.
 
-Classes beyond the table above: `lupe_only` (spinel refuses the program,
-Lupe gives the CRuby answer), `lupe_unsupported`, `lupe_missing` and
-`lupe_crash`.
+Classes beyond the table above: `fx_only` (spinel refuses the program,
+Fluxpinel gives the CRuby answer), `fx_unsupported`, `fx_missing` and
+`fx_crash`.
 
 ### 4.2 The overflow mode
 
-The oracle runs Lupe and AOT in promote mode. Spinel's raise mode is not a
+The oracle runs Fluxpinel and AOT in promote mode. Spinel's raise mode is not a
 property of the runtime alone: the analysis still promotes an Integer where
 it sees growth, for example `10 ** 30`. A walker has no analysis, so it
-cannot make the same choice. In raise mode, 56 tests that Lupe ran gave
+cannot make the same choice. In raise mode, 56 tests that Fluxpinel ran gave
 `RangeError` where AOT gave a Bignum.
 
 The corpus follows spinel's own promote lane: it leaves out the tests in
 `RAISE_MODE_PINS` of spinel's Makefile.
 
-### 4.3 A defect only Lupe reaches
+### 4.3 A defect only Fluxpinel reaches
 
 `"%c" % s` answers `""` when `s` is a mutable String handle in a poly slot.
 CRuby answers the first character. The `%c` branch of
 `sp_str_format_polyarr` (`lib/sp_poly_cold.c`) tests `SP_TAG_STR` only and
 does not dereference a STRBUF handle. The AOT tests pass a literal there,
-which is `SP_TAG_STR`. Lupe makes every String literal a new handle, so it
+which is `SP_TAG_STR`. Fluxpinel makes every String literal a new handle, so it
 takes the handle path on every run.
 
-Lupe does not work around such a defect, as the oracle must show it.
+Fluxpinel does not work around such a defect, as the oracle must show it.
 `tools/oracle_known.tsv` lists the known defects. The oracle counts a
 listed test as `known` while it differs, and as `known_fixed` when it
 agrees again, so that the line can go.
 
-Thus a difference in the `lupe_differs` class is not always a defect of
-Lupe. Lupe holds every value in its most general form, and a runtime path
+Thus a difference in the `fx_differs` class is not always a defect of
+Fluxpinel. Fluxpinel holds every value in its most general form, and a runtime path
 for that form can have a defect that the specialized AOT code never
 reaches.
 
@@ -664,25 +664,25 @@ the one before it.
 
 | Form | Direction | Change to spinel |
 |---|---|---|
-| Scripts and the console | AOT calls Lupe; Lupe calls the entries | none |
-| eval | AOT calls Lupe with a String | none with no binding; a change for a binding |
-| Dynamic dispatch | AOT hands an unresolved call to Lupe | a change to the analysis |
+| Scripts and the console | AOT calls Fluxpinel; Fluxpinel calls the entries | none |
+| eval | AOT calls Fluxpinel with a String | none with no binding; a change for a binding |
+| Dynamic dispatch | AOT hands an unresolved call to Fluxpinel | a change to the analysis |
 
 Requirements for all forms:
 
 - **One walker lock.** The walker is not shared between OS threads
-  (section 3.3.5). AOT code on more than one thread calls Lupe under one
+  (section 3.3.5). AOT code on more than one thread calls Fluxpinel under one
   lock.
-- **Speed.** The walker is slower than CRuby (section 7). Lupe is for the
+- **Speed.** The walker is slower than CRuby (section 7). Fluxpinel is for the
   glue of a program, not for its hot paths.
-- **The same semantics.** A value has the same builtin methods in Lupe and
+- **The same semantics.** A value has the same builtin methods in Fluxpinel and
   in AOT code. The oracle (section 4) checks this.
 
 ### 5.1 Scripts and the console
 
-The AOT program loads a Ruby file with `Lupe.load` (section 3.6). The
+The AOT program loads a Ruby file with `Fluxpinel.load` (section 3.6). The
 script calls the entries of the program and gets AOT objects as values.
-The program calls a method of the script with `Lupe.call`. The console reads a line from a socket, evaluates it
+The program calls a method of the script with `Fluxpinel.call`. The console reads a line from a socket, evaluates it
 with the same walker and keeps the locals from one line to the next.
 
 - **Object layout.** The console reads an ivar of an AOT object through the
@@ -695,7 +695,7 @@ with the same walker and keeps the locals from one line to the next.
 
 ### 5.2 eval
 
-AOT code calls `Lupe.eval` with a String, and Lupe evaluates it at the top
+AOT code calls `Fluxpinel.eval` with a String, and Fluxpinel evaluates it at the top
 level (section 3.6). The string sees the globals, the constants and the
 classes of the kernel. It does not see the locals of the AOT method: they
 are C variables. `eval` with a binding needs those locals, so it needs a
@@ -705,24 +705,24 @@ change to spinel.
 
 Spinel refuses a program that calls a method which no class defines. For
 dynamic dispatch, spinel must accept such a call, and emit code that hands
-it to Lupe at run time. Then a class of the program can use
+it to Fluxpinel at run time. Then a class of the program can use
 `method_missing`, `define_method` and `send` with a computed name, and the
 static part of the program stays AOT code. A port of a CRuby application
-can start with the dynamic parts in Lupe, and move them to AOT code one by
+can start with the dynamic parts in Fluxpinel, and move them to AOT code one by
 one.
 
 ## 6. Prior art
 
 - **suppify** (bash0C7/suppify). It wraps spinel output as a C library, a
   CRuby gem or a PicoRuby mrbgem. Each library has its own spinel heap.
-  Values cross by copy (scalars, or MessagePack). Lupe differs: one heap,
+  Values cross by copy (scalars, or MessagePack). Fluxpinel differs: one heap,
   values cross by reference.
 - **R2P2-darwin PR #13** (bash0C7/R2P2-darwin). It calls a spinel kernel
   from the PicoRuby REPL through suppify.
 - **`crystal i`.** Crystal keeps its semantic analysis and replaces LLVM
   codegen with a bytecode interpreter.
 - **nicht.** Iced (AOT) and naked (walker) code meet at the method table
-  and share one value word. Lupe applies the same idea to spinel.
+  and share one value word. Fluxpinel applies the same idea to spinel.
 
 ## 7. Facts about the spinel runtime
 
@@ -741,18 +741,18 @@ These facts apply to spinel commit `ffac8340d`.
 - Spinel has no mode that forces every slot to poly.
 - `libspinel_rt.a` links with no generated TU. A hand-written TU supplies
   the symbol table, the builtin class names, the user exception table and
-  the init hooks (`src/lupe_tu.c`).
+  the init hooks (`src/fx_tu.c`).
 - `spinel_rt.h` declares hooks such as `sp_class_to_s` and `sp_sym_to_s`
   as `static`. Each TU that includes the header must define them. Thus all
-  Lupe code that uses the runtime is one TU (a unity build).
+  Fluxpinel code that uses the runtime is one TU (a unity build).
 - A poly String has two forms. A literal is `SP_TAG_STR`. A new String is a
   mutable handle: `SP_TAG_OBJ` with `cls_id` `SP_BUILTIN_STRBUF` (-40). The
   walker treats both forms as String.
 - The integer overflow mode is a compile-time macro
   (`SP_INT_OVERFLOW_MODE_RAISE`, `_WRAP` or `_PROMOTE`). The default is
-  `raise`. Lupe uses the mode of the AOT build that it runs with.
+  `raise`. Fluxpinel uses the mode of the AOT build that it runs with.
 - Exceptions use the `setjmp` frame that spinel emits for `begin`/`rescue`
-  (`sp_exc_stack`, `sp_exc_top`, `sp_last_exc_cls`). Lupe code can use the
+  (`sp_exc_stack`, `sp_exc_top`, `sp_last_exc_cls`). Fluxpinel code can use the
   same frame.
 - A host binary of the runtime alone is about 1.4 MB of text (x86_64,
   `-O2`). Most of it is `static inline` code from `spinel_rt.h`.
@@ -790,7 +790,7 @@ These facts apply to spinel commit `ffac8340d`.
   of an Array literal removed, `test/m2/gc_stress.rb` gives the correct
   output in a plain run. It gives a wrong output with `SPINEL_GC_STRESS=1`,
   and it aborts with `SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1`.
-- The oracle on spinel `7ea20089b` (7824 tests, promote mode): Lupe runs
+- The oracle on spinel `7ea20089b` (7824 tests, promote mode): Fluxpinel runs
   96 tests. 95 agree with CRuby and AOT, and 1 differs (section 4.3). The
   largest blockers, by tests:
 
@@ -807,7 +807,7 @@ These facts apply to spinel commit `ffac8340d`.
   | `begin` / `rescue` | 204 |
 
 - The oracle on spinel `1b789548d` (7840 tests, promote mode), with
-  classes and modules: Lupe runs 491 tests and 474 agree. The largest
+  classes and modules: Fluxpinel runs 491 tests and 474 agree. The largest
   blockers now:
 
   | blocker | tests |
@@ -822,7 +822,7 @@ These facts apply to spinel commit `ffac8340d`.
   One test times out: 2^24 calls of class methods
   (`cmethod_chain_reachability`).
 - The oracle on spinel `6ab3b2e20` (7857 tests, promote mode), with
-  blocks: Lupe runs 873 tests and 854 agree. 19 differ. The largest
+  blocks: Fluxpinel runs 873 tests and 854 agree. 19 differ. The largest
   blockers now:
 
   | blocker | tests |
@@ -835,7 +835,7 @@ These facts apply to spinel commit `ffac8340d`.
   | a global variable write | 144 |
 
 - The oracle on spinel `6ab3b2e20`, with Hash, keyword arguments and
-  forwarding: Lupe runs 1548 tests and 1519 agree. 29 differ, most of them
+  forwarding: Fluxpinel runs 1548 tests and 1519 agree. 29 differ, most of them
   in `respond_to?` and in class semantics. The largest blockers now:
 
   | blocker | tests |
@@ -847,9 +847,9 @@ These facts apply to spinel commit `ffac8340d`.
   | a `rescue` modifier | 149 |
   | a multiple assignment | 145 |
 
-- The oracle on spinel `b5d3820ad` (7910 tests), with exceptions: Lupe
+- The oracle on spinel `b5d3820ad` (7910 tests), with exceptions: Fluxpinel
   runs 2023 tests and 1909 agree. 111 differ; about 30 of them check
-  `private` or `freeze`, which Lupe does not model. The largest blockers
+  `private` or `freeze`, which Fluxpinel does not model. The largest blockers
   now:
 
   | blocker | tests |
@@ -861,7 +861,7 @@ These facts apply to spinel commit `ffac8340d`.
   | `case` / `when` | 132 |
   | a Range of values other than Integer | 101 |
 
-- The oracle on spinel `b5d3820ad`, with Regexp: Lupe runs 2210 tests and
+- The oracle on spinel `b5d3820ad`, with Regexp: Fluxpinel runs 2210 tests and
   2095 agree. 112 differ. The largest blockers now:
 
   | blocker | tests |
@@ -873,7 +873,7 @@ These facts apply to spinel commit `ffac8340d`.
   | a Range of values other than Integer | 102 |
   | `case` / `in` | 73 |
 
-- The oracle on spinel `b5d3820ad`, with global variables: Lupe runs 2311
+- The oracle on spinel `b5d3820ad`, with global variables: Fluxpinel runs 2311
   tests and 2188 agree. 120 differ. The largest blockers now:
 
   | blocker | tests |
@@ -886,7 +886,7 @@ These facts apply to spinel commit `ffac8340d`.
   | a call of a block whose scope has returned | 65 |
 
 - The oracle on spinel `b5d3820ad`, with Struct, Data and anonymous
-  classes: Lupe runs 2509 tests and 2386 agree. 120 differ. The largest
+  classes: Fluxpinel runs 2509 tests and 2386 agree. 120 differ. The largest
   blockers now:
 
   | blocker | tests |
@@ -899,8 +899,8 @@ These facts apply to spinel commit `ffac8340d`.
   | a call of a block whose scope has returned | 67 |
 
 - The oracle on spinel `89f0f421b` (7933 tests), with Fiber, Thread and
-  Enumerator.new on the threaded runtime: Lupe runs 2636 tests and 2503
-  agree. A run of the previous Lupe on the same corpus agreed on 2379. 133
+  Enumerator.new on the threaded runtime: Fluxpinel runs 2636 tests and 2503
+  agree. A run of the previous Fluxpinel on the same corpus agreed on 2379. 133
   differ. The largest blockers now:
 
   | blocker | tests |
@@ -921,30 +921,30 @@ These facts apply to spinel commit `ffac8340d`.
 - A Thread name that is a heap String is freed by a minor collection when
   the Thread is the main one: `Thread.current.name = "main-" + x` and a
   collection, then `Thread.current.name` reads a freed slot. AOT code and
-  Lupe both fail under `SPINEL_GC_STRESS=2`. AOT code meets it less often,
+  Fluxpinel both fail under `SPINEL_GC_STRESS=2`. AOT code meets it less often,
   since a literal there is a static String (`gc_minor_thread_local_slot`
-  passes AOT and fails Lupe under the stress mode).
+  passes AOT and fails Fluxpinel under the stress mode).
 - A class keeps one lexical parent, the scope of its first definition.
   In CRuby, the lexical scope belongs to each class body: the body of
-  `class A::B` does not search `A`. Lupe searches `A` there
+  `class A::B` does not search `A`. Fluxpinel searches `A` there
   (`class_new_superclass_order`).
 - The runtime shows a class value by its name, through
-  `lupe_class_name_hook`. Thus `p K` for a Struct class with
+  `fx_class_name_hook`. Thus `p K` for a Struct class with
   `keyword_init: true` shows `K`, but CRuby shows `K(keyword_init: true)`.
 - `sp_re_matchdata` sets the captures of a match but not the positions
-  (`sp_re_caps`) that `sp_re_last_matchdata` reads. Lupe sets the
+  (`sp_re_caps`) that `sp_re_last_matchdata` reads. Fluxpinel sets the
   registers again from the MatchData, so `$~` after `str.match(re)` reads
   this match.
-- Lupe makes a mutable String for each String literal. Thus
-  `"ab12".slice!(/\d+/)` changes a String in Lupe, but CRuby and AOT raise
+- Fluxpinel makes a mutable String for each String literal. Thus
+  `"ab12".slice!(/\d+/)` changes a String in Fluxpinel, but CRuby and AOT raise
   FrozenError (`string_slice_bang_regexp_arm`).
-- `rescue` lets a program reach two old defects of Lupe. A generated
+- `rescue` lets a program reach two old defects of Fluxpinel. A generated
   wrapper whose row has no argument kinds takes any argument: `"s".include?(:x)`
   passes a Symbol to `sp_str_include`, which crashes
   (`param_include_body_widen`). A rescue with `retry` around a method that
-  Lupe lacks retries forever (`string_split_local_each_retry`).
+  Fluxpinel lacks retries forever (`string_split_local_each_retry`).
 - A comparator block that does not compare (`sort { |x| x.length }`) gives
-  an order that depends on the sort algorithm. Lupe uses a stable merge
+  an order that depends on the sort algorithm. Fluxpinel uses a stable merge
   sort, and CRuby uses its own quicksort. `comparator_block_arity` differs
   for this reason.
 - The M2 walker runs `fib(32)` in 0.85 s. CRuby 4.0.6 runs it in 0.24 s,
@@ -953,7 +953,7 @@ These facts apply to spinel commit `ffac8340d`.
 
 ## 8. Open questions
 
-- The smoke test in `poc/m1` checks 6 wrappers. How does Lupe check the
+- The smoke test in `poc/m1` checks 6 wrappers. How does Fluxpinel check the
   other wrappers? The oracle (M3) is one answer.
 - Which AOT build of a test program serves as the oracle reference: one
   build per program, or one shared build?
@@ -965,13 +965,13 @@ These facts apply to spinel commit `ffac8340d`.
   emits for each method, so the map exists in the codegen source.
 - How does the walker dispatch fast? Candidates are interned method names
   (`sp_sym`) and an inline cache per call node.
-- How does Lupe hold its spinel dependency? Lupe uses the spinel source
+- How does Fluxpinel hold its spinel dependency? Fluxpinel uses the spinel source
   (`bop_rows[]`, `ty_traits[]`), `libspinel_rt.a` and `libprism.a` from
   `$(SPINEL)`, an external checkout. The two uses want different things:
   - The oracle checks the spinel tree under test, at any commit. An
     external path fits it.
   - The dynamic layer links with one application. It needs a fixed spinel
-    commit and a reproducible build: the kernel and Lupe must use the same
+    commit and a reproducible build: the kernel and Fluxpinel must use the same
     runtime.
 
   A candidate: a spinel submodule as the default, and `make SPINEL=...` to
@@ -986,13 +986,13 @@ These facts apply to spinel commit `ffac8340d`.
 2. **M1: template survey.** `poc/m1` generates the wrappers, compiles and
    links them, and reports the coverage. A smoke test calls a sample.
    Run it with `make -C poc/m1`.
-3. **M2: minimal walker.** `build/lupe FILE.rb` evaluates literals,
+3. **M2: minimal walker.** `build/fluxpinel FILE.rb` evaluates literals,
    locals, `def`, calls, `if`/`unless`, `while`/`until`, `return`, `break`
    and `next` on Integer, Float, String, Symbol and Array. `make test` runs
-   `test/m2` under CRuby and Lupe, in a plain run and in the GC stress run.
+   `test/m2` under CRuby and Fluxpinel, in a plain run and in the GC stress run.
 4. **M3: oracle harness.** `make oracle` runs the spinel corpus under
-   CRuby, Lupe and AOT in promote mode, and reports the classes of
-   section 4 and the blockers of Lupe.
+   CRuby, Fluxpinel and AOT in promote mode, and reports the classes of
+   section 4 and the blockers of Fluxpinel.
 5. **M3+: coverage.** Take the blockers in the order of the oracle report.
    Each step runs the oracle again. From M4 on, coverage is not a step of
    its own: take first the blockers that a demo meets, and then the
@@ -1015,19 +1015,19 @@ These facts apply to spinel commit `ffac8340d`.
      `native_func` bindings (sections 3.3.6 and 3.3.7): `test/m3`.
    - Heap frames for a scope that a Proc outlives (section 3.3.1):
      `test/m3`.
-   - Next, the tests of a Roundhouse output (`spin test`) under Lupe and
+   - Next, the tests of a Roundhouse output (`spin test`) under Fluxpinel and
      AOT. Roundhouse lowers a Rails app to Ruby that spinel compiles.
    - Then the largest blockers of the oracle report.
-6. **M4: Lupe as a host.** Build the kernel and Lupe in one TU (section
-   3.6). Lupe uses the symbol table and the class names of the kernel, and
+6. **M4: Fluxpinel as a host.** Build the kernel and Fluxpinel in one TU (section
+   3.6). Fluxpinel uses the symbol table and the class names of the kernel, and
    chains each hook to the hook of the kernel. `make test-host` runs
    `test/m2` and `test/m3` on the host build, with `test/kernel/app.rb` as
    the kernel.
 7. **M5: walker to AOT.** A tool reads the entries of a kernel and
    generates a wrapper for each one. The wrapper boxes the result.
    A script calls an entry as a singleton method of its module, and holds
-   an AOT object as a value. Lupe works around the limits of the exports.
-8. **M6: scripts.** AOT code calls Lupe through `kernel/lupe.rb` (section
+   an AOT object as a value. Fluxpinel works around the limits of the exports.
+8. **M6: scripts.** AOT code calls Fluxpinel through `kernel/fluxpinel.rb` (section
    3.6), and `test/host` checks it. The demo `examples/textkit`: an AOT
    program loads `plugins/*.rb` at start, and each plugin adds a filter and
    calls the AOT code.

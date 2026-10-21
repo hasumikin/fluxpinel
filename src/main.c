@@ -1,13 +1,13 @@
-/* main.c -- the Lupe command and the root of the one TU.
+/* main.c -- the Fluxpinel command and the root of the one TU.
 
-   Usage: lupe FILE.rb
+   Usage: fluxpinel FILE.rb
 
-   spinel_rt.h declares hooks as static, so all Lupe code that uses the
+   spinel_rt.h declares hooks as static, so all Fluxpinel code that uses the
    runtime is one TU. This file includes the others in order. */
 
-#include "lupe_tu.c"
+#include "fx_tu.c"
 #include "bop_gen_out.c"
-#include "lupe.h"
+#include "fluxpinel.h"
 #include "object.c"
 #include "walk.c"
 #include "builtin.c"
@@ -26,19 +26,19 @@
 #include "file.c"
 #include "host.c"
 
-static void lupe_body(void) {
+static void fx_body(void) {
   SP_GC_SAVE();
-  lupe_tu_init();
-  lupe_bop_init();
+  fx_tu_init();
+  fx_bop_init();
   L.ctl_val = sp_box_nil();
   _sp_gc_root_push((void **)((uintptr_t)&L.ctl_val | (uintptr_t)1));
-  lupe_object_init();
-  lupe_host_init();
-  lupe_hash_init();
-  lupe_array_init();
-  lupe_exc_hooks();
-  lupe_re_init();
-  lupe_global_init();
+  fx_object_init();
+  fx_host_init();
+  fx_hash_init();
+  fx_array_init();
+  fx_exc_hooks();
+  fx_re_init();
+  fx_global_init();
   /* a fiber runs the walker, whose frames are larger than those of AOT
      code: the size that codegen asks for an unoptimised build */
   sp_fiber_stack_hint((size_t)1 << 20);
@@ -46,21 +46,21 @@ static void lupe_body(void) {
      Thread.new in fiber.c). The threaded runtime needs its root fiber
      before any fiber runs. */
   setenv("SPINEL_WORKERS", "1", 1);
-  lupe_sched_start();
-  lupe_fs_init();
+  fx_sched_start();
+  fx_fs_init();
 
-  lupe_load_main(L.path);
+  fx_load_main(L.path);
   /* a break of a Proc whose call has returned reaches the top */
-  if (L.ctl == LUPE_CTL_BREAK_BLOCK) lupe_gap("break from a block whose call has returned");
-  lupe_sched_end();
+  if (L.ctl == FX_CTL_BREAK_BLOCK) fx_gap("break from a block whose call has returned");
+  fx_sched_end();
   sp_fin_run_exit();
 }
 
 int main(int argc, char **argv) {
-  if (argc < 2) { fprintf(stderr, "usage: lupe FILE.rb [ARG...]\n"); return 2; }
+  if (argc < 2) { fprintf(stderr, "usage: fluxpinel FILE.rb [ARG...]\n"); return 2; }
   L.path = argv[1];
   L.args = argv + 2;
   L.nargs = argc - 2;
-  sp_main_stack_run(lupe_body);
+  sp_main_stack_run(fx_body);
   return 0;
 }

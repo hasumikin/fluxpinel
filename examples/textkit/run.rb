@@ -1,5 +1,5 @@
-# The start of textkit: Lupe runs this file and calls the AOT code.
+# The start of textkit: Fluxpinel runs this file and calls the AOT code.
 #
-#   build/textkit/lupe examples/textkit/run.rb INPUT PLUGIN_DIR
+#   build/textkit/fluxpinel examples/textkit/run.rb INPUT PLUGIN_DIR
 
 Textkit.main(ARGV)

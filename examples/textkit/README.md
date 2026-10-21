@@ -1,27 +1,27 @@
 # textkit
 
-textkit is a small text tool. It shows the dynamic layer of Lupe
+textkit is a small text tool. It shows the dynamic layer of Fluxpinel
 (docs/design.md, section 5.1):
 
 - Spinel compiles the tool (`app.rb`) to C. The tool reads the input,
   splits the lines into words and counts the words.
-- Lupe runs the plugins (`plugins/*.rb`) at run time. Each plugin adds a
+- Fluxpinel runs the plugins (`plugins/*.rb`) at run time. Each plugin adds a
   filter. You add or change a plugin, and you do not compile again.
 
 The two sides call each other, and a value crosses as it is:
 
-- The tool loads each plugin with `Lupe.load` and calls its filter with
-  `Lupe.call` (`kernel/lupe.rb`).
+- The tool loads each plugin with `Fluxpinel.load` and calls its filter with
+  `Fluxpinel.call` (`kernel/fluxpinel.rb`).
 - A plugin calls the AOT code of the tool: `20_stopwords.rb` splits a line
   with `Textkit.words`.
 
 ## Build and run
 
-Run these commands in the top directory of Lupe:
+Run these commands in the top directory of Fluxpinel:
 
 ```sh
 make host HOST=build/textkit KERNEL=examples/textkit/app.rb KERNEL_ENTRIES=Textkit.main,Textkit.words
-build/textkit/lupe examples/textkit/run.rb examples/textkit/input.txt examples/textkit/plugins
+build/textkit/fluxpinel examples/textkit/run.rb examples/textkit/input.txt examples/textkit/plugins
 ```
 
 The output:
@@ -41,7 +41,7 @@ gem: 3
 at: 1
 ```
 
-`KERNEL_ENTRIES` names the methods of the tool that Lupe calls: the start
+`KERNEL_ENTRIES` names the methods of the tool that Fluxpinel calls: the start
 (`Textkit.main`) and the methods that a plugin calls.
 
 ## Add a plugin
@@ -58,16 +58,16 @@ end
 Number.new
 ```
 
-Run `build/textkit/lupe` again. The binary stays the same.
+Run `build/textkit/fluxpinel` again. The binary stays the same.
 
 ## Run under CRuby
 
-The same files run under CRuby. `kernel/lupe_cruby.rb` gives the
-functions of `kernel/lupe.rb`:
+The same files run under CRuby. `kernel/fluxpinel_cruby.rb` gives the
+functions of `kernel/fluxpinel.rb`:
 
 ```sh
-ruby -r ./kernel/lupe_cruby.rb -r ./examples/textkit/app.rb examples/textkit/run.rb \
+ruby -r ./kernel/fluxpinel_cruby.rb -r ./examples/textkit/app.rb examples/textkit/run.rb \
   examples/textkit/input.txt examples/textkit/plugins
 ```
 
-The output is the same as the output of the Lupe build.
+The output is the same as the output of the Fluxpinel build.

@@ -4,7 +4,7 @@
 # Usage: ruby native_link.rb SPINEL THREADS FFI
 #
 # A package binds a C function with native_func. The function is in the
-# runtime archive or in the object of the package (native_obj). Lupe finds
+# runtime archive or in the object of the package (native_obj). Fluxpinel finds
 # it with dlsym when the program calls it. The script prints:
 #
 #   - the object of each package (sp_x_mt.o when THREADS is 1),

@@ -9,14 +9,14 @@
 #      references every other wrapper, and maps each undefined reference,
 #   3. prints the counts per receiver family.
 #
-# Set SPINEL (spinel checkout) and LUPE_TU_DIR (the directory of lupe_tu.c).
-# RT_ARCHIVE, RT_CFLAGS and RT_LIBS name the runtime archive that Lupe
+# Set SPINEL (spinel checkout) and FX_TU_DIR (the directory of fx_tu.c).
+# RT_ARCHIVE, RT_CFLAGS and RT_LIBS name the runtime archive that Fluxpinel
 # links and its flags (the threaded one needs -DSP_THREADS and -lpthread).
 
 require "open3"
 
 SPINEL = ENV.fetch("SPINEL", File.expand_path("~/work/spinel"))
-TU_DIR = ENV.fetch("LUPE_TU_DIR", File.expand_path("../src", __dir__))
+TU_DIR = ENV.fetch("FX_TU_DIR", File.expand_path("../src", __dir__))
 RT_ARCHIVE = ENV.fetch("RT_ARCHIVE", "#{SPINEL}/lib/libspinel_rt.a")
 RT_CFLAGS = ENV.fetch("RT_CFLAGS", "").split
 RT_LIBS = ENV.fetch("RT_LIBS", "").split
@@ -32,7 +32,7 @@ Row = Struct.new(:id, :row, :recv, :name, :variant, :status, :reason)
 def wrapper_at_line(src_lines)
   starts = []
   src_lines.each_with_index do |l, i|
-    starts << [i + 1, $1.to_i] if l =~ /^sp_RbVal lupe_bop_(\d+)\(/
+    starts << [i + 1, $1.to_i] if l =~ /^sp_RbVal fx_bop_(\d+)\(/
   end
   ->(line) { (starts.select { |s, _| s <= line }.last || [0, nil])[1] }
 end
@@ -49,9 +49,9 @@ rows = File.readlines(File.join(dir, "manifest.tsv"), chomp: true).map do |l|
 end
 find = wrapper_at_line(File.readlines(gen))
 
-# The generated file expects lupe_tu.c in front of it (one TU).
+# The generated file expects fx_tu.c in front of it (one TU).
 unit = File.join(dir, "gen_unit.c")
-File.write(unit, "#include \"lupe_tu.c\"\n#include \"bop_gen_out.c\"\n")
+File.write(unit, "#include \"fx_tu.c\"\n#include \"bop_gen_out.c\"\n")
 
 # 1. compile errors
 log, = run("cc", *CFLAGS, "-I#{dir}", "-c", unit, "-o", File.join(dir, "gen.o"))
@@ -62,20 +62,20 @@ compile_fail = log.scan(/bop_gen_out\.c:(\d+):\d+: error:/).map { |(l)| find.(l.
 main_c = File.join(dir, "main.c")
 File.write(main_c, <<~C)
   typedef struct { const char *recv, *name, *variant; int argc_min, argc_max;
-                   unsigned long long arg0, arg1; void *fn; } LupeBop;
-  extern const int lupe_bop_count;
-  extern const LupeBop lupe_bop_table[];
-  int main(void) { int n = 0; for (int i = 0; i < lupe_bop_count; i++) n += lupe_bop_table[i].fn != 0; return n == 0; }
+                   unsigned long long arg0, arg1; void *fn; } FxBop;
+  extern const int fx_bop_count;
+  extern const FxBop fx_bop_table[];
+  int main(void) { int n = 0; for (int i = 0; i < fx_bop_count; i++) n += fx_bop_table[i].fn != 0; return n == 0; }
 C
-offs = compile_fail.map { |id| "-DLUPE_BOP_OFF_#{id}" }
+offs = compile_fail.map { |id| "-DFX_BOP_OFF_#{id}" }
 log, ok = run("cc", *CFLAGS, "-I#{dir}", *offs, "-o", File.join(dir, "link_test"), unit, main_c,
               RT_ARCHIVE, "-lm", "-lcrypt", *RT_LIBS)
 File.write(File.join(dir, "link.log"), log)
-link_fail = log.scan(/in function `lupe_bop_(\d+)'/).map { |(id)| id.to_i }.uniq
+link_fail = log.scan(/in function `fx_bop_(\d+)'/).map { |(id)| id.to_i }.uniq
 abort "link failed for another reason; see #{dir}/link.log" if !ok && link_fail.empty?
 # The flags that turn off every failed wrapper, for a later build.
 File.write(File.join(dir, "off.flags"),
-           (compile_fail + link_fail).sort.map { |id| "-DLUPE_BOP_OFF_#{id}" }.join(" ") + "\n")
+           (compile_fail + link_fail).sort.map { |id| "-DFX_BOP_OFF_#{id}" }.join(" ") + "\n")
 
 # 3. report
 gen_rows = rows.select { |r| r.status == "gen" }

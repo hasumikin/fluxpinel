@@ -24,7 +24,7 @@ p LibC.abs(-7), LibC.labs(-1234567890123)
 p LibC.atof("2.5")
 p LibC.toupper(97).chr
 p LibC::ANSWER
-p LibC.getenv("LUPE_SURELY_UNSET_VARIABLE")
+p LibC.getenv("FX_SURELY_UNSET_VARIABLE")
 
 buf = LibC.scratch
 p LibC.put_u32(buf, 305419896)

@@ -1,16 +1,16 @@
 /* iter.c -- the builtin methods that take a block, Proc and Range.
 
    spinel emits a builtin method with a block as an inline C loop, so no
-   runtime function or generated wrapper calls a block. Lupe writes these
-   methods here, on the poly API, and calls the block with lupe_yield.
+   runtime function or generated wrapper calls a block. Fluxpinel writes these
+   methods here, on the poly API, and calls the block with fx_yield.
 
    After each block call, a method returns at once when a jump is pending
    (L.ctl): a break ends the call that passed the block, and a return
    ends a method further out. */
 
-#include "lupe.h"
+#include "fluxpinel.h"
 
-static sp_RbVal lupe_pair(sp_RbVal a, sp_RbVal b);
+static sp_RbVal fx_pair(sp_RbVal a, sp_RbVal b);
 
 /* ---- sequences: the elements of an Array, an Integer Range or a Hash ---- */
 
@@ -21,16 +21,16 @@ typedef struct {
   int walk;               /* src is a walker (sp_enum_walker_boxed) */
   sp_PolyPolyHash *hash;  /* a Hash: src itself, or a poly copy of a typed one */
   sp_int i, last;
-} LupeSeq;
+} FxSeq;
 
-/* The caller roots a LupeSeq with this, after lupe_seq_open. */
-#define LUPE_SEQ_ROOT(s) SP_GC_ROOT((s).hash); SP_GC_ROOT_RBVAL((s).src)
+/* The caller roots a FxSeq with this, after fx_seq_open. */
+#define FX_SEQ_ROOT(s) SP_GC_ROOT((s).hash); SP_GC_ROOT_RBVAL((s).src)
 
-static int lupe_is_range(sp_RbVal v) {
+static int fx_is_range(sp_RbVal v) {
   return v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_RANGE && v.v.p;
 }
 
-static int lupe_is_hash(sp_RbVal v) {
+static int fx_is_hash(sp_RbVal v) {
   return v.tag == SP_TAG_OBJ && sp_poly_is_hash_kind(v.cls_id) && v.v.p;
 }
 
@@ -39,19 +39,19 @@ static int lupe_is_hash(sp_RbVal v) {
 /* What each { } answers: the receiver, or for an Enumerator made from a
    value (`4.times`) that value. A generator would run again, so it answers
    itself. */
-static sp_RbVal lupe_each_answer(sp_RbVal r) {
+static sp_RbVal fx_each_answer(sp_RbVal r) {
   if (r.tag != SP_TAG_OBJ || r.cls_id != SP_BUILTIN_ENUMERATOR || !r.v.p) return r;
   const sp_Enumerator *e = (const sp_Enumerator *)r.v.p;
   return !e->gen && e->has_src ? e->source : r;
 }
 
-static int lupe_seq_open(sp_RbVal r, LupeSeq *s) {
+static int fx_seq_open(sp_RbVal r, FxSeq *s) {
   s->src = r;
   s->i = 0;
   s->range = 0;
   s->walk = 0;
   s->hash = NULL;
-  if (lupe_is_array(r)) return 1;
+  if (fx_is_array(r)) return 1;
   /* an Enumerator: its items, or one item at a time from a generator, so
      that an endless one stops where the block breaks */
   if (r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_ENUMERATOR && r.v.p) {
@@ -66,11 +66,11 @@ static int lupe_seq_open(sp_RbVal r, LupeSeq *s) {
     else s->walk = 1;
     return 1;
   }
-  if (lupe_is_hash(r)) {
+  if (fx_is_hash(r)) {
     s->hash = sp_poly_as_poly_poly_hash(r);
     return 1;
   }
-  if (!lupe_is_range(r)) return 0;
+  if (!fx_is_range(r)) return 0;
   const sp_Range *g = (const sp_Range *)r.v.p;
   if (g->nobeg) sp_raise_cls("TypeError", "can't iterate from NilClass");
   s->range = 1;
@@ -80,7 +80,7 @@ static int lupe_seq_open(sp_RbVal r, LupeSeq *s) {
 }
 
 /* An Array is read live, so that elements that the block appends are seen. */
-static int lupe_seq_next(LupeSeq *s, sp_RbVal *v) {
+static int fx_seq_next(FxSeq *s, sp_RbVal *v) {
   if (s->range) {
     if (s->i > s->last) return 0;
     *v = sp_box_int(s->i);
@@ -96,7 +96,7 @@ static int lupe_seq_next(LupeSeq *s, sp_RbVal *v) {
   if (s->hash) {
     if (s->i >= s->hash->len) return 0;
     sp_int slot = s->hash->order[s->i++];
-    *v = lupe_pair(s->hash->keys[slot], s->hash->vals[slot]);
+    *v = fx_pair(s->hash->keys[slot], s->hash->vals[slot]);
     return 1;
   }
   if (s->i >= sp_poly_length(s->src)) return 0;
@@ -105,14 +105,14 @@ static int lupe_seq_next(LupeSeq *s, sp_RbVal *v) {
 }
 
 /* The elements of a sequence as a new Array. */
-static sp_PolyArray *lupe_seq_array(sp_RbVal r) {
+static sp_PolyArray *fx_seq_array(sp_RbVal r) {
   sp_PolyArray *a = sp_PolyArray_new();
   SP_GC_ROOT(a);
-  LupeSeq s;
+  FxSeq s;
   sp_RbVal v;
-  lupe_seq_open(r, &s);
-  LUPE_SEQ_ROOT(s);
-  while (lupe_seq_next(&s, &v)) {
+  fx_seq_open(r, &s);
+  FX_SEQ_ROOT(s);
+  while (fx_seq_next(&s, &v)) {
     /* a generator step that yielded several values is an Array as a value */
     if (SP_UNLIKELY(sp_poly_is_pack(v))) v = sp_box_poly_array(sp_PolyArray_dup((sp_PolyArray *)v.v.p));
     sp_PolyArray_push(a, v);
@@ -122,22 +122,22 @@ static sp_PolyArray *lupe_seq_array(sp_RbVal r) {
 
 /* ---- helpers ---- */
 
-static sp_RbVal lupe_y1(const LupeBlock *b, sp_RbVal v) {
+static sp_RbVal fx_y1(const FxBlock *b, sp_RbVal v) {
   SP_GC_ROOT_RBVAL(v);
   /* the item of a generator step that yielded several values: the block
      takes them as several arguments */
-  if (SP_UNLIKELY(sp_poly_is_pack(v))) return lupe_yield(b, (int)sp_poly_length(v), ((sp_PolyArray *)v.v.p)->data);
-  return lupe_yield(b, 1, &v);
+  if (SP_UNLIKELY(sp_poly_is_pack(v))) return fx_yield(b, (int)sp_poly_length(v), ((sp_PolyArray *)v.v.p)->data);
+  return fx_yield(b, 1, &v);
 }
 
-static sp_RbVal lupe_y2(const LupeBlock *b, sp_RbVal v, sp_RbVal w) {
+static sp_RbVal fx_y2(const FxBlock *b, sp_RbVal v, sp_RbVal w) {
   sp_RbVal argv[2] = { v, w };
   SP_GC_ROOT_RBVAL(argv[0]);
   SP_GC_ROOT_RBVAL(argv[1]);
-  return lupe_yield(b, 2, argv);
+  return fx_yield(b, 2, argv);
 }
 
-static sp_RbVal lupe_pair(sp_RbVal a, sp_RbVal b) {
+static sp_RbVal fx_pair(sp_RbVal a, sp_RbVal b) {
   SP_GC_ROOT_RBVAL(a);
   SP_GC_ROOT_RBVAL(b);
   sp_PolyArray *p = sp_PolyArray_new();
@@ -148,56 +148,56 @@ static sp_RbVal lupe_pair(sp_RbVal a, sp_RbVal b) {
 }
 
 /* a <=> b as a C int, through the methods of the program. */
-static sp_int lupe_cmp(sp_RbVal a, sp_RbVal b) {
+static sp_int fx_cmp(sp_RbVal a, sp_RbVal b) {
   SP_GC_ROOT_RBVAL(a);
   SP_GC_ROOT_RBVAL(b);
-  sp_RbVal c = lupe_send(a, "<=>", 1, &b);
-  if (c.tag != SP_TAG_INT) lupe_cmp_failed(a, b);
+  sp_RbVal c = fx_send(a, "<=>", 1, &b);
+  if (c.tag != SP_TAG_INT) fx_cmp_failed(a, b);
   return c.v.i;
 }
 
 /* The result of a sort block: an Integer, or a value that compares with 0. */
-static sp_int lupe_cmp_result(sp_RbVal c, sp_RbVal a, sp_RbVal b) {
+static sp_int fx_cmp_result(sp_RbVal c, sp_RbVal a, sp_RbVal b) {
   if (c.tag == SP_TAG_INT) return c.v.i;
-  if (c.tag == SP_TAG_NIL) lupe_cmp_failed(a, b);
-  return lupe_cmp(c, sp_box_int(0));
+  if (c.tag == SP_TAG_NIL) fx_cmp_failed(a, b);
+  return fx_cmp(c, sp_box_int(0));
 }
 
 /* A stable merge sort of the indexes idx[0..n) of vals. With blk, the
    block compares two values; else keys (or vals) compare with <=>. */
 typedef struct {
   sp_PolyArray *vals, *keys;
-  const LupeBlock *blk;
-} LupeSortCtx;
+  const FxBlock *blk;
+} FxSortCtx;
 
-static sp_int lupe_sort_cmp(const LupeSortCtx *c, sp_int i, sp_int j) {
-  if (L.ctl != LUPE_CTL_NONE) return 0;
+static sp_int fx_sort_cmp(const FxSortCtx *c, sp_int i, sp_int j) {
+  if (L.ctl != FX_CTL_NONE) return 0;
   sp_RbVal a = c->vals->data[i], b = c->vals->data[j];
-  if (c->blk) return lupe_cmp_result(lupe_y2(c->blk, a, b), a, b);
-  if (c->keys) return lupe_cmp(c->keys->data[i], c->keys->data[j]);
-  return lupe_cmp(a, b);
+  if (c->blk) return fx_cmp_result(fx_y2(c->blk, a, b), a, b);
+  if (c->keys) return fx_cmp(c->keys->data[i], c->keys->data[j]);
+  return fx_cmp(a, b);
 }
 
-static void lupe_merge_sort(const LupeSortCtx *c, sp_int *idx, sp_int *tmp, sp_int n) {
+static void fx_merge_sort(const FxSortCtx *c, sp_int *idx, sp_int *tmp, sp_int n) {
   if (n < 2) return;
   sp_int h = n / 2;
-  lupe_merge_sort(c, idx, tmp, h);
-  lupe_merge_sort(c, idx + h, tmp, n - h);
+  fx_merge_sort(c, idx, tmp, h);
+  fx_merge_sort(c, idx + h, tmp, n - h);
   sp_int i = 0, j = h, k = 0;
-  while (i < h && j < n) tmp[k++] = lupe_sort_cmp(c, idx[j], idx[i]) < 0 ? idx[j++] : idx[i++];
+  while (i < h && j < n) tmp[k++] = fx_sort_cmp(c, idx[j], idx[i]) < 0 ? idx[j++] : idx[i++];
   while (i < h) tmp[k++] = idx[i++];
   while (j < n) tmp[k++] = idx[j++];
   memcpy(idx, tmp, sizeof *idx * (size_t)n);
 }
 
-static sp_RbVal lupe_sorted(sp_PolyArray *vals, sp_PolyArray *keys, const LupeBlock *blk) {
+static sp_RbVal fx_sorted(sp_PolyArray *vals, sp_PolyArray *keys, const FxBlock *blk) {
   SP_GC_ROOT(vals);
   SP_GC_ROOT(keys);
   sp_int n = vals->len;
   sp_int *idx = malloc(sizeof *idx * (size_t)(n ? n : 1)), *tmp = malloc(sizeof *tmp * (size_t)(n ? n : 1));
   for (sp_int i = 0; i < n; i++) idx[i] = i;
-  LupeSortCtx c = { vals, keys, blk };
-  lupe_merge_sort(&c, idx, tmp, n);
+  FxSortCtx c = { vals, keys, blk };
+  fx_merge_sort(&c, idx, tmp, n);
   sp_PolyArray *out = sp_PolyArray_new();
   SP_GC_ROOT(out);
   for (sp_int i = 0; i < n; i++) sp_PolyArray_push(out, vals->data[idx[i]]);
@@ -207,7 +207,7 @@ static sp_RbVal lupe_sorted(sp_PolyArray *vals, sp_PolyArray *keys, const LupeBl
 }
 
 /* Replaces the elements of a mutable Array with those of src. */
-static void lupe_array_replace(sp_RbVal r, sp_PolyArray *src) {
+static void fx_array_replace(sp_RbVal r, sp_PolyArray *src) {
   sp_PolyArray *a = (sp_PolyArray *)r.v.p;
   a->len = 0;
   for (sp_int i = 0; i < src->len; i++) sp_PolyArray_push(a, src->data[i]);
@@ -215,160 +215,160 @@ static void lupe_array_replace(sp_RbVal r, sp_PolyArray *src) {
 
 /* ---- the methods ---- */
 
-#define LUPE_IS(s) (!strcmp(name, (s)))
-#define LUPE_STOP() do { if (L.ctl != LUPE_CTL_NONE) { *out = sp_box_nil(); return 1; } } while (0)
+#define FX_IS(s) (!strcmp(name, (s)))
+#define FX_STOP() do { if (L.ctl != FX_CTL_NONE) { *out = sp_box_nil(); return 1; } } while (0)
 
 /* The methods of an Array or a Range that take a block. */
-static int lupe_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
+static int fx_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                          sp_RbVal *out) {
-  LupeSeq s;
+  FxSeq s;
   sp_RbVal v = sp_box_nil(), y = sp_box_nil();
   SP_GC_ROOT_RBVAL(v);
   SP_GC_ROOT_RBVAL(y);
   sp_PolyArray *acc = NULL;
   SP_GC_ROOT(acc);
   /* a beginless Range counts down from its end */
-  if (argc == 0 && LUPE_IS("reverse_each") && lupe_is_range(r) && ((const sp_Range *)r.v.p)->nobeg) {
+  if (argc == 0 && FX_IS("reverse_each") && fx_is_range(r) && ((const sp_Range *)r.v.p)->nobeg) {
     const sp_Range *g = (const sp_Range *)r.v.p;
     if (g->noend) sp_raise_cls("TypeError", "can't iterate from NilClass");
     for (sp_int i = g->excl ? g->last - 1 : g->last;; i--) {
-      lupe_y1(blk, sp_box_int(i));
-      LUPE_STOP();
+      fx_y1(blk, sp_box_int(i));
+      FX_STOP();
       if (i == INT64_MIN) break;
     }
     *out = r;
     return 1;
   }
-  if (!lupe_seq_open(r, &s)) return 0;
-  LUPE_SEQ_ROOT(s);
-  if (argc == 0 && (LUPE_IS("each") || LUPE_IS("each_entry") || (s.hash && LUPE_IS("each_pair")))) {
-    while (lupe_seq_next(&s, &v)) { lupe_y1(blk, v); LUPE_STOP(); }
-    *out = lupe_each_answer(r);
+  if (!fx_seq_open(r, &s)) return 0;
+  FX_SEQ_ROOT(s);
+  if (argc == 0 && (FX_IS("each") || FX_IS("each_entry") || (s.hash && FX_IS("each_pair")))) {
+    while (fx_seq_next(&s, &v)) { fx_y1(blk, v); FX_STOP(); }
+    *out = fx_each_answer(r);
     return 1;
   }
   /* each_with_index, and Enumerator#with_index(offset) */
-  if ((argc == 0 && LUPE_IS("each_with_index")) ||
-      (LUPE_IS("with_index") && (argc == 0 || (argc == 1 && argv[0].tag == SP_TAG_INT)))) {
+  if ((argc == 0 && FX_IS("each_with_index")) ||
+      (FX_IS("with_index") && (argc == 0 || (argc == 1 && argv[0].tag == SP_TAG_INT)))) {
     sp_int from = argc == 1 ? argv[0].v.i : 0;
-    for (sp_int i = from; lupe_seq_next(&s, &v); i++) { lupe_y2(blk, v, sp_box_int(i)); LUPE_STOP(); }
-    *out = lupe_each_answer(r);
+    for (sp_int i = from; fx_seq_next(&s, &v); i++) { fx_y2(blk, v, sp_box_int(i)); FX_STOP(); }
+    *out = fx_each_answer(r);
     return 1;
   }
-  if (argc == 0 && LUPE_IS("reverse_each")) {
-    acc = lupe_seq_array(r);
+  if (argc == 0 && FX_IS("reverse_each")) {
+    acc = fx_seq_array(r);
     for (sp_int i = acc->len - 1; i >= 0; i--) {
-      lupe_y1(blk, acc->data[i]);
-      LUPE_STOP();
+      fx_y1(blk, acc->data[i]);
+      FX_STOP();
     }
     *out = r;
     return 1;
   }
-  if (argc == 1 && LUPE_IS("each_with_object")) {
+  if (argc == 1 && FX_IS("each_with_object")) {
     sp_RbVal memo = argv[0];
-    while (lupe_seq_next(&s, &v)) { lupe_y2(blk, v, memo); LUPE_STOP(); }
+    while (fx_seq_next(&s, &v)) { fx_y2(blk, v, memo); FX_STOP(); }
     *out = memo;
     return 1;
   }
-  int map = LUPE_IS("map") || LUPE_IS("collect"), flat = LUPE_IS("flat_map") || LUPE_IS("collect_concat");
-  int sel = LUPE_IS("select") || LUPE_IS("filter"), rej = LUPE_IS("reject"), fmap = LUPE_IS("filter_map");
+  int map = FX_IS("map") || FX_IS("collect"), flat = FX_IS("flat_map") || FX_IS("collect_concat");
+  int sel = FX_IS("select") || FX_IS("filter"), rej = FX_IS("reject"), fmap = FX_IS("filter_map");
   if (argc == 0 && (map || flat || sel || rej || fmap)) {
     acc = sp_PolyArray_new();
-    while (lupe_seq_next(&s, &v)) {
-      y = lupe_y1(blk, v);
-      LUPE_STOP();
+    while (fx_seq_next(&s, &v)) {
+      y = fx_y1(blk, v);
+      FX_STOP();
       if (map) sp_PolyArray_push(acc, y);
       else if (fmap) { if (sp_poly_truthy(y)) sp_PolyArray_push(acc, y); }
       else if (flat) {
-        if (!lupe_is_array(y)) { sp_PolyArray_push(acc, y); continue; }
+        if (!fx_is_array(y)) { sp_PolyArray_push(acc, y); continue; }
         for (sp_int i = 0; i < sp_poly_length(y); i++) sp_PolyArray_push(acc, sp_poly_arr_get(y, i));
       } else if (sp_poly_truthy(y) == sel) sp_PolyArray_push(acc, v);
     }
     *out = sp_box_poly_array(acc);
     return 1;
   }
-  int find = LUPE_IS("find") || LUPE_IS("detect");
-  if (argc == 0 && (find || LUPE_IS("find_index") || LUPE_IS("index"))) {
-    for (sp_int i = 0; lupe_seq_next(&s, &v); i++) {
-      y = lupe_y1(blk, v);
-      LUPE_STOP();
+  int find = FX_IS("find") || FX_IS("detect");
+  if (argc == 0 && (find || FX_IS("find_index") || FX_IS("index"))) {
+    for (sp_int i = 0; fx_seq_next(&s, &v); i++) {
+      y = fx_y1(blk, v);
+      FX_STOP();
       if (sp_poly_truthy(y)) { *out = find ? v : sp_box_int(i); return 1; }
     }
     *out = sp_box_nil();
     return 1;
   }
-  if (argc == 0 && (LUPE_IS("count") || LUPE_IS("any?") || LUPE_IS("all?") || LUPE_IS("none?") || LUPE_IS("one?"))) {
+  if (argc == 0 && (FX_IS("count") || FX_IS("any?") || FX_IS("all?") || FX_IS("none?") || FX_IS("one?"))) {
     sp_int n = 0, total = 0;
-    while (lupe_seq_next(&s, &v)) {
-      y = lupe_y1(blk, v);
-      LUPE_STOP();
+    while (fx_seq_next(&s, &v)) {
+      y = fx_y1(blk, v);
+      FX_STOP();
       total++;
       if (sp_poly_truthy(y)) n++;
-      if (LUPE_IS("any?") && n) break;
-      if (LUPE_IS("all?") && n < total) break;
-      if (LUPE_IS("none?") && n) break;
+      if (FX_IS("any?") && n) break;
+      if (FX_IS("all?") && n < total) break;
+      if (FX_IS("none?") && n) break;
     }
     if (name[0] == 'c') *out = sp_box_int(n);
-    else if (LUPE_IS("any?")) *out = sp_box_bool(n > 0);
-    else if (LUPE_IS("all?")) *out = sp_box_bool(n == total);
-    else if (LUPE_IS("none?")) *out = sp_box_bool(n == 0);
+    else if (FX_IS("any?")) *out = sp_box_bool(n > 0);
+    else if (FX_IS("all?")) *out = sp_box_bool(n == total);
+    else if (FX_IS("none?")) *out = sp_box_bool(n == 0);
     else *out = sp_box_bool(n == 1);
     return 1;
   }
-  if (argc <= 1 && (LUPE_IS("inject") || LUPE_IS("reduce"))) {
+  if (argc <= 1 && (FX_IS("inject") || FX_IS("reduce"))) {
     int have = argc == 1;
     sp_RbVal a = have ? argv[0] : sp_box_nil();
     SP_GC_ROOT_RBVAL(a);
-    while (lupe_seq_next(&s, &v)) {
+    while (fx_seq_next(&s, &v)) {
       if (!have) { a = v; have = 1; continue; }
-      a = lupe_y2(blk, a, v);
-      LUPE_STOP();
+      a = fx_y2(blk, a, v);
+      FX_STOP();
     }
     *out = a;
     return 1;
   }
-  if (argc <= 1 && LUPE_IS("sum")) {
+  if (argc <= 1 && FX_IS("sum")) {
     acc = sp_PolyArray_new();
-    int numeric = argc == 0 || lupe_is_integer(argv[0]) || argv[0].tag == SP_TAG_FLT;
-    while (lupe_seq_next(&s, &v)) {
-      y = lupe_y1(blk, v);
-      LUPE_STOP();
+    int numeric = argc == 0 || fx_is_integer(argv[0]) || argv[0].tag == SP_TAG_FLT;
+    while (fx_seq_next(&s, &v)) {
+      y = fx_y1(blk, v);
+      FX_STOP();
       sp_PolyArray_push(acc, y);
-      if (!lupe_is_integer(y) && y.tag != SP_TAG_FLT) numeric = 0;
+      if (!fx_is_integer(y) && y.tag != SP_TAG_FLT) numeric = 0;
     }
     /* numbers sum as the runtime sums them (Kahan-Babuska for Float);
        other values fold with +, from the seed */
     if (numeric) {
       y = sp_poly_sum(sp_box_poly_array(acc));
-      *out = argc == 1 ? lupe_send(argv[0], "+", 1, &y) : y;
+      *out = argc == 1 ? fx_send(argv[0], "+", 1, &y) : y;
       return 1;
     }
     y = argc == 1 ? argv[0] : sp_box_int(0);
-    for (sp_int i = 0; i < acc->len; i++) y = lupe_send(y, "+", 1, &acc->data[i]);
+    for (sp_int i = 0; i < acc->len; i++) y = fx_send(y, "+", 1, &acc->data[i]);
     *out = y;
     return 1;
   }
-  if (argc == 0 && (LUPE_IS("min_by") || LUPE_IS("max_by"))) {
+  if (argc == 0 && (FX_IS("min_by") || FX_IS("max_by"))) {
     sp_RbVal best = sp_box_nil(), bkey = sp_box_nil();
     SP_GC_ROOT_RBVAL(best);
     SP_GC_ROOT_RBVAL(bkey);
     int have = 0, max = name[1] == 'a';
-    while (lupe_seq_next(&s, &v)) {
-      y = lupe_y1(blk, v);
-      LUPE_STOP();
-      if (!have || (max ? lupe_cmp(y, bkey) > 0 : lupe_cmp(y, bkey) < 0)) { best = v; bkey = y; have = 1; }
+    while (fx_seq_next(&s, &v)) {
+      y = fx_y1(blk, v);
+      FX_STOP();
+      if (!have || (max ? fx_cmp(y, bkey) > 0 : fx_cmp(y, bkey) < 0)) { best = v; bkey = y; have = 1; }
     }
     *out = best;
     return 1;
   }
-  if (argc == 0 && (LUPE_IS("min") || LUPE_IS("max"))) {
+  if (argc == 0 && (FX_IS("min") || FX_IS("max"))) {
     sp_RbVal best = sp_box_nil();
     SP_GC_ROOT_RBVAL(best);
     int have = 0, max = name[1] == 'a';
-    while (lupe_seq_next(&s, &v)) {
+    while (fx_seq_next(&s, &v)) {
       if (have) {
-        y = lupe_y2(blk, v, best);
-        LUPE_STOP();
-        sp_int c = lupe_cmp_result(y, v, best);
+        y = fx_y2(blk, v, best);
+        FX_STOP();
+        sp_int c = fx_cmp_result(y, v, best);
         if (max ? c <= 0 : c >= 0) continue;
       }
       best = v;
@@ -377,29 +377,29 @@ static int lupe_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     *out = best;
     return 1;
   }
-  if (argc == 0 && (LUPE_IS("sort_by") || LUPE_IS("sort"))) {
-    acc = lupe_seq_array(r);
+  if (argc == 0 && (FX_IS("sort_by") || FX_IS("sort"))) {
+    acc = fx_seq_array(r);
     sp_PolyArray *keys = NULL;
     SP_GC_ROOT(keys);
     if (name[4] == '_') {
       keys = sp_PolyArray_new();
       for (sp_int i = 0; i < acc->len; i++) {
-        y = lupe_y1(blk, acc->data[i]);
-        LUPE_STOP();
+        y = fx_y1(blk, acc->data[i]);
+        FX_STOP();
         sp_PolyArray_push(keys, y);
       }
     }
-    *out = lupe_sorted(acc, keys, keys ? NULL : blk);
-    LUPE_STOP();
+    *out = fx_sorted(acc, keys, keys ? NULL : blk);
+    FX_STOP();
     return 1;
   }
-  if (argc == 0 && (LUPE_IS("group_by") || LUPE_IS("to_h"))) {
+  if (argc == 0 && (FX_IS("group_by") || FX_IS("to_h"))) {
     sp_PolyPolyHash *h = sp_PolyPolyHash_new();
     SP_GC_ROOT(h);
     int group = name[0] == 'g';
-    while (lupe_seq_next(&s, &v)) {
-      y = lupe_y1(blk, v);
-      LUPE_STOP();
+    while (fx_seq_next(&s, &v)) {
+      y = fx_y1(blk, v);
+      FX_STOP();
       if (group) {
         sp_RbVal list = sp_PolyPolyHash_get(h, y);
         if (list.tag == SP_TAG_NIL) {
@@ -409,7 +409,7 @@ static int lupe_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
         }
         sp_PolyArray_push((sp_PolyArray *)list.v.p, v);
       } else {
-        if (!lupe_is_array(y) || sp_poly_length(y) != 2)
+        if (!fx_is_array(y) || sp_poly_length(y) != 2)
           sp_raise_cls("TypeError", sp_sprintf("wrong element type %s (expected array)", sp_poly_class_name(y)));
         sp_PolyPolyHash_set(h, sp_poly_arr_get(y, 0), sp_poly_arr_get(y, 1));
       }
@@ -417,26 +417,26 @@ static int lupe_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     *out = sp_box_obj(h, SP_BUILTIN_POLY_POLY_HASH);
     return 1;
   }
-  if (argc == 0 && LUPE_IS("partition")) {
+  if (argc == 0 && FX_IS("partition")) {
     sp_PolyArray *yes = sp_PolyArray_new(), *no = NULL;
     SP_GC_ROOT(yes);
     SP_GC_ROOT(no);
     no = sp_PolyArray_new();
-    while (lupe_seq_next(&s, &v)) {
-      y = lupe_y1(blk, v);
-      LUPE_STOP();
+    while (fx_seq_next(&s, &v)) {
+      y = fx_y1(blk, v);
+      FX_STOP();
       sp_PolyArray_push(sp_poly_truthy(y) ? yes : no, v);
     }
-    *out = lupe_pair(sp_box_poly_array(yes), sp_box_poly_array(no));
+    *out = fx_pair(sp_box_poly_array(yes), sp_box_poly_array(no));
     return 1;
   }
-  if (argc == 0 && (LUPE_IS("take_while") || LUPE_IS("drop_while"))) {
+  if (argc == 0 && (FX_IS("take_while") || FX_IS("drop_while"))) {
     acc = sp_PolyArray_new();
     int take = name[0] == 't', dropping = 1;
-    while (lupe_seq_next(&s, &v)) {
+    while (fx_seq_next(&s, &v)) {
       if (take || dropping) {
-        y = lupe_y1(blk, v);
-        LUPE_STOP();
+        y = fx_y1(blk, v);
+        FX_STOP();
         if (take && !sp_poly_truthy(y)) break;
         if (!take && sp_poly_truthy(y)) continue;
         dropping = 0;
@@ -446,45 +446,45 @@ static int lupe_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     *out = sp_box_poly_array(acc);
     return 1;
   }
-  if (argc == 1 && (LUPE_IS("each_slice") || LUPE_IS("each_cons")) && argv[0].tag == SP_TAG_INT) {
+  if (argc == 1 && (FX_IS("each_slice") || FX_IS("each_cons")) && argv[0].tag == SP_TAG_INT) {
     sp_int n = argv[0].v.i;
     if (n <= 0) sp_raise_cls("ArgumentError", sp_sprintf("invalid %s", name[5] == 's' ? "slice size" : "size"));
     /* one item at a time, so that an endless generator stops at a break */
     int cons = name[5] == 'c';
     sp_PolyArray *win = sp_PolyArray_new();
     SP_GC_ROOT(win);
-    while (lupe_seq_next(&s, &v)) {
+    while (fx_seq_next(&s, &v)) {
       sp_PolyArray_push(win, v);
       if (win->len < n) continue;
       acc = win;
       win = sp_PolyArray_new();
       /* each_cons keeps the last n - 1 items for the next window */
       for (sp_int j = 1; cons && j < acc->len; j++) sp_PolyArray_push(win, acc->data[j]);
-      lupe_y1(blk, sp_box_poly_array(acc));
-      LUPE_STOP();
+      fx_y1(blk, sp_box_poly_array(acc));
+      FX_STOP();
     }
     if (!cons && win->len) {
-      lupe_y1(blk, sp_box_poly_array(win));
-      LUPE_STOP();
+      fx_y1(blk, sp_box_poly_array(win));
+      FX_STOP();
     }
     *out = r;
     return 1;
   }
   /* the mutators of an Array that the program built (a poly Array) */
-  int mmap = LUPE_IS("map!") || LUPE_IS("collect!");
-  int msel = LUPE_IS("select!") || LUPE_IS("filter!") || LUPE_IS("keep_if");
-  int mrej = LUPE_IS("reject!") || LUPE_IS("delete_if");
+  int mmap = FX_IS("map!") || FX_IS("collect!");
+  int msel = FX_IS("select!") || FX_IS("filter!") || FX_IS("keep_if");
+  int mrej = FX_IS("reject!") || FX_IS("delete_if");
   if (argc == 0 && (mmap || msel || mrej)) {
-    if (r.cls_id != SP_BUILTIN_POLY_ARRAY) lupe_gap(sp_sprintf("%s on a typed Array", name));
+    if (r.cls_id != SP_BUILTIN_POLY_ARRAY) fx_gap(sp_sprintf("%s on a typed Array", name));
     acc = sp_PolyArray_new();
     sp_int before = sp_poly_length(r);
-    while (lupe_seq_next(&s, &v)) {
-      y = lupe_y1(blk, v);
-      LUPE_STOP();
+    while (fx_seq_next(&s, &v)) {
+      y = fx_y1(blk, v);
+      FX_STOP();
       if (mmap) sp_PolyArray_push(acc, y);
       else if (sp_poly_truthy(y) == msel) sp_PolyArray_push(acc, v);
     }
-    lupe_array_replace(r, acc);
+    fx_array_replace(r, acc);
     int bang = name[strlen(name) - 1] == '!';
     *out = !mmap && bang && acc->len == before ? sp_box_nil() : r;
     return 1;
@@ -493,17 +493,17 @@ static int lupe_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
 }
 
 /* Integer#times, #upto, #downto and #step with Integer bounds. */
-static int lupe_int_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
+static int fx_int_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                          sp_RbVal *out) {
   if (r.tag != SP_TAG_INT) return 0;
   sp_int from = r.v.i, to, step = 1;
-  if (argc == 0 && LUPE_IS("times")) {
+  if (argc == 0 && FX_IS("times")) {
     from = 0;
     to = r.v.i - 1;
-  } else if (argc == 1 && (LUPE_IS("upto") || LUPE_IS("downto")) && argv[0].tag == SP_TAG_INT) {
+  } else if (argc == 1 && (FX_IS("upto") || FX_IS("downto")) && argv[0].tag == SP_TAG_INT) {
     to = argv[0].v.i;
     if (name[0] == 'd') step = -1;
-  } else if (argc == 2 && LUPE_IS("step") && argv[0].tag == SP_TAG_INT && argv[1].tag == SP_TAG_INT) {
+  } else if (argc == 2 && FX_IS("step") && argv[0].tag == SP_TAG_INT && argv[1].tag == SP_TAG_INT) {
     to = argv[0].v.i;
     step = argv[1].v.i;
     if (step == 0) sp_raise_cls("ArgumentError", "step can't be 0");
@@ -517,8 +517,8 @@ static int lupe_int_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     if (a) {
       sp_PolyArray_push(a, sp_box_int(i));
     } else {
-      lupe_y1(blk, sp_box_int(i));
-      LUPE_STOP();
+      fx_y1(blk, sp_box_int(i));
+      FX_STOP();
     }
     if ((step > 0 && i > INT64_MAX - step) || (step < 0 && i < INT64_MIN - step)) break;
   }
@@ -533,8 +533,8 @@ static int lupe_int_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
 }
 
 /* String#each_char: one String per UTF-8 character. */
-static int lupe_str_iter(sp_RbVal r, const char *name, int argc, const LupeBlock *blk, sp_RbVal *out) {
-  if (!lupe_is_string(r) || argc != 0 || !LUPE_IS("each_char")) return 0;
+static int fx_str_iter(sp_RbVal r, const char *name, int argc, const FxBlock *blk, sp_RbVal *out) {
+  if (!fx_is_string(r) || argc != 0 || !FX_IS("each_char")) return 0;
   SP_GC_ROOT_RBVAL(r);
   /* read the bytes again after each block call, which can collect */
   for (size_t i = 0; i < strlen(sp_poly_recv_s(r, name));) {
@@ -544,8 +544,8 @@ static int lupe_str_iter(sp_RbVal r, const char *name, int argc, const LupeBlock
     char *c = sp_str_alloc(k);
     memcpy(c, s + i, k);
     c[k] = 0;
-    lupe_y1(blk, sp_box_str_new(c));
-    LUPE_STOP();
+    fx_y1(blk, sp_box_str_new(c));
+    FX_STOP();
     i += k;
   }
   *out = r;
@@ -553,51 +553,51 @@ static int lupe_str_iter(sp_RbVal r, const char *name, int argc, const LupeBlock
 }
 
 /* inject(:sym) and inject(init, :sym): a method name in place of a block. */
-static int lupe_inject_sym(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
-  if (!(LUPE_IS("inject") || LUPE_IS("reduce")) || argc < 1 || argc > 2) return 0;
+static int fx_inject_sym(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (!(FX_IS("inject") || FX_IS("reduce")) || argc < 1 || argc > 2) return 0;
   if (argv[argc - 1].tag != SP_TAG_SYM) return 0;
-  LupeSeq s;
-  if (!lupe_seq_open(r, &s)) return 0;
-  LUPE_SEQ_ROOT(s);
+  FxSeq s;
+  if (!fx_seq_open(r, &s)) return 0;
+  FX_SEQ_ROOT(s);
   const char *op = sp_sym_to_s((sp_sym)argv[argc - 1].v.i);
   sp_RbVal a = argc == 2 ? argv[0] : sp_box_nil(), v = sp_box_nil();
   SP_GC_ROOT_RBVAL(a);
   SP_GC_ROOT_RBVAL(v);
   int have = argc == 2;
-  while (lupe_seq_next(&s, &v)) {
+  while (fx_seq_next(&s, &v)) {
     if (!have) { a = v; have = 1; continue; }
-    a = lupe_send(a, op, 1, &v);
+    a = fx_send(a, op, 1, &v);
   }
   *out = a;
   return 1;
 }
 
 /* The builtin methods that take a block, and inject with a Symbol. */
-static int lupe_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk, sp_RbVal *out) {
-  if (!blk) return lupe_inject_sym(r, name, argc, argv, out) || lupe_int_iter(r, name, argc, argv, NULL, out);
-  if (argc == 0 && LUPE_IS("tap")) {
-    lupe_y1(blk, r);
-    LUPE_STOP();
+static int fx_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out) {
+  if (!blk) return fx_inject_sym(r, name, argc, argv, out) || fx_int_iter(r, name, argc, argv, NULL, out);
+  if (argc == 0 && FX_IS("tap")) {
+    fx_y1(blk, r);
+    FX_STOP();
     *out = r;
     return 1;
   }
-  if (argc == 0 && (LUPE_IS("then") || LUPE_IS("yield_self"))) {
-    *out = lupe_y1(blk, r);
+  if (argc == 0 && (FX_IS("then") || FX_IS("yield_self"))) {
+    *out = fx_y1(blk, r);
     return 1;
   }
   if (r.tag == SP_TAG_CLASS) {
-    LupeClass *k = lupe_class_value(r);
-    if (k && !strcmp(k->name, "Proc") && LUPE_IS("new") && argc == 0) {
-      *out = lupe_block_proc(blk);
+    FxClass *k = fx_class_value(r);
+    if (k && !strcmp(k->name, "Proc") && FX_IS("new") && argc == 0) {
+      *out = fx_block_proc(blk);
       return 1;
     }
-    if (k && !strcmp(k->name, "Array") && LUPE_IS("new") && argc == 1 && argv[0].tag == SP_TAG_INT) {
+    if (k && !strcmp(k->name, "Array") && FX_IS("new") && argc == 1 && argv[0].tag == SP_TAG_INT) {
       if (argv[0].v.i < 0) sp_raise_cls("ArgumentError", "negative array size");
       sp_PolyArray *a = sp_PolyArray_new();
       SP_GC_ROOT(a);
       for (sp_int i = 0; i < argv[0].v.i; i++) {
-        sp_RbVal y = lupe_y1(blk, sp_box_int(i));
-        LUPE_STOP();
+        sp_RbVal y = fx_y1(blk, sp_box_int(i));
+        FX_STOP();
         sp_PolyArray_push(a, y);
       }
       *out = sp_box_poly_array(a);
@@ -605,17 +605,17 @@ static int lupe_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, con
     }
     return 0;
   }
-  return lupe_seq_iter(r, name, argc, argv, blk, out) || lupe_int_iter(r, name, argc, argv, blk, out) ||
-         lupe_str_iter(r, name, argc, blk, out);
+  return fx_seq_iter(r, name, argc, argv, blk, out) || fx_int_iter(r, name, argc, argv, blk, out) ||
+         fx_str_iter(r, name, argc, blk, out);
 }
 
 /* ---- Proc ---- */
 
-static int lupe_proc_arity(const LupeBlock *b) {
+static int fx_proc_arity(const FxBlock *b) {
   if (!b->node) return -2;   /* &:sym, as CRuby answers for a lambda from a Symbol */
   const pm_constant_id_list_t *locals;
   const pm_node_t *params, *body;
-  lupe_block_parts(b->node, &locals, &params, &body);
+  fx_block_parts(b->node, &locals, &params, &body);
   if (!params) return 0;
   if (PM_NODE_TYPE_P(params, PM_IT_PARAMETERS_NODE)) return 1;
   if (PM_NODE_TYPE_P(params, PM_NUMBERED_PARAMETERS_NODE)) return ((const pm_numbered_parameters_node_t *)params)->maximum;
@@ -636,16 +636,16 @@ static int lupe_proc_arity(const LupeBlock *b) {
   return opt ? -(min + 1) : min;
 }
 
-static int lupe_proc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
-  LupeProc *p = (LupeProc *)r.v.p;
-  if (LUPE_IS("call") || LUPE_IS("()") || LUPE_IS("yield") || LUPE_IS("[]") || LUPE_IS("===")) {
+static int fx_proc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  FxProc *p = (FxProc *)r.v.p;
+  if (FX_IS("call") || FX_IS("()") || FX_IS("yield") || FX_IS("[]") || FX_IS("===")) {
     SP_GC_ROOT_RBVAL(r);
-    *out = lupe_yield_x(&p->b, argc, argv, 1);
+    *out = fx_yield_x(&p->b, argc, argv, 1);
     return 1;
   }
-  if (argc == 0 && LUPE_IS("to_proc")) { *out = r; return 1; }
-  if (argc == 0 && LUPE_IS("lambda?")) { *out = sp_box_bool(p->b.lambda); return 1; }
-  if (argc == 0 && LUPE_IS("arity")) { *out = sp_box_int(lupe_proc_arity(&p->b)); return 1; }
+  if (argc == 0 && FX_IS("to_proc")) { *out = r; return 1; }
+  if (argc == 0 && FX_IS("lambda?")) { *out = sp_box_bool(p->b.lambda); return 1; }
+  if (argc == 0 && FX_IS("arity")) { *out = sp_box_int(fx_proc_arity(&p->b)); return 1; }
   return 0;
 }
 
@@ -654,7 +654,7 @@ static int lupe_proc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
 /* The indexes [*beg, *end) that values_at reads for an Integer Range over
    n values, as CRuby's rb_range_beg_len with err = 1 reads them: a begin
    before index 0 raises, and an index past the last reads nil. */
-static void lupe_range_span(sp_RbVal r, sp_int n, sp_int *beg, sp_int *end) {
+static void fx_range_span(sp_RbVal r, sp_int n, sp_int *beg, sp_int *end) {
   const sp_Range *g = (const sp_Range *)r.v.p;
   sp_int b = g->nobeg ? 0 : g->first, e = g->noend ? -1 : g->last;
   if (b < 0 && (b += n) < 0) sp_raise_cls("RangeError", sp_sprintf("%s out of range", sp_poly_inspect(r)));
@@ -665,29 +665,29 @@ static void lupe_range_span(sp_RbVal r, sp_int n, sp_int *beg, sp_int *end) {
 }
 
 /* The methods of an Integer Range with no block. */
-static int lupe_range_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
-  if (!lupe_is_range(r)) return 0;
+static int fx_range_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (!fx_is_range(r)) return 0;
   const sp_Range *g = (const sp_Range *)r.v.p;
   sp_int last = g->excl ? g->last - 1 : g->last;
   sp_int size = g->nobeg || g->noend ? -1 : last >= g->first ? last - g->first + 1 : 0;
   if (argc == 0) {
-    if (LUPE_IS("begin") || (LUPE_IS("first") && !g->nobeg)) {
+    if (FX_IS("begin") || (FX_IS("first") && !g->nobeg)) {
       *out = g->nobeg ? sp_box_nil() : sp_box_int(g->first);
       return 1;
     }
-    if (LUPE_IS("end")) { *out = g->noend ? sp_box_nil() : sp_box_int(g->last); return 1; }
-    if (LUPE_IS("exclude_end?")) { *out = sp_box_bool(g->excl); return 1; }
+    if (FX_IS("end")) { *out = g->noend ? sp_box_nil() : sp_box_int(g->last); return 1; }
+    if (FX_IS("exclude_end?")) { *out = sp_box_bool(g->excl); return 1; }
     if (size < 0) return 0;
-    if (LUPE_IS("to_a") || LUPE_IS("entries")) { *out = sp_box_poly_array(lupe_seq_array(r)); return 1; }
-    if (LUPE_IS("size") || LUPE_IS("count")) { *out = sp_box_int(size); return 1; }
-    if (LUPE_IS("last")) { *out = sp_box_int(g->last); return 1; }
-    if (LUPE_IS("min")) { *out = size ? sp_box_int(g->first) : sp_box_nil(); return 1; }
-    if (LUPE_IS("max")) { *out = size ? sp_box_int(last) : sp_box_nil(); return 1; }
-    if (LUPE_IS("sum")) { *out = sp_poly_sum(sp_box_poly_array(lupe_seq_array(r))); return 1; }
+    if (FX_IS("to_a") || FX_IS("entries")) { *out = sp_box_poly_array(fx_seq_array(r)); return 1; }
+    if (FX_IS("size") || FX_IS("count")) { *out = sp_box_int(size); return 1; }
+    if (FX_IS("last")) { *out = sp_box_int(g->last); return 1; }
+    if (FX_IS("min")) { *out = size ? sp_box_int(g->first) : sp_box_nil(); return 1; }
+    if (FX_IS("max")) { *out = size ? sp_box_int(last) : sp_box_nil(); return 1; }
+    if (FX_IS("sum")) { *out = sp_poly_sum(sp_box_poly_array(fx_seq_array(r))); return 1; }
     return 0;
   }
   /* cover?(range): the other Range lies inside this one */
-  if (argc == 1 && LUPE_IS("cover?") && lupe_is_range(argv[0])) {
+  if (argc == 1 && FX_IS("cover?") && fx_is_range(argv[0])) {
     const sp_Range *o = (const sp_Range *)argv[0].v.p;
     sp_int olast = o->excl ? o->last - 1 : o->last;
     int lo = g->nobeg || (!o->nobeg && o->first >= g->first);
@@ -695,7 +695,7 @@ static int lupe_range_core(sp_RbVal r, const char *name, int argc, sp_RbVal *arg
     *out = sp_box_bool(lo && hi && (o->nobeg || o->noend || o->first <= olast));
     return 1;
   }
-  if (argc == 1 && (LUPE_IS("include?") || LUPE_IS("member?") || LUPE_IS("cover?") || LUPE_IS("==="))) {
+  if (argc == 1 && (FX_IS("include?") || FX_IS("member?") || FX_IS("cover?") || FX_IS("==="))) {
     sp_RbVal a = argv[0];
     if (a.tag != SP_TAG_INT && a.tag != SP_TAG_FLT) { *out = sp_box_bool(0); return 1; }
     double x = a.tag == SP_TAG_INT ? (double)a.v.i : a.v.f;
@@ -704,19 +704,19 @@ static int lupe_range_core(sp_RbVal r, const char *name, int argc, sp_RbVal *arg
     *out = sp_box_bool(lo && hi);
     return 1;
   }
-  if (argc == 1 && (LUPE_IS("first") || LUPE_IS("take")) && argv[0].tag == SP_TAG_INT && !g->nobeg) {
+  if (argc == 1 && (FX_IS("first") || FX_IS("take")) && argv[0].tag == SP_TAG_INT && !g->nobeg) {
     sp_PolyArray *a = sp_PolyArray_new();
     SP_GC_ROOT(a);
-    LupeSeq s;
+    FxSeq s;
     sp_RbVal v;
-    lupe_seq_open(r, &s);
-    LUPE_SEQ_ROOT(s);
-    for (sp_int i = 0; i < argv[0].v.i && lupe_seq_next(&s, &v); i++) sp_PolyArray_push(a, v);
+    fx_seq_open(r, &s);
+    FX_SEQ_ROOT(s);
+    for (sp_int i = 0; i < argv[0].v.i && fx_seq_next(&s, &v); i++) sp_PolyArray_push(a, v);
     *out = sp_box_poly_array(a);
     return 1;
   }
   return 0;
 }
 
-#undef LUPE_IS
-#undef LUPE_STOP
+#undef FX_IS
+#undef FX_STOP

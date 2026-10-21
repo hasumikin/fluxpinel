@@ -10,7 +10,7 @@ CFLAGS = -O2 -g -std=gnu11 -ffp-contract=off -DSP_INT_OVERFLOW_MODE_$(INT_OVERFL
          -I$(SRC) -I$(SPINEL)/lib -I$(SPINEL)/lib/regexp
 LIBS = $(SPINEL)/lib/libspinel_rt.a -lm
 
-m0: m0.c $(SRC)/lupe_tu.c $(SRC)/lupe_tu.h
+m0: m0.c $(SRC)/fx_tu.c $(SRC)/fx_tu.h
 	$(CC) $(CFLAGS) -o $@ m0.c $(LIBS)
 
 run: m0

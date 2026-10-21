@@ -1,11 +1,11 @@
 # textkit -- a small text tool. Spinel compiles this file as the kernel of
-# the host build, and the filters come from plugins that Lupe runs.
+# the host build, and the filters come from plugins that Fluxpinel runs.
 #
 # Textkit.main reads the input, loads each plugin, runs the filter of each
 # one on the lines, and counts the words. The words and the counts are AOT
 # code; a plugin can call Textkit.words too.
 
-require_relative "../../kernel/lupe"
+require_relative "../../kernel/fluxpinel"
 
 module Textkit
   # the words of a line: lower case, letters and apostrophes only
@@ -21,9 +21,9 @@ module Textkit
   def self.main(args)
     lines = File.readlines(args[0], chomp: true)
     Dir.glob(File.join(args[1], "*.rb")).sort.each do |path|
-      plugin = Lupe.load(path)
-      lines = Lupe.call(plugin, "filter", [lines])
-      puts "#{Lupe.call(plugin, "name", [])}: #{lines.size} lines"
+      plugin = Fluxpinel.load(path)
+      lines = Fluxpinel.call(plugin, "filter", [lines])
+      puts "#{Fluxpinel.call(plugin, "name", [])}: #{lines.size} lines"
     end
     puts "--"
     lines.each { |line| puts line }

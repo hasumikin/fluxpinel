@@ -1,36 +1,36 @@
-/* walk.c -- the AST evaluator of Lupe.
+/* walk.c -- the AST evaluator of Fluxpinel.
 
    The walker evaluates the prism AST directly. Every value is an sp_RbVal.
    A C local that holds a value across a call that can allocate is rooted
    with SP_GC_ROOT_RBVAL, as the code that spinel generates does. */
 
-#include "lupe.h"
+#include "fluxpinel.h"
 
 /* The source file that holds node n, by the bytes it points into. */
-static LupeSource *lupe_source_of(const pm_node_t *n) {
+static FxSource *fx_source_of(const pm_node_t *n) {
   for (int i = L.nsources - 1; i >= 0; i--) {
-    LupeSource *s = L.sources[i];
+    FxSource *s = L.sources[i];
     if (n->location.start >= s->start && n->location.start <= s->end) return s;
   }
   return L.sources[0];
 }
 
-static int lupe_line(const pm_node_t *n) {
-  const pm_parser_t *p = &lupe_source_of(n)->parser;
+static int fx_line(const pm_node_t *n) {
+  const pm_parser_t *p = &fx_source_of(n)->parser;
   return pm_newline_list_line_column(&p->newline_list, n->location.start, p->start_line).line;
 }
 
-static void lupe_unsupported(const pm_node_t *n, const char *what) {
-  fprintf(stderr, "lupe: %s:%d: unsupported %s (%s)\n", lupe_source_of(n)->path, lupe_line(n), what,
+static void fx_unsupported(const pm_node_t *n, const char *what) {
+  fprintf(stderr, "fluxpinel: %s:%d: unsupported %s (%s)\n", fx_source_of(n)->path, fx_line(n), what,
           pm_node_type_to_str(PM_NODE_TYPE(n)));
   exit(2);
 }
 
-/* A semantics that Lupe does not model yet, met at run time with no node
-   at hand. It stops as lupe_unsupported does, so the oracle counts the
-   test as a gap of Lupe, not as a wrong answer. */
-static void lupe_gap(const char *what) {
-  fprintf(stderr, "lupe: %s: unsupported %s (runtime)\n", L.path, what);
+/* A semantics that Fluxpinel does not model yet, met at run time with no node
+   at hand. It stops as fx_unsupported does, so the oracle counts the
+   test as a gap of Fluxpinel, not as a wrong answer. */
+static void fx_gap(const char *what) {
+  fprintf(stderr, "fluxpinel: %s: unsupported %s (runtime)\n", L.path, what);
   /* a gap can come on a green thread: end at once, without the exit
      handlers of the runtime, which expect the main thread */
   fflush(stdout);
@@ -38,15 +38,15 @@ static void lupe_gap(const char *what) {
   _exit(2);
 }
 
-static sp_sym lupe_sym(pm_constant_id_t id) {
+static sp_sym fx_sym(pm_constant_id_t id) {
   const pm_constant_t *c = pm_constant_pool_id_to_constant(&L.pool, id);
-  return lupe_sym_intern_n((const char *)c->start, c->length);
+  return fx_sym_intern_n((const char *)c->start, c->length);
 }
 
-/* The write barrier of a frame whose slots are on the heap (LupeEnv): the
+/* The write barrier of a frame whose slots are on the heap (FxEnv): the
    collector is generational, and an env that is old already must join the
    remembered set before a slot of it takes a young value. */
-static void lupe_frame_wb(const LupeFrame *f) {
+static void fx_frame_wb(const FxFrame *f) {
   if (f->heap) sp_gc_wb((void *)f);
   else if (f->env) sp_gc_wb(f->env);
 }
@@ -54,13 +54,13 @@ static void lupe_frame_wb(const LupeFrame *f) {
 /* The slot of a local variable. depth counts the block scopes between the
    reference and the scope that owns the variable. The caller can store
    into the slot, so the frame takes the write barrier. */
-static sp_RbVal *lupe_local(LupeFrame *f, const pm_node_t *n, pm_constant_id_t name, uint32_t depth) {
+static sp_RbVal *fx_local(FxFrame *f, const pm_node_t *n, pm_constant_id_t name, uint32_t depth) {
   for (uint32_t d = 0; d < depth; d++)
-    if (!(f = f->parent)) lupe_unsupported(n, "local variable of an outer scope");
-  lupe_frame_wb(f);
+    if (!(f = f->parent)) fx_unsupported(n, "local variable of an outer scope");
+  fx_frame_wb(f);
   for (size_t i = 0; i < f->names->size; i++)
     if (f->names->ids[i] == name) return &f->locals[i];
-  lupe_unsupported(n, "local variable with no slot");
+  fx_unsupported(n, "local variable with no slot");
 }
 
 /* Declares the slots of a frame on the C stack and roots each one, and
@@ -68,74 +68,74 @@ static sp_RbVal *lupe_local(LupeFrame *f, const pm_node_t *n, pm_constant_id_t n
    the locals: `it`, the anonymous *rest and the anonymous **kwrest. The
    heap copy of the frame (env) is a root too. The roots stay until the
    enclosing SP_GC_SAVE scope ends. */
-#define LUPE_FRAME(f, namelist, self_, cref_)                                     \
+#define FX_FRAME(f, namelist, self_, cref_)                                     \
   size_t f##_n = (namelist)->size;                                                \
   sp_RbVal f##_slots[f##_n + 3];                                                  \
   for (size_t f##_i = 0; f##_i < f##_n + 3; f##_i++) {                            \
     f##_slots[f##_i] = sp_box_nil();                                               \
     _sp_gc_root_push((void **)((uintptr_t)&f##_slots[f##_i] | (uintptr_t)1));      \
   }                                                                               \
-  LupeFrame f __attribute__((cleanup(lupe_frame_exit))) = {                       \
+  FxFrame f __attribute__((cleanup(fx_frame_exit))) = {                       \
     .locals = f##_slots, .names = (namelist), .self = (self_), .cref = (cref_),   \
     .it = &f##_slots[f##_n], .anon = &f##_slots[f##_n + 1], .serial = ++L.serial, \
-    .depth = lupe_frame_enter(L.serial), .fs = lupe_fs() };                       \
+    .depth = fx_frame_enter(L.serial), .fs = fx_fs() };                       \
   _sp_gc_root_push((void **)&f.env)
 
 /* The frame stacks tell whether the home frame of a block is live. They
    are on the heap, so a check never reads the stack memory of a frame
    that has ended. */
 
-static LupeFrameStack *lupe_fs_new(const void *fiber) {
-  LupeFrameStack *s = calloc(1, sizeof *s);
+static FxFrameStack *fx_fs_new(const void *fiber) {
+  FxFrameStack *s = calloc(1, sizeof *s);
   s->fiber = fiber;
   return s;
 }
 
 /* The table slot of a fiber, in a table with open addressing. */
-static int lupe_fs_slot(const void *fiber) {
+static int fx_fs_slot(const void *fiber) {
   int mask = L.fstacks_cap - 1, i = (int)(((uintptr_t)fiber >> 4) & (uintptr_t)mask);
   while (L.fstacks[i].fiber && L.fstacks[i].fiber != fiber) i = (i + 1) & mask;
   return i;
 }
 
-static void lupe_fs_put(const void *fiber, LupeFrameStack *s) {
+static void fx_fs_put(const void *fiber, FxFrameStack *s) {
   if (2 * (L.nfstacks + 1) > L.fstacks_cap) {
     int ocap = L.fstacks_cap;
     __typeof__(L.fstacks) old = L.fstacks;
     L.fstacks_cap = ocap ? ocap * 2 : 64;
     L.fstacks = calloc((size_t)L.fstacks_cap, sizeof *L.fstacks);
     for (int i = 0; i < ocap; i++)
-      if (old[i].fiber) L.fstacks[lupe_fs_slot(old[i].fiber)] = old[i];
+      if (old[i].fiber) L.fstacks[fx_fs_slot(old[i].fiber)] = old[i];
     free(old);
   }
-  int i = lupe_fs_slot(fiber);
+  int i = fx_fs_slot(fiber);
   if (!L.fstacks[i].fiber) L.nfstacks++;
   L.fstacks[i].fiber = fiber;
   L.fstacks[i].fs = s;
 }
 
-/* The frame stack of the running fiber. A fiber that Lupe started got one
-   in lupe_fiber_body; any other is a root fiber (the main program, or a
+/* The frame stack of the running fiber. A fiber that Fluxpinel started got one
+   in fx_fiber_body; any other is a root fiber (the main program, or a
    root that the scheduler adopted), whose frames are the main ones. */
-static LupeFrameStack *lupe_fs(void) {
+static FxFrameStack *fx_fs(void) {
   const void *cur = sp_fiber_current;
   if (L.fs->fiber == cur) return L.fs;
-  int i = L.fstacks_cap ? lupe_fs_slot(cur) : 0;
+  int i = L.fstacks_cap ? fx_fs_slot(cur) : 0;
   if (L.fstacks_cap && L.fstacks[i].fiber) {
     L.fs = L.fstacks[i].fs;
   } else {
-    lupe_fs_put(cur, L.main_fs);
+    fx_fs_put(cur, L.main_fs);
     L.fs = L.main_fs;
   }
   return L.fs;
 }
 
-static void lupe_fs_init(void) {
-  L.main_fs = L.fs = lupe_fs_new(sp_fiber_current);
+static void fx_fs_init(void) {
+  L.main_fs = L.fs = fx_fs_new(sp_fiber_current);
 }
 
-static int lupe_frame_enter(uint64_t serial) {
-  LupeFrameStack *s = lupe_fs();
+static int fx_frame_enter(uint64_t serial) {
+  FxFrameStack *s = fx_fs();
   if (s->depth == s->cap) {
     s->cap = s->cap ? s->cap * 2 : 256;
     s->serial = realloc(s->serial, sizeof *s->serial * (size_t)s->cap);
@@ -146,39 +146,39 @@ static int lupe_frame_enter(uint64_t serial) {
 
 /* A frame that ends pops its entry. A raise skips this cleanup; the
    rescue that lands cuts the stack back to its own depth. */
-static void lupe_frame_exit(LupeFrame *f) {
+static void fx_frame_exit(FxFrame *f) {
   f->fs->depth = f->depth;
 }
 
-static int lupe_frame_live(const LupeBlock *b) {
+static int fx_frame_live(const FxBlock *b) {
   return b->depth < b->fs->depth && b->fs->serial[b->depth] == b->serial;
 }
 
 /* Whether the frame on the C stack of a heap frame f is live. */
-static int lupe_env_live(const LupeFrame *f) {
+static int fx_env_live(const FxFrame *f) {
   return f->depth < f->fs->depth && f->fs->serial[f->depth] == f->serial;
 }
 
-static void lupe_env_scan(void *p) {
-  LupeEnv *e = (LupeEnv *)p;
+static void fx_env_scan(void *p) {
+  FxEnv *e = (FxEnv *)p;
   for (size_t i = 0; i < e->nslots; i++) sp_mark_rbval(e->slots[i]);
   sp_mark_rbval(e->frame.self);
   if (e->frame.parent) sp_gc_mark(e->frame.parent);
   if (e->frame.block && e->frame.block->proc) sp_gc_mark(e->frame.block->proc);
 }
 
-static sp_RbVal lupe_block_proc(const LupeBlock *b);
+static sp_RbVal fx_block_proc(const FxBlock *b);
 
-/* The heap copy of the frame f, which a Proc keeps (LupeEnv). The first
+/* The heap copy of the frame f, which a Proc keeps (FxEnv). The first
    call for a frame on the C stack copies its slots to the heap, and the
    frame runs on with the heap slots. The parent frames move too, since a
    block reads their locals, and so does the block of the frame, which
    yield calls: a block literal of the caller becomes a Proc. */
-static LupeFrame *lupe_frame_heap(LupeFrame *f) {
+static FxFrame *fx_frame_heap(FxFrame *f) {
   if (f->heap) return f;
   if (f->env) return &f->env->frame;
   size_t n = f->names->size + 3;
-  LupeEnv *e = (LupeEnv *)sp_gc_alloc(sizeof *e + sizeof(sp_RbVal) * n, NULL, lupe_env_scan);
+  FxEnv *e = (FxEnv *)sp_gc_alloc(sizeof *e + sizeof(sp_RbVal) * n, NULL, fx_env_scan);
   memcpy(e->slots, f->locals, sizeof(sp_RbVal) * n);
   e->nslots = n;
   e->frame = *f;
@@ -196,12 +196,12 @@ static LupeFrame *lupe_frame_heap(LupeFrame *f) {
   f->anon = e->frame.anon;
   /* each can collect, and e can be old by the store */
   if (f->parent) {
-    LupeFrame *parent = lupe_frame_heap(f->parent);
+    FxFrame *parent = fx_frame_heap(f->parent);
     sp_gc_wb(e);
     e->frame.parent = parent;
   }
   if (f->block) {
-    const LupeBlock *blk = f->block->proc ? f->block : &((LupeProc *)lupe_block_proc(f->block).v.p)->b;
+    const FxBlock *blk = f->block->proc ? f->block : &((FxProc *)fx_block_proc(f->block).v.p)->b;
     sp_gc_wb(e);
     e->frame.block = blk;
   }
@@ -210,23 +210,23 @@ static LupeFrame *lupe_frame_heap(LupeFrame *f) {
 
 /* ---- methods ---- */
 
-static void lupe_define(LupeFrame *f, const pm_def_node_t *def) {
-  sp_sym name = lupe_sym(def->name);
+static void fx_define(FxFrame *f, const pm_def_node_t *def) {
+  sp_sym name = fx_sym(def->name);
   if (def->receiver) {
     if (!PM_NODE_TYPE_P(def->receiver, PM_SELF_NODE) || f->self.tag != SP_TAG_CLASS)
-      lupe_unsupported((const pm_node_t *)def, "singleton method on an object");
-    LupeClass *k = lupe_class_value(f->self);
-    lupe_define_method(k, lupe_method_new(LUPE_M_DEF, name, def, 0, k), 1);
+      fx_unsupported((const pm_node_t *)def, "singleton method on an object");
+    FxClass *k = fx_class_value(f->self);
+    fx_define_method(k, fx_method_new(FX_M_DEF, name, def, 0, k), 1);
     return;
   }
-  LupeClass *k = f->cref;
-  LupeMethod *m = lupe_method_new(LUPE_M_DEF, name, def, 0, k);
+  FxClass *k = f->cref;
+  FxMethod *m = fx_method_new(FX_M_DEF, name, def, 0, k);
   /* 1: inside class << self; 2: after module_function */
-  if (f->singleton_defs != 1) lupe_define_method(k, m, 0);
-  if (f->singleton_defs) lupe_define_method(k, m, 1);
+  if (f->singleton_defs != 1) fx_define_method(k, m, 0);
+  if (f->singleton_defs) fx_define_method(k, m, 1);
 }
 
-static __attribute__((noreturn)) void lupe_arity_error(int argc, int nreq, int nopt, int rest) {
+static __attribute__((noreturn)) void fx_arity_error(int argc, int nreq, int nopt, int rest) {
   if (rest) sp_raise_cls("ArgumentError", sp_sprintf("wrong number of arguments (given %d, expected %d+)", argc, nreq));
   if (nopt)
     sp_raise_cls("ArgumentError",
@@ -234,45 +234,45 @@ static __attribute__((noreturn)) void lupe_arity_error(int argc, int nreq, int n
   sp_raise_cls("ArgumentError", sp_sprintf("wrong number of arguments (given %d, expected %d)", argc, nreq));
 }
 
-static int lupe_is_array_value(sp_RbVal v) {
+static int fx_is_array_value(sp_RbVal v) {
   return v.tag == SP_TAG_OBJ && sp_poly_is_array_kind(v.cls_id);
 }
 
 /* Binds one value to a required parameter or to a pattern `(a, *b, c)`.
    A pattern takes the elements of an Array; any other value is one element. */
-static void lupe_bind_target(LupeFrame *f, const pm_node_t *p, sp_RbVal v) {
+static void fx_bind_target(FxFrame *f, const pm_node_t *p, sp_RbVal v) {
   if (PM_NODE_TYPE_P(p, PM_REQUIRED_PARAMETER_NODE)) {
     /* a repeated `_x` takes its argument, but the name reads the first one */
     if (PM_NODE_FLAG_P(p, PM_PARAMETER_FLAGS_REPEATED_PARAMETER)) return;
-    *lupe_local(f, p, ((const pm_required_parameter_node_t *)p)->name, 0) = v;
+    *fx_local(f, p, ((const pm_required_parameter_node_t *)p)->name, 0) = v;
     return;
   }
-  if (!PM_NODE_TYPE_P(p, PM_MULTI_TARGET_NODE)) lupe_unsupported(p, "parameter pattern");
+  if (!PM_NODE_TYPE_P(p, PM_MULTI_TARGET_NODE)) fx_unsupported(p, "parameter pattern");
   SP_GC_ROOT_RBVAL(v);
   const pm_multi_target_node_t *mt = (const pm_multi_target_node_t *)p;
-  sp_int len = lupe_is_array_value(v) ? sp_poly_length(v) : 1;
+  sp_int len = fx_is_array_value(v) ? sp_poly_length(v) : 1;
   sp_int nl = (sp_int)mt->lefts.size, nr = (sp_int)mt->rights.size;
-#define LUPE_ELT(i) (lupe_is_array_value(v) ? sp_poly_arr_get(v, (i)) : (i) == 0 ? v : sp_box_nil())
-  for (sp_int i = 0; i < nl; i++) lupe_bind_target(f, mt->lefts.nodes[i], i < len ? LUPE_ELT(i) : sp_box_nil());
+#define FX_ELT(i) (fx_is_array_value(v) ? sp_poly_arr_get(v, (i)) : (i) == 0 ? v : sp_box_nil())
+  for (sp_int i = 0; i < nl; i++) fx_bind_target(f, mt->lefts.nodes[i], i < len ? FX_ELT(i) : sp_box_nil());
   sp_int rstart = len - nr > nl ? len - nr : nl;
   if (mt->rest && PM_NODE_TYPE_P(mt->rest, PM_SPLAT_NODE)) {
     const pm_node_t *e = ((const pm_splat_node_t *)mt->rest)->expression;
     if (e) {
       sp_PolyArray *a = sp_PolyArray_new();
       SP_GC_ROOT(a);
-      for (sp_int i = nl; i < rstart; i++) sp_PolyArray_push(a, LUPE_ELT(i));
-      lupe_bind_target(f, e, sp_box_poly_array(a));
+      for (sp_int i = nl; i < rstart; i++) sp_PolyArray_push(a, FX_ELT(i));
+      fx_bind_target(f, e, sp_box_poly_array(a));
     }
   }
   for (sp_int i = 0; i < nr; i++)
-    lupe_bind_target(f, mt->rights.nodes[i], rstart + i < len ? LUPE_ELT(rstart + i) : sp_box_nil());
-#undef LUPE_ELT
+    fx_bind_target(f, mt->rights.nodes[i], rstart + i < len ? FX_ELT(rstart + i) : sp_box_nil());
+#undef FX_ELT
 }
 
-static sp_RbVal lupe_block_proc(const LupeBlock *b);
+static sp_RbVal fx_block_proc(const FxBlock *b);
 
 /* ": a, :b" for an ArgumentError message. */
-static const char *lupe_key_list(sp_PolyArray *keys) {
+static const char *fx_key_list(sp_PolyArray *keys) {
   sp_String *s = sp_String_new("");
   SP_GC_ROOT(s);
   for (sp_int i = 0; i < keys->len; i++) {
@@ -285,7 +285,7 @@ static const char *lupe_key_list(sp_PolyArray *keys) {
 /* Binds the keyword parameters from the Hash kw (nil for none): each
    keyword, then **rest. A missing required keyword and an unknown key
    raise ArgumentError, as CRuby does. */
-static void lupe_bind_keywords(LupeFrame *f, const pm_parameters_node_t *ps, sp_RbVal kw) {
+static void fx_bind_keywords(FxFrame *f, const pm_parameters_node_t *ps, sp_RbVal kw) {
   sp_PolyPolyHash *h = kw.tag == SP_TAG_NIL ? NULL : sp_poly_as_poly_poly_hash(kw);
   SP_GC_ROOT(h);
   sp_PolyArray *missing = sp_PolyArray_new(), *used = NULL;
@@ -297,21 +297,21 @@ static void lupe_bind_keywords(LupeFrame *f, const pm_parameters_node_t *ps, sp_
     int req = PM_NODE_TYPE_P(p, PM_REQUIRED_KEYWORD_PARAMETER_NODE);
     pm_constant_id_t name = req ? ((const pm_required_keyword_parameter_node_t *)p)->name
                                 : ((const pm_optional_keyword_parameter_node_t *)p)->name;
-    sp_RbVal key = sp_box_sym(lupe_sym(name));
+    sp_RbVal key = sp_box_sym(fx_sym(name));
     if (h && sp_PolyPolyHash_has_key(h, key)) {
-      *lupe_local(f, p, name, 0) = sp_PolyPolyHash_get(h, key);
+      *fx_local(f, p, name, 0) = sp_PolyPolyHash_get(h, key);
       sp_PolyArray_push(used, key);
     } else if (req) {
       sp_PolyArray_push(missing, key);
     } else {
       /* the default can make a Proc, which moves the slots: look up after */
-      sp_RbVal v = lupe_eval(f, ((const pm_optional_keyword_parameter_node_t *)p)->value);
-      *lupe_local(f, p, name, 0) = v;
+      sp_RbVal v = fx_eval(f, ((const pm_optional_keyword_parameter_node_t *)p)->value);
+      *fx_local(f, p, name, 0) = v;
     }
   }
   if (missing->len)
     sp_raise_cls("ArgumentError", sp_sprintf("missing keyword%s: %s", missing->len > 1 ? "s" : "",
-                                             lupe_key_list(missing)));
+                                             fx_key_list(missing)));
   sp_PolyPolyHash *rest = sp_PolyPolyHash_new();
   SP_GC_ROOT(rest);
   for (sp_int i = 0; h && i < h->len; i++) {
@@ -321,12 +321,12 @@ static void lupe_bind_keywords(LupeFrame *f, const pm_parameters_node_t *ps, sp_
   const pm_node_t *kr = ps->keyword_rest;
   if (kr && PM_NODE_TYPE_P(kr, PM_KEYWORD_REST_PARAMETER_NODE)) {
     pm_constant_id_t rn = ((const pm_keyword_rest_parameter_node_t *)kr)->name;
-    lupe_frame_wb(f);   /* a default above can have moved the slots */
-    *(rn ? lupe_local(f, kr, rn, 0) : &f->anon[1]) = sp_box_obj(rest, SP_BUILTIN_POLY_POLY_HASH);
+    fx_frame_wb(f);   /* a default above can have moved the slots */
+    *(rn ? fx_local(f, kr, rn, 0) : &f->anon[1]) = sp_box_obj(rest, SP_BUILTIN_POLY_POLY_HASH);
     return;
   }
   if (kr && PM_NODE_TYPE_P(kr, PM_FORWARDING_PARAMETER_NODE)) {
-    lupe_frame_wb(f);
+    fx_frame_wb(f);
     f->anon[1] = sp_box_obj(rest, SP_BUILTIN_POLY_POLY_HASH);
     return;
   }
@@ -335,7 +335,7 @@ static void lupe_bind_keywords(LupeFrame *f, const pm_parameters_node_t *ps, sp_
     SP_GC_ROOT(unknown);
     for (sp_int i = 0; i < rest->len; i++) sp_PolyArray_push(unknown, rest->keys[rest->order[i]]);
     sp_raise_cls("ArgumentError", sp_sprintf("unknown keyword%s: %s", unknown->len > 1 ? "s" : "",
-                                             lupe_key_list(unknown)));
+                                             fx_key_list(unknown)));
   }
 }
 
@@ -343,11 +343,11 @@ static void lupe_bind_keywords(LupeFrame *f, const pm_parameters_node_t *ps, sp_
    ones (a default is evaluated in the callee frame), *rest, the required
    ones after it and &block. With loose set (a block that is not a lambda),
    a missing argument is nil and an extra one is dropped. */
-static void lupe_bind_list(LupeFrame *f, const pm_parameters_node_t *ps, int argc, sp_RbVal *argv, int loose) {
+static void fx_bind_list(FxFrame *f, const pm_parameters_node_t *ps, int argc, sp_RbVal *argv, int loose) {
   const void *kwp = L.kwhash;
   L.kwhash = NULL;
   if (!ps) {
-    if (argc != 0 && !loose) lupe_arity_error(argc, 0, 0, 0);
+    if (argc != 0 && !loose) fx_arity_error(argc, 0, 0, 0);
     return;
   }
   /* keyword parameters (and `...`) take the keyword Hash of the call, the
@@ -361,61 +361,61 @@ static void lupe_bind_list(LupeFrame *f, const pm_parameters_node_t *ps, int arg
   int npre = (int)ps->requireds.size, npost = (int)ps->posts.size, nopt = (int)ps->optionals.size;
   int rest = ps->rest != NULL || fwd;
   if (!loose && (argc < npre + npost || (!rest && argc > npre + npost + nopt)))
-    lupe_arity_error(argc, npre + npost, nopt, rest);
+    fx_arity_error(argc, npre + npost, nopt, rest);
   /* a block drops the extra arguments from the end */
   if (loose && !rest && argc > npre + nopt + npost) argc = npre + nopt + npost;
   int ai = 0;
-  for (int i = 0; i < npre; i++, ai++) lupe_bind_target(f, ps->requireds.nodes[i], ai < argc ? argv[ai] : sp_box_nil());
+  for (int i = 0; i < npre; i++, ai++) fx_bind_target(f, ps->requireds.nodes[i], ai < argc ? argv[ai] : sp_box_nil());
   int nfill = argc - npre - npost;
   for (int i = 0; i < nopt; i++) {
     const pm_optional_parameter_node_t *p = (const pm_optional_parameter_node_t *)ps->optionals.nodes[i];
     /* the default can make a Proc, which moves the slots: look up after */
-    sp_RbVal v = i < nfill ? argv[ai++] : lupe_eval(f, p->value);
-    *lupe_local(f, (const pm_node_t *)p, p->name, 0) = v;
+    sp_RbVal v = i < nfill ? argv[ai++] : fx_eval(f, p->value);
+    *fx_local(f, (const pm_node_t *)p, p->name, 0) = v;
   }
   if (fwd || (ps->rest && PM_NODE_TYPE_P(ps->rest, PM_REST_PARAMETER_NODE))) {
     sp_PolyArray *a = sp_PolyArray_new();
     SP_GC_ROOT(a);
     while (ai < argc - npost) sp_PolyArray_push(a, argv[ai++]);
     pm_constant_id_t rn = ps->rest ? ((const pm_rest_parameter_node_t *)ps->rest)->name : 0;
-    lupe_frame_wb(f);   /* a default above can have moved the slots */
-    *(rn ? lupe_local(f, ps->rest, rn, 0) : &f->anon[0]) = sp_box_poly_array(a);
+    fx_frame_wb(f);   /* a default above can have moved the slots */
+    *(rn ? fx_local(f, ps->rest, rn, 0) : &f->anon[0]) = sp_box_poly_array(a);
   } else if (ps->rest && !PM_NODE_TYPE_P(ps->rest, PM_IMPLICIT_REST_NODE)) {
-    lupe_unsupported(ps->rest, "rest parameter");
+    fx_unsupported(ps->rest, "rest parameter");
   }
   if (ai < argc - npost) ai = argc - npost;
-  for (int i = 0; i < npost; i++, ai++) lupe_bind_target(f, ps->posts.nodes[i], ai < argc ? argv[ai] : sp_box_nil());
-  if (haskw) lupe_bind_keywords(f, ps, kw);
+  for (int i = 0; i < npost; i++, ai++) fx_bind_target(f, ps->posts.nodes[i], ai < argc ? argv[ai] : sp_box_nil());
+  if (haskw) fx_bind_keywords(f, ps, kw);
   if (ps->block) {
     pm_constant_id_t bn = ((const pm_block_parameter_node_t *)ps->block)->name;
-    if (bn) *lupe_local(f, (const pm_node_t *)ps->block, bn, 0) = f->block ? lupe_block_proc(f->block) : sp_box_nil();
+    if (bn) *fx_local(f, (const pm_node_t *)ps->block, bn, 0) = f->block ? fx_block_proc(f->block) : sp_box_nil();
   }
 }
 
-static void lupe_bind_params(LupeFrame *f, const pm_parameters_node_t *ps, int argc, sp_RbVal *argv) {
-  lupe_bind_list(f, ps, argc, argv, 0);
+static void fx_bind_params(FxFrame *f, const pm_parameters_node_t *ps, int argc, sp_RbVal *argv) {
+  fx_bind_list(f, ps, argc, argv, 0);
 }
 
 /* The slot of the numbered parameter _i (1..9) of a block frame. */
-static sp_RbVal *lupe_numbered(LupeFrame *f, const pm_node_t *n, int i) {
+static sp_RbVal *fx_numbered(FxFrame *f, const pm_node_t *n, int i) {
   char name[3] = { '_', (char)('0' + i), 0 };
   pm_constant_id_t id = pm_constant_pool_find(&L.pool, (const uint8_t *)name, 2);
-  if (!id) lupe_unsupported(n, "numbered parameter");
-  return lupe_local(f, n, id, 0);
+  if (!id) fx_unsupported(n, "numbered parameter");
+  return fx_local(f, n, id, 0);
 }
 
 /* Binds the arguments of a block call. A block spreads one Array argument
    over two or more parameters. A lambda does so only when a method yields
    to it (`h.map(&l)`), not when Proc#call calls it (strict). */
-static void lupe_bind_block(LupeFrame *f, const pm_node_t *params, int argc, sp_RbVal *argv, int lambda,
+static void fx_bind_block(FxFrame *f, const pm_node_t *params, int argc, sp_RbVal *argv, int lambda,
                             int strict) {
   SP_GC_SAVE();
   if (!params) {
-    if (lambda && argc != 0) lupe_arity_error(argc, 0, 0, 0);
+    if (lambda && argc != 0) fx_arity_error(argc, 0, 0, 0);
     return;
   }
   if (PM_NODE_TYPE_P(params, PM_IT_PARAMETERS_NODE)) {
-    if (lambda && argc != 1) lupe_arity_error(argc, 1, 0, 0);
+    if (lambda && argc != 1) fx_arity_error(argc, 1, 0, 0);
     *f->it = argc ? argv[0] : sp_box_nil();
     return;
   }
@@ -426,13 +426,13 @@ static void lupe_bind_block(LupeFrame *f, const pm_node_t *params, int argc, sp_
   } else {
     ps = ((const pm_block_parameters_node_t *)params)->parameters;
     if (!ps) {
-      if (lambda && argc != 0) lupe_arity_error(argc, 0, 0, 0);
+      if (lambda && argc != 0) fx_arity_error(argc, 0, 0, 0);
       return;
     }
     int n = (int)(ps->requireds.size + ps->optionals.size + ps->posts.size);
     many = n >= 2 || (n >= 1 && ps->rest) ? 2 : n;
   }
-  int spread = !(lambda && strict) && argc == 1 && many >= 2 && lupe_is_array_value(argv[0]);
+  int spread = !(lambda && strict) && argc == 1 && many >= 2 && fx_is_array_value(argv[0]);
   int len = spread ? (int)sp_poly_length(argv[0]) : 0;
   sp_RbVal elts[len ? len : 1];
   if (spread) {
@@ -446,49 +446,49 @@ static void lupe_bind_block(LupeFrame *f, const pm_node_t *params, int argc, sp_
     argv = elts;
   }
   if (ps) {
-    lupe_bind_list(f, ps, argc, argv, !lambda);
+    fx_bind_list(f, ps, argc, argv, !lambda);
     return;
   }
-  if (lambda && argc != many) lupe_arity_error(argc, many, 0, 0);
-  for (int i = 0; i < many; i++) *lupe_numbered(f, params, i + 1) = i < argc ? argv[i] : sp_box_nil();
+  if (lambda && argc != many) fx_arity_error(argc, many, 0, 0);
+  for (int i = 0; i < many; i++) *fx_numbered(f, params, i + 1) = i < argc ? argv[i] : sp_box_nil();
 }
 
-static sp_RbVal lupe_invoke(const LupeMethod *m, sp_RbVal self, int argc, sp_RbVal *argv) {
-  return lupe_invoke_b(m, self, argc, argv, NULL);
+static sp_RbVal fx_invoke(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal *argv) {
+  return fx_invoke_b(m, self, argc, argv, NULL);
 }
 
-static sp_RbVal lupe_invoke_b(const LupeMethod *m, sp_RbVal self, int argc, sp_RbVal *argv, const LupeBlock *blk) {
-  if (m->kind == LUPE_M_READER) {
-    if (argc != 0) lupe_arity_error(argc, 0, 0, 0);
-    return lupe_ivar_get(self, m->ivar);
+static sp_RbVal fx_invoke_b(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal *argv, const FxBlock *blk) {
+  if (m->kind == FX_M_READER) {
+    if (argc != 0) fx_arity_error(argc, 0, 0, 0);
+    return fx_ivar_get(self, m->ivar);
   }
-  if (m->kind == LUPE_M_WRITER) {
-    if (argc != 1) lupe_arity_error(argc, 1, 0, 0);
-    lupe_ivar_set(self, m->ivar, argv[0]);
+  if (m->kind == FX_M_WRITER) {
+    if (argc != 1) fx_arity_error(argc, 1, 0, 0);
+    fx_ivar_set(self, m->ivar, argv[0]);
     return argv[0];
   }
-  if (m->kind == LUPE_M_FFI) return lupe_ffi_invoke(m->ffi, self, argc, argv);
-  if (m->kind == LUPE_M_ENTRY) return lupe_entry_invoke(m->entry, argc, argv);
+  if (m->kind == FX_M_FFI) return fx_ffi_invoke(m->ffi, self, argc, argv);
+  if (m->kind == FX_M_ENTRY) return fx_entry_invoke(m->entry, argc, argv);
   SP_GC_SAVE();
   sp_RbVal me = self;
   SP_GC_ROOT_RBVAL(me);
   const pm_def_node_t *def = m->def;
   /* $~ is local to the method: the caller's registers come back on exit */
   sp_re_frame rf;
-  int rx = lupe_re_frame_enter(m, &rf);
-  LUPE_FRAME(f, &def->locals, me, m->owner);
+  int rx = fx_re_frame_enter(m, &rf);
+  FX_FRAME(f, &def->locals, me, m->owner);
   f.method = m;
   f.block = blk;
-  lupe_bind_params(&f, def->parameters, argc, argv);
-  sp_RbVal v = def->body ? lupe_eval(&f, def->body) : sp_box_nil();
-  if (L.ctl == LUPE_CTL_RETURN && L.ctl_target == &f) { v = L.ctl_val; L.ctl = LUPE_CTL_NONE; }
+  fx_bind_params(&f, def->parameters, argc, argv);
+  sp_RbVal v = def->body ? fx_eval(&f, def->body) : sp_box_nil();
+  if (L.ctl == FX_CTL_RETURN && L.ctl_target == &f) { v = L.ctl_val; L.ctl = FX_CTL_NONE; }
   if (rx) sp_re_frame_pop(&rf);
   return v;
 }
 
 /* ---- blocks ---- */
 
-static void lupe_block_parts(const pm_node_t *n, const pm_constant_id_list_t **locals, const pm_node_t **params,
+static void fx_block_parts(const pm_node_t *n, const pm_constant_id_list_t **locals, const pm_node_t **params,
                              const pm_node_t **body) {
   if (PM_NODE_TYPE_P(n, PM_LAMBDA_NODE)) {
     const pm_lambda_node_t *l = (const pm_lambda_node_t *)n;
@@ -504,83 +504,83 @@ static void lupe_block_parts(const pm_node_t *n, const pm_constant_id_list_t **l
    holds the block, or the lambda. strict is set for Proc#call. self and
    cref replace those of the home frame when they are set (the body of
    Class.new); the caller roots *self. */
-static sp_RbVal lupe_yield_in(const LupeBlock *b, int argc, sp_RbVal *argv, int strict, const sp_RbVal *self,
-                              LupeClass *cref) {
+static sp_RbVal fx_yield_in(const FxBlock *b, int argc, sp_RbVal *argv, int strict, const sp_RbVal *self,
+                              FxClass *cref) {
   if (!b->node) {
-    if (self) lupe_gap("a Symbol block as a class body");
+    if (self) fx_gap("a Symbol block as a class body");
     if (argc < 1) sp_raise_cls("ArgumentError", "no receiver given");
-    return lupe_send(argv[0], sp_sym_to_s(b->sym), argc - 1, argv + 1);
+    return fx_send(argv[0], sp_sym_to_s(b->sym), argc - 1, argv + 1);
   }
   /* a home on the heap outlives its scope; one on the C stack does not */
-  LupeFrame *h = b->home;
-  int live = lupe_frame_live(b);
-  if (!live && !h->heap) lupe_gap("a call of a block whose scope has returned");
+  FxFrame *h = b->home;
+  int live = fx_frame_live(b);
+  if (!live && !h->heap) fx_gap("a call of a block whose scope has returned");
   SP_GC_SAVE();
   const pm_constant_id_list_t *locals;
   const pm_node_t *params, *body;
-  lupe_block_parts(b->node, &locals, &params, &body);
+  fx_block_parts(b->node, &locals, &params, &body);
   if (SP_UNLIKELY(SP_SAFEPOINT_POLL())) sp_safepoint();
-  LUPE_FRAME(bf, locals, self ? *self : h->self, cref ? cref : h->cref);
+  FX_FRAME(bf, locals, self ? *self : h->self, cref ? cref : h->cref);
   bf.method = h->method;
   bf.parent = h;
   bf.block = h->block;
   bf.lambda = b->lambda;
-  lupe_bind_block(&bf, params, argc, argv, b->lambda, strict);
-  sp_RbVal v = body ? lupe_eval(&bf, body) : sp_box_nil();
+  fx_bind_block(&bf, params, argc, argv, b->lambda, strict);
+  sp_RbVal v = body ? fx_eval(&bf, body) : sp_box_nil();
   switch (L.ctl) {
-  case LUPE_CTL_NEXT:
-    L.ctl = LUPE_CTL_NONE;
+  case FX_CTL_NEXT:
+    L.ctl = FX_CTL_NONE;
     return L.ctl_val;
-  case LUPE_CTL_BREAK:
-    if (b->lambda) { L.ctl = LUPE_CTL_NONE; return L.ctl_val; }
+  case FX_CTL_BREAK:
+    if (b->lambda) { L.ctl = FX_CTL_NONE; return L.ctl_val; }
     /* the call that a break leaves is in the home scope */
     if (!b->site || !live) {
-      L.ctl = LUPE_CTL_NONE;
+      L.ctl = FX_CTL_NONE;
       sp_raise_cls("LocalJumpError", "break from proc-closure");
     }
-    L.ctl = LUPE_CTL_BREAK_BLOCK;
+    L.ctl = FX_CTL_BREAK_BLOCK;
     L.ctl_target = b->site;
     return sp_box_nil();
-  case LUPE_CTL_RETURN:
-    if (L.ctl_target == &bf) { L.ctl = LUPE_CTL_NONE; return L.ctl_val; }
+  case FX_CTL_RETURN:
+    if (L.ctl_target == &bf) { L.ctl = FX_CTL_NONE; return L.ctl_val; }
     return v;
   default:
     return v;
   }
 }
 
-static sp_RbVal lupe_yield_x(const LupeBlock *b, int argc, sp_RbVal *argv, int strict) {
-  return lupe_yield_in(b, argc, argv, strict, NULL, NULL);
+static sp_RbVal fx_yield_x(const FxBlock *b, int argc, sp_RbVal *argv, int strict) {
+  return fx_yield_in(b, argc, argv, strict, NULL, NULL);
 }
 
-static sp_RbVal lupe_yield(const LupeBlock *b, int argc, sp_RbVal *argv) {
-  return lupe_yield_x(b, argc, argv, 0);
+static sp_RbVal fx_yield(const FxBlock *b, int argc, sp_RbVal *argv) {
+  return fx_yield_x(b, argc, argv, 0);
 }
 
 /* Calls a block with self and the definee replaced: a def in it defines a
    method of cref. */
-static sp_RbVal lupe_yield_under(const LupeBlock *b, sp_RbVal self, LupeClass *cref, int argc, sp_RbVal *argv) {
+static sp_RbVal fx_yield_under(const FxBlock *b, sp_RbVal self, FxClass *cref, int argc, sp_RbVal *argv) {
   SP_GC_ROOT_RBVAL(self);
-  return lupe_yield_in(b, argc, argv, 0, &self, cref);
+  return fx_yield_in(b, argc, argv, 0, &self, cref);
 }
 
-static int lupe_is_proc(sp_RbVal v) {
+static int fx_is_proc(sp_RbVal v) {
   return v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_PROC && v.v.p;
 }
 
-static void lupe_proc_scan(void *p) {
-  const LupeBlock *b = &((LupeProc *)p)->b;
+static void fx_proc_scan(void *p) {
+  const FxBlock *b = &((FxProc *)p)->b;
   if (b->home && b->home->heap) sp_gc_mark(b->home);
 }
 
 /* A Proc value for a block. A block that a Proc carries answers that Proc.
    The Proc can outlive the scope of the block, so its home frame moves to
    the heap. */
-static sp_RbVal lupe_block_proc(const LupeBlock *b) {
+static sp_RbVal fx_block_proc(const FxBlock *b) {
   if (b->proc) return sp_box_obj(b->proc, SP_BUILTIN_PROC);
   /* the env of a home on the C stack stays a root of that frame here */
-  LupeFrame *home = b->node && lupe_frame_live(b) ? lupe_frame_heap(b->home) : b->home;
-  LupeProc *p = (LupeProc *)sp_gc_alloc(sizeof *p, NULL, lupe_proc_scan);
+  FxFrame *home = b->node && fx_frame_live(b) ? fx_frame_heap(b->home) : b->home;
+  FxProc *p = (FxProc *)sp_gc_alloc(sizeof *p, NULL, fx_proc_scan);
   p->p.lambda_p = b->lambda ? TRUE : FALSE;
   p->b = *b;
   p->b.home = home;
@@ -591,30 +591,30 @@ static sp_RbVal lupe_block_proc(const LupeBlock *b) {
 /* The block that a call passes: a block literal (into *lit), `&expr` or
    `&`. *holder roots the Proc of `&expr`. Answers NULL for no block, and
    also when a jump is pending. */
-static const LupeBlock *lupe_make_block(LupeFrame *f, const pm_node_t *bn, LupeBlock *lit, sp_RbVal *holder) {
+static const FxBlock *fx_make_block(FxFrame *f, const pm_node_t *bn, FxBlock *lit, sp_RbVal *holder) {
   if (!bn) return NULL;
   if (PM_NODE_TYPE_P(bn, PM_BLOCK_NODE)) {
-    *lit = (LupeBlock){ .node = bn, .home = f, .serial = f->serial, .fs = f->fs, .depth = f->depth, .site = lit };
+    *lit = (FxBlock){ .node = bn, .home = f, .serial = f->serial, .fs = f->fs, .depth = f->depth, .site = lit };
     return lit;
   }
   const pm_node_t *e = ((const pm_block_argument_node_t *)bn)->expression;
   if (!e) return f->block;   /* def m(&) ... n(&) */
-  sp_RbVal v = lupe_eval(f, e);
-  if (L.ctl != LUPE_CTL_NONE) return NULL;
+  sp_RbVal v = fx_eval(f, e);
+  if (L.ctl != FX_CTL_NONE) return NULL;
   *holder = v;
   if (v.tag == SP_TAG_NIL) return NULL;
   if (v.tag == SP_TAG_SYM) {
-    *lit = (LupeBlock){ .sym = (sp_sym)v.v.i, .lambda = 1 };
+    *lit = (FxBlock){ .sym = (sp_sym)v.v.i, .lambda = 1 };
     return lit;
   }
-  if (lupe_is_proc(v)) return &((LupeProc *)v.v.p)->b;
-  lupe_unsupported(bn, "block argument that is not a Proc or a Symbol");
+  if (fx_is_proc(v)) return &((FxProc *)v.v.p)->b;
+  fx_unsupported(bn, "block argument that is not a Proc or a Symbol");
 }
 
 /* ---- calls ---- */
 
 /* A keyword Hash of only `**h`, which passes nothing when it is empty. */
-static int lupe_kwsplat_only(const pm_node_t *a) {
+static int fx_kwsplat_only(const pm_node_t *a) {
   if (!PM_NODE_TYPE_P(a, PM_KEYWORD_HASH_NODE)) return 0;
   const pm_node_list_t *e = &((const pm_keyword_hash_node_t *)a)->elements;
   for (size_t i = 0; i < e->size; i++)
@@ -624,52 +624,52 @@ static int lupe_kwsplat_only(const pm_node_t *a) {
 
 /* Whether the count of the arguments is known at run time only: a splat,
    `...`, or a keyword Hash of only `**h`. */
-static int lupe_args_dynamic(const pm_arguments_node_t *args) {
+static int fx_args_dynamic(const pm_arguments_node_t *args) {
   if (!args) return 0;
   for (size_t i = 0; i < args->arguments.size; i++) {
     const pm_node_t *a = args->arguments.nodes[i];
-    if (PM_NODE_TYPE_P(a, PM_SPLAT_NODE) || PM_NODE_TYPE_P(a, PM_FORWARDING_ARGUMENTS_NODE) || lupe_kwsplat_only(a))
+    if (PM_NODE_TYPE_P(a, PM_SPLAT_NODE) || PM_NODE_TYPE_P(a, PM_FORWARDING_ARGUMENTS_NODE) || fx_kwsplat_only(a))
       return 1;
   }
   return 0;
 }
 
-static int lupe_has_forwarding(const pm_arguments_node_t *args) {
+static int fx_has_forwarding(const pm_arguments_node_t *args) {
   for (size_t i = 0; args && i < args->arguments.size; i++)
     if (PM_NODE_TYPE_P(args->arguments.nodes[i], PM_FORWARDING_ARGUMENTS_NODE)) return 1;
   return 0;
 }
 
 /* The argument count of a call site that needs a fixed count. */
-static int lupe_argc(const pm_arguments_node_t *args) {
+static int fx_argc(const pm_arguments_node_t *args) {
   if (!args) return 0;
-  if (lupe_args_dynamic(args)) lupe_unsupported((const pm_node_t *)args, "argument kind");
+  if (fx_args_dynamic(args)) fx_unsupported((const pm_node_t *)args, "argument kind");
   return (int)args->arguments.size;
 }
 
 /* The frame of the method (or the program) that holds frame f. */
-static LupeFrame *lupe_method_frame(LupeFrame *f) {
+static FxFrame *fx_method_frame(FxFrame *f) {
   while (f->parent) f = f->parent;
   return f;
 }
 
 /* Pushes the elements of a splat: an Array spreads, nil passes nothing
    and any other value passes itself. */
-static void lupe_spread(sp_PolyArray *out, sp_RbVal v) {
+static void fx_spread(sp_PolyArray *out, sp_RbVal v) {
   if (v.tag == SP_TAG_NIL) return;
   if (!(v.tag == SP_TAG_OBJ && (sp_poly_is_array_kind(v.cls_id) || v.cls_id == SP_BUILTIN_RANGE))) {
     sp_PolyArray_push(out, v);
     return;
   }
   SP_GC_ROOT_RBVAL(v);
-  if (v.cls_id == SP_BUILTIN_RANGE) v = lupe_send(v, "to_a", 0, NULL);
+  if (v.cls_id == SP_BUILTIN_RANGE) v = fx_send(v, "to_a", 0, NULL);
   for (sp_int i = 0; i < sp_poly_length(v); i++) sp_PolyArray_push(out, sp_poly_arr_get(v, i));
 }
 
 /* Evaluates arguments whose count is known at run time only into *out.
    Sets *kw to the keyword Hash when it is the last argument. Answers 0
    when a jump is pending. */
-static int lupe_args_spread(LupeFrame *f, const pm_arguments_node_t *args, sp_PolyArray *out, const void **kw) {
+static int fx_args_spread(FxFrame *f, const pm_arguments_node_t *args, sp_PolyArray *out, const void **kw) {
   sp_RbVal v = sp_box_nil();
   SP_GC_ROOT_RBVAL(v);
   for (size_t i = 0; i < args->arguments.size; i++) {
@@ -677,21 +677,21 @@ static int lupe_args_spread(LupeFrame *f, const pm_arguments_node_t *args, sp_Po
     *kw = NULL;
     if (PM_NODE_TYPE_P(a, PM_SPLAT_NODE)) {
       const pm_node_t *e = ((const pm_splat_node_t *)a)->expression;
-      v = e ? lupe_eval(f, e) : lupe_method_frame(f)->anon[0];
-      if (L.ctl != LUPE_CTL_NONE) return 0;
-      lupe_spread(out, v);
+      v = e ? fx_eval(f, e) : fx_method_frame(f)->anon[0];
+      if (L.ctl != FX_CTL_NONE) return 0;
+      fx_spread(out, v);
     } else if (PM_NODE_TYPE_P(a, PM_FORWARDING_ARGUMENTS_NODE)) {
-      LupeFrame *mf = lupe_method_frame(f);
-      lupe_spread(out, mf->anon[0]);
+      FxFrame *mf = fx_method_frame(f);
+      fx_spread(out, mf->anon[0]);
       v = mf->anon[1];
       if (v.tag != SP_TAG_NIL && sp_poly_length(v) > 0) {
         sp_PolyArray_push(out, v);
         *kw = v.v.p;
       }
     } else {
-      v = lupe_eval(f, a);
-      if (L.ctl != LUPE_CTL_NONE) return 0;
-      if (lupe_kwsplat_only(a) && sp_poly_length(v) == 0) continue;
+      v = fx_eval(f, a);
+      if (L.ctl != FX_CTL_NONE) return 0;
+      if (fx_kwsplat_only(a) && sp_poly_length(v) == 0) continue;
       sp_PolyArray_push(out, v);
       if (PM_NODE_TYPE_P(a, PM_KEYWORD_HASH_NODE)) *kw = v.v.p;
     }
@@ -702,8 +702,8 @@ static int lupe_args_spread(LupeFrame *f, const pm_arguments_node_t *args, sp_Po
 /* Declares argc and argv for a call site and evaluates the arguments: into
    a C array when the count is fixed, else into a rooted Array. kw is the
    keyword Hash of the call, or NULL. */
-#define LUPE_ARGS(f, args, argc, argv, kw, ok)                                            \
-  int argc = lupe_args_dynamic(args) ? -1 : (args) ? (int)(args)->arguments.size : 0;       \
+#define FX_ARGS(f, args, argc, argv, kw, ok)                                            \
+  int argc = fx_args_dynamic(args) ? -1 : (args) ? (int)(args)->arguments.size : 0;       \
   sp_RbVal argc##_vla[argc > 0 ? argc : 1];                                                \
   sp_RbVal *argv = argc##_vla;                                                             \
   sp_PolyArray *argc##_spread = NULL;                                                      \
@@ -711,82 +711,82 @@ static int lupe_args_spread(LupeFrame *f, const pm_arguments_node_t *args, sp_Po
   const void *kw = NULL;                                                                   \
   int ok;                                                                                  \
   if (argc >= 0) {                                                                         \
-    ok = lupe_args(f, args, argc, argv);                                                   \
+    ok = fx_args(f, args, argc, argv);                                                   \
     if (ok && argc > 0 && PM_NODE_TYPE_P((args)->arguments.nodes[argc - 1], PM_KEYWORD_HASH_NODE)) \
       kw = argv[argc - 1].v.p;                                                             \
   } else {                                                                                 \
     argc##_spread = sp_PolyArray_new();                                                    \
-    ok = lupe_args_spread(f, args, argc##_spread, &kw);                                    \
+    ok = fx_args_spread(f, args, argc##_spread, &kw);                                    \
     argc = (int)argc##_spread->len;                                                        \
     argv = argc##_spread->data;                                                            \
   }
 
 /* Roots argv[0..argc) and evaluates the arguments into it. Answers 0 when
    a jump is pending. The roots stay until the caller's SP_GC_SAVE ends. */
-static int lupe_args(LupeFrame *f, const pm_arguments_node_t *args, int argc, sp_RbVal *argv) {
+static int fx_args(FxFrame *f, const pm_arguments_node_t *args, int argc, sp_RbVal *argv) {
   for (int i = 0; i < argc; i++) {
     argv[i] = sp_box_nil();
     _sp_gc_root_push((void **)((uintptr_t)&argv[i] | (uintptr_t)1));
   }
   for (int i = 0; i < argc; i++) {
-    argv[i] = lupe_eval(f, args->arguments.nodes[i]);
-    if (L.ctl != LUPE_CTL_NONE) return 0;
+    argv[i] = fx_eval(f, args->arguments.nodes[i]);
+    if (L.ctl != FX_CTL_NONE) return 0;
   }
   return 1;
 }
 
 /* A call that passed the block lit ends here when the block breaks. */
-static sp_RbVal lupe_catch_break(const LupeBlock *lit, sp_RbVal v) {
-  if (L.ctl == LUPE_CTL_BREAK_BLOCK && L.ctl_target == lit) {
-    L.ctl = LUPE_CTL_NONE;
+static sp_RbVal fx_catch_break(const FxBlock *lit, sp_RbVal v) {
+  if (L.ctl == FX_CTL_BREAK_BLOCK && L.ctl_target == lit) {
+    L.ctl = FX_CTL_NONE;
     return L.ctl_val;
   }
   return v;
 }
 
-static sp_RbVal lupe_call(LupeFrame *f, const pm_call_node_t *c) {
+static sp_RbVal fx_call(FxFrame *f, const pm_call_node_t *c) {
   SP_GC_SAVE();
-  const char *name = sp_sym_to_s(lupe_sym(c->name));
+  const char *name = sp_sym_to_s(fx_sym(c->name));
   sp_RbVal recv = sp_box_nil();
   SP_GC_ROOT_RBVAL(recv);
   if (c->receiver) {
-    recv = lupe_eval(f, c->receiver);
-    if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+    recv = fx_eval(f, c->receiver);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
     if (PM_NODE_FLAG_P((const pm_node_t *)c, PM_CALL_NODE_FLAGS_SAFE_NAVIGATION) && recv.tag == SP_TAG_NIL)
       return recv;
   }
-  LUPE_ARGS(f, c->arguments, argc, argv, kw, ok);
+  FX_ARGS(f, c->arguments, argc, argv, kw, ok);
   if (!ok) return sp_box_nil();
-  LupeBlock lit;
+  FxBlock lit;
   sp_RbVal holder = sp_box_nil();
   SP_GC_ROOT_RBVAL(holder);
-  const LupeBlock *blk = lupe_make_block(f, c->block, &lit, &holder);
-  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-  if (!c->block && lupe_has_forwarding(c->arguments)) blk = lupe_method_frame(f)->block;
+  const FxBlock *blk = fx_make_block(f, c->block, &lit, &holder);
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  if (!c->block && fx_has_forwarding(c->arguments)) blk = fx_method_frame(f)->block;
   /* the callee's binder takes the keyword Hash; a builtin leaves it, so
      it is cleared after the call, before its address can be reused */
   L.kwhash = kw;
   sp_RbVal v;
   /* require_relative and __dir__ answer from the file of the call, unless
      the program defines its own */
-  if (!c->receiver && !blk && lupe_load_call((const pm_node_t *)c, f->self, name, argc, argv, &v)) {
+  if (!c->receiver && !blk && fx_load_call((const pm_node_t *)c, f->self, name, argc, argv, &v)) {
   } else {
     L.vcall = PM_NODE_FLAG_P((const pm_node_t *)c, PM_CALL_NODE_FLAGS_VARIABLE_CALL);
-    v = c->receiver ? lupe_send_b(recv, name, argc, argv, blk) : lupe_call_self(f, name, argc, argv, blk);
+    v = c->receiver ? fx_send_b(recv, name, argc, argv, blk) : fx_call_self(f, name, argc, argv, blk);
   }
   L.kwhash = NULL;
-  v = lupe_catch_break(&lit, v);
+  v = fx_catch_break(&lit, v);
   if (!c->receiver) return v;
   /* `obj.x = v` answers v, whatever x= returns */
   if (PM_NODE_FLAG_P((const pm_node_t *)c, PM_CALL_NODE_FLAGS_ATTRIBUTE_WRITE) && argc > 0) return argv[argc - 1];
   return v;
 }
 
-static sp_RbVal lupe_loop(const LupeBlock *blk);   /* the exceptions section */
+static sp_RbVal fx_loop(const FxBlock *blk);   /* the exceptions section */
 
 /* The Kernel methods that take the block of the call. Answers 1 and sets
    *out when it handles the call. */
-static int lupe_kernel_block(LupeFrame *f, const char *name, int argc, const LupeBlock *blk, sp_RbVal *out) {
+static int fx_kernel_block(FxFrame *f, const char *name, int argc, const FxBlock *blk, sp_RbVal *out) {
   if (argc == 0 && (!strcmp(name, "block_given?") || !strcmp(name, "iterator?"))) {
     *out = sp_box_bool(f->block != NULL);
     return 1;
@@ -795,17 +795,17 @@ static int lupe_kernel_block(LupeFrame *f, const char *name, int argc, const Lup
   if (argc == 0 && (!strcmp(name, "proc") || !strcmp(name, "lambda"))) {
     /* a break in the Proc of a literal has no call to end */
     if (blk->node && !blk->proc) {
-      LupeBlock l = *blk;
+      FxBlock l = *blk;
       l.lambda = name[0] == 'l';
       l.site = NULL;
-      *out = lupe_block_proc(&l);
+      *out = fx_block_proc(&l);
     } else {
-      *out = lupe_block_proc(blk);
+      *out = fx_block_proc(blk);
     }
     return 1;
   }
   if (argc == 0 && !strcmp(name, "loop")) {
-    *out = lupe_loop(blk);
+    *out = fx_loop(blk);
     return 1;
   }
   return 0;
@@ -813,32 +813,32 @@ static int lupe_kernel_block(LupeFrame *f, const char *name, int argc, const Lup
 
 /* A call with no receiver: a method of self, then Kernel, then a builtin
    method of self. In a class body or a class method, self is the class. */
-static sp_RbVal lupe_call_self(LupeFrame *f, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk) {
-  /* lupe_call marks a call with no arguments and no parentheses */
+static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk) {
+  /* fx_call marks a call with no arguments and no parentheses */
   int vcall = L.vcall;
   L.vcall = 0;
   sp_sym s = sp_sym_intern(name);
   sp_RbVal self = f->self, out;
   if (self.tag == SP_TAG_CLASS) {
-    LupeClass *k = lupe_class_value(self);
-    LupeMethod *m = k ? lupe_find_smethod(k, s) : NULL;
-    if (m) return lupe_invoke_b(m, self, argc, argv, blk);
-    if (lupe_class_core(f, self, name, argc, argv, blk, &out)) return out;
+    FxClass *k = fx_class_value(self);
+    FxMethod *m = k ? fx_find_smethod(k, s) : NULL;
+    if (m) return fx_invoke_b(m, self, argc, argv, blk);
+    if (fx_class_core(f, self, name, argc, argv, blk, &out)) return out;
   }
-  LupeMethod *m = lupe_find_method(lupe_class_of(self), s);
-  if (m) return lupe_invoke_b(m, self, argc, argv, blk);
-  if (lupe_kernel_block(f, name, argc, blk, &out)) return out;
-  if (blk) return lupe_send_b(self, name, argc, argv, blk);
-  if (lupe_exc_kernel(name, argc, argv, &out)) return out;
-  if (lupe_fiber_kernel(name, argc, argv, &out)) return out;
-  if (lupe_kernel(name, argc, argv, &out)) return out;
-  if (lupe_object_core(self, name, argc, argv, &out)) return out;
-  if (!lupe_is_lupe_object(self) && self.tag != SP_TAG_CLASS) return lupe_send(self, name, argc, argv);
-  lupe_trace_missing("Kernel#", name, argc);
+  FxMethod *m = fx_find_method(fx_class_of(self), s);
+  if (m) return fx_invoke_b(m, self, argc, argv, blk);
+  if (fx_kernel_block(f, name, argc, blk, &out)) return out;
+  if (blk) return fx_send_b(self, name, argc, argv, blk);
+  if (fx_exc_kernel(name, argc, argv, &out)) return out;
+  if (fx_fiber_kernel(name, argc, argv, &out)) return out;
+  if (fx_kernel(name, argc, argv, &out)) return out;
+  if (fx_object_core(self, name, argc, argv, &out)) return out;
+  if (!fx_is_fx_object(self) && self.tag != SP_TAG_CLASS) return fx_send(self, name, argc, argv);
+  fx_trace_missing("Kernel#", name, argc);
   /* a bare name that could be a local variable is a NameError */
   const char *cls = vcall ? "NameError" : "NoMethodError";
   const char *what = vcall ? "undefined local variable or method" : "undefined method";
-  if (lupe_is_lupe_object(self) && self.v.p == L.main.v.p)
+  if (fx_is_fx_object(self) && self.v.p == L.main.v.p)
     sp_raise_cls(cls, sp_sprintf("%s '%s' for main", what, name));
   sp_raise_cls(cls, sp_sprintf("%s '%s' for an instance of %s", what, name, sp_poly_class_name(self)));
 }
@@ -846,8 +846,8 @@ static sp_RbVal lupe_call_self(LupeFrame *f, const char *name, int argc, sp_RbVa
 /* The arguments that a bare super passes, into out: the current values of
    the parameters, in order, with *rest spread, then a keyword Hash of the
    keywords and **rest. Answers that Hash, or NULL for none. */
-static const void *lupe_zsuper_args(LupeFrame *f, const pm_node_t *n, sp_PolyArray *out) {
-  f = lupe_method_frame(f);   /* a super in a block reads the method's parameters */
+static const void *fx_zsuper_args(FxFrame *f, const pm_node_t *n, sp_PolyArray *out) {
+  f = fx_method_frame(f);   /* a super in a block reads the method's parameters */
   const pm_parameters_node_t *ps = f->method->def ? f->method->def->parameters : NULL;
   if (!ps) return NULL;
   const pm_node_list_t *lists[3] = { &ps->requireds, &ps->optionals, NULL };
@@ -858,17 +858,17 @@ static const void *lupe_zsuper_args(LupeFrame *f, const pm_node_t *n, sp_PolyArr
                                 ? ((const pm_optional_parameter_node_t *)p)->name
                                 : ((const pm_required_parameter_node_t *)p)->name;
       if (!PM_NODE_TYPE_P(p, PM_OPTIONAL_PARAMETER_NODE) && !PM_NODE_TYPE_P(p, PM_REQUIRED_PARAMETER_NODE))
-        lupe_unsupported(n, "bare super with a parameter pattern");
-      sp_PolyArray_push(out, *lupe_local(f, n, name, 0));
+        fx_unsupported(n, "bare super with a parameter pattern");
+      sp_PolyArray_push(out, *fx_local(f, n, name, 0));
     }
   const pm_node_t *kr = ps->keyword_rest;
   int fwd = kr && PM_NODE_TYPE_P(kr, PM_FORWARDING_PARAMETER_NODE);
   if (fwd || (ps->rest && PM_NODE_TYPE_P(ps->rest, PM_REST_PARAMETER_NODE))) {
     pm_constant_id_t rn = ps->rest ? ((const pm_rest_parameter_node_t *)ps->rest)->name : 0;
-    lupe_spread(out, rn ? *lupe_local(f, n, rn, 0) : f->anon[0]);
+    fx_spread(out, rn ? *fx_local(f, n, rn, 0) : f->anon[0]);
   }
   for (size_t i = 0; i < ps->posts.size; i++)
-    sp_PolyArray_push(out, *lupe_local(f, n, ((const pm_required_parameter_node_t *)ps->posts.nodes[i])->name, 0));
+    sp_PolyArray_push(out, *fx_local(f, n, ((const pm_required_parameter_node_t *)ps->posts.nodes[i])->name, 0));
   /* the keywords, with their current values, then **rest */
   if (!ps->keywords.size && !kr) return NULL;
   sp_PolyPolyHash *h = sp_PolyPolyHash_new();
@@ -878,13 +878,13 @@ static const void *lupe_zsuper_args(LupeFrame *f, const pm_node_t *n, sp_PolyArr
     pm_constant_id_t name = PM_NODE_TYPE_P(p, PM_REQUIRED_KEYWORD_PARAMETER_NODE)
                               ? ((const pm_required_keyword_parameter_node_t *)p)->name
                               : ((const pm_optional_keyword_parameter_node_t *)p)->name;
-    sp_PolyPolyHash_set(h, sp_box_sym(lupe_sym(name)), *lupe_local(f, n, name, 0));
+    sp_PolyPolyHash_set(h, sp_box_sym(fx_sym(name)), *fx_local(f, n, name, 0));
   }
   sp_RbVal kwrest = sp_box_nil();
   if (fwd) kwrest = f->anon[1];
   else if (kr && PM_NODE_TYPE_P(kr, PM_KEYWORD_REST_PARAMETER_NODE)) {
     pm_constant_id_t rn = ((const pm_keyword_rest_parameter_node_t *)kr)->name;
-    kwrest = rn ? *lupe_local(f, n, rn, 0) : f->anon[1];
+    kwrest = rn ? *fx_local(f, n, rn, 0) : f->anon[1];
   }
   sp_PolyPolyHash *r = kwrest.tag == SP_TAG_NIL ? NULL : sp_poly_as_poly_poly_hash(kwrest);
   for (sp_int i = 0; r && i < r->len; i++) sp_PolyPolyHash_set(h, r->keys[r->order[i]], r->vals[r->order[i]]);
@@ -893,119 +893,119 @@ static const void *lupe_zsuper_args(LupeFrame *f, const pm_node_t *n, sp_PolyArr
   return h;
 }
 
-static sp_RbVal lupe_super_call(LupeFrame *f, const pm_node_t *n, const pm_arguments_node_t *args, int forward,
-                                const LupeBlock *blk);
+static sp_RbVal fx_super_call(FxFrame *f, const pm_node_t *n, const pm_arguments_node_t *args, int forward,
+                                const FxBlock *blk);
 
 /* super, and super with no arguments, which passes the parameters. Both
    pass the block of the method, unless the super has its own. */
-static sp_RbVal lupe_super(LupeFrame *f, const pm_node_t *n, const pm_arguments_node_t *args, int forward,
+static sp_RbVal fx_super(FxFrame *f, const pm_node_t *n, const pm_arguments_node_t *args, int forward,
                            const pm_node_t *bnode) {
   SP_GC_SAVE();
-  if (!f->method) lupe_unsupported(n, "super outside a method");
-  LupeBlock lit;
+  if (!f->method) fx_unsupported(n, "super outside a method");
+  FxBlock lit;
   sp_RbVal holder = sp_box_nil();
   SP_GC_ROOT_RBVAL(holder);
-  const LupeBlock *blk = bnode ? lupe_make_block(f, bnode, &lit, &holder) : f->block;
-  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-  sp_RbVal v = lupe_super_call(f, n, args, forward, blk);
+  const FxBlock *blk = bnode ? fx_make_block(f, bnode, &lit, &holder) : f->block;
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  sp_RbVal v = fx_super_call(f, n, args, forward, blk);
   L.kwhash = NULL;
-  return lupe_catch_break(&lit, v);
+  return fx_catch_break(&lit, v);
 }
 
-static sp_RbVal lupe_super_call(LupeFrame *f, const pm_node_t *n, const pm_arguments_node_t *args, int forward,
-                                const LupeBlock *blk) {
+static sp_RbVal fx_super_call(FxFrame *f, const pm_node_t *n, const pm_arguments_node_t *args, int forward,
+                                const FxBlock *blk) {
   SP_GC_SAVE();
-  LUPE_ARGS(f, forward ? NULL : args, argc, argv, kw, ok);
+  FX_ARGS(f, forward ? NULL : args, argc, argv, kw, ok);
   if (!ok) return sp_box_nil();
   if (forward) {
     argc_spread = sp_PolyArray_new();
-    kw = lupe_zsuper_args(f, n, argc_spread);
+    kw = fx_zsuper_args(f, n, argc_spread);
     argc = (int)argc_spread->len;
     argv = argc_spread->data;
   }
   L.kwhash = kw;
-  const LupeMethod *m = f->method;
-  LupeMethod *s;
-  if (f->self.tag == SP_TAG_CLASS && lupe_table_get(&m->owner->smethods, m->name) == m)
-    s = m->owner->super ? lupe_find_smethod(m->owner->super, m->name) : NULL;
+  const FxMethod *m = f->method;
+  FxMethod *s;
+  if (f->self.tag == SP_TAG_CLASS && fx_table_get(&m->owner->smethods, m->name) == m)
+    s = m->owner->super ? fx_find_smethod(m->owner->super, m->name) : NULL;
   else
-    s = lupe_find_super(lupe_class_of(f->self), m);
-  if (s) return lupe_invoke_b(s, f->self, argc, argv, blk);
+    s = fx_find_super(fx_class_of(f->self), m);
+  if (s) return fx_invoke_b(s, f->self, argc, argv, blk);
   const char *name = sp_sym_to_s(m->name);
   sp_RbVal out;
   /* the builtin initialize: an exception takes its message, a Struct or a
      Data its members */
   if (!strcmp(name, "initialize")) {
-    if (lupe_is_exc(f->self)) lupe_exc_init(f->self, argc, argv);
-    else if (lupe_is_lupe_object(f->self) && lupe_record_of(lupe_class_of(f->self))) lupe_record_init(f->self, argc, argv);
+    if (fx_is_exc(f->self)) fx_exc_init(f->self, argc, argv);
+    else if (fx_is_fx_object(f->self) && fx_record_of(fx_class_of(f->self))) fx_record_init(f->self, argc, argv);
     return sp_box_nil();
   }
-  if (f->self.tag == SP_TAG_CLASS && lupe_class_core(NULL, f->self, name, argc, argv, blk, &out)) return out;
+  if (f->self.tag == SP_TAG_CLASS && fx_class_core(NULL, f->self, name, argc, argv, blk, &out)) return out;
   /* an object of the program: the defaults of Object, which do not call
      the hooks (to_s through a hook would call the program's to_s again) */
-  if (lupe_is_lupe_object(f->self)) {
-    if (blk) lupe_gap(sp_sprintf("super with a block to the builtin %s", name));
-    if (lupe_object_core(f->self, name, argc, argv, &out)) return out;
-  } else if (lupe_builtin_call(f->self, name, argc, argv, blk, &out)) {
+  if (fx_is_fx_object(f->self)) {
+    if (blk) fx_gap(sp_sprintf("super with a block to the builtin %s", name));
+    if (fx_object_core(f->self, name, argc, argv, &out)) return out;
+  } else if (fx_builtin_call(f->self, name, argc, argv, blk, &out)) {
     return out;
   }
-  lupe_trace_missing("super#", name, argc);
+  fx_trace_missing("super#", name, argc);
   sp_raise_cls("NoMethodError", sp_sprintf("super: no superclass method '%s'", name));
 }
 
 /* ---- control flow ---- */
 
-static sp_RbVal lupe_eval_stmts(LupeFrame *f, const pm_statements_node_t *s) {
+static sp_RbVal fx_eval_stmts(FxFrame *f, const pm_statements_node_t *s) {
   sp_RbVal v = sp_box_nil();
   if (!s) return v;
   for (size_t i = 0; i < s->body.size; i++) {
-    v = lupe_eval(f, s->body.nodes[i]);
-    if (L.ctl != LUPE_CTL_NONE) break;
+    v = fx_eval(f, s->body.nodes[i]);
+    if (L.ctl != FX_CTL_NONE) break;
   }
   return v;
 }
 
-static sp_RbVal lupe_while(LupeFrame *f, const pm_node_t *pred, const pm_statements_node_t *body, int until) {
+static sp_RbVal fx_while(FxFrame *f, const pm_node_t *pred, const pm_statements_node_t *body, int until) {
   for (;;) {
     /* a back-edge lets another green thread run, as in AOT code */
     if (SP_UNLIKELY(SP_SAFEPOINT_POLL())) sp_safepoint();
-    sp_RbVal c = lupe_eval(f, pred);
-    if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+    sp_RbVal c = fx_eval(f, pred);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
     if (sp_poly_truthy(c) == until) return sp_box_nil();
-    lupe_eval_stmts(f, body);
-    if (L.ctl == LUPE_CTL_BREAK) { L.ctl = LUPE_CTL_NONE; return L.ctl_val; }
-    if (L.ctl == LUPE_CTL_NEXT) { L.ctl = LUPE_CTL_NONE; continue; }
-    if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+    fx_eval_stmts(f, body);
+    if (L.ctl == FX_CTL_BREAK) { L.ctl = FX_CTL_NONE; return L.ctl_val; }
+    if (L.ctl == FX_CTL_NEXT) { L.ctl = FX_CTL_NONE; continue; }
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
   }
 }
 
 /* The value that return / break / next carry: nil, one value, or an Array. */
-static sp_RbVal lupe_jump_value(LupeFrame *f, const pm_arguments_node_t *args) {
+static sp_RbVal fx_jump_value(FxFrame *f, const pm_arguments_node_t *args) {
   if (!args || args->arguments.size == 0) return sp_box_nil();
-  if (args->arguments.size == 1) return lupe_eval(f, args->arguments.nodes[0]);
+  if (args->arguments.size == 1) return fx_eval(f, args->arguments.nodes[0]);
   sp_PolyArray *a = sp_PolyArray_new();
   SP_GC_ROOT(a);
-  for (size_t i = 0; i < args->arguments.size; i++) sp_PolyArray_push(a, lupe_eval(f, args->arguments.nodes[i]));
+  for (size_t i = 0; i < args->arguments.size; i++) sp_PolyArray_push(a, fx_eval(f, args->arguments.nodes[i]));
   return sp_box_poly_array(a);
 }
 
-static sp_RbVal lupe_jump(LupeFrame *f, LupeCtl kind, const pm_arguments_node_t *args) {
-  sp_RbVal v = lupe_jump_value(f, args);
-  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+static sp_RbVal fx_jump(FxFrame *f, FxCtl kind, const pm_arguments_node_t *args) {
+  sp_RbVal v = fx_jump_value(f, args);
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
   L.ctl_val = v;
   L.ctl = kind;
-  if (kind == LUPE_CTL_RETURN) {
+  if (kind == FX_CTL_RETURN) {
     /* a return in a block leaves the method that holds it, or the lambda */
-    LupeFrame *t = f;
+    FxFrame *t = f;
     while (t->parent && !t->lambda) t = t->parent;
     /* a heap frame returns from its frame on the C stack, which a Proc can
        outlive (CRuby: LocalJumpError) */
     if (t->heap) {
-      if (!lupe_env_live(t)) {
-        L.ctl = LUPE_CTL_NONE;
+      if (!fx_env_live(t)) {
+        L.ctl = FX_CTL_NONE;
         sp_raise_cls("LocalJumpError", "unexpected return");
       }
-      t = ((LupeEnv *)t)->stack;
+      t = ((FxEnv *)t)->stack;
     }
     L.ctl_target = t;
   }
@@ -1014,17 +1014,17 @@ static sp_RbVal lupe_jump(LupeFrame *f, LupeCtl kind, const pm_arguments_node_t 
 
 /* ---- literals ---- */
 
-static sp_RbVal lupe_integer(const pm_node_t *n, const pm_integer_t *iv) {
+static sp_RbVal fx_integer(const pm_node_t *n, const pm_integer_t *iv) {
   uint64_t u;
   if (!iv->values) u = iv->value;
   else if (iv->length == 2) u = (uint64_t)iv->values[1] << 32 | iv->values[0];
-  else lupe_unsupported(n, "integer literal beyond 64 bits");
-  if (u > (uint64_t)INT64_MAX + (iv->negative ? 1 : 0)) lupe_unsupported(n, "integer literal beyond 64 bits");
+  else fx_unsupported(n, "integer literal beyond 64 bits");
+  if (u > (uint64_t)INT64_MAX + (iv->negative ? 1 : 0)) fx_unsupported(n, "integer literal beyond 64 bits");
   return sp_box_int(iv->negative ? (sp_int)(0 - u) : (sp_int)u);
 }
 
 /* A new mutable String with the given bytes, as a literal makes one. */
-static sp_RbVal lupe_new_string(const uint8_t *p, size_t len) {
+static sp_RbVal fx_new_string(const uint8_t *p, size_t len) {
   char *d = sp_str_alloc(len);
   if (len) memcpy(d, p, len);
   d[len] = 0;
@@ -1034,7 +1034,7 @@ static sp_RbVal lupe_new_string(const uint8_t *p, size_t len) {
 /* As CRuby does, a part that is not a String converts with to_s when it
    is evaluated, and the parts join after the last one: a String part
    shows a change that a later part makes to it. */
-static sp_RbVal lupe_interpolate(LupeFrame *f, const pm_node_list_t *parts) {
+static sp_RbVal fx_interpolate(FxFrame *f, const pm_node_list_t *parts) {
   sp_PolyArray *vals = sp_PolyArray_new();
   SP_GC_ROOT(vals);
   sp_RbVal acc = sp_box_nil(), v = sp_box_nil();
@@ -1044,29 +1044,29 @@ static sp_RbVal lupe_interpolate(LupeFrame *f, const pm_node_list_t *parts) {
     const pm_node_t *p = parts->nodes[i];
     if (PM_NODE_TYPE_P(p, PM_STRING_NODE)) {
       const pm_string_t *s = &((const pm_string_node_t *)p)->unescaped;
-      v = lupe_new_string(pm_string_source(s), pm_string_length(s));
+      v = fx_new_string(pm_string_source(s), pm_string_length(s));
     } else if (PM_NODE_TYPE_P(p, PM_EMBEDDED_STATEMENTS_NODE)) {
-      v = lupe_eval_stmts(f, ((const pm_embedded_statements_node_t *)p)->statements);
-      if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-      if (!lupe_is_string(v)) v = sp_poly_to_s_box(v);
+      v = fx_eval_stmts(f, ((const pm_embedded_statements_node_t *)p)->statements);
+      if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+      if (!fx_is_string(v)) v = sp_poly_to_s_box(v);
     } else {
-      lupe_unsupported(p, "interpolation part");
+      fx_unsupported(p, "interpolation part");
     }
     sp_PolyArray_push(vals, v);
   }
-  acc = lupe_new_string(NULL, 0);
+  acc = fx_new_string(NULL, 0);
   for (sp_int i = 0; i < vals->len; i++) acc = sp_poly_add(acc, vals->data[i]);
   return acc;
 }
 
-static sp_RbVal lupe_array(LupeFrame *f, const pm_array_node_t *n) {
+static sp_RbVal fx_array(FxFrame *f, const pm_array_node_t *n) {
   sp_PolyArray *a = sp_PolyArray_new();
   SP_GC_ROOT(a);
   for (size_t i = 0; i < n->elements.size; i++) {
     const pm_node_t *e = n->elements.nodes[i];
-    if (PM_NODE_TYPE_P(e, PM_SPLAT_NODE)) lupe_unsupported(e, "splat in an Array literal");
-    sp_RbVal v = lupe_eval(f, e);
-    if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+    if (PM_NODE_TYPE_P(e, PM_SPLAT_NODE)) fx_unsupported(e, "splat in an Array literal");
+    sp_RbVal v = fx_eval(f, e);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
     sp_PolyArray_push(a, v);
   }
   return sp_box_poly_array(a);
@@ -1074,7 +1074,7 @@ static sp_RbVal lupe_array(LupeFrame *f, const pm_array_node_t *n) {
 
 /* A Hash literal, or the keyword arguments of a call (`m(a: 1)`), as a
    poly Hash. `**h` copies the entries of h. */
-static sp_RbVal lupe_hash_lit(LupeFrame *f, const pm_node_list_t *elts) {
+static sp_RbVal fx_hash_lit(FxFrame *f, const pm_node_list_t *elts) {
   sp_PolyPolyHash *h = sp_PolyPolyHash_new();
   SP_GC_ROOT(h);
   sp_RbVal k = sp_box_nil(), v = sp_box_nil();
@@ -1084,36 +1084,36 @@ static sp_RbVal lupe_hash_lit(LupeFrame *f, const pm_node_list_t *elts) {
     const pm_node_t *e = elts->nodes[i];
     if (PM_NODE_TYPE_P(e, PM_ASSOC_SPLAT_NODE)) {
       const pm_node_t *x = ((const pm_assoc_splat_node_t *)e)->value;
-      v = x ? lupe_eval(f, x) : lupe_method_frame(f)->anon[1];   /* `**` passes the method's **kwrest */
-      if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+      v = x ? fx_eval(f, x) : fx_method_frame(f)->anon[1];   /* `**` passes the method's **kwrest */
+      if (L.ctl != FX_CTL_NONE) return sp_box_nil();
       if (v.tag == SP_TAG_NIL) continue;
-      if (lupe_is_lupe_object(v)) v = lupe_send(v, "to_hash", 0, NULL);
+      if (fx_is_fx_object(v)) v = fx_send(v, "to_hash", 0, NULL);
       sp_PolyPolyHash *o = sp_poly_as_poly_poly_hash(v);
       if (!o) sp_raise_cls("TypeError", sp_sprintf("no implicit conversion of %s into Hash", sp_poly_class_name(v)));
       for (sp_int j = 0; j < o->len; j++) sp_PolyPolyHash_set(h, o->keys[o->order[j]], o->vals[o->order[j]]);
       continue;
     }
     const pm_assoc_node_t *a = (const pm_assoc_node_t *)e;
-    k = lupe_eval(f, a->key);
-    if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+    k = fx_eval(f, a->key);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
     /* `{x:}` reads x */
-    v = PM_NODE_TYPE_P(a->value, PM_IMPLICIT_NODE) ? lupe_eval(f, ((const pm_implicit_node_t *)a->value)->value)
-                                                   : lupe_eval(f, a->value);
-    if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+    v = PM_NODE_TYPE_P(a->value, PM_IMPLICIT_NODE) ? fx_eval(f, ((const pm_implicit_node_t *)a->value)->value)
+                                                   : fx_eval(f, a->value);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
     sp_PolyPolyHash_set(h, k, v);
   }
   return sp_box_obj(h, SP_BUILTIN_POLY_POLY_HASH);
 }
 
 /* A Range of Integers. A missing end makes a beginless or endless one. */
-static sp_RbVal lupe_range(LupeFrame *f, const pm_range_node_t *n) {
-  sp_RbVal lo = n->left ? lupe_eval(f, n->left) : sp_box_nil();
-  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-  sp_RbVal hi = n->right ? lupe_eval(f, n->right) : sp_box_nil();
-  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+static sp_RbVal fx_range(FxFrame *f, const pm_range_node_t *n) {
+  sp_RbVal lo = n->left ? fx_eval(f, n->left) : sp_box_nil();
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  sp_RbVal hi = n->right ? fx_eval(f, n->right) : sp_box_nil();
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
   if ((lo.tag != SP_TAG_INT && lo.tag != SP_TAG_NIL) || (hi.tag != SP_TAG_INT && hi.tag != SP_TAG_NIL) ||
       (lo.tag == SP_TAG_NIL && hi.tag == SP_TAG_NIL))
-    lupe_unsupported((const pm_node_t *)n, "Range of values other than Integer");
+    fx_unsupported((const pm_node_t *)n, "Range of values other than Integer");
   sp_oint first = { lo.tag == SP_TAG_INT ? lo.v.i : 0, lo.tag == SP_TAG_NIL };
   sp_oint last = { hi.tag == SP_TAG_INT ? hi.v.i : 0, hi.tag == SP_TAG_NIL };
   return sp_box_range(sp_range_new_o(first, last, PM_NODE_FLAG_P((const pm_node_t *)n, PM_RANGE_FLAGS_EXCLUDE_END)));
@@ -1122,136 +1122,136 @@ static sp_RbVal lupe_range(LupeFrame *f, const pm_range_node_t *n) {
 /* ---- classes, modules and constants ---- */
 
 /* The scope and the name that a constant path writes or defines. */
-static void lupe_const_target(LupeFrame *f, const pm_node_t *path, LupeClass **scope, sp_sym *name) {
+static void fx_const_target(FxFrame *f, const pm_node_t *path, FxClass **scope, sp_sym *name) {
   if (PM_NODE_TYPE_P(path, PM_CONSTANT_READ_NODE)) {
     *scope = f->cref;
-    *name = lupe_sym(((const pm_constant_read_node_t *)path)->name);
+    *name = fx_sym(((const pm_constant_read_node_t *)path)->name);
     return;
   }
-  if (!PM_NODE_TYPE_P(path, PM_CONSTANT_PATH_NODE)) lupe_unsupported(path, "constant target");
+  if (!PM_NODE_TYPE_P(path, PM_CONSTANT_PATH_NODE)) fx_unsupported(path, "constant target");
   const pm_constant_path_node_t *cp = (const pm_constant_path_node_t *)path;
-  *name = lupe_sym(cp->name);
+  *name = fx_sym(cp->name);
   if (!cp->parent) { *scope = L.object; return; }
-  sp_RbVal pv = lupe_eval(f, cp->parent);
-  *scope = lupe_class_value(pv);
+  sp_RbVal pv = fx_eval(f, cp->parent);
+  *scope = fx_class_value(pv);
   if (!*scope) sp_raise_cls("TypeError", sp_sprintf("%s is not a class/module", sp_poly_inspect(pv)));
 }
 
-static sp_RbVal lupe_class_def(LupeFrame *f, const pm_node_t *path, const pm_node_t *super_node,
+static sp_RbVal fx_class_def(FxFrame *f, const pm_node_t *path, const pm_node_t *super_node,
                                const pm_node_t *body, const pm_constant_id_list_t *locals, int is_module) {
   SP_GC_SAVE();
-  LupeClass *scope;
+  FxClass *scope;
   sp_sym name;
-  lupe_const_target(f, path, &scope, &name);
+  fx_const_target(f, path, &scope, &name);
   const char *cname = sp_sym_to_s(name);
-  LupeClass *k = NULL;
-  LupeConst *own = lupe_const_own(scope, name);
-  if (!own && scope == L.object && lupe_autoload(name)) own = lupe_const_own(scope, name);
+  FxClass *k = NULL;
+  FxConst *own = fx_const_own(scope, name);
+  if (!own && scope == L.object && fx_autoload(name)) own = fx_const_own(scope, name);
   if (own) {
-    k = lupe_class_value(own->value);
+    k = fx_class_value(own->value);
     if (!k) sp_raise_cls("TypeError", sp_sprintf("%s is not a %s", cname, is_module ? "module" : "class"));
   } else if (scope == L.object) {
-    k = lupe_builtin(cname);   /* reopen a builtin class */
-    if (!k && lupe_unknown_builtin(cname)) lupe_gap(sp_sprintf("reopening of the builtin %s", cname));
+    k = fx_builtin(cname);   /* reopen a builtin class */
+    if (!k && fx_unknown_builtin(cname)) fx_gap(sp_sprintf("reopening of the builtin %s", cname));
   }
   if (!k) {
-    LupeClass *super = NULL;
+    FxClass *super = NULL;
     if (!is_module) {
       super = L.object;
       if (super_node) {
-        sp_RbVal sv = lupe_eval(f, super_node);
-        if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-        super = lupe_class_value(sv);
+        sp_RbVal sv = fx_eval(f, super_node);
+        if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+        super = fx_class_value(sv);
         if (!super || super->is_module)
           sp_raise_cls("TypeError", sp_sprintf("superclass must be an instance of Class (given an instance of %s)",
-                                               super ? "Module" : lupe_class_of(sv)->name));
+                                               super ? "Module" : fx_class_of(sv)->name));
       }
     }
     const char *full = scope == L.object ? cname : sp_sprintf("%s::%s", scope->name, cname);
-    k = lupe_class_new(strdup(full), is_module, super, scope);
-    lupe_const_set(scope, name, lupe_class_box(k));
+    k = fx_class_new(strdup(full), is_module, super, scope);
+    fx_const_set(scope, name, fx_class_box(k));
     /* the hook of the superclass: inherited(subclass), before the body */
-    LupeMethod *hook = super ? lupe_find_smethod(super, sp_sym_intern("inherited")) : NULL;
+    FxMethod *hook = super ? fx_find_smethod(super, sp_sym_intern("inherited")) : NULL;
     if (hook) {
-      sp_RbVal sub = lupe_class_box(k);
-      lupe_invoke(hook, lupe_class_box(super), 1, &sub);
+      sp_RbVal sub = fx_class_box(k);
+      fx_invoke(hook, fx_class_box(super), 1, &sub);
     }
   }
   if (!body) return sp_box_nil();
-  LUPE_FRAME(cf, locals, lupe_class_box(k), k);
-  return lupe_eval(&cf, body);
+  FX_FRAME(cf, locals, fx_class_box(k), k);
+  return fx_eval(&cf, body);
 }
 
-static sp_RbVal lupe_singleton_class(LupeFrame *f, const pm_singleton_class_node_t *n) {
+static sp_RbVal fx_singleton_class(FxFrame *f, const pm_singleton_class_node_t *n) {
   SP_GC_SAVE();
-  sp_RbVal target = lupe_eval(f, n->expression);
-  LupeClass *k = lupe_class_value(target);
-  if (!k) lupe_unsupported((const pm_node_t *)n, "singleton class of an object");
+  sp_RbVal target = fx_eval(f, n->expression);
+  FxClass *k = fx_class_value(target);
+  if (!k) fx_unsupported((const pm_node_t *)n, "singleton class of an object");
   if (!n->body) return sp_box_nil();
-  LUPE_FRAME(sf, &n->locals, target, k);
+  FX_FRAME(sf, &n->locals, target, k);
   sf.singleton_defs = 1;
-  return lupe_eval(&sf, n->body);
+  return fx_eval(&sf, n->body);
 }
 
-static sp_RbVal lupe_const_read(LupeFrame *f, const pm_node_t *n) {
+static sp_RbVal fx_const_read(FxFrame *f, const pm_node_t *n) {
   sp_RbVal v;
   if (PM_NODE_TYPE_P(n, PM_CONSTANT_READ_NODE)) {
-    sp_sym name = lupe_sym(((const pm_constant_read_node_t *)n)->name);
-    if (!lupe_const_lookup(f->cref, name, &v)) lupe_const_missing(sp_sym_to_s(name));
+    sp_sym name = fx_sym(((const pm_constant_read_node_t *)n)->name);
+    if (!fx_const_lookup(f->cref, name, &v)) fx_const_missing(sp_sym_to_s(name));
     return v;
   }
   const pm_constant_path_node_t *cp = (const pm_constant_path_node_t *)n;
-  sp_sym name = lupe_sym(cp->name);
-  LupeClass *scope = L.object;
+  sp_sym name = fx_sym(cp->name);
+  FxClass *scope = L.object;
   if (cp->parent) {
-    sp_RbVal pv = lupe_eval(f, cp->parent);
-    if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-    scope = lupe_class_value(pv);
+    sp_RbVal pv = fx_eval(f, cp->parent);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    scope = fx_class_value(pv);
     if (!scope) sp_raise_cls("TypeError", sp_sprintf("%s is not a class/module", sp_poly_inspect(pv)));
   }
-  if (!lupe_const_scoped(scope, name, &v)) lupe_const_missing(sp_sym_to_s(name));
+  if (!fx_const_scoped(scope, name, &v)) fx_const_missing(sp_sym_to_s(name));
   return v;
 }
 
 /* x op= v on a local, an ivar or an attribute: read, send op, write. */
-static sp_RbVal lupe_op(sp_RbVal cur, pm_constant_id_t op, sp_RbVal v) {
+static sp_RbVal fx_op(sp_RbVal cur, pm_constant_id_t op, sp_RbVal v) {
   SP_GC_ROOT_RBVAL(cur);
   SP_GC_ROOT_RBVAL(v);
-  return lupe_send(cur, sp_sym_to_s(lupe_sym(op)), 1, &v);
+  return fx_send(cur, sp_sym_to_s(fx_sym(op)), 1, &v);
 }
 
-static sp_RbVal lupe_call_op_write(LupeFrame *f, const pm_call_operator_write_node_t *n) {
+static sp_RbVal fx_call_op_write(FxFrame *f, const pm_call_operator_write_node_t *n) {
   SP_GC_SAVE();
-  if (!n->receiver) lupe_unsupported((const pm_node_t *)n, "attribute op-assign with no receiver");
-  sp_RbVal recv = lupe_eval(f, n->receiver);
+  if (!n->receiver) fx_unsupported((const pm_node_t *)n, "attribute op-assign with no receiver");
+  sp_RbVal recv = fx_eval(f, n->receiver);
   SP_GC_ROOT_RBVAL(recv);
-  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-  sp_RbVal cur = lupe_send(recv, sp_sym_to_s(lupe_sym(n->read_name)), 0, NULL);
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  sp_RbVal cur = fx_send(recv, sp_sym_to_s(fx_sym(n->read_name)), 0, NULL);
   SP_GC_ROOT_RBVAL(cur);
-  sp_RbVal v = lupe_eval(f, n->value);
-  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-  sp_RbVal nv = lupe_op(cur, n->binary_operator, v);
+  sp_RbVal v = fx_eval(f, n->value);
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  sp_RbVal nv = fx_op(cur, n->binary_operator, v);
   SP_GC_ROOT_RBVAL(nv);
-  lupe_send(recv, sp_sym_to_s(lupe_sym(n->write_name)), 1, &nv);
+  fx_send(recv, sp_sym_to_s(fx_sym(n->write_name)), 1, &nv);
   return nv;
 }
 
-static sp_RbVal lupe_index_op_write(LupeFrame *f, const pm_index_operator_write_node_t *n) {
+static sp_RbVal fx_index_op_write(FxFrame *f, const pm_index_operator_write_node_t *n) {
   SP_GC_SAVE();
-  if (n->block) lupe_unsupported((const pm_node_t *)n, "block");
-  sp_RbVal recv = lupe_eval(f, n->receiver);
+  if (n->block) fx_unsupported((const pm_node_t *)n, "block");
+  sp_RbVal recv = fx_eval(f, n->receiver);
   SP_GC_ROOT_RBVAL(recv);
-  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-  int argc = lupe_argc(n->arguments);
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  int argc = fx_argc(n->arguments);
   sp_RbVal argv[argc + 1];
-  if (!lupe_args(f, n->arguments, argc, argv)) return sp_box_nil();
-  sp_RbVal cur = lupe_send(recv, "[]", argc, argv);
+  if (!fx_args(f, n->arguments, argc, argv)) return sp_box_nil();
+  sp_RbVal cur = fx_send(recv, "[]", argc, argv);
   SP_GC_ROOT_RBVAL(cur);
-  sp_RbVal v = lupe_eval(f, n->value);
-  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-  argv[argc] = lupe_op(cur, n->binary_operator, v);
+  sp_RbVal v = fx_eval(f, n->value);
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  argv[argc] = fx_op(cur, n->binary_operator, v);
   _sp_gc_root_push((void **)((uintptr_t)&argv[argc] | (uintptr_t)1));
-  lupe_send(recv, "[]=", argc + 1, argv);
+  fx_send(recv, "[]=", argc + 1, argv);
   return argv[argc];
 }
 
@@ -1259,38 +1259,38 @@ static sp_RbVal lupe_index_op_write(LupeFrame *f, const pm_index_operator_write_
 
    As CRuby does, the receivers and the arguments of the targets come
    first, left to right, then the value, then each target takes its part.
-   lupe_mw_prepare keeps in pre what a target needs at its write: the
+   fx_mw_prepare keeps in pre what a target needs at its write: the
    receiver of `x.a`, the receiver and an Array of the arguments of
    `x[i]`, and the scope of `X::A` (nil for `::A`). */
-static int lupe_mw_prepare(LupeFrame *f, const pm_node_t *t, sp_PolyArray *pre);
+static int fx_mw_prepare(FxFrame *f, const pm_node_t *t, sp_PolyArray *pre);
 
-static int lupe_mw_prepare_list(LupeFrame *f, const pm_node_list_t *lefts, const pm_node_t *rest,
+static int fx_mw_prepare_list(FxFrame *f, const pm_node_list_t *lefts, const pm_node_t *rest,
                                 const pm_node_list_t *rights, sp_PolyArray *pre) {
   for (size_t i = 0; i < lefts->size; i++)
-    if (!lupe_mw_prepare(f, lefts->nodes[i], pre)) return 0;
-  if (rest && !lupe_mw_prepare(f, rest, pre)) return 0;
+    if (!fx_mw_prepare(f, lefts->nodes[i], pre)) return 0;
+  if (rest && !fx_mw_prepare(f, rest, pre)) return 0;
   for (size_t i = 0; i < rights->size; i++)
-    if (!lupe_mw_prepare(f, rights->nodes[i], pre)) return 0;
+    if (!fx_mw_prepare(f, rights->nodes[i], pre)) return 0;
   return 1;
 }
 
 /* Evaluates n into pre. */
-static int lupe_mw_keep(LupeFrame *f, const pm_node_t *n, sp_PolyArray *pre) {
+static int fx_mw_keep(FxFrame *f, const pm_node_t *n, sp_PolyArray *pre) {
   SP_GC_SAVE();
-  sp_RbVal v = n ? lupe_eval(f, n) : sp_box_nil();
+  sp_RbVal v = n ? fx_eval(f, n) : sp_box_nil();
   SP_GC_ROOT_RBVAL(v);
   sp_PolyArray_push(pre, v);
-  return L.ctl == LUPE_CTL_NONE;
+  return L.ctl == FX_CTL_NONE;
 }
 
 /* x[i]: the receiver, then an Array of the arguments. */
-static int lupe_mw_prepare_index(LupeFrame *f, const pm_index_target_node_t *x, sp_PolyArray *pre) {
+static int fx_mw_prepare_index(FxFrame *f, const pm_index_target_node_t *x, sp_PolyArray *pre) {
   SP_GC_SAVE();
-  if (x->block) lupe_unsupported((const pm_node_t *)x, "block");
-  if (!lupe_mw_keep(f, x->receiver, pre)) return 0;
-  int argc = lupe_argc(x->arguments);
+  if (x->block) fx_unsupported((const pm_node_t *)x, "block");
+  if (!fx_mw_keep(f, x->receiver, pre)) return 0;
+  int argc = fx_argc(x->arguments);
   sp_RbVal argv[argc > 0 ? argc : 1];
-  if (!lupe_args(f, x->arguments, argc, argv)) return 0;
+  if (!fx_args(f, x->arguments, argc, argv)) return 0;
   sp_PolyArray *a = sp_PolyArray_new();
   SP_GC_ROOT(a);
   for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
@@ -1298,36 +1298,36 @@ static int lupe_mw_prepare_index(LupeFrame *f, const pm_index_target_node_t *x, 
   return 1;
 }
 
-static int lupe_mw_prepare(LupeFrame *f, const pm_node_t *t, sp_PolyArray *pre) {
+static int fx_mw_prepare(FxFrame *f, const pm_node_t *t, sp_PolyArray *pre) {
   switch (PM_NODE_TYPE(t)) {
   case PM_CALL_TARGET_NODE:
-    return lupe_mw_keep(f, ((const pm_call_target_node_t *)t)->receiver, pre);
+    return fx_mw_keep(f, ((const pm_call_target_node_t *)t)->receiver, pre);
   case PM_INDEX_TARGET_NODE:
-    return lupe_mw_prepare_index(f, (const pm_index_target_node_t *)t, pre);
+    return fx_mw_prepare_index(f, (const pm_index_target_node_t *)t, pre);
   case PM_CONSTANT_PATH_TARGET_NODE:
-    return lupe_mw_keep(f, ((const pm_constant_path_target_node_t *)t)->parent, pre);
+    return fx_mw_keep(f, ((const pm_constant_path_target_node_t *)t)->parent, pre);
   case PM_MULTI_TARGET_NODE: {
     const pm_multi_target_node_t *mt = (const pm_multi_target_node_t *)t;
-    return lupe_mw_prepare_list(f, &mt->lefts, mt->rest, &mt->rights, pre);
+    return fx_mw_prepare_list(f, &mt->lefts, mt->rest, &mt->rights, pre);
   }
   case PM_SPLAT_NODE: {
     const pm_node_t *e = ((const pm_splat_node_t *)t)->expression;
-    return e ? lupe_mw_prepare(f, e, pre) : 1;
+    return e ? fx_mw_prepare(f, e, pre) : 1;
   }
   default:
     break;
   }
-  return L.ctl == LUPE_CTL_NONE;
+  return L.ctl == FX_CTL_NONE;
 }
 
 /* The elements that the targets take from v: an Array as it is, the
    to_ary of an object of the program, else [v]. */
-static sp_RbVal lupe_mw_array(sp_RbVal v) {
-  if (lupe_is_array_value(v)) return v;
+static sp_RbVal fx_mw_array(sp_RbVal v) {
+  if (fx_is_array_value(v)) return v;
   SP_GC_ROOT_RBVAL(v);
-  if (lupe_is_lupe_object(v) && lupe_find_method(lupe_class_of(v), sp_sym_intern("to_ary"))) {
-    sp_RbVal a = lupe_send(v, "to_ary", 0, NULL);
-    if (lupe_is_array_value(a)) return a;
+  if (fx_is_fx_object(v) && fx_find_method(fx_class_of(v), sp_sym_intern("to_ary"))) {
+    sp_RbVal a = fx_send(v, "to_ary", 0, NULL);
+    if (fx_is_array_value(a)) return a;
     if (a.tag != SP_TAG_NIL) {
       const char *cn = sp_poly_class_name(v);
       sp_raise_cls("TypeError", sp_sprintf("can't convert %s to Array (%s#to_ary gives %s)", cn, cn,
@@ -1340,37 +1340,37 @@ static sp_RbVal lupe_mw_array(sp_RbVal v) {
   return sp_box_poly_array(a);
 }
 
-static void lupe_mw_split(LupeFrame *f, const pm_node_list_t *lefts, const pm_node_t *rest,
+static void fx_mw_split(FxFrame *f, const pm_node_list_t *lefts, const pm_node_t *rest,
                           const pm_node_list_t *rights, sp_RbVal arr, sp_PolyArray *pre, sp_int *pi);
 
-/* Writes v to the target t, with what lupe_mw_prepare kept for it. */
-static void lupe_mw_assign(LupeFrame *f, const pm_node_t *t, sp_RbVal v, sp_PolyArray *pre, sp_int *pi) {
+/* Writes v to the target t, with what fx_mw_prepare kept for it. */
+static void fx_mw_assign(FxFrame *f, const pm_node_t *t, sp_RbVal v, sp_PolyArray *pre, sp_int *pi) {
   SP_GC_ROOT_RBVAL(v);
   switch (PM_NODE_TYPE(t)) {
   case PM_LOCAL_VARIABLE_TARGET_NODE: {
     const pm_local_variable_target_node_t *x = (const pm_local_variable_target_node_t *)t;
-    *lupe_local(f, t, x->name, x->depth) = v;
+    *fx_local(f, t, x->name, x->depth) = v;
     return;
   }
   case PM_INSTANCE_VARIABLE_TARGET_NODE:
-    lupe_ivar_set(f->self, lupe_sym(((const pm_instance_variable_target_node_t *)t)->name), v);
+    fx_ivar_set(f->self, fx_sym(((const pm_instance_variable_target_node_t *)t)->name), v);
     return;
   case PM_GLOBAL_VARIABLE_TARGET_NODE:
-    lupe_gvar_set(sp_sym_to_s(lupe_sym(((const pm_global_variable_target_node_t *)t)->name)), v);
+    fx_gvar_set(sp_sym_to_s(fx_sym(((const pm_global_variable_target_node_t *)t)->name)), v);
     return;
   case PM_CONSTANT_TARGET_NODE:
-    lupe_const_set(f->cref, lupe_sym(((const pm_constant_target_node_t *)t)->name), v);
+    fx_const_set(f->cref, fx_sym(((const pm_constant_target_node_t *)t)->name), v);
     return;
   case PM_CONSTANT_PATH_TARGET_NODE: {
     sp_RbVal sv = pre->data[(*pi)++];
-    LupeClass *scope = sv.tag == SP_TAG_NIL ? L.object : lupe_class_value(sv);
+    FxClass *scope = sv.tag == SP_TAG_NIL ? L.object : fx_class_value(sv);
     if (!scope) sp_raise_cls("TypeError", sp_sprintf("%s is not a class/module", sp_poly_inspect(sv)));
-    lupe_const_set(scope, lupe_sym(((const pm_constant_path_target_node_t *)t)->name), v);
+    fx_const_set(scope, fx_sym(((const pm_constant_path_target_node_t *)t)->name), v);
     return;
   }
   case PM_CALL_TARGET_NODE: {
     sp_RbVal recv = pre->data[(*pi)++];
-    lupe_send(recv, sp_sym_to_s(lupe_sym(((const pm_call_target_node_t *)t)->name)), 1, &v);
+    fx_send(recv, sp_sym_to_s(fx_sym(((const pm_call_target_node_t *)t)->name)), 1, &v);
     return;
   }
   case PM_INDEX_TARGET_NODE: {
@@ -1379,55 +1379,55 @@ static void lupe_mw_assign(LupeFrame *f, const pm_node_t *t, sp_RbVal v, sp_Poly
     sp_RbVal argv[argc + 1];
     for (sp_int i = 0; i < argc; i++) argv[i] = sp_poly_arr_get(args, i);
     argv[argc] = v;
-    lupe_send(recv, "[]=", (int)argc + 1, argv);
+    fx_send(recv, "[]=", (int)argc + 1, argv);
     return;
   }
   case PM_MULTI_TARGET_NODE: {
     const pm_multi_target_node_t *mt = (const pm_multi_target_node_t *)t;
-    lupe_mw_split(f, &mt->lefts, mt->rest, &mt->rights, lupe_mw_array(v), pre, pi);
+    fx_mw_split(f, &mt->lefts, mt->rest, &mt->rights, fx_mw_array(v), pre, pi);
     return;
   }
   default:
-    lupe_unsupported(t, "target of a multiple assignment");
+    fx_unsupported(t, "target of a multiple assignment");
   }
 }
 
 /* The targets take the elements of arr: the lefts from the start, the
    rights from the end, and a splat the rest. */
-static void lupe_mw_split(LupeFrame *f, const pm_node_list_t *lefts, const pm_node_t *rest,
+static void fx_mw_split(FxFrame *f, const pm_node_list_t *lefts, const pm_node_t *rest,
                           const pm_node_list_t *rights, sp_RbVal arr, sp_PolyArray *pre, sp_int *pi) {
   SP_GC_ROOT_RBVAL(arr);
   sp_int len = sp_poly_length(arr), nl = (sp_int)lefts->size, nr = (sp_int)rights->size;
-  for (sp_int i = 0; i < nl && L.ctl == LUPE_CTL_NONE; i++)
-    lupe_mw_assign(f, lefts->nodes[i], i < len ? sp_poly_arr_get(arr, i) : sp_box_nil(), pre, pi);
+  for (sp_int i = 0; i < nl && L.ctl == FX_CTL_NONE; i++)
+    fx_mw_assign(f, lefts->nodes[i], i < len ? sp_poly_arr_get(arr, i) : sp_box_nil(), pre, pi);
   sp_int rstart = len - nr > nl ? len - nr : nl;
   if (rest && PM_NODE_TYPE_P(rest, PM_SPLAT_NODE) && ((const pm_splat_node_t *)rest)->expression) {
     sp_PolyArray *a = sp_PolyArray_new();
     SP_GC_ROOT(a);
     for (sp_int i = nl; i < rstart; i++) sp_PolyArray_push(a, sp_poly_arr_get(arr, i));
-    if (L.ctl == LUPE_CTL_NONE)
-      lupe_mw_assign(f, ((const pm_splat_node_t *)rest)->expression, sp_box_poly_array(a), pre, pi);
+    if (L.ctl == FX_CTL_NONE)
+      fx_mw_assign(f, ((const pm_splat_node_t *)rest)->expression, sp_box_poly_array(a), pre, pi);
   }
-  for (sp_int i = 0; i < nr && L.ctl == LUPE_CTL_NONE; i++)
-    lupe_mw_assign(f, rights->nodes[i], rstart + i < len ? sp_poly_arr_get(arr, rstart + i) : sp_box_nil(), pre, pi);
+  for (sp_int i = 0; i < nr && L.ctl == FX_CTL_NONE; i++)
+    fx_mw_assign(f, rights->nodes[i], rstart + i < len ? sp_poly_arr_get(arr, rstart + i) : sp_box_nil(), pre, pi);
 }
 
 /* a, b = v: answers v. */
-static sp_RbVal lupe_multi_write(LupeFrame *f, const pm_multi_write_node_t *w) {
+static sp_RbVal fx_multi_write(FxFrame *f, const pm_multi_write_node_t *w) {
   SP_GC_SAVE();
   sp_PolyArray *pre = sp_PolyArray_new();
   SP_GC_ROOT(pre);
-  if (!lupe_mw_prepare_list(f, &w->lefts, w->rest, &w->rights, pre)) return sp_box_nil();
-  sp_RbVal v = lupe_eval(f, w->value);
-  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+  if (!fx_mw_prepare_list(f, &w->lefts, w->rest, &w->rights, pre)) return sp_box_nil();
+  sp_RbVal v = fx_eval(f, w->value);
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
   SP_GC_ROOT_RBVAL(v);
   sp_int pi = 0;
-  lupe_mw_split(f, &w->lefts, w->rest, &w->rights, lupe_mw_array(v), pre, &pi);
+  fx_mw_split(f, &w->lefts, w->rest, &w->rights, fx_mw_array(v), pre, &pi);
   return v;
 }
 
 /* x[i] ||= v and x[i] &&= v: read, test, and write only when needed. */
-static sp_RbVal lupe_index_logic_write(LupeFrame *f, const pm_node_t *n) {
+static sp_RbVal fx_index_logic_write(FxFrame *f, const pm_node_t *n) {
   SP_GC_SAVE();
   int is_or = PM_NODE_TYPE_P(n, PM_INDEX_OR_WRITE_NODE);
   const pm_node_t *recv_n, *value, *block;
@@ -1439,40 +1439,40 @@ static sp_RbVal lupe_index_logic_write(LupeFrame *f, const pm_node_t *n) {
     const pm_index_and_write_node_t *w = (const pm_index_and_write_node_t *)n;
     recv_n = w->receiver, args = w->arguments, value = w->value, block = (const pm_node_t *)w->block;
   }
-  if (block) lupe_unsupported(n, "block");
-  sp_RbVal recv = lupe_eval(f, recv_n);
+  if (block) fx_unsupported(n, "block");
+  sp_RbVal recv = fx_eval(f, recv_n);
   SP_GC_ROOT_RBVAL(recv);
-  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-  int argc = lupe_argc(args);
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  int argc = fx_argc(args);
   sp_RbVal argv[argc + 1];
-  if (!lupe_args(f, args, argc, argv)) return sp_box_nil();
-  sp_RbVal cur = lupe_send(recv, "[]", argc, argv);
+  if (!fx_args(f, args, argc, argv)) return sp_box_nil();
+  sp_RbVal cur = fx_send(recv, "[]", argc, argv);
   if (sp_poly_truthy(cur) == is_or) return cur;
-  argv[argc] = lupe_eval(f, value);
+  argv[argc] = fx_eval(f, value);
   _sp_gc_root_push((void **)((uintptr_t)&argv[argc] | (uintptr_t)1));
-  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-  lupe_send(recv, "[]=", argc + 1, argv);
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  fx_send(recv, "[]=", argc + 1, argv);
   return argv[argc];
 }
 
 /* ---- exceptions ---- */
 
 /* Pushes a rescue handler and pops it, as the code that spinel emits
-   does (src/codegen: begin/rescue). LUPE_TRY_LANDED restores the GC roots
-   and the rescue stack at a landing, and cuts the frame stack of Lupe,
+   does (src/codegen: begin/rescue). FX_TRY_LANDED restores the GC roots
+   and the rescue stack at a landing, and cuts the frame stack of Fluxpinel,
    since a raise skips the cleanup of the frames that it unwinds. */
-#define LUPE_TRY_PUSH()                                                                \
+#define FX_TRY_PUSH()                                                                \
   sp_exc_check_depth();                                                                \
   sp_exc_rootmark[sp_exc_top] = sp_gc_nroots;                                          \
   sp_rescue_mark[sp_exc_top] = sp_rescue_sp;                                           \
   sp_exc_msg[sp_exc_top] = 0;                                                          \
   sp_exc_obj[sp_exc_top] = 0;                                                          \
   sp_exc_top++
-#define LUPE_TRY_LANDED(d)                                                             \
+#define FX_TRY_LANDED(d)                                                             \
   sp_exc_top--;                                                                        \
   sp_gc_nroots = sp_exc_rootmark[sp_exc_top];                                          \
   sp_rescue_sp = sp_rescue_mark[sp_exc_top];                                           \
-  lupe_fs()->depth = (d);                                                              \
+  fx_fs()->depth = (d);                                                              \
   L.kwhash = NULL
 
 /* The exception that a handler caught: its class name, message and object
@@ -1480,16 +1480,16 @@ static sp_RbVal lupe_index_logic_write(LupeFrame *f, const pm_node_t *n) {
 typedef struct {
   const char *cls, *msg;
   void *obj;
-} LupeCaught;
+} FxCaught;
 
-static LupeCaught lupe_caught(void) {
-  return (LupeCaught){ (const char *)sp_last_exc_cls, sp_exc_msg[sp_exc_top], sp_exc_obj[sp_exc_top] };
+static FxCaught fx_caught(void) {
+  return (FxCaught){ (const char *)sp_last_exc_cls, sp_exc_msg[sp_exc_top], sp_exc_obj[sp_exc_top] };
 }
 
 /* The object of a caught exception, made now when the runtime raised by
    name. It takes as its cause the exception that a rescue handled when
    the raise happened (sp_pending_cause), as the code of spinel does. */
-static sp_Exception *lupe_caught_obj(LupeCaught c) {
+static sp_Exception *fx_caught_obj(FxCaught c) {
   sp_Exception *e = c.obj ? (sp_Exception *)c.obj : sp_exc_new_for_catch(c.cls, c.msg);
   if (!e->cause) {
     sp_gc_wb(e);
@@ -1500,27 +1500,27 @@ static sp_Exception *lupe_caught_obj(LupeCaught c) {
 }
 
 /* Raises a caught exception again, the same object. */
-static __attribute__((noreturn)) void lupe_reraise(LupeCaught c) {
+static __attribute__((noreturn)) void fx_reraise(FxCaught c) {
   sp_pending_exc_obj = c.obj;
   sp_bt_keep = 1;
   sp_raise_cls(c.cls, c.msg);
 }
 
 /* Binds `=> target` of a rescue clause. */
-static void lupe_rescue_bind(LupeFrame *f, const pm_node_t *t, sp_RbVal v) {
+static void fx_rescue_bind(FxFrame *f, const pm_node_t *t, sp_RbVal v) {
   if (PM_NODE_TYPE_P(t, PM_LOCAL_VARIABLE_TARGET_NODE)) {
     const pm_local_variable_target_node_t *l = (const pm_local_variable_target_node_t *)t;
-    *lupe_local(f, t, l->name, l->depth) = v;
+    *fx_local(f, t, l->name, l->depth) = v;
   } else if (PM_NODE_TYPE_P(t, PM_INSTANCE_VARIABLE_TARGET_NODE)) {
-    lupe_ivar_set(f->self, lupe_sym(((const pm_instance_variable_target_node_t *)t)->name), v);
+    fx_ivar_set(f->self, fx_sym(((const pm_instance_variable_target_node_t *)t)->name), v);
   } else {
-    lupe_unsupported(t, "rescue target");
+    fx_unsupported(t, "rescue target");
   }
 }
 
 /* Whether a rescue clause takes the exception ev of class cls. A clause
    with no class takes a StandardError. */
-static int lupe_rescue_takes(LupeFrame *f, const pm_rescue_node_t *r, const char *cls, sp_RbVal ev) {
+static int fx_rescue_takes(FxFrame *f, const pm_rescue_node_t *r, const char *cls, sp_RbVal ev) {
   /* Fiber#kill unwinds with this: ensure clauses run, no rescue takes it */
   if (!strcmp(cls, "FiberKillSignal")) return 0;
   if (r->exceptions.size == 0) return sp_exc_is_standard_error(cls);
@@ -1529,406 +1529,406 @@ static int lupe_rescue_takes(LupeFrame *f, const pm_rescue_node_t *r, const char
   for (size_t i = 0; i < r->exceptions.size; i++) {
     const pm_node_t *x = r->exceptions.nodes[i];
     if (PM_NODE_TYPE_P(x, PM_SPLAT_NODE)) {
-      t = lupe_eval(f, ((const pm_splat_node_t *)x)->expression);
-      for (sp_int j = 0; lupe_is_array_value(t) && j < sp_poly_length(t); j++)
-        if (lupe_exc_matches(cls, ev, sp_poly_arr_get(t, j))) return 1;
+      t = fx_eval(f, ((const pm_splat_node_t *)x)->expression);
+      for (sp_int j = 0; fx_is_array_value(t) && j < sp_poly_length(t); j++)
+        if (fx_exc_matches(cls, ev, sp_poly_arr_get(t, j))) return 1;
       continue;
     }
-    t = lupe_eval(f, x);
-    if (lupe_exc_matches(cls, ev, t)) return 1;
+    t = fx_eval(f, x);
+    if (fx_exc_matches(cls, ev, t)) return 1;
   }
   return 0;
 }
 
 /* The rescue clauses for a caught exception: the first that takes it
    runs, else the exception goes on. Sets *retry for a retry. */
-static sp_RbVal lupe_rescue_run(LupeFrame *f, const pm_rescue_node_t *r, LupeCaught c, int *retry) {
-  sp_Exception *e = lupe_caught_obj(c);
+static sp_RbVal fx_rescue_run(FxFrame *f, const pm_rescue_node_t *r, FxCaught c, int *retry) {
+  sp_Exception *e = fx_caught_obj(c);
   SP_GC_ROOT(e);
-  sp_RbVal ev = lupe_exc_box(e);
+  sp_RbVal ev = fx_exc_box(e);
   SP_GC_ROOT_RBVAL(ev);
   for (; r; r = r->subsequent) {
-    if (!lupe_rescue_takes(f, r, c.cls, ev)) continue;
+    if (!fx_rescue_takes(f, r, c.cls, ev)) continue;
     sp_rescue_push(e);
-    if (r->reference) lupe_rescue_bind(f, r->reference, ev);
-    sp_RbVal v = lupe_eval_stmts(f, r->statements);
+    if (r->reference) fx_rescue_bind(f, r->reference, ev);
+    sp_RbVal v = fx_eval_stmts(f, r->statements);
     sp_rescue_sp--;
-    if (L.ctl == LUPE_CTL_RETRY) {
-      L.ctl = LUPE_CTL_NONE;
+    if (L.ctl == FX_CTL_RETRY) {
+      L.ctl = FX_CTL_NONE;
       *retry = 1;
     }
     return v;
   }
   c.obj = e;
-  lupe_reraise(c);
+  fx_reraise(c);
 }
 
 /* begin/rescue/else: the body under a handler, then the else clause when
    nothing was raised. A rescue clause runs outside the handler, so a raise
    in it goes to the next handler out. */
-static sp_RbVal lupe_rescue(LupeFrame *f, const pm_begin_node_t *b) {
+static sp_RbVal fx_rescue(FxFrame *f, const pm_begin_node_t *b) {
   SP_GC_SAVE();
   sp_RbVal v = sp_box_nil();
   SP_GC_ROOT_RBVAL(v);
-  const int depth = lupe_fs()->depth;
+  const int depth = fx_fs()->depth;
 retry:
-  LUPE_TRY_PUSH();
+  FX_TRY_PUSH();
   if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
-    v = lupe_eval_stmts(f, b->statements);
+    v = fx_eval_stmts(f, b->statements);
     sp_exc_top--;
   } else {
-    LUPE_TRY_LANDED(depth);
+    FX_TRY_LANDED(depth);
     if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
-    LupeCaught c = lupe_caught();
+    FxCaught c = fx_caught();
     int again = 0;
-    v = lupe_rescue_run(f, b->rescue_clause, c, &again);
+    v = fx_rescue_run(f, b->rescue_clause, c, &again);
     if (again) goto retry;
     return v;
   }
-  if (L.ctl == LUPE_CTL_NONE && b->else_clause) v = lupe_eval(f, (const pm_node_t *)b->else_clause);
+  if (L.ctl == FX_CTL_NONE && b->else_clause) v = fx_eval(f, (const pm_node_t *)b->else_clause);
   return v;
 }
 
 /* begin/ensure: the ensure clause runs after the body, after a jump out of
    it, and after a raise, which then goes on. A jump in the ensure clause
    takes the place of the jump or the raise that was passing. */
-static sp_RbVal lupe_begin(LupeFrame *f, const pm_begin_node_t *b) {
-  if (!b->ensure_clause) return b->rescue_clause ? lupe_rescue(f, b) : lupe_eval_stmts(f, b->statements);
+static sp_RbVal fx_begin(FxFrame *f, const pm_begin_node_t *b) {
+  if (!b->ensure_clause) return b->rescue_clause ? fx_rescue(f, b) : fx_eval_stmts(f, b->statements);
   SP_GC_SAVE();
   sp_RbVal v = sp_box_nil();
   SP_GC_ROOT_RBVAL(v);
-  const int depth = lupe_fs()->depth;
-  LupeCaught c = { NULL, NULL, NULL };
+  const int depth = fx_fs()->depth;
+  FxCaught c = { NULL, NULL, NULL };
   sp_Exception *exc = NULL;
   SP_GC_ROOT(exc);
-  LUPE_TRY_PUSH();
+  FX_TRY_PUSH();
   if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
-    v = b->rescue_clause ? lupe_rescue(f, b) : lupe_eval_stmts(f, b->statements);
+    v = b->rescue_clause ? fx_rescue(f, b) : fx_eval_stmts(f, b->statements);
     sp_exc_top--;
   } else {
-    LUPE_TRY_LANDED(depth);
+    FX_TRY_LANDED(depth);
     if (sp_unwind_kind != SP_UNWIND_NONE) {
-      lupe_eval_stmts(f, b->ensure_clause->statements);
+      fx_eval_stmts(f, b->ensure_clause->statements);
       sp_unwind_resume();
     }
-    c = lupe_caught();
-    exc = lupe_caught_obj(c);
+    c = fx_caught();
+    exc = fx_caught_obj(c);
     c.obj = exc;
   }
   /* the jump that passes through the ensure clause */
-  LupeCtl ctl = L.ctl;
+  FxCtl ctl = L.ctl;
   sp_RbVal ctl_val = L.ctl_val;
   SP_GC_ROOT_RBVAL(ctl_val);
   const void *ctl_target = L.ctl_target;
-  L.ctl = LUPE_CTL_NONE;
+  L.ctl = FX_CTL_NONE;
   if (exc) sp_rescue_push(exc);
-  lupe_eval_stmts(f, b->ensure_clause->statements);
+  fx_eval_stmts(f, b->ensure_clause->statements);
   if (exc) sp_rescue_sp--;
-  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
   L.ctl = ctl;
   L.ctl_val = ctl_val;
   L.ctl_target = ctl_target;
-  if (exc) lupe_reraise(c);
+  if (exc) fx_reraise(c);
   return v;
 }
 
 /* Kernel#loop: a StopIteration ends the loop, as Enumerator#next raises
    it at the end, and the loop answers its result. Any other exception
    goes on. */
-static sp_RbVal lupe_loop(const LupeBlock *blk) {
+static sp_RbVal fx_loop(const FxBlock *blk) {
   SP_GC_SAVE();
-  const int depth = lupe_fs()->depth;
-  LUPE_TRY_PUSH();
+  const int depth = fx_fs()->depth;
+  FX_TRY_PUSH();
   if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
     for (;;) {
-      lupe_yield(blk, 0, NULL);
-      if (L.ctl != LUPE_CTL_NONE) break;
+      fx_yield(blk, 0, NULL);
+      if (L.ctl != FX_CTL_NONE) break;
     }
     sp_exc_top--;
     return sp_box_nil();
   }
-  LUPE_TRY_LANDED(depth);
-  LupeCaught c = lupe_caught();
-  if (!sp_exc_cls_matches(c.cls, "StopIteration")) lupe_reraise(c);
-  return sp_exc_result(lupe_caught_obj(c));
+  FX_TRY_LANDED(depth);
+  FxCaught c = fx_caught();
+  if (!sp_exc_cls_matches(c.cls, "StopIteration")) fx_reraise(c);
+  return sp_exc_result(fx_caught_obj(c));
 }
 
 /* expr rescue fallback: a StandardError from expr gives fallback. */
-static sp_RbVal lupe_rescue_modifier(LupeFrame *f, const pm_rescue_modifier_node_t *n) {
+static sp_RbVal fx_rescue_modifier(FxFrame *f, const pm_rescue_modifier_node_t *n) {
   SP_GC_SAVE();
   sp_RbVal v = sp_box_nil();
   SP_GC_ROOT_RBVAL(v);
-  const int depth = lupe_fs()->depth;
-  LUPE_TRY_PUSH();
+  const int depth = fx_fs()->depth;
+  FX_TRY_PUSH();
   if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
-    v = lupe_eval(f, n->expression);
+    v = fx_eval(f, n->expression);
     sp_exc_top--;
     return v;
   }
-  LUPE_TRY_LANDED(depth);
+  FX_TRY_LANDED(depth);
   if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
-  LupeCaught c = lupe_caught();
-  if (!sp_exc_is_standard_error(c.cls) || !strcmp(c.cls, "FiberKillSignal")) lupe_reraise(c);
+  FxCaught c = fx_caught();
+  if (!sp_exc_is_standard_error(c.cls) || !strcmp(c.cls, "FiberKillSignal")) fx_reraise(c);
   /* $! is the exception while the fallback runs */
-  sp_Exception *e = lupe_caught_obj(c);
+  sp_Exception *e = fx_caught_obj(c);
   SP_GC_ROOT(e);
   sp_rescue_push(e);
-  v = lupe_eval(f, n->rescue_expression);
+  v = fx_eval(f, n->rescue_expression);
   sp_rescue_sp--;
   return v;
 }
 
 /* ---- the evaluator ---- */
 
-static sp_RbVal lupe_eval(LupeFrame *f, const pm_node_t *n) {
+static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
   switch (PM_NODE_TYPE(n)) {
   case PM_STATEMENTS_NODE:
-    return lupe_eval_stmts(f, (const pm_statements_node_t *)n);
+    return fx_eval_stmts(f, (const pm_statements_node_t *)n);
   case PM_PARENTHESES_NODE: {
     const pm_node_t *b = ((const pm_parentheses_node_t *)n)->body;
-    return b ? lupe_eval(f, b) : sp_box_nil();
+    return b ? fx_eval(f, b) : sp_box_nil();
   }
   case PM_INTEGER_NODE:
-    return lupe_integer(n, &((const pm_integer_node_t *)n)->value);
+    return fx_integer(n, &((const pm_integer_node_t *)n)->value);
   case PM_FLOAT_NODE:
     return sp_box_float(((const pm_float_node_t *)n)->value);
   case PM_STRING_NODE: {
     const pm_string_t *s = &((const pm_string_node_t *)n)->unescaped;
-    return lupe_new_string(pm_string_source(s), pm_string_length(s));
+    return fx_new_string(pm_string_source(s), pm_string_length(s));
   }
   case PM_INTERPOLATED_STRING_NODE:
-    return lupe_interpolate(f, &((const pm_interpolated_string_node_t *)n)->parts);
+    return fx_interpolate(f, &((const pm_interpolated_string_node_t *)n)->parts);
   case PM_SYMBOL_NODE: {
     const pm_string_t *s = &((const pm_symbol_node_t *)n)->unescaped;
-    return sp_box_sym(lupe_sym_intern_n((const char *)pm_string_source(s), pm_string_length(s)));
+    return sp_box_sym(fx_sym_intern_n((const char *)pm_string_source(s), pm_string_length(s)));
   }
   case PM_TRUE_NODE: return sp_box_bool(1);
   case PM_FALSE_NODE: return sp_box_bool(0);
   case PM_NIL_NODE: return sp_box_nil();
   case PM_ARRAY_NODE:
-    return lupe_array(f, (const pm_array_node_t *)n);
+    return fx_array(f, (const pm_array_node_t *)n);
   case PM_LOCAL_VARIABLE_READ_NODE: {
     const pm_local_variable_read_node_t *r = (const pm_local_variable_read_node_t *)n;
-    return *lupe_local(f, n, r->name, r->depth);
+    return *fx_local(f, n, r->name, r->depth);
   }
   case PM_LOCAL_VARIABLE_WRITE_NODE: {
     const pm_local_variable_write_node_t *w = (const pm_local_variable_write_node_t *)n;
-    sp_RbVal v = lupe_eval(f, w->value);
-    if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-    *lupe_local(f, n, w->name, w->depth) = v;
+    sp_RbVal v = fx_eval(f, w->value);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    *fx_local(f, n, w->name, w->depth) = v;
     return v;
   }
   case PM_LOCAL_VARIABLE_OPERATOR_WRITE_NODE: {
     const pm_local_variable_operator_write_node_t *w = (const pm_local_variable_operator_write_node_t *)n;
     /* the operand can make a Proc, which moves the slots: look up after */
-    sp_RbVal v = lupe_eval(f, w->value);
-    if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+    sp_RbVal v = fx_eval(f, w->value);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
     SP_GC_ROOT_RBVAL(v);
-    sp_RbVal r = lupe_send(*lupe_local(f, n, w->name, w->depth), sp_sym_to_s(lupe_sym(w->binary_operator)), 1, &v);
-    return *lupe_local(f, n, w->name, w->depth) = r;
+    sp_RbVal r = fx_send(*fx_local(f, n, w->name, w->depth), sp_sym_to_s(fx_sym(w->binary_operator)), 1, &v);
+    return *fx_local(f, n, w->name, w->depth) = r;
   }
   case PM_AND_NODE: {
     const pm_and_node_t *a = (const pm_and_node_t *)n;
-    sp_RbVal l = lupe_eval(f, a->left);
-    if (L.ctl != LUPE_CTL_NONE || !sp_poly_truthy(l)) return l;
-    return lupe_eval(f, a->right);
+    sp_RbVal l = fx_eval(f, a->left);
+    if (L.ctl != FX_CTL_NONE || !sp_poly_truthy(l)) return l;
+    return fx_eval(f, a->right);
   }
   case PM_OR_NODE: {
     const pm_or_node_t *o = (const pm_or_node_t *)n;
-    sp_RbVal l = lupe_eval(f, o->left);
-    if (L.ctl != LUPE_CTL_NONE || sp_poly_truthy(l)) return l;
-    return lupe_eval(f, o->right);
+    sp_RbVal l = fx_eval(f, o->left);
+    if (L.ctl != FX_CTL_NONE || sp_poly_truthy(l)) return l;
+    return fx_eval(f, o->right);
   }
   case PM_IF_NODE: {
     const pm_if_node_t *i = (const pm_if_node_t *)n;
-    sp_RbVal c = lupe_eval(f, i->predicate);
-    if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-    if (sp_poly_truthy(c)) return lupe_eval_stmts(f, i->statements);
-    return i->subsequent ? lupe_eval(f, i->subsequent) : sp_box_nil();
+    sp_RbVal c = fx_eval(f, i->predicate);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    if (sp_poly_truthy(c)) return fx_eval_stmts(f, i->statements);
+    return i->subsequent ? fx_eval(f, i->subsequent) : sp_box_nil();
   }
   case PM_UNLESS_NODE: {
     const pm_unless_node_t *u = (const pm_unless_node_t *)n;
-    sp_RbVal c = lupe_eval(f, u->predicate);
-    if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-    if (!sp_poly_truthy(c)) return lupe_eval_stmts(f, u->statements);
-    return u->else_clause ? lupe_eval(f, (const pm_node_t *)u->else_clause) : sp_box_nil();
+    sp_RbVal c = fx_eval(f, u->predicate);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    if (!sp_poly_truthy(c)) return fx_eval_stmts(f, u->statements);
+    return u->else_clause ? fx_eval(f, (const pm_node_t *)u->else_clause) : sp_box_nil();
   }
   case PM_ELSE_NODE:
-    return lupe_eval_stmts(f, ((const pm_else_node_t *)n)->statements);
+    return fx_eval_stmts(f, ((const pm_else_node_t *)n)->statements);
   case PM_WHILE_NODE: {
     const pm_while_node_t *w = (const pm_while_node_t *)n;
-    if (PM_NODE_FLAG_P(n, PM_LOOP_FLAGS_BEGIN_MODIFIER)) lupe_unsupported(n, "begin...end while");
-    return lupe_while(f, w->predicate, w->statements, 0);
+    if (PM_NODE_FLAG_P(n, PM_LOOP_FLAGS_BEGIN_MODIFIER)) fx_unsupported(n, "begin...end while");
+    return fx_while(f, w->predicate, w->statements, 0);
   }
   case PM_UNTIL_NODE: {
     const pm_until_node_t *u = (const pm_until_node_t *)n;
-    if (PM_NODE_FLAG_P(n, PM_LOOP_FLAGS_BEGIN_MODIFIER)) lupe_unsupported(n, "begin...end until");
-    return lupe_while(f, u->predicate, u->statements, 1);
+    if (PM_NODE_FLAG_P(n, PM_LOOP_FLAGS_BEGIN_MODIFIER)) fx_unsupported(n, "begin...end until");
+    return fx_while(f, u->predicate, u->statements, 1);
   }
   case PM_RETURN_NODE:
-    return lupe_jump(f, LUPE_CTL_RETURN, ((const pm_return_node_t *)n)->arguments);
+    return fx_jump(f, FX_CTL_RETURN, ((const pm_return_node_t *)n)->arguments);
   case PM_BREAK_NODE:
-    return lupe_jump(f, LUPE_CTL_BREAK, ((const pm_break_node_t *)n)->arguments);
+    return fx_jump(f, FX_CTL_BREAK, ((const pm_break_node_t *)n)->arguments);
   case PM_NEXT_NODE:
-    return lupe_jump(f, LUPE_CTL_NEXT, ((const pm_next_node_t *)n)->arguments);
+    return fx_jump(f, FX_CTL_NEXT, ((const pm_next_node_t *)n)->arguments);
   case PM_DEF_NODE: {
     const pm_def_node_t *d = (const pm_def_node_t *)n;
-    lupe_define(f, d);
-    return sp_box_sym(lupe_sym(d->name));
+    fx_define(f, d);
+    return sp_box_sym(fx_sym(d->name));
   }
   case PM_ALIAS_METHOD_NODE: {
     const pm_alias_method_node_t *a = (const pm_alias_method_node_t *)n;
     if (!PM_NODE_TYPE_P(a->new_name, PM_SYMBOL_NODE) || !PM_NODE_TYPE_P(a->old_name, PM_SYMBOL_NODE))
-      lupe_unsupported(n, "alias of an interpolated name");
-    sp_RbVal to = lupe_eval(f, a->new_name), from = lupe_eval(f, a->old_name);
-    lupe_alias(f->cref, f->singleton_defs == 1, (sp_sym)to.v.i, (sp_sym)from.v.i);
+      fx_unsupported(n, "alias of an interpolated name");
+    sp_RbVal to = fx_eval(f, a->new_name), from = fx_eval(f, a->old_name);
+    fx_alias(f->cref, f->singleton_defs == 1, (sp_sym)to.v.i, (sp_sym)from.v.i);
     return sp_box_nil();
   }
   case PM_CALL_NODE:
-    return lupe_call(f, (const pm_call_node_t *)n);
+    return fx_call(f, (const pm_call_node_t *)n);
   case PM_CALL_OPERATOR_WRITE_NODE:
-    return lupe_call_op_write(f, (const pm_call_operator_write_node_t *)n);
+    return fx_call_op_write(f, (const pm_call_operator_write_node_t *)n);
   case PM_INDEX_OPERATOR_WRITE_NODE:
-    return lupe_index_op_write(f, (const pm_index_operator_write_node_t *)n);
+    return fx_index_op_write(f, (const pm_index_operator_write_node_t *)n);
   case PM_MULTI_WRITE_NODE:
-    return lupe_multi_write(f, (const pm_multi_write_node_t *)n);
+    return fx_multi_write(f, (const pm_multi_write_node_t *)n);
   case PM_SUPER_NODE: {
     const pm_super_node_t *s = (const pm_super_node_t *)n;
-    return lupe_super(f, n, s->arguments, 0, s->block);
+    return fx_super(f, n, s->arguments, 0, s->block);
   }
   case PM_FORWARDING_SUPER_NODE:
-    return lupe_super(f, n, NULL, 1, (const pm_node_t *)((const pm_forwarding_super_node_t *)n)->block);
+    return fx_super(f, n, NULL, 1, (const pm_node_t *)((const pm_forwarding_super_node_t *)n)->block);
   case PM_YIELD_NODE: {
     SP_GC_SAVE();
     const pm_arguments_node_t *args = ((const pm_yield_node_t *)n)->arguments;
     if (!f->block) sp_raise_cls("LocalJumpError", "no block given (yield)");
-    LUPE_ARGS(f, args, argc, argv, kw, ok);
+    FX_ARGS(f, args, argc, argv, kw, ok);
     if (!ok) return sp_box_nil();
     L.kwhash = kw;
-    sp_RbVal v = lupe_yield(f->block, argc, argv);
+    sp_RbVal v = fx_yield(f->block, argc, argv);
     L.kwhash = NULL;
     return v;
   }
   case PM_LAMBDA_NODE: {
-    LupeBlock b = { .node = n, .home = f, .serial = f->serial, .fs = f->fs, .depth = f->depth, .lambda = 1 };
-    return lupe_block_proc(&b);
+    FxBlock b = { .node = n, .home = f, .serial = f->serial, .fs = f->fs, .depth = f->depth, .lambda = 1 };
+    return fx_block_proc(&b);
   }
   case PM_IT_LOCAL_VARIABLE_READ_NODE:
     return *f->it;
   case PM_RANGE_NODE:
-    return lupe_range(f, (const pm_range_node_t *)n);
+    return fx_range(f, (const pm_range_node_t *)n);
   case PM_HASH_NODE:
-    return lupe_hash_lit(f, &((const pm_hash_node_t *)n)->elements);
+    return fx_hash_lit(f, &((const pm_hash_node_t *)n)->elements);
   case PM_KEYWORD_HASH_NODE:
-    return lupe_hash_lit(f, &((const pm_keyword_hash_node_t *)n)->elements);
+    return fx_hash_lit(f, &((const pm_keyword_hash_node_t *)n)->elements);
   case PM_INDEX_OR_WRITE_NODE:
   case PM_INDEX_AND_WRITE_NODE:
-    return lupe_index_logic_write(f, n);
+    return fx_index_logic_write(f, n);
   case PM_SELF_NODE:
     return f->self;
   case PM_CLASS_NODE: {
     const pm_class_node_t *c = (const pm_class_node_t *)n;
-    return lupe_class_def(f, c->constant_path, c->superclass, c->body, &c->locals, 0);
+    return fx_class_def(f, c->constant_path, c->superclass, c->body, &c->locals, 0);
   }
   case PM_MODULE_NODE: {
     const pm_module_node_t *m = (const pm_module_node_t *)n;
-    return lupe_class_def(f, m->constant_path, NULL, m->body, &m->locals, 1);
+    return fx_class_def(f, m->constant_path, NULL, m->body, &m->locals, 1);
   }
   case PM_SINGLETON_CLASS_NODE:
-    return lupe_singleton_class(f, (const pm_singleton_class_node_t *)n);
+    return fx_singleton_class(f, (const pm_singleton_class_node_t *)n);
   case PM_CONSTANT_READ_NODE:
   case PM_CONSTANT_PATH_NODE:
-    return lupe_const_read(f, n);
+    return fx_const_read(f, n);
   case PM_CONSTANT_WRITE_NODE: {
     const pm_constant_write_node_t *w = (const pm_constant_write_node_t *)n;
-    sp_RbVal v = lupe_eval(f, w->value);
-    if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-    lupe_const_set(f->cref, lupe_sym(w->name), v);
+    sp_RbVal v = fx_eval(f, w->value);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    fx_const_set(f->cref, fx_sym(w->name), v);
     return v;
   }
   case PM_CONSTANT_PATH_WRITE_NODE: {
     const pm_constant_path_write_node_t *w = (const pm_constant_path_write_node_t *)n;
-    LupeClass *scope;
+    FxClass *scope;
     sp_sym name;
-    lupe_const_target(f, (const pm_node_t *)w->target, &scope, &name);
-    sp_RbVal v = lupe_eval(f, w->value);
-    if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-    lupe_const_set(scope, name, v);
+    fx_const_target(f, (const pm_node_t *)w->target, &scope, &name);
+    sp_RbVal v = fx_eval(f, w->value);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    fx_const_set(scope, name, v);
     return v;
   }
   case PM_INSTANCE_VARIABLE_READ_NODE:
-    return lupe_ivar_get(f->self, lupe_sym(((const pm_instance_variable_read_node_t *)n)->name));
+    return fx_ivar_get(f->self, fx_sym(((const pm_instance_variable_read_node_t *)n)->name));
   case PM_INSTANCE_VARIABLE_WRITE_NODE: {
     const pm_instance_variable_write_node_t *w = (const pm_instance_variable_write_node_t *)n;
-    sp_RbVal v = lupe_eval(f, w->value);
-    if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-    lupe_ivar_set(f->self, lupe_sym(w->name), v);
+    sp_RbVal v = fx_eval(f, w->value);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    fx_ivar_set(f->self, fx_sym(w->name), v);
     return v;
   }
   case PM_INSTANCE_VARIABLE_OPERATOR_WRITE_NODE: {
     const pm_instance_variable_operator_write_node_t *w = (const pm_instance_variable_operator_write_node_t *)n;
-    sp_sym name = lupe_sym(w->name);
-    sp_RbVal v = lupe_eval(f, w->value);
-    if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-    sp_RbVal nv = lupe_op(lupe_ivar_get(f->self, name), w->binary_operator, v);
-    lupe_ivar_set(f->self, name, nv);
+    sp_sym name = fx_sym(w->name);
+    sp_RbVal v = fx_eval(f, w->value);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    sp_RbVal nv = fx_op(fx_ivar_get(f->self, name), w->binary_operator, v);
+    fx_ivar_set(f->self, name, nv);
     return nv;
   }
   case PM_INSTANCE_VARIABLE_OR_WRITE_NODE: {
     const pm_instance_variable_or_write_node_t *w = (const pm_instance_variable_or_write_node_t *)n;
-    sp_sym name = lupe_sym(w->name);
-    sp_RbVal cur = lupe_ivar_get(f->self, name);
+    sp_sym name = fx_sym(w->name);
+    sp_RbVal cur = fx_ivar_get(f->self, name);
     if (sp_poly_truthy(cur)) return cur;
-    sp_RbVal v = lupe_eval(f, w->value);
-    if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-    lupe_ivar_set(f->self, name, v);
+    sp_RbVal v = fx_eval(f, w->value);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    fx_ivar_set(f->self, name, v);
     return v;
   }
   case PM_LOCAL_VARIABLE_OR_WRITE_NODE: {
     const pm_local_variable_or_write_node_t *w = (const pm_local_variable_or_write_node_t *)n;
-    sp_RbVal cur = *lupe_local(f, n, w->name, w->depth);
+    sp_RbVal cur = *fx_local(f, n, w->name, w->depth);
     if (sp_poly_truthy(cur)) return cur;
-    sp_RbVal v = lupe_eval(f, w->value);
-    if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-    *lupe_local(f, n, w->name, w->depth) = v;   /* after: the slots can move */
+    sp_RbVal v = fx_eval(f, w->value);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    *fx_local(f, n, w->name, w->depth) = v;   /* after: the slots can move */
     return v;
   }
   case PM_BEGIN_NODE:
-    return lupe_begin(f, (const pm_begin_node_t *)n);
+    return fx_begin(f, (const pm_begin_node_t *)n);
   case PM_RESCUE_MODIFIER_NODE:
-    return lupe_rescue_modifier(f, (const pm_rescue_modifier_node_t *)n);
+    return fx_rescue_modifier(f, (const pm_rescue_modifier_node_t *)n);
   case PM_RETRY_NODE:
-    L.ctl = LUPE_CTL_RETRY;
+    L.ctl = FX_CTL_RETRY;
     L.ctl_val = sp_box_nil();
     return sp_box_nil();
   case PM_GLOBAL_VARIABLE_READ_NODE: {
     /* $!: the exception that a rescue handles; $~: the last match */
-    const char *g = sp_sym_to_s(lupe_sym(((const pm_global_variable_read_node_t *)n)->name));
-    if (!strcmp(g, "$~")) return lupe_re_last();
-    if (strcmp(g, "$!")) return lupe_gvar_eval(f, n);
-    return sp_rescue_sp > 0 ? lupe_exc_box((sp_Exception *)sp_exc_handling[sp_rescue_sp - 1]) : sp_box_nil();
+    const char *g = sp_sym_to_s(fx_sym(((const pm_global_variable_read_node_t *)n)->name));
+    if (!strcmp(g, "$~")) return fx_re_last();
+    if (strcmp(g, "$!")) return fx_gvar_eval(f, n);
+    return sp_rescue_sp > 0 ? fx_exc_box((sp_Exception *)sp_exc_handling[sp_rescue_sp - 1]) : sp_box_nil();
   }
   case PM_GLOBAL_VARIABLE_WRITE_NODE:
   case PM_GLOBAL_VARIABLE_OPERATOR_WRITE_NODE:
   case PM_GLOBAL_VARIABLE_OR_WRITE_NODE:
   case PM_GLOBAL_VARIABLE_AND_WRITE_NODE:
-    return lupe_gvar_eval(f, n);
+    return fx_gvar_eval(f, n);
   case PM_REGULAR_EXPRESSION_NODE:
   case PM_INTERPOLATED_REGULAR_EXPRESSION_NODE:
-    return lupe_re_literal(f, n);
+    return fx_re_literal(f, n);
   case PM_SOURCE_FILE_NODE: {
     const pm_string_t *s = &((const pm_source_file_node_t *)n)->filepath;
-    return lupe_new_string(pm_string_source(s), pm_string_length(s));
+    return fx_new_string(pm_string_source(s), pm_string_length(s));
   }
   case PM_SOURCE_LINE_NODE:
-    return sp_box_int(lupe_line(n));
+    return sp_box_int(fx_line(n));
   case PM_MATCH_WRITE_NODE:
-    return lupe_re_match_write(f, (const pm_match_write_node_t *)n);
+    return fx_re_match_write(f, (const pm_match_write_node_t *)n);
   case PM_NUMBERED_REFERENCE_READ_NODE:
-    return lupe_re_nth((int)((const pm_numbered_reference_read_node_t *)n)->number);
+    return fx_re_nth((int)((const pm_numbered_reference_read_node_t *)n)->number);
   case PM_BACK_REFERENCE_READ_NODE:
-    return lupe_re_backref(sp_sym_to_s(lupe_sym(((const pm_back_reference_read_node_t *)n)->name)));
+    return fx_re_backref(sp_sym_to_s(fx_sym(((const pm_back_reference_read_node_t *)n)->name)));
   default:
-    lupe_unsupported(n, "node");
+    fx_unsupported(n, "node");
   }
 }

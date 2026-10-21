@@ -6,9 +6,9 @@
 
    spinel_rt.h declares hooks such as sp_class_to_s as static, so each TU
    that includes it must define them. This file therefore includes
-   lupe_tu.c, and the program is one TU. */
+   fx_tu.c, and the program is one TU. */
 
-#include "lupe_tu.c"
+#include "fx_tu.c"
 
 static int failures = 0;
 
@@ -76,7 +76,7 @@ static void test_exception(void) {
   check_str("message", msg, "String can't be coerced into Integer");
 }
 
-/* The overflow mode is a compile-time choice (spinel --int-overflow). Lupe
+/* The overflow mode is a compile-time choice (spinel --int-overflow). Fluxpinel
    must use the mode of the AOT build that it runs with. */
 static void test_overflow(void) {
   sp_RbVal big = sp_box_int((sp_int)1 << 62), four = sp_box_int(4);
@@ -120,7 +120,7 @@ static void test_gc(void) {
 
 static void m0_body(void) {
   SP_GC_SAVE();
-  lupe_tu_init();
+  fx_tu_init();
   test_scalars();
   test_containers();
   test_exception();

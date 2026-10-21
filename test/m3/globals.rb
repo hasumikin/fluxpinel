@@ -85,23 +85,23 @@ rescue NameError, SyntaxError => e
 end
 
 # ENV
-ENV["LUPE_T1"] = "one"
-p ENV["LUPE_T1"], ENV.fetch("LUPE_T1"), ENV.key?("LUPE_T1")
-p ENV["LUPE_NONE"], ENV.fetch("LUPE_NONE", "dflt"), ENV.fetch("LUPE_NONE") { |k| k.downcase }
+ENV["FX_T1"] = "one"
+p ENV["FX_T1"], ENV.fetch("FX_T1"), ENV.key?("FX_T1")
+p ENV["FX_NONE"], ENV.fetch("FX_NONE", "dflt"), ENV.fetch("FX_NONE") { |k| k.downcase }
 begin
-  ENV.fetch("LUPE_NONE")
+  ENV.fetch("FX_NONE")
 rescue KeyError => e
   puts e.message
 end
 ENV["RAILS_ENV"] = "test" if ENV["RAILS_ENV"].nil?
 p ENV["RAILS_ENV"]
-p ENV.delete("LUPE_T1"), ENV.delete("LUPE_T1"), ENV.key?("LUPE_T1")
-ENV.update("LUPE_T2" => "two", "LUPE_T3" => "three")
-p ENV.select { |k, _| k.start_with?("LUPE_T") }.sort_by { |k, _| k }
-ENV["LUPE_T2"] = nil
-p ENV.key?("LUPE_T2"), ENV.to_h["LUPE_T3"], ENV.class, ENV.to_s
+p ENV.delete("FX_T1"), ENV.delete("FX_T1"), ENV.key?("FX_T1")
+ENV.update("FX_T2" => "two", "FX_T3" => "three")
+p ENV.select { |k, _| k.start_with?("FX_T") }.sort_by { |k, _| k }
+ENV["FX_T2"] = nil
+p ENV.key?("FX_T2"), ENV.to_h["FX_T3"], ENV.class, ENV.to_s
 begin
-  ENV["LUPE_T4"] = 4
+  ENV["FX_T4"] = 4
 rescue TypeError => e
   puts e.message
 end

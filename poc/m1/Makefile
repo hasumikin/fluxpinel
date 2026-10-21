@@ -24,7 +24,7 @@ $(BUILD)/bop_gen_out.c: $(BUILD)/bop_gen
 	$(BUILD)/bop_gen $@ $(BUILD)/manifest.tsv
 
 $(BUILD)/off.flags: $(BUILD)/bop_gen_out.c $(TOOLS)/bop_report.rb
-	SPINEL=$(SPINEL) LUPE_TU_DIR=$(abspath $(TU_DIR)) ruby $(TOOLS)/bop_report.rb $(BUILD)
+	SPINEL=$(SPINEL) FX_TU_DIR=$(abspath $(TU_DIR)) ruby $(TOOLS)/bop_report.rb $(BUILD)
 
 report: $(BUILD)/off.flags
 

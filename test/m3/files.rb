@@ -18,7 +18,7 @@ class Named
 end
 
 dir = "/tmp"
-a = File.join(dir, "lupe_files_a.txt")
+a = File.join(dir, "fx_files_a.txt")
 t("join") { [File.join("a", "b"), File.join("a/", "/b"), File.join("a", ["b", ["c"]]), File.join, File.join("x")] }
 t("join to_path") { File.join(Where.new("w"), Named.new) }
 t("join nil") { File.join("a", nil) }
@@ -31,10 +31,10 @@ t("write perm") { [File.write(a, "x", perm: 0o600), File.read(a)] }
 t("binwrite") { [File.binwrite(a, "\x00\x01"), File.binread(a).bytes, File.binread(a).encoding] }
 t("read") { File.write(a, "0123456789"); [File.read(a, 3), File.read(a, 3, 5), File.read(a, nil, 8), File.read(a).encoding] }
 t("read to_path") { File.read(Where.new(a)) }
-t("read missing") { File.read(File.join(dir, "lupe_files_none")) }
+t("read missing") { File.read(File.join(dir, "fx_files_none")) }
 t("predicates") do
   [File.exist?(a), File.file?(a), File.directory?(a), File.directory?(dir), File.file?(dir),
-   File.exist?(dir + "/lupe_files_z")]
+   File.exist?(dir + "/fx_files_z")]
 end
 t("names") do
   [File.basename(a), File.basename(a, ".txt"), File.basename(a, ".*"), File.dirname("/x/y/z"), File.extname(a),
@@ -42,7 +42,7 @@ t("names") do
 end
 t("expand") { [File.expand_path("b", "/a"), File.expand_path("../c", "/a/b"), File.absolute_path("/q/./r")] }
 t("respond_to?") { [File.respond_to?(:join), File.respond_to?(:write), File.respond_to?(:nope)] }
-b = File.join(dir, "lupe_files_b.txt")
+b = File.join(dir, "fx_files_b.txt")
 File.write(b, "")
 t("delete") { [File.delete(a, b), File.exist?(a), File.exist?(b)] }
 t("delete missing") { File.unlink(a) }
