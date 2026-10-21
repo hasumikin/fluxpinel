@@ -70,14 +70,49 @@ static int lupe_kind_fits(unsigned long long mask, sp_RbVal v) {
   return (mask >> k & 1) || (mask >> LUPE_TY_POLY & 1);
 }
 
+/* The rows of the generated table with a wrapper, sorted by name. A
+   lookup reads only the rows of one name. */
+static const LupeBop **lupe_bop_index;
+static int lupe_bop_nindex;
+
+/* By name, then in the order of the table: the first row that fits wins. */
+static int lupe_bop_cmp(const void *a, const void *b) {
+  const LupeBop *x = *(const LupeBop *const *)a, *y = *(const LupeBop *const *)b;
+  int c = strcmp(x->name, y->name);
+  return c ? c : (x > y) - (x < y);
+}
+
+/* Builds the index at the start, before a Thread can run a lookup. */
+static void lupe_bop_init(void) {
+  lupe_bop_index = malloc(sizeof *lupe_bop_index * (lupe_bop_count + 1));
+  for (int i = 0; i < lupe_bop_count; i++)
+    if (lupe_bop_table[i].fn) lupe_bop_index[lupe_bop_nindex++] = &lupe_bop_table[i];
+  qsort(lupe_bop_index, lupe_bop_nindex, sizeof *lupe_bop_index, lupe_bop_cmp);
+}
+
+/* The first row of the index with this name; *n is the count of them. */
+static const LupeBop **lupe_bop_rows(const char *name, int *n) {
+  int lo = 0, hi = lupe_bop_nindex;
+  while (lo < hi) {
+    int mid = (lo + hi) / 2;
+    if (strcmp(lupe_bop_index[mid]->name, name) < 0) lo = mid + 1; else hi = mid;
+  }
+  int end = lo;
+  while (end < lupe_bop_nindex && !strcmp(lupe_bop_index[end]->name, name)) end++;
+  *n = end - lo;
+  return lupe_bop_index + lo;
+}
+
 /* The generated wrapper for this call, or NULL. */
 static lupe_bop_fn lupe_bop_find(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv) {
   const char *fam, *var;
   lupe_kind_of(recv, &fam, &var);
   if (!fam) return NULL;
-  for (int i = 0; i < lupe_bop_count; i++) {
-    const LupeBop *b = &lupe_bop_table[i];
-    if (!b->fn || strcmp(b->name, name) || strcmp(b->recv, fam) || strcmp(b->variant, var)) continue;
+  int n;
+  const LupeBop **rows = lupe_bop_rows(name, &n);
+  for (int i = 0; i < n; i++) {
+    const LupeBop *b = rows[i];
+    if (strcmp(b->recv, fam) || strcmp(b->variant, var)) continue;
     if (argc < b->argc_min || argc > b->argc_max) continue;
     if (argc > 0 && !lupe_kind_fits(b->arg0, argv[0])) continue;
     if (argc > 1 && !lupe_kind_fits(b->arg1, argv[1])) continue;
@@ -279,10 +314,10 @@ static int lupe_builtin_responds(sp_RbVal r, const char *name) {
   const char *fam, *var;
   lupe_kind_of(r, &fam, &var);
   if (!fam) return 0;
-  for (int i = 0; i < lupe_bop_count; i++) {
-    const LupeBop *b = &lupe_bop_table[i];
-    if (b->fn && !strcmp(b->name, name) && !strcmp(b->recv, fam) && !strcmp(b->variant, var)) return 1;
-  }
+  int n;
+  const LupeBop **rows = lupe_bop_rows(name, &n);
+  for (int i = 0; i < n; i++)
+    if (!strcmp(rows[i]->recv, fam) && !strcmp(rows[i]->variant, var)) return 1;
   return 0;
 }
 

@@ -26,6 +26,7 @@
 static void lupe_body(void) {
   SP_GC_SAVE();
   lupe_tu_init();
+  lupe_bop_init();
   L.ctl_val = sp_box_nil();
   _sp_gc_root_push((void **)((uintptr_t)&L.ctl_val | (uintptr_t)1));
   lupe_object_init();
