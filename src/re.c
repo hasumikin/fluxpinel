@@ -490,6 +490,19 @@ static int lupe_re_string(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     *out = lupe_re_aref(s, argc, argv);
     return 1;
   }
+  /* s[re] = v and s[re, n] = v: the span of the match, or of its group n */
+  if (LUPE_IS("[]=") && (argc == 2 || argc == 3)) {
+    lupe_str_mut(r, name);
+    sp_MatchData *m = lupe_re_md_set(sp_re_matchdata(pat, s));
+    SP_GC_ROOT(m);
+    if (!m) sp_raise_cls("IndexError", "regexp not matched");
+    sp_int g = argc == 3 ? sp_poly_arg_int_chk(argv[1]) : 0;
+    sp_oint b = sp_MatchData_begin(m, g), e = sp_MatchData_end(m, g);
+    if (b.nil) sp_raise_cls("IndexError", sp_sprintf("regexp group %lld not matched", (long long)g));
+    sp_poly_splice(r, b.v, e.v - b.v, argv[argc - 1]);
+    *out = argv[argc - 1];
+    return 1;
+  }
   /* index(re, pos) sets $~, as CRuby's does */
   if (LUPE_IS("index") && (argc == 1 || (argc == 2 && argv[1].tag == SP_TAG_INT))) {
     sp_MatchData *m = lupe_re_md_set(sp_re_matchdata_at(pat, s, argc == 2 ? argv[1].v.i : 0));

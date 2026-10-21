@@ -222,6 +222,8 @@ static int lupe_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
 static int lupe_array_hash(sp_RbVal r, const char *name, int argc, sp_RbVal *out);
 static int lupe_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
                            sp_RbVal *out);
+static int lupe_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
+                            sp_RbVal *out);
 static int lupe_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
                              sp_RbVal *out);
 static LupeClass *lupe_class_named(const char *name);

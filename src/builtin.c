@@ -233,7 +233,18 @@ static int lupe_builtin_responds(sp_RbVal r, const char *name) {
                                      "freeze", "itself", NULL };
   static const char *const num[] = { "+", "-", "*", "/", "%", "**", "<", "<=", ">", ">=", "-@", NULL };
   static const char *const bits[] = { "&", "|", "^", "<<", ">>", NULL };
-  static const char *const str[] = { "+", "*", "%", "length", "size", "start_with?", "end_with?", "split", NULL };
+  /* and the methods of string.c */
+  static const char *const str[] = { "+", "*", "%", "length", "size", "start_with?", "end_with?", "split", "dup",
+                                     "clone", "-@", "dedup", "freeze", "frozen?", "to_i", "lines", "clear",
+                                     "each_char", "each_byte", "each_line", "each_codepoint", "scrub!", "[]",
+                                     "slice", "getbyte", "unpack", "unpack1", "index", "rindex", "byteindex",
+                                     "byterindex", "partition", "rpartition", "chomp", "<<", "replace",
+                                     "force_encoding", "encode", "between?", "clamp", "center", "ljust", "rjust",
+                                     "setbyte", "insert", "[]=", "bytesplice", "slice!", "count", "delete",
+                                     "squeeze", "append_as_bytes", "concat", "prepend", "upcase!", "downcase!",
+                                     "capitalize!", "swapcase!", "strip!", "lstrip!", "rstrip!", "chomp!", "chop!",
+                                     "squeeze!", "tr!", "tr_s!", "delete!", "delete_prefix!", "delete_suffix!",
+                                     "succ!", "next!", "reverse!", NULL };
   /* and the methods of array.c */
   static const char *const ary[] = { "length", "size", "first", "last", "include?", "[]", "[]=", "<<", "push", "+",
                                      "empty?", "to_ary", "entries", "pop", "shift", "uniq", "flatten", "minmax",
@@ -316,6 +327,7 @@ static int lupe_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal
   if (lupe_array_core(recv, name, argc, argv, blk, out)) return 1;
   if (lupe_exc_core(recv, name, argc, argv, out)) return 1;
   if (lupe_re_call(recv, name, argc, argv, blk, out)) return 1;
+  if (lupe_string_core(recv, name, argc, argv, blk, out)) return 1;
   if (lupe_fiber_core(recv, name, argc, argv, blk, out)) return 1;
   if (!blk && lupe_io_core(recv, name, argc, argv, out)) return 1;
   if (lupe_iter(recv, name, argc, argv, blk, out)) return 1;

@@ -95,6 +95,9 @@ static int lupe_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *arg
     if (LUPE_IS("empty?")) { *out = sp_box_bool(sp_poly_length(r) == 0); return 1; }
     if (LUPE_IS("count")) { *out = sp_box_int(sp_poly_length(r)); return 1; }
     if (LUPE_IS("to_ary")) { *out = r; return 1; }
+    /* each and each_with_index with no block: an Enumerator */
+    if (LUPE_IS("each")) { *out = sp_box_obj(sp_Enumerator_new_from(r), SP_BUILTIN_ENUMERATOR); return 1; }
+    if (LUPE_IS("each_with_index")) { *out = sp_box_obj(sp_Enumerator_new_ewi(r, 0), SP_BUILTIN_ENUMERATOR); return 1; }
     if (LUPE_IS("entries")) { *out = sp_box_poly_array(sp_PolyArray_dup(sp_poly_to_poly_array(r))); return 1; }
     if (LUPE_IS("pop") || LUPE_IS("shift")) {
       sp_poly_array_recv(r, name, 1);

@@ -14,6 +14,7 @@
 #include "iter.c"
 #include "hash.c"
 #include "array.c"
+#include "string.c"
 #include "exc.c"
 #include "re.c"
 #include "global.c"

@@ -462,6 +462,12 @@ code can hold any of the 12 forms. The walker reads all 12 forms.
   AOT code calls on a boxed Array (`sp_poly_sort`, `sp_poly_splice` and
   others). A mutator works on a poly array and writes the result back
   into a typed one (`sp_poly_arr_writeback`).
+- **String.** `src/string.c` does the same for String. A mutator reads
+  the bytes, calls the C function of the typed String and writes the new
+  bytes back into the handle (`sp_poly_str_become`). A bang method with a
+  plain form calls the plain form and answers nil when nothing changes.
+  A String of the tag `SP_TAG_STR` comes from the runtime, so a mutator
+  raises `FrozenError` on a frozen one and stops as a gap on another.
 - **User objects in an Array.** The helpers reach the program through
   hooks: `sp_obj_cmp_hook` calls `<=>`, and `sp_obj_to_ary_fn`,
   `sp_obj_to_a_fn`, `sp_obj_to_int_fn` and `sp_obj_to_str_fn` call the

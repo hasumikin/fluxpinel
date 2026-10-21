@@ -55,6 +55,10 @@ static int lupe_seq_open(sp_RbVal r, LupeSeq *s) {
   /* an Enumerator: its items, or one item at a time from a generator, so
      that an endless one stops where the block breaks */
   if (r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_ENUMERATOR && r.v.p) {
+    /* a live one (each_char of a String handle) is read as a copy that
+       holds its items as they are now */
+    r = s->src = sp_box_obj(sp_enum_walk((sp_Enumerator *)r.v.p), SP_BUILTIN_ENUMERATOR);
+    SP_GC_ROOT_RBVAL(s->src);
     sp_PolyArray *items = sp_enum_finite_items(r);
     if (items) { s->src = sp_box_poly_array(items); return 1; }
     s->src = sp_enum_walker_boxed(r);
