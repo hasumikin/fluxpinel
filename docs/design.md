@@ -1028,9 +1028,9 @@ These facts apply to spinel commit `ffac8340d`.
    A script calls an entry as a singleton method of its module, and holds
    an AOT object as a value. Lupe works around the limits of the exports.
 8. **M6: scripts.** AOT code calls Lupe through `kernel/lupe.rb` (section
-   3.6), and `test/host` checks it. Then a demo: an AOT program loads
-   `plugins/*.rb` at start, and each plugin adds a feature through the
-   entries.
+   3.6), and `test/host` checks it. The demo `examples/textkit`: an AOT
+   program loads `plugins/*.rb` at start, and each plugin adds a filter and
+   calls the AOT code.
 9. **M7: console.** A REPL over a socket on the base of M6. It keeps the
    locals from one line to the next, and Prism tells an incomplete line.
 10. **M8: eval with a binding and dynamic dispatch.** With the demos of M6
