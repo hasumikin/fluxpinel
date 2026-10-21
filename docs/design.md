@@ -2,27 +2,38 @@
 
 ## 1. Goals
 
-Lupe gives spinel programs an interpreted mode. The interpreted code and the
-AOT code share one value representation, one heap and one set of builtin
-semantics.
+Lupe adds a dynamic layer to an AOT spinel program. The interpreted code
+and the AOT code share one value representation, one heap and one set of
+builtin semantics. Thus a value crosses between them by reference.
 
 Lupe serves two uses:
 
+- **Dynamic layer (use 1).** An AOT binary links Lupe. Section 5 gives the
+  forms:
+  - **Scripts.** The AOT program loads Ruby files at run time: plugins,
+    configuration and glue code. A console is the interactive form: a user
+    connects over a socket, reads live objects and calls AOT methods.
+  - **eval.** AOT code evaluates a Ruby string.
+  - **Dynamic dispatch.** A call that AOT code cannot resolve goes to Lupe:
+    `method_missing`, `define_method` and `send` with a computed name.
 - **Oracle (use 2).** Lupe runs a program as a reference. It does no type
   inference and no optimization. A difference between Lupe and the AOT
-  binary points to the analysis or the codegen of spinel.
-- **Embedded REPL (use 1).** An AOT binary links Lupe. A user connects over
-  a serial line or a socket. The REPL reads live objects, calls AOT methods
-  and replaces methods that go through a method table.
+  binary points to the analysis or the codegen of spinel. The oracle also
+  keeps the two sides of use 1 equal: a method gives the same answer in
+  Lupe and in AOT code.
 
-The oracle comes first. It needs no change to spinel, and it gives the
-walker a test harness. The embedded REPL reuses the same walker.
+The oracle needs no change to spinel, and it gives the walker a test
+harness. Use 1 reuses the same walker.
 
 ## 2. Constraints
 
-- Lupe does not modify spinel. The spinel maintainer keeps a VM and `eval`
-  out of the spinel design (matz/spinel#41, matz/spinel#36). Lupe lives
-  outside that design, as a separate project.
+- Lupe does not modify spinel on its own. The spinel maintainer keeps a VM
+  and `eval` out of the spinel design (matz/spinel#41, matz/spinel#36).
+  Lupe lives outside that design, as a separate project. A change that
+  Lupe needs in spinel goes to the maintainer as an issue, after a demo
+  shows the use.
+- Lupe is a tool for a host. A microcontroller is not a target of the
+  design.
 - Lupe pins one spinel commit. The runtime API of spinel is internal and
   changes often. The pin makes each update an explicit step.
 - Lupe links `libspinel_rt` (the C runtime in `spinel/lib/`). Lupe does not
@@ -497,13 +508,48 @@ code can hold any of the 12 forms. The walker reads all 12 forms.
 
 ### 3.6 Boundary to AOT code
 
-- **Walker to AOT.** Spinel exports a method with `--ext-init NAME` and
-  `--ext-entry Mod.m`. Lupe registers each export in its method table.
-  An `untyped` parameter in RBS gives an `sp_RbVal` slot, so a value
-  crosses by reference.
-- **AOT to walker.** Out of scope. The poly dispatch of AOT code is a
-  `switch` over the classes of that program. An unknown `cls_id` raises
-  `NoMethodError`. This direction needs a hook in spinel.
+Spinel emits a program as a library with `--ext-init NAME` and
+`--ext-entry Mod.m,...` (with `-c`). The output has two parts:
+
+- The C file is the **kernel**. It holds the global state of the runtime
+  (the exception stack, `ARGV`, the signal state), the symbol table and
+  the class names of the program. Its `NAME()` takes the place of `main`.
+- The header is the contract for a **host**: C code that calls into the
+  kernel. A host is built with `SPINEL_EXT_HOST`, so that `spinel_rt.h`
+  declares that global state `extern` and does not define it. The two
+  parts link one `libspinel_rt`, so they have one heap.
+
+Lupe is the host of use 1. The program that a user compiles is the kernel.
+
+- **The entries.** Each export is a C function, for example
+  `sp_App_s_add`. A parameter with no caller in the program is an
+  `sp_RbVal`. A caller in the program narrows the parameter to its type
+  (`sp_int`). An `untyped` parameter in RBS keeps the `sp_RbVal` slot.
+- **The results.** An entry answers a C type: `sp_RbVal`, `sp_int`,
+  `sp_float`, `sp_sym`, `const char *`, an Array, or a pointer to an
+  object of the program. An object starts with its `cls_id`, so the host
+  boxes it as an `sp_RbVal`.
+- **Exceptions.** `NAME_try(fn, ctx, &cls, &msg)` runs `fn` under a rescue
+  handler. It answers 0, or 1 and the class name and message of a raise.
+- **The hooks.** The kernel sets the hooks of the runtime (`sp_obj_inspect_fn`
+  and its kin) to the functions that know its classes. The host keeps each
+  hook of the kernel and sets its own. The hook of the host handles a
+  class of Lupe (`cls_id >= LUPE_CLS_BASE`) and calls the hook of the
+  kernel for the other classes.
+- **Limits of the exports.** Lupe works around them, and the spinel
+  maintainer gets them as issues after a demo:
+  - An entry that answers a String and has no caller in the program
+    answers `NULL`.
+  - The header does not declare the type of an object that an entry
+    answers (`sp_Counter`).
+  - Only the singleton methods of a module export. A method of an instance
+    does not.
+
+The other direction is AOT to walker. The candidate path is the FFI of
+spinel: an `ffi_func` with no `ffi_lib` names a C function of the same
+binary, so AOT code can call a function of the host. If M6 (section 9)
+confirms it, a script (section 5.1) needs no change to spinel. eval and
+dynamic dispatch need more (sections 5.2 and 5.3).
 
 ## 4. Use 2: oracle
 
@@ -571,18 +617,58 @@ Lupe. Lupe holds every value in its most general form, and a runtime path
 for that form can have a defect that the specialized AOT code never
 reaches.
 
-## 5. Use 1: embedded REPL
+## 5. Use 1: dynamic layer
 
-Requirements beyond the oracle:
+The three forms need different amounts from spinel. Each form builds on
+the one before it.
 
-- **Object layout.** The REPL must read the ivars of an AOT object. Spinel
-  must give the struct layout of each class. Possible sources are a
-  metadata file from spinel, or the generated C.
-- **Transport.** A serial line on a microcontroller. A socket on a host.
-- **Redefinition.** The REPL replaces a method only through a method table.
+| Form | Direction | Change to spinel |
+|---|---|---|
+| Scripts and the console | AOT calls Lupe; Lupe calls the entries | none expected |
+| eval | AOT calls Lupe with a String | an `eval` that a program can call |
+| Dynamic dispatch | AOT hands an unresolved call to Lupe | a change to the analysis |
+
+Requirements for all forms:
+
+- **One walker lock.** The walker is not shared between OS threads
+  (section 3.3.5). AOT code on more than one thread calls Lupe under one
+  lock.
+- **Speed.** The walker is slower than CRuby (section 7). Lupe is for the
+  glue of a program, not for its hot paths.
+- **The same semantics.** A value has the same builtin methods in Lupe and
+  in AOT code. The oracle (section 4) checks this.
+
+### 5.1 Scripts and the console
+
+The AOT program calls a function of Lupe that loads a Ruby file. The
+script calls the entries of the program (section 3.6) and gets AOT
+objects as values. The console reads a line from a socket, evaluates it
+with the same walker and keeps the locals from one line to the next.
+
+- **Object layout.** The console reads an ivar of an AOT object through the
+  `inspect` hook of the kernel. A read or a write of one ivar by name needs
+  the struct layout of the class. The generated C has it, and spinel does
+  not give it in another form.
+- **Redefinition.** A script replaces a method only through a method table.
   AOT code that calls a method directly keeps the old method.
-- **Footprint.** The walker and libprism must fit next to the AOT code on
-  the target board.
+
+### 5.2 eval
+
+AOT code calls `eval` with a String, and Lupe evaluates it. The string sees
+the globals, the constants and `self`. It does not see the locals of the
+AOT method: they are C variables. The language of spinel has no `eval`, so
+an AOT program reaches it through a function of the host, or through an
+entry that spinel adds for it.
+
+### 5.3 Dynamic dispatch
+
+Spinel refuses a program that calls a method which no class defines. For
+dynamic dispatch, spinel must accept such a call, and emit code that hands
+it to Lupe at run time. Then a class of the program can use
+`method_missing`, `define_method` and `send` with a computed name, and the
+static part of the program stays AOT code. A port of a CRuby application
+can start with the dynamic parts in Lupe, and move them to AOT code one by
+one.
 
 ## 6. Prior art
 
@@ -830,8 +916,9 @@ These facts apply to spinel commit `ffac8340d`.
   other wrappers? The oracle (M3) is one answer.
 - Which AOT build of a test program serves as the oracle reference: one
   build per program, or one shared build?
-- How much of the 1.4 MB text does a walker keep after the linker drops
-  unused code? The answer decides whether Lupe fits a microcontroller.
+- Which entries does a host get? An export names each method. A program
+  that loads scripts wants a wide surface. Candidates are a list in the
+  build, or a mark on a method in the source.
 - Can a generator map the `sp_poly_*` helpers to method names, as
   `tools/bop_gen.c` does for `bop_rows[]`? Codegen names the helper that it
   emits for each method, so the map exists in the codegen source.
@@ -842,13 +929,13 @@ These facts apply to spinel commit `ffac8340d`.
   `$(SPINEL)`, an external checkout. The two uses want different things:
   - The oracle checks the spinel tree under test, at any commit. An
     external path fits it.
-  - The embedded REPL links with one application. It needs a fixed spinel
-    commit and a reproducible build. On a microcontroller, it also builds
-    the runtime and prism from source with the target toolchain.
+  - The dynamic layer links with one application. It needs a fixed spinel
+    commit and a reproducible build: the kernel and Lupe must use the same
+    runtime.
 
   A candidate: a spinel submodule as the default, and `make SPINEL=...` to
   use another tree. The oracle (M3) needs at least a recorded commit. The
-  device REPL (M4) needs the source build.
+  dynamic layer (M4 and later) needs the fixed commit.
 
 ## 9. Plan
 
@@ -866,7 +953,9 @@ These facts apply to spinel commit `ffac8340d`.
    CRuby, Lupe and AOT in promote mode, and reports the classes of
    section 4 and the blockers of Lupe.
 5. **M3+: coverage.** Take the blockers in the order of the oracle report.
-   Each step runs the oracle again.
+   Each step runs the oracle again. From M4 on, coverage is not a step of
+   its own: take first the blockers that a demo meets, and then the
+   blockers of the oracle report.
    - Classes, modules and constants (section 3.4): `test/m3`.
    - Blocks, Proc and Integer Range (section 3.3.1): `test/m3`.
    - Hash and keyword arguments (section 3.5): `test/m3`.
@@ -888,5 +977,18 @@ These facts apply to spinel commit `ffac8340d`.
    - Next, the tests of a Roundhouse output (`spin test`) under Lupe and
      AOT. Roundhouse lowers a Rails app to Ruby that spinel compiles.
    - Then the largest blockers of the oracle report.
-6. **M4: embedded REPL.** Link Lupe into an AOT binary on a host. Then move
-   to a microcontroller board.
+6. **M4: Lupe as a host.** Build Lupe with `SPINEL_EXT_HOST` and link it
+   with a kernel (section 3.6). Lupe uses the symbol table and the class
+   names of the kernel, and chains each hook to the hook of the kernel.
+   `make test` passes with the host build too.
+7. **M5: walker to AOT.** A tool reads the header of a kernel and
+   generates a wrapper for each entry. The wrapper boxes the result.
+   A script calls an entry as a singleton method of its module, and holds
+   an AOT object as a value. Lupe works around the limits of the exports.
+8. **M6: scripts.** Confirm the FFI path from AOT code to Lupe (section
+   3.6). Then a demo: an AOT program loads `plugins/*.rb` at start, and
+   each plugin adds a feature through the entries.
+9. **M7: console.** A REPL over a socket on the base of M6. It keeps the
+   locals from one line to the next, and Prism tells an incomplete line.
+10. **M8: eval and dynamic dispatch.** With the demos of M6 and M7, ask
+    the spinel maintainer for the changes of sections 5.2 and 5.3.

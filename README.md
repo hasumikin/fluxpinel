@@ -8,13 +8,14 @@ Spinel is a gem. Lupe looks into spinel programs.
 
 Lupe has two purposes:
 
-- A REPL inside an AOT binary while the binary runs. The REPL reads and
-  changes live objects in the same heap as the compiled code.
+- A dynamic layer for an AOT binary. The binary loads Ruby scripts at run
+  time, and a console connects to it while it runs. The interpreted code
+  uses live objects in the same heap as the compiled code.
 - A reference oracle for spinel. Lupe runs a program with no type inference
   and no optimization, but with the same runtime as the AOT output.
 
-Lupe does not modify spinel. It links against `libspinel_rt` and pins one
-spinel commit.
+Lupe does not modify spinel on its own. It links against `libspinel_rt`
+and pins one spinel commit.
 
 ## Build
 
