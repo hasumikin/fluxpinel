@@ -1,20 +1,20 @@
 # run.rb -- run each test program under CRuby and Lupe and compare.
 #
-# Usage: ruby test/run.rb [--require KERNEL.rb] LUPE DIR...
+# Usage: ruby test/run.rb [--require FILE.rb]... LUPE DIR...
 #
 # A test passes when stdout and the exit status are the same. stderr is not
 # compared: the two report an uncaught exception in different words. A
 # test with a FILE.expected compares with it instead of CRuby (status 0).
-# With --require, CRuby requires the kernel of the host build first, as
-# the host build of Lupe has it.
+# With --require, CRuby requires each file first: the kernel of the host
+# build, as the host build of Lupe has it.
 
 require "open3"
 
 args = ARGV.dup
-kernel = args.shift(2).last if args.first == "--require"
+ruby = ["ruby"]
+ruby += ["-r", File.expand_path(args.shift(2).last)] while args.first == "--require"
 lupe, *dirs = args
-abort "usage: ruby test/run.rb [--require KERNEL.rb] LUPE DIR..." if lupe.nil? || dirs.empty?
-ruby = kernel ? ["ruby", "-r", File.expand_path(kernel)] : ["ruby"]
+abort "usage: ruby test/run.rb [--require FILE.rb]... LUPE DIR..." if lupe.nil? || dirs.empty?
 
 def run(*cmd)
   out, _err, st = Open3.capture3(*cmd)

@@ -575,11 +575,21 @@ src/main.c             Lupe, with LUPE_KERNEL=lupe_kernel_init
   - The kernel names only its own classes in `sp_class_to_s`.
     `kernel_prelude.h` works around this.
 
-The other direction is AOT to walker. The candidate path is the FFI of
-spinel: an `ffi_func` with no `ffi_lib` names a C function of the same
-binary, so AOT code can call a function of the host. If M6 (section 9)
-confirms it, a script (section 5.1) needs no change to spinel. eval and
-dynamic dispatch need more (sections 5.2 and 5.3).
+The other direction is AOT to walker. A `native_func` of spinel binds a
+method of a module to a C function by its name, and an `:any` argument or
+result is an `sp_RbVal` as it is. AOT code thus calls a C function of Lupe
+in the same TU, with no change to spinel. `kernel/lupe.rb` declares these
+functions (`src/host.c`), and a kernel does `require_relative` of it:
+
+- `Lupe.load(path)` runs a Ruby file at the top level and answers the
+  value of its last statement.
+- `Lupe.eval(src)` does the same for a String.
+- `Lupe.call(obj, name, args)` calls a method of a value of Lupe. The poly
+  dispatch of AOT code does not know the classes of Lupe.
+
+A raise in Lupe reaches a rescue of AOT code, and the reverse, through the
+one exception stack. `kernel/lupe_cruby.rb` gives the same functions under
+CRuby, so the same program runs there for the answer of a test.
 
 ## 4. Use 2: oracle
 
@@ -654,8 +664,8 @@ the one before it.
 
 | Form | Direction | Change to spinel |
 |---|---|---|
-| Scripts and the console | AOT calls Lupe; Lupe calls the entries | none expected |
-| eval | AOT calls Lupe with a String | an `eval` that a program can call |
+| Scripts and the console | AOT calls Lupe; Lupe calls the entries | none |
+| eval | AOT calls Lupe with a String | none with no binding; a change for a binding |
 | Dynamic dispatch | AOT hands an unresolved call to Lupe | a change to the analysis |
 
 Requirements for all forms:
@@ -670,9 +680,9 @@ Requirements for all forms:
 
 ### 5.1 Scripts and the console
 
-The AOT program calls a function of Lupe that loads a Ruby file. The
-script calls the entries of the program (section 3.6) and gets AOT
-objects as values. The console reads a line from a socket, evaluates it
+The AOT program loads a Ruby file with `Lupe.load` (section 3.6). The
+script calls the entries of the program and gets AOT objects as values.
+The program calls a method of the script with `Lupe.call`. The console reads a line from a socket, evaluates it
 with the same walker and keeps the locals from one line to the next.
 
 - **Object layout.** The console reads an ivar of an AOT object through the
@@ -685,11 +695,11 @@ with the same walker and keeps the locals from one line to the next.
 
 ### 5.2 eval
 
-AOT code calls `eval` with a String, and Lupe evaluates it. The string sees
-the globals, the constants and `self`. It does not see the locals of the
-AOT method: they are C variables. The language of spinel has no `eval`, so
-an AOT program reaches it through a function of the host, or through an
-entry that spinel adds for it.
+AOT code calls `Lupe.eval` with a String, and Lupe evaluates it at the top
+level (section 3.6). The string sees the globals, the constants and the
+classes of the kernel. It does not see the locals of the AOT method: they
+are C variables. `eval` with a binding needs those locals, so it needs a
+change to spinel.
 
 ### 5.3 Dynamic dispatch
 
@@ -1017,10 +1027,12 @@ These facts apply to spinel commit `ffac8340d`.
    generates a wrapper for each one. The wrapper boxes the result.
    A script calls an entry as a singleton method of its module, and holds
    an AOT object as a value. Lupe works around the limits of the exports.
-8. **M6: scripts.** Confirm the FFI path from AOT code to Lupe (section
-   3.6). Then a demo: an AOT program loads `plugins/*.rb` at start, and
-   each plugin adds a feature through the entries.
+8. **M6: scripts.** AOT code calls Lupe through `kernel/lupe.rb` (section
+   3.6), and `test/host` checks it. Then a demo: an AOT program loads
+   `plugins/*.rb` at start, and each plugin adds a feature through the
+   entries.
 9. **M7: console.** A REPL over a socket on the base of M6. It keeps the
    locals from one line to the next, and Prism tells an incomplete line.
-10. **M8: eval and dynamic dispatch.** With the demos of M6 and M7, ask
-    the spinel maintainer for the changes of sections 5.2 and 5.3.
+10. **M8: eval with a binding and dynamic dispatch.** With the demos of M6
+    and M7, ask the spinel maintainer for the changes of sections 5.2 and
+    5.3.

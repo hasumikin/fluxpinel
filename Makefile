@@ -90,11 +90,12 @@ test: $(BUILD)/lupe
 # kernel must share the TU to share that state. KERNEL names the program
 # and KERNEL_ENTRIES the methods that it exports.
 KERNEL ?= test/kernel/app.rb
-KERNEL_ENTRIES ?= LupeKernel.ping,LupeKernel.add,LupeKernel.make,LupeKernel.bump,LupeKernel.boom,LupeKernel.pair
+KERNEL_ENTRIES ?= LupeKernel.ping,LupeKernel.add,LupeKernel.make,LupeKernel.bump,LupeKernel.boom,LupeKernel.pair,$\
+                  LupeKernel.greet_all,LupeKernel.script,LupeKernel.rescue_script
 HOST = $(BUILD)/host
 KERNEL_OVERFLOW = $(shell echo $(INT_OVERFLOW) | tr A-Z a-z)
 
-$(HOST)/kernel.c: $(KERNEL) src/kernel_prelude.h
+$(HOST)/kernel.c: $(KERNEL) kernel/lupe.rb src/kernel_prelude.h
 	mkdir -p $(HOST)
 	$(SPINEL)/spinel $(KERNEL) -c -o $@ --force --int-overflow $(KERNEL_OVERFLOW) \
 	  --ext-init lupe_kernel_init --ext-entry $(KERNEL_ENTRIES)
@@ -115,9 +116,11 @@ $(HOST)/lupe: src/*.c src/*.h $(HOST)/kernel.c $(HOST)/entries.c $(BUILD)/bop_ge
 
 host: $(HOST)/lupe
 
+HOST_REQUIRES = --require kernel/lupe_cruby.rb --require $(KERNEL)
+
 test-host: $(HOST)/lupe
-	ruby test/run.rb --require $(KERNEL) $(HOST)/lupe $(TEST_DIRS) test/host
-	SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1 ruby test/run.rb --require $(KERNEL) $(HOST)/lupe $(TEST_DIRS) test/host
+	ruby test/run.rb $(HOST_REQUIRES) $(HOST)/lupe $(TEST_DIRS) test/host
+	SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1 ruby test/run.rb $(HOST_REQUIRES) $(HOST)/lupe $(TEST_DIRS) test/host
 
 # The oracle: the spinel test corpus under CRuby (.expected), Lupe and AOT,
 # in promote mode on both sides. In raise mode, spinel's analysis still

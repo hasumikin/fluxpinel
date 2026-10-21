@@ -63,6 +63,59 @@ static sp_RbVal lupe_entry_invoke(int i, int argc, sp_RbVal *argv) {
   return lupe_kernel_entries[i].fn(argv);
 }
 
+/* ---- the calls of the kernel into Lupe (kernel/lupe.rb) ----
+
+   AOT code calls these by name (native_func). The kernel runs its top
+   level before Lupe starts, so a call from there is an error. */
+
+static void lupe_api_check(void) {
+  if (!L.object) sp_raise_cls("RuntimeError", "Lupe has not started: call Lupe from an entry");
+}
+
+/* Runs a new source at the top level and answers the value of its last
+   statement. The source stays: a method of it can run later. */
+static sp_RbVal lupe_api_run(const char *path, char *buf, size_t len) {
+  LupeSource *s;
+  char *real = realpath(path, NULL);
+  const char *err = lupe_parse(strdup(path), real ? real : strdup(path), buf, len, &s);
+  if (err) sp_raise_cls("SyntaxError", err);
+  return lupe_run_source(s);
+}
+
+/* Lupe.load(path): Kernel#load, but it answers the value of the file. */
+sp_RbVal lupe_api_load(const char *path) {
+  lupe_api_check();
+  size_t len;
+  char *buf = lupe_read_file(path, &len);
+  if (!buf) sp_raise_cls("LoadError", sp_sprintf("cannot load such file -- %s", path));
+  return lupe_api_run(path, buf, len);
+}
+
+/* Lupe.eval(src): with no binding, so the locals of the caller are not
+   seen. */
+sp_RbVal lupe_api_eval(const char *src) {
+  lupe_api_check();
+  size_t len = sp_str_byte_len(src);
+  char *buf = malloc(len + 1);
+  memcpy(buf, src, len);
+  buf[len] = 0;
+  return lupe_api_run("(eval)", buf, len);
+}
+
+/* Lupe.call(obj, name, args): args is an Array, or nil for none. */
+sp_RbVal lupe_api_call(sp_RbVal obj, const char *name, sp_RbVal args) {
+  lupe_api_check();
+  SP_GC_ROOT_RBVAL(obj);
+  SP_GC_ROOT_RBVAL(args);
+  SP_GC_ROOT_STR(name);
+  int argc = args.tag == SP_TAG_NIL ? 0 : (int)sp_poly_length(args);
+  if (args.tag != SP_TAG_NIL && !lupe_is_array(args))
+    sp_raise_cls("TypeError", sp_sprintf("no implicit conversion of %s into Array", sp_poly_class_name(args)));
+  sp_RbVal argv[argc > 0 ? argc : 1];
+  for (int i = 0; i < argc; i++) argv[i] = sp_poly_arr_get(args, i);
+  return lupe_send(obj, name, argc, argv);
+}
+
 #else
 
 static void lupe_host_init(void) {}
