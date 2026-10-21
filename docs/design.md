@@ -551,6 +551,14 @@ src/main.c             Lupe, with LUPE_KERNEL=lupe_kernel_init
   boxes it as an `sp_RbVal`.
 - **Exceptions.** `NAME_try(fn, ctx, &cls, &msg)` runs `fn` under a rescue
   handler. It answers 0, or 1 and the class name and message of a raise.
+  In the host build, a raise of the kernel reaches the rescue of a script
+  directly.
+- **In Lupe.** `tools/entry_gen.rb` reads the header and writes a wrapper
+  for each entry: it converts each argument to the C type of its parameter
+  and boxes the result. Each class of the kernel is a `LupeClass` with the
+  id of the kernel, so a constant names it and an AOT object has it as its
+  class. An entry is a singleton method of its module (`LUPE_M_ENTRY`).
+  `new` of a class of the kernel is a gap, as the constructor is no entry.
 - **The hooks.** The kernel sets the hooks of the runtime (`sp_obj_inspect_fn`,
   `sp_obj_cmp_hook` and their kin) to the functions that know its classes.
   Lupe keeps each hook of the kernel and sets its own. The hook of Lupe

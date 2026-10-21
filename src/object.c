@@ -206,7 +206,8 @@ static LupeClass *lupe_class_by_id(sp_int cls_id) {
   if (cls_id >= LUPE_CLS_BASE && cls_id < LUPE_CLS_BASE + L.nclasses) return L.classes[cls_id - LUPE_CLS_BASE];
   int i = -100 - (int)cls_id;
   if (i >= 0 && i < LUPE_NBUILTIN_CLASSES) return lupe_builtin(lupe_builtin_class_names[i]);
-  for (int j = 0; cls_id <= LUPE_EXC_CLS_BASE && j < L.nbuiltins; j++)
+  /* a class that only the runtime names, or a class of the kernel (host.c) */
+  for (int j = 0; (cls_id <= LUPE_EXC_CLS_BASE || lupe_kernel_cls(cls_id)) && j < L.nbuiltins; j++)
     if (L.builtins[j]->cls_id == cls_id) return L.builtins[j];
   return NULL;
 }
@@ -359,8 +360,9 @@ static int lupe_const_scoped(const LupeClass *scope, sp_sym name, sp_RbVal *out)
     if (b) { *out = lupe_class_box(b); return 1; }
     if (lupe_autoload(name)) return lupe_const_scoped(scope, name, out);
   }
-  /* a builtin class nested in a builtin one: Thread::Queue */
-  if (scope->cls_id < 0 && scope != L.object) {
+  /* a builtin class nested in a builtin one (Thread::Queue), or a class of
+     the kernel nested in another one */
+  if ((scope->cls_id < 0 || lupe_kernel_cls(scope->cls_id)) && scope != L.object) {
     LupeClass *b = lupe_builtin(sp_sprintf("%s::%s", scope->name, sp_sym_to_s(name)));
     if (b) { *out = lupe_class_box(b); return 1; }
   }
@@ -788,6 +790,8 @@ static int lupe_class_core(LupeFrame *f, sp_RbVal r, const char *name, int argc,
     }
     /* a builtin class other than Object makes its own instances */
     if (k->cls_id < 0 && k != L.object) return 0;
+    /* the constructor of a class of the kernel is not an entry */
+    if (lupe_kernel_cls(k->cls_id)) lupe_gap(sp_sprintf("%s.%s of a class of the kernel", k->name, name));
     /* an instance of a subclass of Exception, Array, Struct ... needs the
        builtin part, which a LupeObject does not have */
     for (const LupeClass *s = k->super; s; s = s->super)

@@ -12,7 +12,7 @@
 struct LupeClass;
 
 /* What a method does when it is called. */
-typedef enum { LUPE_M_DEF, LUPE_M_READER, LUPE_M_WRITER, LUPE_M_FFI } LupeMethodKind;
+typedef enum { LUPE_M_DEF, LUPE_M_READER, LUPE_M_WRITER, LUPE_M_FFI, LUPE_M_ENTRY } LupeMethodKind;
 
 typedef struct {
   sp_sym name;
@@ -22,6 +22,7 @@ typedef struct {
   struct LupeClass *owner;    /* the class or module that defines it */
   int matches;                /* whether the body can set $~: 0 not known yet, 1 no, 2 yes */
   struct LupeFfi *ffi;        /* LUPE_M_FFI: what ffi_func and its kin declared */
+  int entry;                  /* LUPE_M_ENTRY: the row of lupe_kernel_entries (host.c) */
 } LupeMethod;
 
 typedef struct {
@@ -269,6 +270,10 @@ static int lupe_process_responds(sp_RbVal r, const char *name);
 /* file.c */
 static int lupe_file_class(const LupeClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int lupe_file_responds(sp_RbVal r, const char *name);
+
+/* host.c */
+static void lupe_host_init(void);
+static sp_RbVal lupe_entry_invoke(int i, int argc, sp_RbVal *argv);
 
 /* load.c */
 static int lupe_load_call(const pm_node_t *n, sp_RbVal self, const char *name, int argc, sp_RbVal *argv,

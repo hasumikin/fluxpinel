@@ -24,6 +24,7 @@
 #include "ffi.c"
 #include "process.c"
 #include "file.c"
+#include "host.c"
 
 static void lupe_body(void) {
   SP_GC_SAVE();
@@ -32,6 +33,7 @@ static void lupe_body(void) {
   L.ctl_val = sp_box_nil();
   _sp_gc_root_push((void **)((uintptr_t)&L.ctl_val | (uintptr_t)1));
   lupe_object_init();
+  lupe_host_init();
   lupe_hash_init();
   lupe_array_init();
   lupe_exc_hooks();
