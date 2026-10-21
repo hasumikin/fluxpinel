@@ -52,7 +52,7 @@ SPINEL_TABLES = $(SPINEL)/src/builtin_ops.c $(SPINEL)/src/builtin_ops.h $(SPINEL
 
 $(BUILD)/bop_gen: tools/bop_gen.c $(SPINEL_TABLES)
 	mkdir -p $(BUILD)
-	$(CC) -std=gnu11 -include stdarg.h -I$(SPINEL)/src -o $@ $< \
+	$(CC) -std=gnu11 -include stdarg.h -include builtin_names.h -I$(SPINEL)/src -o $@ $< \
 	  $(SPINEL)/src/types.c $(SPINEL)/src/builtin_names.c
 
 $(BUILD)/bop_gen_out.c: $(BUILD)/bop_gen
