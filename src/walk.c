@@ -1255,6 +1255,177 @@ static sp_RbVal lupe_index_op_write(LupeFrame *f, const pm_index_operator_write_
   return argv[argc];
 }
 
+/* ---- multiple assignment ----
+
+   As CRuby does, the receivers and the arguments of the targets come
+   first, left to right, then the value, then each target takes its part.
+   lupe_mw_prepare keeps in pre what a target needs at its write: the
+   receiver of `x.a`, the receiver and an Array of the arguments of
+   `x[i]`, and the scope of `X::A` (nil for `::A`). */
+static int lupe_mw_prepare(LupeFrame *f, const pm_node_t *t, sp_PolyArray *pre);
+
+static int lupe_mw_prepare_list(LupeFrame *f, const pm_node_list_t *lefts, const pm_node_t *rest,
+                                const pm_node_list_t *rights, sp_PolyArray *pre) {
+  for (size_t i = 0; i < lefts->size; i++)
+    if (!lupe_mw_prepare(f, lefts->nodes[i], pre)) return 0;
+  if (rest && !lupe_mw_prepare(f, rest, pre)) return 0;
+  for (size_t i = 0; i < rights->size; i++)
+    if (!lupe_mw_prepare(f, rights->nodes[i], pre)) return 0;
+  return 1;
+}
+
+/* Evaluates n into pre. */
+static int lupe_mw_keep(LupeFrame *f, const pm_node_t *n, sp_PolyArray *pre) {
+  SP_GC_SAVE();
+  sp_RbVal v = n ? lupe_eval(f, n) : sp_box_nil();
+  SP_GC_ROOT_RBVAL(v);
+  sp_PolyArray_push(pre, v);
+  return L.ctl == LUPE_CTL_NONE;
+}
+
+/* x[i]: the receiver, then an Array of the arguments. */
+static int lupe_mw_prepare_index(LupeFrame *f, const pm_index_target_node_t *x, sp_PolyArray *pre) {
+  SP_GC_SAVE();
+  if (x->block) lupe_unsupported((const pm_node_t *)x, "block");
+  if (!lupe_mw_keep(f, x->receiver, pre)) return 0;
+  int argc = lupe_argc(x->arguments);
+  sp_RbVal argv[argc > 0 ? argc : 1];
+  if (!lupe_args(f, x->arguments, argc, argv)) return 0;
+  sp_PolyArray *a = sp_PolyArray_new();
+  SP_GC_ROOT(a);
+  for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
+  sp_PolyArray_push(pre, sp_box_poly_array(a));
+  return 1;
+}
+
+static int lupe_mw_prepare(LupeFrame *f, const pm_node_t *t, sp_PolyArray *pre) {
+  switch (PM_NODE_TYPE(t)) {
+  case PM_CALL_TARGET_NODE:
+    return lupe_mw_keep(f, ((const pm_call_target_node_t *)t)->receiver, pre);
+  case PM_INDEX_TARGET_NODE:
+    return lupe_mw_prepare_index(f, (const pm_index_target_node_t *)t, pre);
+  case PM_CONSTANT_PATH_TARGET_NODE:
+    return lupe_mw_keep(f, ((const pm_constant_path_target_node_t *)t)->parent, pre);
+  case PM_MULTI_TARGET_NODE: {
+    const pm_multi_target_node_t *mt = (const pm_multi_target_node_t *)t;
+    return lupe_mw_prepare_list(f, &mt->lefts, mt->rest, &mt->rights, pre);
+  }
+  case PM_SPLAT_NODE: {
+    const pm_node_t *e = ((const pm_splat_node_t *)t)->expression;
+    return e ? lupe_mw_prepare(f, e, pre) : 1;
+  }
+  default:
+    break;
+  }
+  return L.ctl == LUPE_CTL_NONE;
+}
+
+/* The elements that the targets take from v: an Array as it is, the
+   to_ary of an object of the program, else [v]. */
+static sp_RbVal lupe_mw_array(sp_RbVal v) {
+  if (lupe_is_array_value(v)) return v;
+  SP_GC_ROOT_RBVAL(v);
+  if (lupe_is_lupe_object(v) && lupe_find_method(lupe_class_of(v), sp_sym_intern("to_ary"))) {
+    sp_RbVal a = lupe_send(v, "to_ary", 0, NULL);
+    if (lupe_is_array_value(a)) return a;
+    if (a.tag != SP_TAG_NIL) {
+      const char *cn = sp_poly_class_name(v);
+      sp_raise_cls("TypeError", sp_sprintf("can't convert %s to Array (%s#to_ary gives %s)", cn, cn,
+                                           sp_poly_class_name(a)));
+    }
+  }
+  sp_PolyArray *a = sp_PolyArray_new();
+  SP_GC_ROOT(a);
+  sp_PolyArray_push(a, v);
+  return sp_box_poly_array(a);
+}
+
+static void lupe_mw_split(LupeFrame *f, const pm_node_list_t *lefts, const pm_node_t *rest,
+                          const pm_node_list_t *rights, sp_RbVal arr, sp_PolyArray *pre, sp_int *pi);
+
+/* Writes v to the target t, with what lupe_mw_prepare kept for it. */
+static void lupe_mw_assign(LupeFrame *f, const pm_node_t *t, sp_RbVal v, sp_PolyArray *pre, sp_int *pi) {
+  SP_GC_ROOT_RBVAL(v);
+  switch (PM_NODE_TYPE(t)) {
+  case PM_LOCAL_VARIABLE_TARGET_NODE: {
+    const pm_local_variable_target_node_t *x = (const pm_local_variable_target_node_t *)t;
+    *lupe_local(f, t, x->name, x->depth) = v;
+    return;
+  }
+  case PM_INSTANCE_VARIABLE_TARGET_NODE:
+    lupe_ivar_set(f->self, lupe_sym(((const pm_instance_variable_target_node_t *)t)->name), v);
+    return;
+  case PM_GLOBAL_VARIABLE_TARGET_NODE:
+    lupe_gvar_set(sp_sym_to_s(lupe_sym(((const pm_global_variable_target_node_t *)t)->name)), v);
+    return;
+  case PM_CONSTANT_TARGET_NODE:
+    lupe_const_set(f->cref, lupe_sym(((const pm_constant_target_node_t *)t)->name), v);
+    return;
+  case PM_CONSTANT_PATH_TARGET_NODE: {
+    sp_RbVal sv = pre->data[(*pi)++];
+    LupeClass *scope = sv.tag == SP_TAG_NIL ? L.object : lupe_class_value(sv);
+    if (!scope) sp_raise_cls("TypeError", sp_sprintf("%s is not a class/module", sp_poly_inspect(sv)));
+    lupe_const_set(scope, lupe_sym(((const pm_constant_path_target_node_t *)t)->name), v);
+    return;
+  }
+  case PM_CALL_TARGET_NODE: {
+    sp_RbVal recv = pre->data[(*pi)++];
+    lupe_send(recv, sp_sym_to_s(lupe_sym(((const pm_call_target_node_t *)t)->name)), 1, &v);
+    return;
+  }
+  case PM_INDEX_TARGET_NODE: {
+    sp_RbVal recv = pre->data[(*pi)++], args = pre->data[(*pi)++];
+    sp_int argc = sp_poly_length(args);
+    sp_RbVal argv[argc + 1];
+    for (sp_int i = 0; i < argc; i++) argv[i] = sp_poly_arr_get(args, i);
+    argv[argc] = v;
+    lupe_send(recv, "[]=", (int)argc + 1, argv);
+    return;
+  }
+  case PM_MULTI_TARGET_NODE: {
+    const pm_multi_target_node_t *mt = (const pm_multi_target_node_t *)t;
+    lupe_mw_split(f, &mt->lefts, mt->rest, &mt->rights, lupe_mw_array(v), pre, pi);
+    return;
+  }
+  default:
+    lupe_unsupported(t, "target of a multiple assignment");
+  }
+}
+
+/* The targets take the elements of arr: the lefts from the start, the
+   rights from the end, and a splat the rest. */
+static void lupe_mw_split(LupeFrame *f, const pm_node_list_t *lefts, const pm_node_t *rest,
+                          const pm_node_list_t *rights, sp_RbVal arr, sp_PolyArray *pre, sp_int *pi) {
+  SP_GC_ROOT_RBVAL(arr);
+  sp_int len = sp_poly_length(arr), nl = (sp_int)lefts->size, nr = (sp_int)rights->size;
+  for (sp_int i = 0; i < nl && L.ctl == LUPE_CTL_NONE; i++)
+    lupe_mw_assign(f, lefts->nodes[i], i < len ? sp_poly_arr_get(arr, i) : sp_box_nil(), pre, pi);
+  sp_int rstart = len - nr > nl ? len - nr : nl;
+  if (rest && PM_NODE_TYPE_P(rest, PM_SPLAT_NODE) && ((const pm_splat_node_t *)rest)->expression) {
+    sp_PolyArray *a = sp_PolyArray_new();
+    SP_GC_ROOT(a);
+    for (sp_int i = nl; i < rstart; i++) sp_PolyArray_push(a, sp_poly_arr_get(arr, i));
+    if (L.ctl == LUPE_CTL_NONE)
+      lupe_mw_assign(f, ((const pm_splat_node_t *)rest)->expression, sp_box_poly_array(a), pre, pi);
+  }
+  for (sp_int i = 0; i < nr && L.ctl == LUPE_CTL_NONE; i++)
+    lupe_mw_assign(f, rights->nodes[i], rstart + i < len ? sp_poly_arr_get(arr, rstart + i) : sp_box_nil(), pre, pi);
+}
+
+/* a, b = v: answers v. */
+static sp_RbVal lupe_multi_write(LupeFrame *f, const pm_multi_write_node_t *w) {
+  SP_GC_SAVE();
+  sp_PolyArray *pre = sp_PolyArray_new();
+  SP_GC_ROOT(pre);
+  if (!lupe_mw_prepare_list(f, &w->lefts, w->rest, &w->rights, pre)) return sp_box_nil();
+  sp_RbVal v = lupe_eval(f, w->value);
+  if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
+  SP_GC_ROOT_RBVAL(v);
+  sp_int pi = 0;
+  lupe_mw_split(f, &w->lefts, w->rest, &w->rights, lupe_mw_array(v), pre, &pi);
+  return v;
+}
+
 /* x[i] ||= v and x[i] &&= v: read, test, and write only when needed. */
 static sp_RbVal lupe_index_logic_write(LupeFrame *f, const pm_node_t *n) {
   SP_GC_SAVE();
@@ -1619,6 +1790,8 @@ static sp_RbVal lupe_eval(LupeFrame *f, const pm_node_t *n) {
     return lupe_call_op_write(f, (const pm_call_operator_write_node_t *)n);
   case PM_INDEX_OPERATOR_WRITE_NODE:
     return lupe_index_op_write(f, (const pm_index_operator_write_node_t *)n);
+  case PM_MULTI_WRITE_NODE:
+    return lupe_multi_write(f, (const pm_multi_write_node_t *)n);
   case PM_SUPER_NODE: {
     const pm_super_node_t *s = (const pm_super_node_t *)n;
     return lupe_super(f, n, s->arguments, 0, s->block);
