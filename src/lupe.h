@@ -274,6 +274,10 @@ static void lupe_process_consts(LupeClass *c);
 static int lupe_process_class(const LupeClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int lupe_process_responds(sp_RbVal r, const char *name);
 
+/* file.c */
+static int lupe_file_class(const LupeClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int lupe_file_responds(sp_RbVal r, const char *name);
+
 /* load.c */
 static int lupe_load_call(const pm_node_t *n, sp_RbVal self, const char *name, int argc, sp_RbVal *argv,
                           sp_RbVal *out);

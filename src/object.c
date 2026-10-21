@@ -708,7 +708,9 @@ static int lupe_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
       sp_sym s = sp_sym_intern(mn);
       int yes = lupe_find_method(lupe_class_of(r), s) != NULL;
       if (!yes && r.tag == SP_TAG_CLASS) yes = lupe_find_smethod(lupe_class_value(r), s) != NULL;
-      if (!yes) yes = lupe_builtin_responds(r, mn) || lupe_record_responds(r, mn) || lupe_process_responds(r, mn);
+      if (!yes)
+        yes = lupe_builtin_responds(r, mn) || lupe_record_responds(r, mn) || lupe_process_responds(r, mn) ||
+              lupe_file_responds(r, mn);
       *out = sp_box_bool(yes);
       return 1;
     }
@@ -761,6 +763,8 @@ static int lupe_class_core(LupeFrame *f, sp_RbVal r, const char *name, int argc,
   if (!blk && lupe_ffi_class(k, name, argc, argv, out)) return 1;
   /* the module functions of Process and GC */
   if (!blk && lupe_process_class(k, name, argc, argv, out)) return 1;
+  /* the class methods of File on paths */
+  if (!blk && lupe_file_class(k, name, argc, argv, out)) return 1;
   if (!strcmp(name, "new") || !strcmp(name, "allocate")) {
     if (k->is_module) return 0;
     /* an exception is a runtime sp_Exception, for a builtin class too */

@@ -23,6 +23,7 @@
 #include "load.c"
 #include "ffi.c"
 #include "process.c"
+#include "file.c"
 
 static void lupe_body(void) {
   SP_GC_SAVE();

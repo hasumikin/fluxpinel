@@ -360,12 +360,29 @@ static const char *lupe_hook_to_str(int cls_id, void *p) {
   return lupe_is_string(s) ? sp_poly_recv_s(s, "to_str") : NULL;
 }
 
+/* to_path, for a path argument (sp_poly_arg_path): NULL for a class with
+   no to_path, which then takes to_str. */
+static const char *lupe_hook_to_path(int cls_id, void *p) {
+  sp_RbVal v = sp_box_obj(p, cls_id);
+  LupeMethod *m = lupe_hook_method(v, "to_path");
+  if (!m) return NULL;
+  SP_GC_ROOT_RBVAL(v);
+  sp_RbVal s = lupe_invoke(m, v, 0, NULL);
+  if (!lupe_is_string(s)) {
+    const char *cn = sp_poly_class_name(v);
+    sp_raise_cls("TypeError", sp_sprintf("can't convert %s to String (%s#to_path gives %s)", cn, cn,
+                                         sp_poly_class_name(s)));
+  }
+  return sp_poly_recv_s(s, "to_path");
+}
+
 static void lupe_array_init(void) {
   sp_obj_cmp_hook = lupe_hook_cmp;
   sp_obj_to_ary_fn = lupe_hook_to_ary;
   sp_obj_to_a_fn = lupe_hook_to_a;
   sp_obj_to_int_fn = lupe_hook_to_int;
   sp_obj_to_str_fn = lupe_hook_to_str;
+  sp_obj_to_path_fn = lupe_hook_to_path;
 }
 
 #undef LUPE_IS
