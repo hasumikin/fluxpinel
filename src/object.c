@@ -145,7 +145,7 @@ static const struct {
 static int lupe_unknown_builtin(const char *name) {
   static const char *const names[] = { "Random", "Encoding", "Method", "UnboundMethod", "Binding",
                                        "Mutex", "Queue", "SizedQueue", "ConditionVariable", "ObjectSpace",
-                                       "GC", "Process", "Marshal", "Warning", "RubyVM", NULL };
+                                       "Marshal", "Warning", "RubyVM", NULL };
   for (int i = 0; names[i]; i++)
     if (!strcmp(names[i], name)) return 1;
   return 0;
@@ -176,6 +176,14 @@ static LupeClass *lupe_builtin(const char *name) {
     LupeClass *c = lupe_class_alloc(LUPE_EXC_CLS_BASE - L.nbuiltins, strdup(name), 0, NULL, NULL);
     lupe_push_class(&L.builtins, &L.nbuiltins, &L.builtins_cap, c);
     c->super = lupe_builtin(exc_parent);
+    return c;
+  }
+  /* a module that spinel's codegen answers by name (process.c): an id of
+     its own below the table too */
+  if (!id && (!strcmp(name, "Process") || !strcmp(name, "GC"))) {
+    LupeClass *c = lupe_class_alloc(LUPE_EXC_CLS_BASE - L.nbuiltins, strdup(name), 1, NULL, NULL);
+    lupe_push_class(&L.builtins, &L.nbuiltins, &L.builtins_cap, c);
+    if (name[0] == 'P') lupe_process_consts(c);
     return c;
   }
   if (!id) return NULL;
@@ -700,7 +708,7 @@ static int lupe_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
       sp_sym s = sp_sym_intern(mn);
       int yes = lupe_find_method(lupe_class_of(r), s) != NULL;
       if (!yes && r.tag == SP_TAG_CLASS) yes = lupe_find_smethod(lupe_class_value(r), s) != NULL;
-      if (!yes) yes = lupe_builtin_responds(r, mn) || lupe_record_responds(r, mn);
+      if (!yes) yes = lupe_builtin_responds(r, mn) || lupe_record_responds(r, mn) || lupe_process_responds(r, mn);
       *out = sp_box_bool(yes);
       return 1;
     }
@@ -751,6 +759,8 @@ static int lupe_class_core(LupeFrame *f, sp_RbVal r, const char *name, int argc,
   if (lupe_struct_class(f, k, name, argc, argv, blk, out)) return 1;
   /* ffi_func and its kin in a module body */
   if (!blk && lupe_ffi_class(k, name, argc, argv, out)) return 1;
+  /* the module functions of Process and GC */
+  if (!blk && lupe_process_class(k, name, argc, argv, out)) return 1;
   if (!strcmp(name, "new") || !strcmp(name, "allocate")) {
     if (k->is_module) return 0;
     /* an exception is a runtime sp_Exception, for a builtin class too */

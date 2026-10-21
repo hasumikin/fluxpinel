@@ -269,6 +269,11 @@ static void lupe_sched_end(void);
 static int lupe_ffi_class(LupeClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static sp_RbVal lupe_ffi_invoke(const struct LupeFfi *x, sp_RbVal self, int argc, sp_RbVal *argv);
 
+/* process.c */
+static void lupe_process_consts(LupeClass *c);
+static int lupe_process_class(const LupeClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int lupe_process_responds(sp_RbVal r, const char *name);
+
 /* load.c */
 static int lupe_load_call(const pm_node_t *n, sp_RbVal self, const char *name, int argc, sp_RbVal *argv,
                           sp_RbVal *out);

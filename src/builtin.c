@@ -43,6 +43,7 @@ static int lupe_kind_of(sp_RbVal v, const char **family, const char **variant) {
     case SP_BUILTIN_QUEUE: fam = var = "queue"; kind = LUPE_TY_QUEUE; break;
     case SP_BUILTIN_MUTEX: fam = var = "mutex"; kind = LUPE_TY_MUTEX; break;
     case SP_BUILTIN_CONDVAR: fam = var = "condvar"; kind = LUPE_TY_CONDVAR; break;
+    case SP_BUILTIN_TMS: fam = var = "tms"; break;
     case SP_BUILTIN_STR_INT_HASH: fam = "ANY_HASH"; var = "str_int_hash"; kind = LUPE_TY_STR_INT_HASH; break;
     case SP_BUILTIN_STR_STR_HASH: fam = "ANY_HASH"; var = "str_str_hash"; kind = LUPE_TY_STR_STR_HASH; break;
     case SP_BUILTIN_INT_INT_HASH: fam = "ANY_HASH"; var = "int_int_hash"; kind = LUPE_TY_INT_INT_HASH; break;
