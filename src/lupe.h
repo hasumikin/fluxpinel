@@ -284,7 +284,7 @@ static int lupe_is_proc(sp_RbVal v);
 static int lupe_is_range(sp_RbVal v);
 static int lupe_is_hash(sp_RbVal v);
 static int lupe_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
-static void lupe_trace_missing(const char *cls, const char *name, int argc);
+static void lupe_trace_missing(const char *owner, const char *name, int argc);
 static int lupe_builtin_responds(sp_RbVal r, const char *name);
 static __attribute__((noreturn)) void lupe_unsupported(const pm_node_t *n, const char *what);
 static __attribute__((noreturn)) void lupe_gap(const char *what);

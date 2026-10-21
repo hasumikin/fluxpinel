@@ -73,10 +73,41 @@ static sp_RbVal lupe_ary_setop(sp_RbVal r, char op, int argc, sp_RbVal *argv) {
   return sp_box_poly_array(acc);
 }
 
+/* Array.new, Array.new(ary), Array.new(n), Array.new(n, v) and
+   Array.new(n) { |i| }, as the AOT code makes them. A copy of ary ignores
+   the block, as CRuby does. */
+static int lupe_array_class(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
+                            sp_RbVal *out) {
+  LupeClass *k = lupe_class_value(r);
+  if (!k || k->cls_id >= 0 || strcmp(k->name, "Array") || !LUPE_IS("new")) return 0;
+  if (argc > 2) sp_raise_cls("ArgumentError", sp_sprintf("wrong number of arguments (given %d, expected 0..2)", argc));
+  if (argc == 1 && lupe_is_array(argv[0])) {
+    *out = sp_box_poly_array(sp_PolyArray_dup(sp_poly_to_poly_array(argv[0])));
+    return 1;
+  }
+  sp_PolyArray *a = sp_PolyArray_new();
+  SP_GC_ROOT(a);
+  *out = sp_box_poly_array(a);
+  if (argc == 0) return 1;
+  sp_int n = sp_poly_arg_int_chk(argv[0]);
+  if (n < 0) sp_raise_cls("ArgumentError", "negative array size");
+  for (sp_int i = 0; i < n; i++) {
+    sp_RbVal v = argc == 2 ? argv[1] : sp_box_nil();
+    if (blk) {
+      sp_RbVal iv = sp_box_int(i);
+      v = lupe_yield(blk, 1, &iv);
+      if (L.ctl != LUPE_CTL_NONE) { *out = sp_box_nil(); return 1; }
+    }
+    sp_PolyArray_push(a, v);
+  }
+  return 1;
+}
+
 /* The methods of Array with no block, and Array#fetch with one. Answers
    1 and sets *out when it handles the call. */
 static int lupe_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
                            sp_RbVal *out) {
+  if (r.tag == SP_TAG_CLASS) return lupe_array_class(r, name, argc, argv, blk, out);
   if (!lupe_is_array(r)) return 0;
   SP_GC_ROOT_RBVAL(r);
   if (blk) {

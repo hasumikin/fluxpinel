@@ -88,10 +88,33 @@ static int lupe_all_strings(int argc, sp_RbVal *argv) {
   return 1;
 }
 
+/* String.new and String.new(s), as the AOT code makes them: a new handle,
+   ASCII-8BIT when empty and a copy of s otherwise. encoding: sets the
+   encoding of the copy. capacity: has no visible effect. */
+static int lupe_string_class(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  LupeClass *k = lupe_class_value(r);
+  if (!k || k->cls_id >= 0 || strcmp(k->name, "String") || !LUPE_IS("new")) return 0;
+  sp_RbVal enc = sp_box_nil();
+  SP_GC_ROOT_RBVAL(enc);
+  if (argc > 0 && lupe_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash) {
+    sp_PolyPolyHash *kw = sp_poly_as_poly_poly_hash(argv[--argc]);
+    sp_RbVal key = sp_box_sym(sp_sym_intern("encoding"));
+    if (sp_PolyPolyHash_has_key(kw, key)) enc = sp_PolyPolyHash_get(kw, key);
+  }
+  if (argc > 1) sp_raise_cls("ArgumentError", sp_sprintf("wrong number of arguments (given %d, expected 0..1)", argc));
+  const char *s = argc ? sp_poly_arg_str_chk(argv[0]) : NULL;
+  SP_GC_ROOT_STR(s);
+  *out = sp_box_str_new(s ? sp_str_dup(s) : sp_str_empty_binary());
+  if (enc.tag != SP_TAG_NIL && sp_poly_is_strbuf(*out))
+    sp_String_force_encoding((sp_String *)out->v.p, lupe_str_enc_mode(enc));
+  return 1;
+}
+
 /* The methods of String with no block. Answers 1 and sets *out when it
    handles the call. */
 static int lupe_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const LupeBlock *blk,
                             sp_RbVal *out) {
+  if (r.tag == SP_TAG_CLASS) return blk ? 0 : lupe_string_class(r, name, argc, argv, out);
   if (blk || !lupe_is_string(r)) return 0;
   SP_GC_ROOT_RBVAL(r);
   if (lupe_str_bang(r, name, argc, argv, out)) return 1;

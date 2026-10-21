@@ -45,4 +45,13 @@ t("freeze") do
   [x.frozen?, (x << "d" rescue $!.class), (x.upcase! rescue $!.class)]
 end
 t("array each") { [[1, 2].each.to_a, [5, 6].each_with_index.to_a] }
+t("String.new") do
+  s = String.new
+  s << "abc"
+  u = String.new("hi", capacity: 100)
+  u << "!"
+  [s, String.new.encoding, String.new.frozen?, u, u.encoding, String.new(encoding: "BINARY").encoding,
+   String.new("x", encoding: "ASCII-8BIT").encoding]
+end
+t("String.new(3)") { String.new(3) }
 p "abc".each_char, [1, 2].each, [1, 2].each_with_index

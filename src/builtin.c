@@ -323,11 +323,13 @@ static int lupe_builtin_responds(sp_RbVal r, const char *name) {
 
 /* LUPE_TRACE_MISSING=1 reports each method that Lupe cannot find, before
    it raises NoMethodError. The oracle (tools/oracle.rb) reads the report
-   to tell a gap of Lupe from a NoMethodError that the program expects. */
-static void lupe_trace_missing(const char *cls, const char *name, int argc) {
+   to tell a gap of Lupe from a NoMethodError that the program expects.
+   The owner ends with its separator: "Array#" for an instance method,
+   "Array." for a method of the class Array. */
+static void lupe_trace_missing(const char *owner, const char *name, int argc) {
   static int on = -1;
   if (on < 0) { const char *e = getenv("LUPE_TRACE_MISSING"); on = e && *e && *e != '0'; }
-  if (on) fprintf(stderr, "lupe: missing builtin %s#%s/%d\n", cls, name, argc);
+  if (on) fprintf(stderr, "lupe: missing builtin %s%s/%d\n", owner, name, argc);
 }
 
 /* A call on a receiver. A method that the program defines comes first: on
@@ -397,7 +399,8 @@ static sp_RbVal lupe_send_b(sp_RbVal recv, const char *name, int argc, sp_RbVal 
   if (blk && argc >= 1 && (!strcmp(name, "send") || !strcmp(name, "__send__") || !strcmp(name, "public_send")))
     return lupe_send_b(recv, lupe_name_arg(argv[0]), argc - 1, argv + 1, blk);
   const char *cls = sp_poly_class_name(recv);
-  lupe_trace_missing(cls, name, argc);
+  LupeClass *rk = recv.tag == SP_TAG_CLASS ? lupe_class_value(recv) : NULL;
+  lupe_trace_missing(rk ? sp_sprintf("%s.", rk->name) : sp_sprintf("%s#", cls), name, argc);
   sp_raise_cls("NoMethodError", sp_sprintf("undefined method '%s' for an instance of %s", name, cls));
 }
 

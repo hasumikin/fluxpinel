@@ -84,3 +84,13 @@ end
 s = [1, 2, 3]
 s[1, 1] = Pair.new
 p s, [1, 2].concat(Pair.new), [1, 2].zip(5..), [1, 2].zip(1..1)
+
+# Array.new: the same value in each place, a block per index, or a copy
+a = Array.new(2, "x")
+a[0] << "y"
+src = [1, 2]
+c = Array.new(src)
+c << 3
+p Array.new, Array.new(3), a, Array.new(4) { |i| i * i }, src, c
+p Array.new(3) { |i| break :out if i == 1; i }
+p((Array.new(-1) rescue $!.message), (Array.new("x") rescue $!.class))

@@ -371,7 +371,7 @@ static int lupe_const_lookup(const LupeClass *cref, sp_sym name, sp_RbVal *out) 
 }
 
 static __attribute__((noreturn)) void lupe_const_missing(const char *name) {
-  lupe_trace_missing("const", name, 0);
+  lupe_trace_missing("const#", name, 0);
   sp_raise_cls("NameError", sp_sprintf("uninitialized constant %s", name));
 }
 

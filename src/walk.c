@@ -833,7 +833,7 @@ static sp_RbVal lupe_call_self(LupeFrame *f, const char *name, int argc, sp_RbVa
   if (lupe_kernel(name, argc, argv, &out)) return out;
   if (lupe_object_core(self, name, argc, argv, &out)) return out;
   if (!lupe_is_lupe_object(self) && self.tag != SP_TAG_CLASS) return lupe_send(self, name, argc, argv);
-  lupe_trace_missing("Kernel", name, argc);
+  lupe_trace_missing("Kernel#", name, argc);
   /* a bare name that could be a local variable is a NameError */
   const char *cls = vcall ? "NameError" : "NoMethodError";
   const char *what = vcall ? "undefined local variable or method" : "undefined method";
@@ -948,7 +948,7 @@ static sp_RbVal lupe_super_call(LupeFrame *f, const pm_node_t *n, const pm_argum
   } else if (lupe_builtin_call(f->self, name, argc, argv, blk, &out)) {
     return out;
   }
-  lupe_trace_missing("super", name, argc);
+  lupe_trace_missing("super#", name, argc);
   sp_raise_cls("NoMethodError", sp_sprintf("super: no superclass method '%s'", name));
 }
 
