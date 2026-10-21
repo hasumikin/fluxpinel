@@ -54,4 +54,9 @@ t("String.new") do
    String.new("x", encoding: "ASCII-8BIT").encoding]
 end
 t("String.new(3)") { String.new(3) }
+t("interpolation order") do
+  x = +"x"
+  z = +"z"
+  ["#{x}#{(x << "Y"; 1)}#{x}", "<#{z}#{z << "1"; z}>", "#{x}".equal?(x)]
+end
 p "abc".each_char, [1, 2].each, [1, 2].each_with_index

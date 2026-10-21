@@ -1030,8 +1030,13 @@ static sp_RbVal lupe_new_string(const uint8_t *p, size_t len) {
   return sp_box_str_new(d);
 }
 
+/* As CRuby does, a part that is not a String converts with to_s when it
+   is evaluated, and the parts join after the last one: a String part
+   shows a change that a later part makes to it. */
 static sp_RbVal lupe_interpolate(LupeFrame *f, const pm_node_list_t *parts) {
-  sp_RbVal acc = lupe_new_string(NULL, 0), v = sp_box_nil();
+  sp_PolyArray *vals = sp_PolyArray_new();
+  SP_GC_ROOT(vals);
+  sp_RbVal acc = sp_box_nil(), v = sp_box_nil();
   SP_GC_ROOT_RBVAL(acc);
   SP_GC_ROOT_RBVAL(v);
   for (size_t i = 0; i < parts->size; i++) {
@@ -1042,12 +1047,14 @@ static sp_RbVal lupe_interpolate(LupeFrame *f, const pm_node_list_t *parts) {
     } else if (PM_NODE_TYPE_P(p, PM_EMBEDDED_STATEMENTS_NODE)) {
       v = lupe_eval_stmts(f, ((const pm_embedded_statements_node_t *)p)->statements);
       if (L.ctl != LUPE_CTL_NONE) return sp_box_nil();
-      v = sp_poly_to_s_box(v);
+      if (!lupe_is_string(v)) v = sp_poly_to_s_box(v);
     } else {
       lupe_unsupported(p, "interpolation part");
     }
-    acc = sp_poly_add(acc, v);
+    sp_PolyArray_push(vals, v);
   }
+  acc = lupe_new_string(NULL, 0);
+  for (sp_int i = 0; i < vals->len; i++) acc = sp_poly_add(acc, vals->data[i]);
   return acc;
 }
 
