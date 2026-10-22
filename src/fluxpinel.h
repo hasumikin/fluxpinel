@@ -203,6 +203,7 @@ typedef struct {
                             that a later definition replaced, as a call of it
                             can still run; marked by the mark hook */
   int nprocs, procs_cap;
+  int mm_vcall;          /* the running method_missing hook is for a bare name */
 } Fluxpinel;
 
 static Fluxpinel L;

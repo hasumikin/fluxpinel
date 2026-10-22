@@ -258,6 +258,78 @@ static FxClass *fx_class_of(sp_RbVal v) {
   return c ? c : L.object;
 }
 
+/* NoMethodError for a missing method, or NameError for a bare name (vcall),
+   in the words of CRuby: "for main", "for nil", "for class C", "for an
+   instance of C". */
+static __attribute__((noreturn)) void fx_no_method(sp_RbVal self, const char *name, int vcall) {
+  const char *on;
+  if (fx_is_fx_object(self) && self.v.p == L.main.v.p) on = "main";
+  else if (self.tag == SP_TAG_NIL) on = "nil";
+  else if (self.tag == SP_TAG_BOOL) on = self.v.b ? "true" : "false";
+  else if (self.tag == SP_TAG_CLASS) {
+    FxClass *k = fx_class_value(self);
+    on = sp_sprintf("%s %s", k && k->is_module ? "module" : "class", k ? k->name : sp_poly_inspect(self));
+  } else {
+    on = sp_sprintf("an instance of %s", sp_poly_class_name(self));
+  }
+  sp_raise_cls(vcall ? "NameError" : "NoMethodError",
+               sp_sprintf("%s '%s' for %s", vcall ? "undefined local variable or method" : "undefined method", name,
+                          on));
+}
+
+/* The hook of a missing method: method_missing(:name, *args) of the
+   receiver, with the block of the call. Answers 0 when the program
+   defines no method_missing for the receiver. vcall is for a bare name,
+   so that a super from the hook raises NameError (L.mm_vcall). */
+/* Whether name is a method of Object or Kernel in CRuby. Such a call does
+   not miss in CRuby, so when Fluxpinel has no such builtin, the call is a
+   gap of Fluxpinel and not one for method_missing. */
+static int fx_object_method_name(const char *name) {
+  static const char *const names[] = {
+    "!", "!=", "!~", "<=>", "==", "===", "Array", "Complex",
+    "Float", "Hash", "Integer", "Rational", "String", "__callee__", "__dir__", "__id__",
+    "__method__", "__send__", "`", "abort", "at_exit", "autoload", "autoload?", "binding",
+    "block_given?", "caller", "caller_locations", "catch", "class", "clone", "define_singleton_method", "display",
+    "dup", "enum_for", "eql?", "equal?", "eval", "exec", "exit", "exit!",
+    "extend", "fail", "fork", "format", "freeze", "frozen?", "gets", "global_variables",
+    "hash", "inspect", "instance_eval", "instance_exec", "instance_of?", "instance_variable_defined?",
+    "instance_variable_get", "instance_variable_set", "instance_variables", "is_a?", "iterator?", "itself",
+    "kind_of?", "lambda", "load", "local_variables", "loop", "method", "methods", "nil?",
+    "object_id", "open", "p", "pp", "print", "printf", "private_methods", "proc",
+    "protected_methods", "public_method", "public_methods", "public_send", "putc", "puts", "raise", "rand",
+    "readline", "readlines", "remove_instance_variable", "require", "require_relative", "respond_to?", "select",
+    "send", "set_trace_func", "singleton_class", "singleton_method", "singleton_methods", "sleep", "spawn",
+    "sprintf", "srand", "syscall", "system", "tap", "test", "then", "throw",
+    "to_enum", "to_s", "trace_var", "trap", "untrace_var", "warn", "yield_self", NULL
+  };
+  for (int i = 0; names[i]; i++)
+    if (!strcmp(name, names[i])) return 1;
+  return 0;
+}
+
+static FxMethod *fx_find_hook(sp_RbVal r, const char *hook) {
+  sp_sym s = sp_sym_intern(hook);
+  FxClass *k = fx_class_value(r);
+  FxMethod *m = k ? fx_find_smethod(k, s) : NULL;
+  return m ? m : fx_find_method(fx_class_of(r), s);
+}
+
+static int fx_method_missing(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                               int vcall, sp_RbVal *out) {
+  FxMethod *m = fx_object_method_name(name) ? NULL : fx_find_hook(r, "method_missing");
+  if (!m) return 0;
+  SP_GC_SAVE();
+  sp_PolyArray *a = sp_PolyArray_new();
+  SP_GC_ROOT(a);
+  sp_PolyArray_push(a, sp_box_sym(sp_sym_intern(name)));
+  for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
+  int saved = L.mm_vcall;
+  L.mm_vcall = vcall;
+  *out = fx_invoke_b(m, r, (int)a->len, a->data, blk);
+  L.mm_vcall = saved;
+  return 1;
+}
+
 /* The ancestors of c, in method lookup order: c, its mixins (the last
    included first, each with its own mixins), then the same for the
    superclass. Answers the count. */
@@ -651,7 +723,31 @@ static const char *fx_name_arg(sp_RbVal v) {
   return sp_poly_recv_s(v, "send");
 }
 
+/* respond_to?(name, include_all): a method of the program or a builtin
+   method, else what respond_to_missing?(name, include_all) answers. Every
+   method is public here, so include_all only goes on to the hook. */
+static sp_RbVal fx_respond_to(sp_RbVal r, sp_RbVal a, sp_RbVal all) {
+  const char *mn = fx_name_arg(a);
+  sp_sym s = sp_sym_intern(mn);
+  int yes = fx_find_method(fx_class_of(r), s) != NULL;
+  if (!yes && r.tag == SP_TAG_CLASS) yes = fx_find_smethod(fx_class_value(r), s) != NULL;
+  if (!yes)
+    yes = fx_builtin_responds(r, mn) || fx_record_responds(r, mn) || fx_process_responds(r, mn) ||
+          fx_file_responds(r, mn);
+  if (yes) return sp_box_bool(1);
+  FxMethod *m = fx_find_hook(r, "respond_to_missing?");
+  if (!m) return sp_box_bool(0);
+  SP_GC_SAVE();
+  sp_RbVal args[2] = { sp_box_sym(s), all };
+  SP_GC_ROOT_RBVAL(args[1]);
+  return sp_box_bool(sp_poly_truthy(fx_invoke(m, r, 2, args)));
+}
+
 static int fx_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (argc == 2 && !strcmp(name, "respond_to?")) {
+    *out = fx_respond_to(r, argv[0], argv[1]);
+    return 1;
+  }
   if (argc == 0) {
     if (!strcmp(name, "class")) {
       FxClass *k = r.tag == SP_TAG_CLASS ? fx_builtin(sp_poly_class_name(r)) : fx_class_of(r);
@@ -721,14 +817,7 @@ static int fx_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       return 1;
     }
     if (!strcmp(name, "respond_to?")) {
-      const char *mn = fx_name_arg(a);
-      sp_sym s = sp_sym_intern(mn);
-      int yes = fx_find_method(fx_class_of(r), s) != NULL;
-      if (!yes && r.tag == SP_TAG_CLASS) yes = fx_find_smethod(fx_class_value(r), s) != NULL;
-      if (!yes)
-        yes = fx_builtin_responds(r, mn) || fx_record_responds(r, mn) || fx_process_responds(r, mn) ||
-              fx_file_responds(r, mn);
-      *out = sp_box_bool(yes);
+      *out = fx_respond_to(r, a, sp_box_bool(0));
       return 1;
     }
     if (fx_is_fx_object(r) && !strcmp(name, "extend")) fx_gap("extend on an object");

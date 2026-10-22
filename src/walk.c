@@ -870,13 +870,10 @@ static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *a
   if (fx_kernel(name, argc, argv, &out)) return out;
   if (fx_object_core(self, name, argc, argv, &out)) return out;
   if (!fx_is_fx_object(self) && self.tag != SP_TAG_CLASS) return fx_send(self, name, argc, argv);
+  if (fx_method_missing(self, name, argc, argv, NULL, vcall, &out)) return out;
   fx_trace_missing("Kernel#", name, argc);
   /* a bare name that could be a local variable is a NameError */
-  const char *cls = vcall ? "NameError" : "NoMethodError";
-  const char *what = vcall ? "undefined local variable or method" : "undefined method";
-  if (fx_is_fx_object(self) && self.v.p == L.main.v.p)
-    sp_raise_cls(cls, sp_sprintf("%s '%s' for main", what, name));
-  sp_raise_cls(cls, sp_sprintf("%s '%s' for an instance of %s", what, name, sp_poly_class_name(self)));
+  fx_no_method(self, name, vcall);
 }
 
 /* The arguments that a bare super passes, into out: the current values of
@@ -972,6 +969,11 @@ static sp_RbVal fx_super_call(FxFrame *f, const pm_node_t *n, const pm_arguments
   if (s) return fx_invoke_b(s, f->self, argc, argv, blk);
   const char *name = sp_sym_to_s(m->name);
   sp_RbVal out;
+  /* the builtin method_missing: the error of the method that was missing;
+     the builtin respond_to_missing?: false */
+  if (!strcmp(name, "method_missing") && argc >= 1 && argv[0].tag == SP_TAG_SYM)
+    fx_no_method(f->self, sp_sym_to_s((sp_sym)argv[0].v.i), L.mm_vcall);
+  if (!strcmp(name, "respond_to_missing?")) return sp_box_bool(0);
   /* the builtin initialize: an exception takes its message, a Struct or a
      Data its members */
   if (!strcmp(name, "initialize")) {

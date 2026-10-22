@@ -371,6 +371,8 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
   if (fx_iter(recv, name, argc, argv, blk, out)) return 1;
   if (blk) {
     if (argc >= 1 && (!strcmp(name, "send") || !strcmp(name, "__send__") || !strcmp(name, "public_send"))) return 0;
+    /* a method of no builtin, with a hook that takes it */
+    if (!fx_object_method_name(name) && fx_find_hook(recv, "method_missing")) return 0;
     fx_gap(sp_sprintf("block for the builtin %s#%s", sp_poly_class_name(recv), name));
   }
   if (fx_core(recv, name, argc, argv, out)) return 1;
@@ -399,10 +401,10 @@ static sp_RbVal fx_send_b(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
   if (fx_builtin_call(recv, name, argc, argv, blk, &out)) return out;
   if (blk && argc >= 1 && (!strcmp(name, "send") || !strcmp(name, "__send__") || !strcmp(name, "public_send")))
     return fx_send_b(recv, fx_name_arg(argv[0]), argc - 1, argv + 1, blk);
-  const char *cls = sp_poly_class_name(recv);
+  if (fx_method_missing(recv, name, argc, argv, blk, 0, &out)) return out;
   FxClass *rk = recv.tag == SP_TAG_CLASS ? fx_class_value(recv) : NULL;
-  fx_trace_missing(rk ? sp_sprintf("%s.", rk->name) : sp_sprintf("%s#", cls), name, argc);
-  sp_raise_cls("NoMethodError", sp_sprintf("undefined method '%s' for an instance of %s", name, cls));
+  fx_trace_missing(rk ? sp_sprintf("%s.", rk->name) : sp_sprintf("%s#", sp_poly_class_name(recv)), name, argc);
+  fx_no_method(recv, name, 0);
 }
 
 /* p v to the object that $stdout holds: its write takes the inspect and a
