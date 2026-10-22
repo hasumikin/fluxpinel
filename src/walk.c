@@ -226,12 +226,34 @@ static void fx_define(FxFrame *f, const pm_def_node_t *def) {
   if (f->singleton_defs) fx_define_method(k, m, 1);
 }
 
-static __attribute__((noreturn)) void fx_arity_error(int argc, int nreq, int nopt, int rest) {
-  if (rest) sp_raise_cls("ArgumentError", sp_sprintf("wrong number of arguments (given %d, expected %d+)", argc, nreq));
+/* kws is "; required keyword: k" or "" (fx_required_keywords) */
+static __attribute__((noreturn)) void fx_arity_error_kw(int argc, int nreq, int nopt, int rest, const char *kws) {
+  if (rest)
+    sp_raise_cls("ArgumentError", sp_sprintf("wrong number of arguments (given %d, expected %d+%s)", argc, nreq, kws));
   if (nopt)
-    sp_raise_cls("ArgumentError",
-                 sp_sprintf("wrong number of arguments (given %d, expected %d..%d)", argc, nreq, nreq + nopt));
-  sp_raise_cls("ArgumentError", sp_sprintf("wrong number of arguments (given %d, expected %d)", argc, nreq));
+    sp_raise_cls("ArgumentError", sp_sprintf("wrong number of arguments (given %d, expected %d..%d%s)", argc, nreq,
+                                             nreq + nopt, kws));
+  sp_raise_cls("ArgumentError", sp_sprintf("wrong number of arguments (given %d, expected %d%s)", argc, nreq, kws));
+}
+
+static __attribute__((noreturn)) void fx_arity_error(int argc, int nreq, int nopt, int rest) {
+  fx_arity_error_kw(argc, nreq, nopt, rest, "");
+}
+
+/* The tail that CRuby adds to an arity error when the method has required
+   keywords: all of them, given or not. */
+static const char *fx_required_keywords(const pm_parameters_node_t *ps) {
+  sp_String *s = sp_String_new("");
+  SP_GC_ROOT(s);
+  int n = 0;
+  for (size_t i = 0; i < ps->keywords.size; i++) {
+    const pm_node_t *p = ps->keywords.nodes[i];
+    if (!PM_NODE_TYPE_P(p, PM_REQUIRED_KEYWORD_PARAMETER_NODE)) continue;
+    sp_String_append(s, n++ ? ", " : "");
+    sp_String_append(s, sp_sym_to_s(fx_sym(((const pm_required_keyword_parameter_node_t *)p)->name)));
+  }
+  if (!n) return "";
+  return sp_sprintf("; required keyword%s: %s", n > 1 ? "s" : "", s->data);
 }
 
 static int fx_is_array_value(sp_RbVal v) {
@@ -361,7 +383,7 @@ static void fx_bind_list(FxFrame *f, const pm_parameters_node_t *ps, int argc, s
   int npre = (int)ps->requireds.size, npost = (int)ps->posts.size, nopt = (int)ps->optionals.size;
   int rest = ps->rest != NULL || fwd;
   if (!loose && (argc < npre + npost || (!rest && argc > npre + npost + nopt)))
-    fx_arity_error(argc, npre + npost, nopt, rest);
+    fx_arity_error_kw(argc, npre + npost, nopt, rest, fx_required_keywords(ps));
   /* a block drops the extra arguments from the end */
   if (loose && !rest && argc > npre + nopt + npost) argc = npre + nopt + npost;
   int ai = 0;
