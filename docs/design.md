@@ -412,6 +412,84 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   with no libffi, and then every FFI declaration and every native binding
   is a gap.
 
+### 3.3.8 Speed
+
+The walker is slower than CRuby. The target is the speed of the CRuby
+interpreter with no JIT. A tree-walking interpreter on a runtime that it
+borrows reaches it: abruby of ASTro (section 6) walks its tree on the
+values, the GC and the parser of CRuby, and runs `fib` in 0.85 s where
+CRuby takes 1.33 s.
+
+Most of the cost of the walker is not the walk over the AST. It is the
+work that each call does again on each run:
+
+- **Dispatch by String.** A call finds a builtin method by its name: a
+  chain of `strcmp` in each core file (about 500 comparisons in `src/`),
+  then a search of the generated rows (`fx_bop_find`). A frequent method
+  at the end of a chain pays for each comparison before it.
+- **Lookup with no cache.** `fx_find_method` builds the list of the
+  ancestors (`fx_ancestors`) and searches each method table, at each call.
+- **The name.** A call turns the constant id of prism into a C string, and
+  `sp_sym_intern` turns it back into a Symbol for each lookup.
+- **Instance variables.** `fx_ivar_slot` searches the names of the class
+  for the slot at each read and each write.
+- **Jumps.** After each evaluation, the caller reads `L.ctl` in memory to
+  see a pending `return`, `break` or `next`.
+- **Frames.** A frame roots each slot with its own push to the GC root
+  stack.
+
+A bytecode VM would remove the walk itself, but it keeps each cost above.
+The walker removes them. The measures, in order:
+
+1. **A tree of the walker.** Translate the prism AST once, at load, into
+   nodes of Fluxpinel. A node keeps what the translation resolves: the
+   Symbol of a name, the slot of a local, and the cache fields of the
+   measures below. The walker cannot add a field to a prism node, so each
+   other measure needs this tree. A node can also carry a function
+   pointer for its evaluation, so that a measure can replace the
+   evaluation of one node (measure 5).
+2. **Symbols, no strings.** The translation interns each name once. A
+   lookup compares Symbols and does no `strcmp` and no `sp_sym_intern`.
+   Builtin dispatch finds a core method in one table by (receiver kind,
+   Symbol), not by a chain of comparisons.
+3. **A method cache for each call node.** A call node keeps the class of
+   the last receiver, the method that it found and a serial number. The
+   cache hits when the class and the serial are the same. A definition, an
+   `include`, an `extend` or a change of visibility increments one global
+   serial, and thus clears every cache. A program defines its methods
+   mostly at the start, so the caches stay valid at run time. The code of
+   a miss stays out of line (`noinline`), but not in a cold section: a
+   call site with more than one class takes the miss path often.
+4. **Jumps in the result.** Each evaluation returns the value and a state
+   (`return`, `break`, `next`) in two words, which stay in registers. A
+   method boundary clears its state with one operation. An exception
+   stays a raise of the runtime (`sp_raise`), so that a raise crosses to
+   AOT code (section 3.6).
+5. **Specialized operators.** The translation gives `a + b` and its kin a
+   node for two Integers. When the node meets a Float, it changes its
+   evaluation to the Float form, and then to the general form. A node
+   that changes too often stays general. A program that redefines a
+   builtin operator turns off each such node.
+6. **An instance variable cache.** A node of `@x` keeps the class and the
+   slot that it found last.
+7. **Accessors.** A method that `attr_reader` or `attr_writer` defines
+   runs with no frame.
+8. **Frames.** Root the slots of a frame as one range, with one push.
+
+Two parts of the work stay as they are:
+
+- **Calls into the runtime.** A builtin method is a function of the spinel
+  runtime, and the walker does not make it faster. abruby has the same
+  limit: the functions of CRuby take about 30% of its profile.
+- **Code generation.** ASTro gets most of its speed from C code that it
+  generates for each node and compiles. A part of a program that needs
+  that speed moves to AOT code in Fluxpinel, and spinel compiles it.
+
+Each measure keeps the semantics. The oracle (section 4) checks this: the
+same tests must agree after each step. A step must also show its gain on
+a benchmark: `fib`, and `examples/logq/queries/block.rb`, which calls into
+the walker once for each row of the log.
+
 ### 3.4 User classes
 
 Spinel compiles each user class to a C struct. The `cls_id` of a class
@@ -699,8 +777,8 @@ Requirements for all forms:
 - **One walker lock.** The walker is not shared between OS threads
   (section 3.3.5). AOT code on more than one thread calls Fluxpinel under one
   lock.
-- **Speed.** The walker is slower than CRuby (section 7). Fluxpinel is for the
-  glue of a program, not for its hot paths.
+- **Speed.** The walker is slower than CRuby (sections 3.3.8 and 7).
+  Fluxpinel is for the glue of a program, not for its hot paths.
 - **The same semantics.** A value has the same builtin methods in Fluxpinel and
   in AOT code. The oracle (section 4) checks this.
 
@@ -749,6 +827,13 @@ one.
   codegen with a bytecode interpreter.
 - **nicht.** Iced (AOT) and naked (walker) code meet at the method table
   and share one value word. Fluxpinel applies the same idea to spinel.
+- **ASTro** (ko1/astro). A framework for AST interpreters. It generates
+  the evaluator of each node from one definition, and it specializes a
+  tree into C code that a C compiler makes fast. Its sample abruby walks a
+  tree on the runtime of CRuby, as Fluxpinel does on the runtime of
+  spinel. The measures of section 3.3.8 come from abruby: a tree made
+  from the prism AST, a method cache keyed by a serial, specialized
+  operators and jumps in the result.
 
 ## 7. Facts about the spinel runtime
 
@@ -989,8 +1074,6 @@ These facts apply to spinel commit `ffac8340d`.
 - Can a generator map the `sp_poly_*` helpers to method names, as
   `tools/bop_gen.c` does for `bop_rows[]`? Codegen names the helper that it
   emits for each method, so the map exists in the codegen source.
-- How does the walker dispatch fast? Candidates are interned method names
-  (`sp_sym`) and an inline cache per call node.
 
 ## 9. Plan
 
