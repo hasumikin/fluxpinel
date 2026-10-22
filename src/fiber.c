@@ -183,9 +183,8 @@ static int fx_fiber_class(FxClass *k, const char *name, int argc, sp_RbVal *argv
       sp_gc_wb(f);
       f->user_data = d;
       /* The runtime reads SPINEL_WORKERS at the first spawn. The state of
-         the walker (L) has no lock, so Fluxpinel asks for the fewest workers,
-         whatever the program wrote to ENV. One helper still runs beside
-         main (matz/spinel#9840). */
+         the walker (L) has no lock, so Fluxpinel asks for one OS thread,
+         whatever the program wrote to ENV: main then runs every thread. */
       setenv("SPINEL_WORKERS", "1", 1);
       *out = sp_box_obj(sp_Thread_spawn_fiber(f, sp_box_nil()), SP_BUILTIN_THREAD);
       return 1;

@@ -299,9 +299,13 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   runtime needs its root fiber before any fiber runs, and drains it at the
   end of the program. Fluxpinel sets `SPINEL_WORKERS=1`: the state of the
   walker is not shared between OS threads, so green threads take turns on
-  one worker. A `while` back-edge and a block call poll the safepoint
-  flag, as AOT code does at a back-edge. A thread switch thus comes only
-  where no jump is pending.
+  one OS thread, which is main. A `while` back-edge and a block call poll
+  the safepoint flag, as AOT code does at a back-edge. A thread switch
+  thus comes only where no jump is pending.
+- **Blocking calls.** I/O, `sleep`, and a wait on a Queue or a Mutex park
+  a green thread in the scheduler. A call that blocks in the OS stops
+  every thread until it returns. An example is an `ffi_func` call that
+  blocks.
 - **Iteration.** A generator Enumerator is the runtime's, so the generated
   wrappers answer `next`, `peek`, `take`, `size` and `rewind`. A method
   with a block reads the items one at a time through a walker of the
