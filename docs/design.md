@@ -807,11 +807,13 @@ change to spinel.
 
 ### 5.3 Dynamic dispatch
 
-Spinel refuses a program that calls a method which no class defines. For
-dynamic dispatch, spinel must accept such a call, and emit code that hands
-it to Fluxpinel at run time. Then a class of the program can use
-`method_missing`, `define_method` and `send` with a computed name, and the
-static part of the program stays AOT code. A port of a CRuby application
+Spinel compiles a call of a method that no class defines, and the call
+raises `NoMethodError` at run time. It does not call `method_missing`, and
+it warns when a class defines one. Spinel refuses `define_method` with a
+name that the program makes at run time. For dynamic dispatch, spinel must
+emit code that hands such a call to Fluxpinel at run time. Then a class of
+the program can use `method_missing` and `define_method` with a computed
+name, and the static part of the program stays AOT code. A port of a CRuby application
 can start with the dynamic parts in Fluxpinel, and move them to AOT code one by
 one.
 
