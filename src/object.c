@@ -28,14 +28,30 @@ static void fx_table_put(FxMethodTable *t, FxMethod *m) {
 static FxMethod *fx_method_new(FxMethodKind kind, sp_sym name, const pm_def_node_t *def,
                                    sp_sym ivar, FxClass *owner) {
   FxMethod *m = calloc(1, sizeof *m);
-  *m = (FxMethod){ name, kind, def, ivar, owner };
+  *m = (FxMethod){ .name = name, .kind = kind, .def = def, .ivar = ivar, .owner = owner };
   return m;
+}
+
+/* A copy of m with the visibility vis. */
+static FxMethod *fx_method_copy(const FxMethod *m, int vis) {
+  FxMethod *c = malloc(sizeof *c);
+  *c = *m;
+  c->vis = vis;
+  return c;
+}
+
+/* The instance methods that are private whatever the scope says. */
+static int fx_always_private(sp_sym name) {
+  const char *n = sp_sym_to_s(name);
+  return !strcmp(n, "initialize") || !strcmp(n, "initialize_copy") || !strcmp(n, "initialize_clone") ||
+         !strcmp(n, "initialize_dup") || !strcmp(n, "respond_to_missing?");
 }
 
 /* the number of builtin classes that the program reopened with a def */
 static int fx_reopened_builtins;
 
 static void fx_define_method(FxClass *c, FxMethod *m, int singleton) {
+  if (!singleton && fx_always_private(m->name)) m->vis = FX_VIS_PRIVATE;
   fx_table_put(singleton ? &c->smethods : &c->methods, m);
   if (!singleton && c->cls_id < 0 && c != L.object) fx_reopened_builtins++;
   /* the hook of the class: method_added(name) */
@@ -53,8 +69,7 @@ static void fx_define_method(FxClass *c, FxMethod *m, int singleton) {
 static void fx_alias(FxClass *k, int singleton, sp_sym to, sp_sym from) {
   FxMethod *m = singleton ? fx_find_smethod(k, from) : fx_find_method(k, from);
   if (!m) fx_gap(sp_sprintf("an alias of the builtin method %s", sp_sym_to_s(from)));
-  FxMethod *c = malloc(sizeof *c);
-  *c = *m;
+  FxMethod *c = fx_method_copy(m, m->vis);
   c->name = to;
   fx_define_method(k, c, singleton);
 }
@@ -258,29 +273,31 @@ static FxClass *fx_class_of(sp_RbVal v) {
   return c ? c : L.object;
 }
 
-/* NoMethodError for a missing method, or NameError for a bare name (vcall),
-   in the words of CRuby: "for main", "for nil", "for class C", "for an
+/* The receiver in the words of CRuby: "main", "nil", "class C", "an
    instance of C". */
-static __attribute__((noreturn)) void fx_no_method(sp_RbVal self, const char *name, int vcall) {
-  const char *on;
-  if (fx_is_fx_object(self) && self.v.p == L.main.v.p) on = "main";
-  else if (self.tag == SP_TAG_NIL) on = "nil";
-  else if (self.tag == SP_TAG_BOOL) on = self.v.b ? "true" : "false";
-  else if (self.tag == SP_TAG_CLASS) {
+static const char *fx_recv_words(sp_RbVal self) {
+  if (fx_is_fx_object(self) && self.v.p == L.main.v.p) return "main";
+  if (self.tag == SP_TAG_NIL) return "nil";
+  if (self.tag == SP_TAG_BOOL) return self.v.b ? "true" : "false";
+  if (self.tag == SP_TAG_CLASS) {
     FxClass *k = fx_class_value(self);
-    on = sp_sprintf("%s %s", k && k->is_module ? "module" : "class", k ? k->name : sp_poly_inspect(self));
-  } else {
-    on = sp_sprintf("an instance of %s", sp_poly_class_name(self));
+    return sp_sprintf("%s %s", k && k->is_module ? "module" : "class", k ? k->name : sp_poly_inspect(self));
   }
-  sp_raise_cls(vcall ? "NameError" : "NoMethodError",
-               sp_sprintf("%s '%s' for %s", vcall ? "undefined local variable or method" : "undefined method", name,
-                          on));
+  return sp_sprintf("an instance of %s", sp_poly_class_name(self));
 }
 
-/* The hook of a missing method: method_missing(:name, *args) of the
-   receiver, with the block of the call. Answers 0 when the program
-   defines no method_missing for the receiver. vcall is for a bare name,
-   so that a super from the hook raises NameError (L.mm_vcall). */
+/* The error of a call that missed for the reason why (FX_MISS_*):
+   NameError for a bare name, else NoMethodError. */
+static __attribute__((noreturn)) void fx_no_method(sp_RbVal self, const char *name, int why) {
+  const char *on = fx_recv_words(self);
+  if (why == FX_MISS_VCALL)
+    sp_raise_cls("NameError", sp_sprintf("undefined local variable or method '%s' for %s", name, on));
+  if (why == FX_MISS_PRIVATE || why == FX_MISS_PROTECTED)
+    sp_raise_cls("NoMethodError", sp_sprintf("%s method '%s' called for %s",
+                                             why == FX_MISS_PRIVATE ? "private" : "protected", name, on));
+  sp_raise_cls("NoMethodError", sp_sprintf("undefined method '%s' for %s", name, on));
+}
+
 /* Whether name is a method of Object or Kernel in CRuby. Such a call does
    not miss in CRuby, so when Fluxpinel has no such builtin, the call is a
    gap of Fluxpinel and not one for method_missing. */
@@ -314,8 +331,13 @@ static FxMethod *fx_find_hook(sp_RbVal r, const char *hook) {
   return m ? m : fx_find_method(fx_class_of(r), s);
 }
 
+/* The hook of a missing method: method_missing(:name, *args) of the
+   receiver, with the block of the call. Answers 0 when the program
+   defines no method_missing for the receiver. why (FX_MISS_*) is the
+   reason of the miss, for the error of a super from the hook
+   (L.mm_why). */
 static int fx_method_missing(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
-                               int vcall, sp_RbVal *out) {
+                               int why, sp_RbVal *out) {
   FxMethod *m = fx_object_method_name(name) ? NULL : fx_find_hook(r, "method_missing");
   if (!m) return 0;
   SP_GC_SAVE();
@@ -323,11 +345,29 @@ static int fx_method_missing(sp_RbVal r, const char *name, int argc, sp_RbVal *a
   SP_GC_ROOT(a);
   sp_PolyArray_push(a, sp_box_sym(sp_sym_intern(name)));
   for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
-  int saved = L.mm_vcall;
-  L.mm_vcall = vcall;
+  int saved = L.mm_why;
+  L.mm_why = why;
   *out = fx_invoke_b(m, r, (int)a->len, a->data, blk);
-  L.mm_vcall = saved;
+  L.mm_why = saved;
   return 1;
+}
+
+/* The Kernel methods that are private in CRuby. A call of one with a
+   receiver is a private call, unless the receiver has a public method of
+   the name (IO#puts, Array#select). */
+static int fx_kernel_private(const char *name) {
+  static const char *const names[] = {
+    "Array", "Complex", "Float", "Hash", "Integer", "Rational", "String", "__callee__", "__dir__", "__method__",
+    "`", "abort", "at_exit", "autoload", "autoload?", "binding", "block_given?", "caller", "caller_locations",
+    "catch", "eval", "exec", "exit", "exit!", "fail", "fork", "format", "gets", "global_variables", "iterator?",
+    "lambda", "load", "local_variables", "loop", "open", "p", "pp", "print", "printf", "proc", "putc", "puts",
+    "raise", "rand", "readline", "readlines", "require", "require_relative", "select", "sleep", "spawn",
+    "sprintf", "srand", "syscall", "system", "test", "throw", "trap", "warn", "initialize", "initialize_copy",
+    "initialize_clone", "initialize_dup", "respond_to_missing?", "method_missing", NULL
+  };
+  for (int i = 0; names[i]; i++)
+    if (!strcmp(name, names[i])) return 1;
+  return 0;
 }
 
 /* The ancestors of c, in method lookup order: c, its mixins (the last
@@ -724,17 +764,20 @@ static const char *fx_name_arg(sp_RbVal v) {
 }
 
 /* respond_to?(name, include_all): a method of the program or a builtin
-   method, else what respond_to_missing?(name, include_all) answers. Every
-   method is public here, so include_all only goes on to the hook. */
+   method, else what respond_to_missing?(name, include_all) answers. A
+   private or protected method answers include_all, and the hook does not
+   run for it, as in CRuby. */
 static sp_RbVal fx_respond_to(sp_RbVal r, sp_RbVal a, sp_RbVal all) {
   const char *mn = fx_name_arg(a);
   sp_sym s = sp_sym_intern(mn);
-  int yes = fx_find_method(fx_class_of(r), s) != NULL;
-  if (!yes && r.tag == SP_TAG_CLASS) yes = fx_find_smethod(fx_class_value(r), s) != NULL;
-  if (!yes)
+  FxMethod *pm = r.tag == SP_TAG_CLASS ? fx_find_smethod(fx_class_value(r), s) : NULL;
+  if (!pm) pm = fx_find_method(fx_class_of(r), s);
+  int yes = pm && pm->vis == FX_VIS_PUBLIC;
+  if (!yes && !pm)
     yes = fx_builtin_responds(r, mn) || fx_record_responds(r, mn) || fx_process_responds(r, mn) ||
           fx_file_responds(r, mn);
   if (yes) return sp_box_bool(1);
+  if (pm || fx_kernel_private(mn)) return sp_box_bool(sp_poly_truthy(all));
   FxMethod *m = fx_find_hook(r, "respond_to_missing?");
   if (!m) return sp_box_bool(0);
   SP_GC_SAVE();
@@ -839,7 +882,7 @@ static int fx_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     return 1;
   }
   if (argc >= 1 && (!strcmp(name, "send") || !strcmp(name, "__send__") || !strcmp(name, "public_send"))) {
-    *out = fx_send(r, fx_name_arg(argv[0]), argc - 1, argv + 1);
+    *out = fx_send_v(r, fx_name_arg(argv[0]), argc - 1, argv + 1, NULL, name[0] == 'p' ? 2 : 0, NULL);
     return 1;
   }
   return 0;
@@ -847,21 +890,97 @@ static int fx_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
 
 /* ---- builtin methods of a Class or Module value ---- */
 
+/* The frame that holds the default visibility for a def in frame f: a
+   block frame shares that of its scope. */
+static FxFrame *fx_vis_frame(FxFrame *f) {
+  while (f->parent && !f->vis_scope) f = f->parent;
+  return f;
+}
+
+/* The visibility of a method that frame f defines. A definition through
+   a receiver (f is NULL) is public. */
+static int fx_scope_vis(FxFrame *f) {
+  return f ? fx_vis_frame(f)->vis : FX_VIS_PUBLIC;
+}
+
+static void fx_define_vis(FxClass *k, FxMethod *m, int singleton, int vis) {
+  m->vis = vis;
+  fx_define_method(k, m, singleton);
+}
+
 /* attr_*; inside class << self, the accessors are class methods. */
-static void fx_attr(FxClass *k, int reader, int writer, int singleton, int argc, sp_RbVal *argv) {
+static void fx_attr(FxClass *k, int reader, int writer, int singleton, int vis, int argc, sp_RbVal *argv) {
   for (int i = 0; i < argc; i++) {
     const char *n = fx_name_arg(argv[i]);
     sp_sym ivar = sp_sym_intern(sp_sprintf("@%s", n));
-    if (reader) fx_define_method(k, fx_method_new(FX_M_READER, sp_sym_intern(n), NULL, ivar, k), singleton);
+    if (reader) fx_define_vis(k, fx_method_new(FX_M_READER, sp_sym_intern(n), NULL, ivar, k), singleton, vis);
     if (writer)
-      fx_define_method(k, fx_method_new(FX_M_WRITER, sp_sym_intern(sp_sprintf("%s=", n)), NULL, ivar, k),
-                         singleton);
+      fx_define_vis(k, fx_method_new(FX_M_WRITER, sp_sym_intern(sp_sprintf("%s=", n)), NULL, ivar, k), singleton,
+                      vis);
   }
+}
+
+/* Whether k has no builtin method of the name: a class or a module of
+   the program whose ancestors are of the program, but Object, Kernel and
+   BasicObject, and a name that those do not define. */
+static int fx_no_builtin_method(const FxClass *k, const char *name) {
+  if (k->cls_id < FX_CLS_BASE || k == L.object || k->record || k->native) return 0;
+  if (fx_object_method_name(name) || fx_kernel_private(name)) return 0;
+  const FxClass *anc[128];
+  int n = fx_ancestors(k, anc, 128);
+  for (int i = 0; i < n; i++)
+    if (anc[i]->cls_id < 0 && anc[i] != L.object && strcmp(anc[i]->name, "Kernel") &&
+        strcmp(anc[i]->name, "BasicObject"))
+      return 0;
+  return 1;
+}
+
+/* Sets the visibility of the method name of k, or of the singleton
+   method: a method of an ancestor gets a copy in k, and a builtin method
+   gets an entry (FX_M_BUILTIN). */
+static void fx_set_vis(FxClass *k, int singleton, int vis, sp_sym name) {
+  FxMethod *m = fx_table_get(singleton ? &k->smethods : &k->methods, name);
+  if (m) { m->vis = vis; return; }
+  m = singleton ? fx_find_smethod(k, name) : fx_find_method(k, name);
+  if (m) { fx_define_method(k, fx_method_copy(m, vis), singleton); return; }
+  const char *n = sp_sym_to_s(name);
+  if (!singleton && fx_no_builtin_method(k, n))
+    sp_raise_cls("NameError", sp_sprintf("undefined method '%s' for %s '%s'", n, k->is_module ? "module" : "class",
+                                         k->name));
+  fx_define_vis(k, fx_method_new(FX_M_BUILTIN, name, NULL, 0, k), singleton, vis);
+}
+
+/* The names of private :a, "b", [:c, :d] (what attr_* answers). */
+static void fx_set_vis_args(FxClass *k, int singleton, int vis, int argc, sp_RbVal *argv) {
+  for (int i = 0; i < argc; i++) {
+    sp_RbVal a = argv[i];
+    if (a.tag == SP_TAG_OBJ && sp_poly_is_array_kind(a.cls_id)) {
+      SP_GC_ROOT_RBVAL(a);
+      for (sp_int j = 0; j < sp_poly_length(a); j++) {
+        sp_RbVal e = sp_poly_arr_get(a, j);
+        fx_set_vis_args(k, singleton, vis, 1, &e);
+      }
+      continue;
+    }
+    if (a.tag != SP_TAG_SYM && !fx_is_string(a))
+      sp_raise_cls("TypeError", sp_sprintf("%s is not a symbol nor a string", sp_poly_inspect(a)));
+    fx_set_vis(k, singleton, vis, sp_sym_intern(fx_name_arg(a)));
+  }
+}
+
+/* What private and its kin answer: nil, the argument, or the arguments. */
+static sp_RbVal fx_vis_answer(int argc, sp_RbVal *argv) {
+  if (argc == 0) return sp_box_nil();
+  if (argc == 1) return argv[0];
+  sp_PolyArray *a = sp_PolyArray_new();
+  for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
+  return sp_box_poly_array(a);
 }
 
 /* define_method(name) { ... } and define_method(name, proc): a method whose
    body is the block (FX_M_PROC). Answers the name. */
-static sp_RbVal fx_define_proc_method(FxClass *k, int singleton, int argc, sp_RbVal *argv, const FxBlock *blk) {
+static sp_RbVal fx_define_proc_method(FxClass *k, int singleton, int vis, int argc, sp_RbVal *argv,
+                                        const FxBlock *blk) {
   if (argc != 1 && argc != 2) fx_arity_error(argc, 1, 1, 0);
   sp_sym name = sp_sym_intern(fx_name_arg(argv[0]));
   sp_RbVal body;
@@ -883,7 +1002,7 @@ static sp_RbVal fx_define_proc_method(FxClass *k, int singleton, int argc, sp_Rb
   L.procs[L.nprocs++] = body.v.p;
   FxMethod *m = fx_method_new(FX_M_PROC, name, NULL, 0, k);
   m->proc = body.v.p;
-  fx_define_method(k, m, singleton);
+  fx_define_vis(k, m, singleton, vis);
   return sp_box_sym(name);
 }
 
@@ -944,9 +1063,16 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     return 1;
   }
   if (!strcmp(name, "attr_accessor") || !strcmp(name, "attr_reader") || !strcmp(name, "attr_writer")) {
-    fx_attr(k, name[5] != 'w', name[5] != 'r', f && f->singleton_defs == 1, argc, argv);
+    int reader = name[5] != 'w', writer = name[5] != 'r';
+    fx_attr(k, reader, writer, f && f->singleton_defs == 1, fx_scope_vis(f), argc, argv);
+    /* the names of the methods: [:x, :x=] for attr_accessor :x */
     sp_PolyArray *a = sp_PolyArray_new();
-    for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
+    SP_GC_ROOT(a);
+    for (int i = 0; i < argc; i++) {
+      const char *n = fx_name_arg(argv[i]);
+      if (reader) sp_PolyArray_push(a, sp_box_sym(sp_sym_intern(n)));
+      if (writer) sp_PolyArray_push(a, sp_box_sym(sp_sym_intern(sp_sprintf("%s=", n))));
+    }
     *out = sp_box_poly_array(a);
     return 1;
   }
@@ -962,7 +1088,9 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     return 1;
   }
   if (!strcmp(name, "define_method") || !strcmp(name, "define_singleton_method")) {
-    *out = fx_define_proc_method(k, name[7] == 's' || (f && f->singleton_defs == 1), argc, argv, blk);
+    int own = name[7] == 's';
+    *out = fx_define_proc_method(k, own || (f && f->singleton_defs == 1), own ? FX_VIS_PUBLIC : fx_scope_vis(f),
+                                 argc, argv, blk);
     return 1;
   }
   if (!strcmp(name, "include") || !strcmp(name, "extend")) {
@@ -972,6 +1100,8 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
       if (!m || !m->is_module) sp_raise_cls("TypeError", "wrong argument type (expected Module)");
       if (name[0] == 'i') fx_push_class(&k->includes, &k->nincludes, &k->includes_cap, m);
       else fx_push_class(&k->extends, &k->nextends, &k->extends_cap, m);
+      /* a module in a builtin class reopens it, as a def does */
+      if (name[0] == 'i' && k->cls_id < 0 && k != L.object) fx_reopened_builtins++;
       /* the hook of the module: included(base) / extended(base) */
       FxMethod *hook = fx_table_get(&m->smethods, sp_sym_intern(name[0] == 'i' ? "included" : "extended"));
       if (hook) fx_invoke(hook, argv[i], 1, &r);
@@ -998,20 +1128,35 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     else *out = sp_box_nil();
     return 1;
   }
-  if (!strcmp(name, "module_function") && f) {
+  if (!strcmp(name, "module_function") && f && k->is_module) {
     if (argc == 0) { f->singleton_defs = 2; *out = sp_box_nil(); return 1; }
+    /* a public copy for the module, and the instance method turns private */
     for (int i = 0; i < argc; i++) {
       FxMethod *m = fx_table_get(&k->methods, sp_sym_intern(fx_name_arg(argv[i])));
-      if (m) fx_define_method(k, m, 1);
+      if (!m) continue;
+      fx_define_method(k, fx_method_copy(m, FX_VIS_PUBLIC), 1);
+      m->vis = FX_VIS_PRIVATE;
     }
-    *out = sp_box_nil();
+    *out = fx_vis_answer(argc, argv);
     return 1;
   }
-  /* visibility is not modeled: these answer as CRuby does and change nothing */
+  /* private, public and protected: with no names, the default of the scope
+     for the definitions after it, which also ends module_function */
   if (!strcmp(name, "private") || !strcmp(name, "public") || !strcmp(name, "protected") ||
-      !strcmp(name, "private_constant") || !strcmp(name, "public_constant") ||
       !strcmp(name, "private_class_method") || !strcmp(name, "public_class_method")) {
-    *out = argc == 0 ? sp_box_nil() : argc == 1 ? argv[0] : sp_box_nil();
+    int vis = name[1] == 'u' ? FX_VIS_PUBLIC : name[2] == 'i' ? FX_VIS_PRIVATE : FX_VIS_PROTECTED;
+    int cm = strchr(name, '_') != NULL;
+    if (argc == 0 && !cm && f) {
+      fx_vis_frame(f)->vis = vis;
+      if (f->singleton_defs == 2) f->singleton_defs = 0;
+    }
+    fx_set_vis_args(k, cm || (f && f->singleton_defs == 1), vis, argc, argv);
+    *out = cm ? r : fx_vis_answer(argc, argv);
+    return 1;
+  }
+  /* constants have no visibility here: these answer as CRuby does */
+  if (!strcmp(name, "private_constant") || !strcmp(name, "public_constant")) {
+    *out = r;
     return 1;
   }
   if (argc == 1 && !strcmp(name, "===")) { *out = sp_box_bool(fx_is_a(argv[0], k)); return 1; }

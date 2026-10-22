@@ -75,6 +75,7 @@ static sp_RbVal fx_run_source(const FxSource *s) {
   SP_GC_SAVE();
   const pm_program_node_t *prog = (const pm_program_node_t *)s->root;
   FX_FRAME(top, &prog->locals, L.main, L.object);
+  top.vis = FX_VIS_PRIVATE;   /* a top-level def is a private method of Object */
   sp_RbVal v = fx_eval_stmts(&top, prog->statements);
   if (L.ctl == FX_CTL_RETURN && L.ctl_target == &top) L.ctl = FX_CTL_NONE;
   return v;

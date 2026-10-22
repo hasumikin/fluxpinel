@@ -11,12 +11,21 @@
 
 struct FxClass;
 
-/* What a method does when it is called. */
-typedef enum { FX_M_DEF, FX_M_READER, FX_M_WRITER, FX_M_FFI, FX_M_ENTRY, FX_M_PROC } FxMethodKind;
+/* What a method does when it is called. FX_M_BUILTIN is the builtin
+   method of the name, which an entry carries for its visibility only
+   (`private :first` in a reopened Array, `private_class_method :new`). */
+typedef enum { FX_M_DEF, FX_M_READER, FX_M_WRITER, FX_M_FFI, FX_M_ENTRY, FX_M_PROC, FX_M_BUILTIN } FxMethodKind;
+
+/* The visibility of a method, and the default of a scope for a def. */
+enum { FX_VIS_PUBLIC, FX_VIS_PRIVATE, FX_VIS_PROTECTED };
+
+/* Why a call missed, for the words of NoMethodError (fx_no_method). */
+enum { FX_MISS_METHOD, FX_MISS_VCALL, FX_MISS_PRIVATE, FX_MISS_PROTECTED };
 
 typedef struct {
   sp_sym name;
   FxMethodKind kind;
+  int vis;                    /* FX_VIS_* */
   const pm_def_node_t *def;   /* FX_M_DEF */
   sp_sym ivar;                /* FX_M_READER / FX_M_WRITER: "@name" */
   struct FxClass *owner;    /* the class or module that defines it */
@@ -124,6 +133,10 @@ typedef struct FxFrame {
   FxClass *cref;            /* the lexical class: def target and constant scope */
   const FxMethod *method;   /* the running method, for super; NULL outside one */
   int singleton_defs;         /* 1: inside class << self; 2: after module_function */
+  int vis;                    /* the default visibility of a def here (FX_VIS_*): a
+                                 block frame uses that of its scope (fx_vis_frame) */
+  int vis_scope;              /* a block frame with a scope of its own: a class
+                                 body of Class.new, or a define_method body */
   struct FxFrame *parent;   /* a block frame: the frame of the enclosing scope */
   const FxBlock *block;     /* the block of the method, for yield; NULL for none */
   sp_RbVal *it;               /* the slot of `it` (a rooted slot after the locals) */
@@ -203,7 +216,8 @@ typedef struct {
                             that a later definition replaced, as a call of it
                             can still run; marked by the mark hook */
   int nprocs, procs_cap;
-  int mm_vcall;          /* the running method_missing hook is for a bare name */
+  int mm_why;            /* why the call of the running method_missing hook
+                            missed (FX_MISS_*), for a super from the hook */
 } Fluxpinel;
 
 static Fluxpinel L;
@@ -211,6 +225,8 @@ static Fluxpinel L;
 static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n);
 static sp_RbVal fx_send(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv);
 static sp_RbVal fx_send_b(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk);
+static sp_RbVal fx_send_v(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                            int check, const sp_RbVal *caller);
 static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk);
 static sp_RbVal fx_yield(const FxBlock *b, int argc, sp_RbVal *argv);
 static sp_RbVal fx_block_proc(const FxBlock *b);

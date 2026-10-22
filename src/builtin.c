@@ -384,27 +384,94 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
 
 /* The same, with the block of the call. */
 static sp_RbVal fx_send_b(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk) {
+  return fx_send_v(recv, name, argc, argv, blk, 0, NULL);
+}
+
+/* Whether a builtin method of the receiver r has the name in CRuby, by
+   the modules ahead of Object: Kernel, Comparable and Enumerable. A miss
+   of such a name is a gap of Fluxpinel, which a top-level def must not
+   take. */
+static int fx_builtin_module_name(sp_RbVal r, const char *name) {
+  static const char *const comparable[] = { "between?", "clamp", "<", "<=", ">", ">=", "==", NULL };
+  static const char *const enumerable[] = {
+    "all?", "any?", "chain", "chunk", "chunk_while", "collect", "collect_concat", "compact", "count", "cycle",
+    "detect", "drop", "drop_while", "each_cons", "each_entry", "each_slice", "each_with_index",
+    "each_with_object", "entries", "filter", "filter_map", "find", "find_all", "find_index", "first", "flat_map",
+    "grep", "grep_v", "group_by", "include?", "inject", "lazy", "map", "max", "max_by", "member?", "min",
+    "min_by", "minmax", "minmax_by", "none?", "one?", "partition", "reduce", "reject", "reverse_each", "select",
+    "slice_after", "slice_before", "slice_when", "sort", "sort_by", "sum", "take", "take_while", "tally", "to_a",
+    "to_h", "to_set", "uniq", "zip", NULL
+  };
+  if (fx_object_method_name(name)) return 1;
+  const char *const *lists[2] = { comparable, enumerable };
+  const char *mods[2] = { "Comparable", "Enumerable" };
+  for (int l = 0; l < 2; l++)
+    for (int i = 0; lists[l][i]; i++)
+      if (!strcmp(name, lists[l][i])) return fx_is_a(r, fx_builtin(mods[l]));
+  return 0;
+}
+
+/* Why a call with check (fx_send_v) cannot reach m, or 0 when it can. */
+static int fx_vis_denied(const FxMethod *m, int check, const sp_RbVal *caller) {
+  if (!check || m->vis == FX_VIS_PUBLIC) return 0;
+  if (m->vis == FX_VIS_PRIVATE) return FX_MISS_PRIVATE;
+  return check == 1 && caller && fx_is_a(*caller, m->owner) ? 0 : FX_MISS_PROTECTED;
+}
+
+/* A call that cannot reach the method for the reason why goes to the
+   method_missing hook, as in CRuby, else raises. */
+static sp_RbVal fx_denied(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, int why) {
   sp_RbVal out;
+  if (fx_method_missing(recv, name, argc, argv, blk, why, &out)) return out;
+  fx_no_method(recv, name, why);
+}
+
+/* The same, with the visibility of the method. check is 0 for a call
+   that reaches any method (send, a call from the runtime), 1 for a call
+   with a receiver, from *caller, and 2 for public_send. */
+static sp_RbVal fx_send_v(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                            int check, const sp_RbVal *caller) {
+  sp_RbVal out;
+  FxMethod *m = NULL;
   if (fx_is_fx_object(recv)) {
-    FxMethod *m = fx_find_method(fx_class_of(recv), sp_sym_intern(name));
-    if (m) return fx_invoke_b(m, recv, argc, argv, blk);
+    m = fx_find_method(fx_class_of(recv), sp_sym_intern(name));
   } else if (recv.tag == SP_TAG_CLASS) {
     FxClass *k = fx_class_value(recv);
-    FxMethod *m = k ? fx_find_smethod(k, sp_sym_intern(name)) : NULL;
-    if (m) return fx_invoke_b(m, recv, argc, argv, blk);
-    if (fx_class_core(NULL, recv, name, argc, argv, blk, &out)) return out;
+    m = k ? fx_find_smethod(k, sp_sym_intern(name)) : NULL;
+    if (!m && fx_class_core(NULL, recv, name, argc, argv, blk, &out)) return out;
   } else if (fx_reopened_builtins || fx_is_exc(recv)) {
     /* a reopened builtin class, or an exception of a class of the program */
-    FxMethod *m = fx_find_method(fx_class_of(recv), sp_sym_intern(name));
-    if (m && m->owner != L.object) return fx_invoke_b(m, recv, argc, argv, blk);
+    m = fx_find_method(fx_class_of(recv), sp_sym_intern(name));
+    if (m && m->owner == L.object) m = NULL;
+  }
+  if (m) {
+    int why = fx_vis_denied(m, check, caller);
+    if (why) return fx_denied(recv, name, argc, argv, blk, why);
+    return fx_invoke_b(m, recv, argc, argv, blk);
   }
   if (fx_builtin_call(recv, name, argc, argv, blk, &out)) return out;
   if (blk && argc >= 1 && (!strcmp(name, "send") || !strcmp(name, "__send__") || !strcmp(name, "public_send")))
-    return fx_send_b(recv, fx_name_arg(argv[0]), argc - 1, argv + 1, blk);
-  if (fx_method_missing(recv, name, argc, argv, blk, 0, &out)) return out;
+    return fx_send_v(recv, fx_name_arg(argv[0]), argc - 1, argv + 1, blk, name[0] == 'p' ? 2 : 0, NULL);
+  /* a method of Object (a top-level def) after the builtin methods of
+     the receiver, which come first in its ancestors; a builtin class can
+     have a class method of the name that Fluxpinel lacks (Time.at) */
+  FxClass *rc = recv.tag == SP_TAG_CLASS ? fx_class_value(recv) : NULL;
+  if (!fx_is_fx_object(recv) && !(rc && rc->cls_id < FX_CLS_BASE) && !fx_builtin_module_name(recv, name) &&
+      (m = fx_table_get(&L.object->methods, sp_sym_intern(name)))) {
+    int why = fx_vis_denied(m, check, caller);
+    if (why) return fx_denied(recv, name, argc, argv, blk, why);
+    return fx_invoke_b(m, recv, argc, argv, blk);
+  }
+  /* a private method of Kernel, on a receiver whose class has no public
+     builtin of the name; on any other one, the miss is a gap of Fluxpinel
+     (File.open, Array#select) */
+  int plain = recv.tag == SP_TAG_INT || recv.tag == SP_TAG_FLT || recv.tag == SP_TAG_NIL || recv.tag == SP_TAG_BOOL ||
+              (fx_is_fx_object(recv) && !fx_is_native_obj(recv) && !fx_record_of(fx_class_of(recv)));
+  if (check && plain && fx_kernel_private(name)) return fx_denied(recv, name, argc, argv, blk, FX_MISS_PRIVATE);
+  if (fx_method_missing(recv, name, argc, argv, blk, FX_MISS_METHOD, &out)) return out;
   FxClass *rk = recv.tag == SP_TAG_CLASS ? fx_class_value(recv) : NULL;
   fx_trace_missing(rk ? sp_sprintf("%s.", rk->name) : sp_sprintf("%s#", sp_poly_class_name(recv)), name, argc);
-  fx_no_method(recv, name, 0);
+  fx_no_method(recv, name, FX_MISS_METHOD);
 }
 
 /* p v to the object that $stdout holds: its write takes the inspect and a

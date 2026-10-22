@@ -221,9 +221,15 @@ static void fx_define(FxFrame *f, const pm_def_node_t *def) {
   }
   FxClass *k = f->cref;
   FxMethod *m = fx_method_new(FX_M_DEF, name, def, 0, k);
-  /* 1: inside class << self; 2: after module_function */
-  if (f->singleton_defs != 1) fx_define_method(k, m, 0);
-  if (f->singleton_defs) fx_define_method(k, m, 1);
+  /* after module_function: a private instance method and a public copy
+     for the module */
+  if (f->singleton_defs == 2) {
+    fx_define_vis(k, m, 0, FX_VIS_PRIVATE);
+    fx_define_method(k, fx_method_copy(m, FX_VIS_PUBLIC), 1);
+    return;
+  }
+  /* 1: inside class << self */
+  fx_define_vis(k, m, f->singleton_defs == 1, fx_scope_vis(f));
 }
 
 /* kws is "; required keyword: k" or "" (fx_required_keywords) */
@@ -494,6 +500,18 @@ static sp_RbVal fx_invoke_b(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal
   }
   if (m->kind == FX_M_FFI) return fx_ffi_invoke(m->ffi, self, argc, argv);
   if (m->kind == FX_M_ENTRY) return fx_entry_invoke(m->entry, argc, argv);
+  if (m->kind == FX_M_BUILTIN) {
+    /* as super does: an object of the program takes the defaults of
+       Object, which do not call the hooks */
+    sp_RbVal out;
+    if (self.tag == SP_TAG_CLASS && fx_class_core(NULL, self, sp_sym_to_s(m->name), argc, argv, blk, &out))
+      return out;
+    if (fx_is_fx_object(self) ? fx_record_core(self, sp_sym_to_s(m->name), argc, argv, blk, &out) ||
+                                    fx_object_core(self, sp_sym_to_s(m->name), argc, argv, &out)
+                              : fx_builtin_call(self, sp_sym_to_s(m->name), argc, argv, blk, &out))
+      return out;
+    fx_no_method(self, sp_sym_to_s(m->name), FX_MISS_METHOD);
+  }
   SP_GC_SAVE();
   sp_RbVal me = self;
   SP_GC_ROOT_RBVAL(me);
@@ -555,6 +573,7 @@ static sp_RbVal fx_yield_in(const FxBlock *b, int argc, sp_RbVal *argv, int stri
   if (SP_UNLIKELY(SP_SAFEPOINT_POLL())) sp_safepoint();
   FX_FRAME(bf, locals, self ? *self : h->self, cref ? cref : h->cref);
   bf.method = m ? m : h->method;
+  bf.vis_scope = cref || m;
   bf.parent = h;
   bf.block = m ? mblk : h->block;
   bf.lambda = b->lambda;
@@ -805,7 +824,10 @@ static sp_RbVal fx_call(FxFrame *f, const pm_call_node_t *c) {
   if (!c->receiver && !blk && fx_load_call((const pm_node_t *)c, f->self, name, argc, argv, &v)) {
   } else {
     L.vcall = PM_NODE_FLAG_P((const pm_node_t *)c, PM_CALL_NODE_FLAGS_VARIABLE_CALL);
-    v = c->receiver ? fx_send_b(recv, name, argc, argv, blk) : fx_call_self(f, name, argc, argv, blk);
+    /* a receiver other than `self.` sees the public methods, and the
+       protected ones of a class of self */
+    if (!c->receiver) v = fx_call_self(f, name, argc, argv, blk);
+    else v = fx_send_v(recv, name, argc, argv, blk, !PM_NODE_TYPE_P(c->receiver, PM_SELF_NODE), &f->self);
   }
   L.kwhash = NULL;
   v = fx_catch_break(&lit, v);
@@ -848,7 +870,7 @@ static int fx_kernel_block(FxFrame *f, const char *name, int argc, const FxBlock
    method of self. In a class body or a class method, self is the class. */
 static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk) {
   /* fx_call marks a call with no arguments and no parentheses */
-  int vcall = L.vcall;
+  int why = L.vcall ? FX_MISS_VCALL : FX_MISS_METHOD;
   L.vcall = 0;
   sp_sym s = sp_sym_intern(name);
   sp_RbVal self = f->self, out;
@@ -860,9 +882,14 @@ static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *a
   }
   FxMethod *m = fx_find_method(fx_class_of(self), s);
   if (m) return fx_invoke_b(m, self, argc, argv, blk);
-  /* define_method of main defines a method of Object, as a top-level def does */
-  if (fx_is_fx_object(self) && self.v.p == L.main.v.p && !strcmp(name, "define_method"))
-    return fx_define_proc_method(L.object, 0, argc, argv, blk);
+  /* define_method, private and public of main act on Object, as a
+     top-level def does; define_method there is public */
+  if (fx_is_fx_object(self) && self.v.p == L.main.v.p) {
+    if (!strcmp(name, "define_method")) return fx_define_proc_method(L.object, 0, FX_VIS_PUBLIC, argc, argv, blk);
+    if ((!strcmp(name, "private") || !strcmp(name, "public")) &&
+        fx_class_core(f, fx_class_box(L.object), name, argc, argv, blk, &out))
+      return out;
+  }
   if (fx_kernel_block(f, name, argc, blk, &out)) return out;
   if (blk) return fx_send_b(self, name, argc, argv, blk);
   if (fx_exc_kernel(name, argc, argv, &out)) return out;
@@ -870,10 +897,10 @@ static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *a
   if (fx_kernel(name, argc, argv, &out)) return out;
   if (fx_object_core(self, name, argc, argv, &out)) return out;
   if (!fx_is_fx_object(self) && self.tag != SP_TAG_CLASS) return fx_send(self, name, argc, argv);
-  if (fx_method_missing(self, name, argc, argv, NULL, vcall, &out)) return out;
+  if (fx_method_missing(self, name, argc, argv, NULL, why, &out)) return out;
   fx_trace_missing("Kernel#", name, argc);
   /* a bare name that could be a local variable is a NameError */
-  fx_no_method(self, name, vcall);
+  fx_no_method(self, name, why);
 }
 
 /* The arguments that a bare super passes, into out: the current values of
@@ -972,7 +999,7 @@ static sp_RbVal fx_super_call(FxFrame *f, const pm_node_t *n, const pm_arguments
   /* the builtin method_missing: the error of the method that was missing;
      the builtin respond_to_missing?: false */
   if (!strcmp(name, "method_missing") && argc >= 1 && argv[0].tag == SP_TAG_SYM)
-    fx_no_method(f->self, sp_sym_to_s((sp_sym)argv[0].v.i), L.mm_vcall);
+    fx_no_method(f->self, sp_sym_to_s((sp_sym)argv[0].v.i), L.mm_why);
   if (!strcmp(name, "respond_to_missing?")) return sp_box_bool(0);
   /* the builtin initialize: an exception takes its message, a Struct or a
      Data its members */
