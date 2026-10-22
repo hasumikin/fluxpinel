@@ -20,40 +20,72 @@ Ruby interpreter that lives in the same binary. It opens the program again.
 
 ## An example
 
-The compiled side loads a plugin and calls its filter. The code is a short
-form of [examples/textkit](examples/textkit):
+[examples/logq](examples/logq) is an access log analyzer. Spinel compiles
+the tool, and a user writes the questions in Ruby. The binary reads them
+at run time:
+
+```sh
+build/logq/logq access.log examples/logq/queries/slow.rb
+```
 
 ```ruby
-# app.rb: spinel compiles this file.
-require_relative "../../kernel/fluxpinel"
+# queries/slow.rb: a user writes this file, and Fluxpinel runs it.
+report "slow 5xx" do
+  where_status(500..599).slower_than(1.0).top(5, by: :duration)
+end
 
-module Textkit
-  def self.words(line) = line.downcase.scan(/[a-z']+/)
+report "POST by path" do
+  where_verb("POST").count_by_path
+end
+```
 
-  def self.main(args)
-    lines = File.readlines(args[0], chomp: true)
-    Dir.glob(File.join(args[1], "*.rb")).sort.each do |path|
-      plugin = Fluxpinel.load(path)
-      lines = Fluxpinel.call(plugin, "filter", [lines])
+No class defines `where_status` or `count_by_path`. The DSL, also a file
+that Fluxpinel runs, reads the name in `method_missing` and adds the method
+with `define_method` on its first call:
+
+```ruby
+# dsl.rb: Fluxpinel runs this file at each start.
+class Query
+  def initialize(sel) = @sel = sel
+
+  def method_missing(name, *args)
+    case name
+    when /\Awhere_(\w+)\z/
+      field = $1
+      self.class.define_method(name) { |cond| Query.new(Logq.where(@sel, field, cond)) }
+    when /\Acount_by_(\w+)\z/
+      field = $1
+      self.class.define_method(name) { Logq.count_by(@sel, field) }
+    else
+      return super
     end
-    lines.each { |line| puts line }
+    send(name, *args)
   end
 end
 ```
 
-The plugin is plain Ruby. It calls the compiled method `Textkit.words`:
+`Logq.where` and `Logq.count_by` are compiled methods. Each step of a
+query calls one of them, and the loop over the rows runs in compiled code:
 
 ```ruby
-# plugins/20_stopwords.rb: Fluxpinel runs this file.
-class Stopwords
-  WORDS = %w[a an and the of to is in it].freeze
-
-  def name = "stopwords"
-  def filter(lines) = lines.map { |line| Textkit.words(line).reject { |w| WORDS.include?(w) }.join(" ") }
+# app.rb: spinel compiles this file.
+module Logq
+  #: (Array[Integer], String, untyped) -> Array[Integer]
+  def self.where(sel, field, cond)
+    out = []
+    case field
+    when "status" then sel.each { |i| out << i if cond === TABLE.statuses[i] }
+    # ...
+    end
+    out
+  end
 end
-
-Stopwords.new
 ```
+
+On a log of one million lines, the queries of `slow.rb` take about 0.1
+seconds in logq and about 0.6 seconds in CRuby. Spinel alone does not
+call `method_missing`, and it refuses `define_method` with a name that the
+program makes at run time.
 
 ## How it works
 
@@ -64,8 +96,8 @@ and Fluxpinel into one C translation unit (TU):
 +-------------------------- one TU, one binary --------------------------+
 |                                                                        |
 |  kernel.c (spinel output)         Fluxpinel (tree-walking interpreter) |
-|    Textkit.main  --- Fluxpinel.load / .call / .eval --->  script.rb    |
-|    Textkit.words <------------- entries -------------  Textkit.words   |
+|    Logq.main  ---- Fluxpinel.load / .call / .eval ---->  query.rb      |
+|    Logq.where <-------------- entries --------------  Logq.where(...)  |
 |                                                                        |
 |  spinel runtime: values, heap, GC, exceptions, builtin methods         |
 +------------------------------------------------------------------------+
@@ -90,6 +122,8 @@ Fluxpinel can:
 
 Fluxpinel cannot yet:
 
+- call a method of an instance of a compiled class: only the module
+  methods that you name export
 - see the locals of a compiled method (`eval` with a binding)
 - take a call that the compiled code cannot resolve (dynamic dispatch)
 - replace a method that compiled code calls directly
@@ -119,9 +153,9 @@ The oracle also keeps the promise of "the same semantics" above. See
 
 ## The name
 
-The name joins "flux" and "spinel". The flux method grows spinel crystals
-in a melt. "Flux" also means a flow and a change. Fluxpinel lets a compiled
-spinel program flow and change while it runs.
+The name joins "flux" and "spinel". "Flux" means a flow and a change.
+Fluxpinel adds a flow to a compiled spinel program, so that the program
+can change while it runs.
 
 ## Build and test
 
