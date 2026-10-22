@@ -81,7 +81,19 @@ static sp_RbVal fx_run_source(const FxSource *s) {
   return v;
 }
 
-/* The main program. A syntax error ends Fluxpinel, as it ends ruby. */
+/* The main program from the source buf. A syntax error ends Fluxpinel, as
+   it ends ruby. */
+static void fx_load_main_src(const char *path, const char *real, char *buf, size_t len) {
+  FxSource *s;
+  const char *err = fx_parse(path, real, buf, len, &s);
+  if (err) {
+    fprintf(stderr, "fluxpinel: syntax error: %s\n", err);
+    exit(1);
+  }
+  fx_run_source(s);
+}
+
+/* The main program from the file path. */
 static void fx_load_main(const char *path) {
   size_t len;
   char *buf = fx_read_file(path, &len);
@@ -90,13 +102,7 @@ static void fx_load_main(const char *path) {
     exit(1);
   }
   char *real = realpath(path, NULL);
-  FxSource *s;
-  const char *err = fx_parse(path, real ? real : path, buf, len, &s);
-  if (err) {
-    fprintf(stderr, "fluxpinel: syntax error: %s\n", err);
-    exit(1);
-  }
-  fx_run_source(s);
+  fx_load_main_src(path, real ? real : path, buf, len);
 }
 
 /* The directory of a path, as a new C string. */

@@ -115,6 +115,10 @@ KERNEL ?= test/kernel/app.rb
 KERNEL_ENTRIES ?= FxKernel.ping,FxKernel.add,FxKernel.make,FxKernel.bump,FxKernel.boom,FxKernel.pair,$\
                   FxKernel.greet_all,FxKernel.script,FxKernel.rescue_script
 HOST = $(BUILD)/host
+# The binary is $(HOST)/$(HOST_NAME). With KERNEL_MAIN (an entry such as
+# App.main), it takes no script and calls that entry with ARGV.
+HOST_NAME = fluxpinel
+KERNEL_MAIN =
 KERNEL_OVERFLOW = $(shell echo $(INT_OVERFLOW) | tr A-Z a-z)
 
 $(HOST)/kernel.c: $(KERNEL) kernel/fluxpinel.rb src/kernel_prelude.h SPINEL_COMMIT
@@ -128,13 +132,14 @@ $(HOST)/kernel.c: $(KERNEL) kernel/fluxpinel.rb src/kernel_prelude.h SPINEL_COMM
 $(HOST)/entries.c: $(HOST)/kernel.c tools/entry_gen.rb
 	ruby tools/entry_gen.rb $(KERNEL_ENTRIES) $(HOST)/kernel.h > $@
 
-$(HOST)/fluxpinel: src/*.c src/*.h $(HOST)/kernel.c $(HOST)/entries.c $(BUILD)/bop_gen_out.c $(BUILD)/off.flags \
-              $(NATIVE_FLAGS)
-	$(CC) $(CFLAGS) -I$(HOST) -DFX_KERNEL=fx_kernel_init -include src/kernel_prelude.h -include $(HOST)/kernel.c \
+$(HOST)/$(HOST_NAME): src/*.c src/*.h $(HOST)/kernel.c $(HOST)/entries.c $(BUILD)/bop_gen_out.c \
+              $(BUILD)/off.flags $(NATIVE_FLAGS)
+	$(CC) $(CFLAGS) -I$(HOST) -DFX_KERNEL=fx_kernel_init $(if $(KERNEL_MAIN),'-DFX_KERNEL_MAIN="$(KERNEL_MAIN)"') \
+	  -include src/kernel_prelude.h -include $(HOST)/kernel.c \
 	  -include $(HOST)/entries.c $$(cat $(BUILD)/off.flags) -o $@ src/main.c \
 	  $(if $(NATIVE_FLAGS),$$(cat $(NATIVE_FLAGS))) $(LIBS)
 
-host: $(HOST)/fluxpinel
+host: $(HOST)/$(HOST_NAME)
 
 HOST_REQUIRES = --require kernel/fluxpinel_cruby.rb --require $(KERNEL)
 

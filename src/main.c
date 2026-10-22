@@ -1,6 +1,9 @@
 /* main.c -- the Fluxpinel command and the root of the one TU.
 
-   Usage: fluxpinel FILE.rb
+   Usage: fluxpinel FILE.rb [ARG...]
+
+   A host build with FX_KERNEL_MAIN (an entry such as "Logq.main") takes
+   no FILE.rb: it calls the entry with ARGV, which holds every argument.
 
    spinel_rt.h declares hooks as static, so all Fluxpinel code that uses the
    runtime is one TU. This file includes the others in order. */
@@ -49,7 +52,12 @@ static void fx_body(void) {
   fx_sched_start();
   fx_fs_init();
 
+#ifdef FX_KERNEL_MAIN
+  const char *src = FX_KERNEL_MAIN "(ARGV)";
+  fx_load_main_src(L.path, L.path, strdup(src), strlen(src));
+#else
   fx_load_main(L.path);
+#endif
   /* a break of a Proc whose call has returned reaches the top */
   if (L.ctl == FX_CTL_BREAK_BLOCK) fx_gap("break from a block whose call has returned");
   fx_sched_end();
@@ -57,10 +65,16 @@ static void fx_body(void) {
 }
 
 int main(int argc, char **argv) {
+#ifdef FX_KERNEL_MAIN
+  L.path = argv[0];
+  L.args = argv + 1;
+  L.nargs = argc - 1;
+#else
   if (argc < 2) { fprintf(stderr, "usage: fluxpinel FILE.rb [ARG...]\n"); return 2; }
   L.path = argv[1];
   L.args = argv + 2;
   L.nargs = argc - 2;
+#endif
   sp_main_stack_run(fx_body);
   return 0;
 }
