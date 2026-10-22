@@ -863,6 +863,13 @@ static int fx_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       *out = fx_respond_to(r, a, sp_box_bool(0));
       return 1;
     }
+    /* Object#===: the same object, or ==; Range, Regexp, Proc and a class
+       answer their own before this */
+    if (!strcmp(name, "===")) {
+      int same = r.tag == a.tag && r.cls_id == a.cls_id && r.v.i == a.v.i;
+      *out = sp_box_bool(same || sp_poly_truthy(fx_send(r, "==", 1, argv)));
+      return 1;
+    }
     if (fx_is_fx_object(r) && !strcmp(name, "extend")) fx_gap("extend on an object");
     if (!strcmp(name, "instance_variable_get")) { *out = fx_ivar_get(r, sp_sym_intern(fx_name_arg(a))); return 1; }
   }

@@ -1047,6 +1047,49 @@ static sp_RbVal fx_while(FxFrame *f, const pm_node_t *pred, const pm_statements_
   }
 }
 
+/* Whether the value v of a when clause takes the subject: v === subject,
+   or v itself for a case with no subject. */
+static int fx_when_hit(sp_RbVal v, const sp_RbVal *subject) {
+  if (!subject) return sp_poly_truthy(v);
+  sp_RbVal s = *subject;
+  return sp_poly_truthy(fx_send(v, "===", 1, &s));
+}
+
+/* case / when: the first when with a value that takes the subject runs,
+   else the else clause. A splat (`when *list`) tests each element. */
+static sp_RbVal fx_case(FxFrame *f, const pm_case_node_t *c) {
+  SP_GC_SAVE();
+  sp_RbVal subject = sp_box_nil(), v = sp_box_nil();
+  SP_GC_ROOT_RBVAL(subject);
+  SP_GC_ROOT_RBVAL(v);
+  if (c->predicate) {
+    subject = fx_eval(f, c->predicate);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  }
+  const sp_RbVal *sp = c->predicate ? &subject : NULL;
+  for (size_t i = 0; i < c->conditions.size; i++) {
+    const pm_when_node_t *w = (const pm_when_node_t *)c->conditions.nodes[i];
+    for (size_t j = 0; j < w->conditions.size; j++) {
+      const pm_node_t *cn = w->conditions.nodes[j];
+      int hit = 0;
+      if (PM_NODE_TYPE_P(cn, PM_SPLAT_NODE)) {
+        sp_PolyArray *list = sp_PolyArray_new();
+        SP_GC_ROOT(list);
+        v = fx_eval(f, ((const pm_splat_node_t *)cn)->expression);
+        if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+        fx_spread(list, v);
+        for (sp_int k = 0; k < list->len && !hit; k++) hit = fx_when_hit(list->data[k], sp);
+      } else {
+        v = fx_eval(f, cn);
+        if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+        hit = fx_when_hit(v, sp);
+      }
+      if (hit) return fx_eval_stmts(f, w->statements);
+    }
+  }
+  return c->else_clause ? fx_eval(f, (const pm_node_t *)c->else_clause) : sp_box_nil();
+}
+
 /* The value that return / break / next carry: nil, one value, or an Array. */
 static sp_RbVal fx_jump_value(FxFrame *f, const pm_arguments_node_t *args) {
   if (!args || args->arguments.size == 0) return sp_box_nil();
@@ -1823,6 +1866,8 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
   }
   case PM_ELSE_NODE:
     return fx_eval_stmts(f, ((const pm_else_node_t *)n)->statements);
+  case PM_CASE_NODE:
+    return fx_case(f, (const pm_case_node_t *)n);
   case PM_WHILE_NODE: {
     const pm_while_node_t *w = (const pm_while_node_t *)n;
     if (PM_NODE_FLAG_P(n, PM_LOOP_FLAGS_BEGIN_MODIFIER)) fx_unsupported(n, "begin...end while");
