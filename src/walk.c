@@ -453,6 +453,9 @@ static void fx_bind_block(FxFrame *f, const pm_node_t *params, int argc, sp_RbVa
   for (int i = 0; i < many; i++) *fx_numbered(f, params, i + 1) = i < argc ? argv[i] : sp_box_nil();
 }
 
+static sp_RbVal fx_yield_in(const FxBlock *b, int argc, sp_RbVal *argv, int strict, const sp_RbVal *self,
+                              FxClass *cref, const FxMethod *m, const FxBlock *mblk);
+
 static sp_RbVal fx_invoke(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal *argv) {
   return fx_invoke_b(m, self, argc, argv, NULL);
 }
@@ -472,6 +475,12 @@ static sp_RbVal fx_invoke_b(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal
   SP_GC_SAVE();
   sp_RbVal me = self;
   SP_GC_ROOT_RBVAL(me);
+  if (m->kind == FX_M_PROC) {
+    /* the body is a lambda: a strict arity, and a return ends the method */
+    FxBlock b = ((FxProc *)m->proc)->b;
+    b.lambda = 1;
+    return fx_yield_in(&b, argc, argv, 1, &me, NULL, m, blk);
+  }
   const pm_def_node_t *def = m->def;
   /* $~ is local to the method: the caller's registers come back on exit */
   sp_re_frame rf;
@@ -503,9 +512,11 @@ static void fx_block_parts(const pm_node_t *n, const pm_constant_id_list_t **loc
    ends the call that passed the block; a return ends the method that
    holds the block, or the lambda. strict is set for Proc#call. self and
    cref replace those of the home frame when they are set (the body of
-   Class.new); the caller roots *self. */
+   Class.new); the caller roots *self. m is set for the body of a method
+   that define_method made: the block is the body, super starts from m,
+   and mblk is the block of the call. */
 static sp_RbVal fx_yield_in(const FxBlock *b, int argc, sp_RbVal *argv, int strict, const sp_RbVal *self,
-                              FxClass *cref) {
+                              FxClass *cref, const FxMethod *m, const FxBlock *mblk) {
   if (!b->node) {
     if (self) fx_gap("a Symbol block as a class body");
     if (argc < 1) sp_raise_cls("ArgumentError", "no receiver given");
@@ -521,9 +532,9 @@ static sp_RbVal fx_yield_in(const FxBlock *b, int argc, sp_RbVal *argv, int stri
   fx_block_parts(b->node, &locals, &params, &body);
   if (SP_UNLIKELY(SP_SAFEPOINT_POLL())) sp_safepoint();
   FX_FRAME(bf, locals, self ? *self : h->self, cref ? cref : h->cref);
-  bf.method = h->method;
+  bf.method = m ? m : h->method;
   bf.parent = h;
-  bf.block = h->block;
+  bf.block = m ? mblk : h->block;
   bf.lambda = b->lambda;
   fx_bind_block(&bf, params, argc, argv, b->lambda, strict);
   sp_RbVal v = body ? fx_eval(&bf, body) : sp_box_nil();
@@ -550,7 +561,7 @@ static sp_RbVal fx_yield_in(const FxBlock *b, int argc, sp_RbVal *argv, int stri
 }
 
 static sp_RbVal fx_yield_x(const FxBlock *b, int argc, sp_RbVal *argv, int strict) {
-  return fx_yield_in(b, argc, argv, strict, NULL, NULL);
+  return fx_yield_in(b, argc, argv, strict, NULL, NULL, NULL, NULL);
 }
 
 static sp_RbVal fx_yield(const FxBlock *b, int argc, sp_RbVal *argv) {
@@ -561,7 +572,7 @@ static sp_RbVal fx_yield(const FxBlock *b, int argc, sp_RbVal *argv) {
    method of cref. */
 static sp_RbVal fx_yield_under(const FxBlock *b, sp_RbVal self, FxClass *cref, int argc, sp_RbVal *argv) {
   SP_GC_ROOT_RBVAL(self);
-  return fx_yield_in(b, argc, argv, 0, &self, cref);
+  return fx_yield_in(b, argc, argv, 0, &self, cref, NULL, NULL);
 }
 
 static int fx_is_proc(sp_RbVal v) {
@@ -827,6 +838,9 @@ static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *a
   }
   FxMethod *m = fx_find_method(fx_class_of(self), s);
   if (m) return fx_invoke_b(m, self, argc, argv, blk);
+  /* define_method of main defines a method of Object, as a top-level def does */
+  if (fx_is_fx_object(self) && self.v.p == L.main.v.p && !strcmp(name, "define_method"))
+    return fx_define_proc_method(L.object, 0, argc, argv, blk);
   if (fx_kernel_block(f, name, argc, blk, &out)) return out;
   if (blk) return fx_send_b(self, name, argc, argv, blk);
   if (fx_exc_kernel(name, argc, argv, &out)) return out;
@@ -917,6 +931,9 @@ static sp_RbVal fx_super_call(FxFrame *f, const pm_node_t *n, const pm_arguments
   SP_GC_SAVE();
   FX_ARGS(f, forward ? NULL : args, argc, argv, kw, ok);
   if (!ok) return sp_box_nil();
+  if (forward && f->method->kind == FX_M_PROC)
+    sp_raise_cls("RuntimeError", "implicit argument passing of super from method defined by define_method() is "
+                                 "not supported. Specify all arguments explicitly.");
   if (forward) {
     argc_spread = sp_PolyArray_new();
     kw = fx_zsuper_args(f, n, argc_spread);

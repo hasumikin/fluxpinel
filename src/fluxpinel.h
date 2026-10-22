@@ -12,7 +12,7 @@
 struct FxClass;
 
 /* What a method does when it is called. */
-typedef enum { FX_M_DEF, FX_M_READER, FX_M_WRITER, FX_M_FFI, FX_M_ENTRY } FxMethodKind;
+typedef enum { FX_M_DEF, FX_M_READER, FX_M_WRITER, FX_M_FFI, FX_M_ENTRY, FX_M_PROC } FxMethodKind;
 
 typedef struct {
   sp_sym name;
@@ -23,6 +23,7 @@ typedef struct {
   int matches;                /* whether the body can set $~: 0 not known yet, 1 no, 2 yes */
   struct FxFfi *ffi;        /* FX_M_FFI: what ffi_func and its kin declared */
   int entry;                  /* FX_M_ENTRY: the row of fx_kernel_entries (host.c) */
+  void *proc;                 /* FX_M_PROC: the FxProc of define_method; L.procs roots it */
 } FxMethod;
 
 typedef struct {
@@ -198,6 +199,10 @@ typedef struct {
   FxConst *globals;    /* the global variables that the program assigned;
                             marked by the mark hook */
   int nglobals, globals_cap;
+  void **procs;          /* the FxProc of each define_method, also of a method
+                            that a later definition replaced, as a call of it
+                            can still run; marked by the mark hook */
+  int nprocs, procs_cap;
 } Fluxpinel;
 
 static Fluxpinel L;
@@ -207,6 +212,8 @@ static sp_RbVal fx_send(sp_RbVal recv, const char *name, int argc, sp_RbVal *arg
 static sp_RbVal fx_send_b(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk);
 static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk);
 static sp_RbVal fx_yield(const FxBlock *b, int argc, sp_RbVal *argv);
+static sp_RbVal fx_block_proc(const FxBlock *b);
+static __attribute__((noreturn)) void fx_arity_error(int argc, int nreq, int nopt, int rest);
 static int fx_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out);
 static int fx_proc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int fx_range_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);

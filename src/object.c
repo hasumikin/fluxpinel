@@ -623,6 +623,7 @@ static void fx_hook_mark(void) {
     for (int j = 0; j < L.builtins[i]->nconsts; j++) sp_mark_rbval(L.builtins[i]->consts[j].value);
   if (fx_class_ivars) sp_gc_mark(fx_class_ivars);
   for (int i = 0; i < L.nglobals; i++) sp_mark_rbval(L.globals[i].value);
+  for (int i = 0; i < L.nprocs; i++) sp_gc_mark(L.procs[i]);
 }
 
 static void fx_object_init(void) {
@@ -769,6 +770,34 @@ static void fx_attr(FxClass *k, int reader, int writer, int singleton, int argc,
   }
 }
 
+/* define_method(name) { ... } and define_method(name, proc): a method whose
+   body is the block (FX_M_PROC). Answers the name. */
+static sp_RbVal fx_define_proc_method(FxClass *k, int singleton, int argc, sp_RbVal *argv, const FxBlock *blk) {
+  if (argc != 1 && argc != 2) fx_arity_error(argc, 1, 1, 0);
+  sp_sym name = sp_sym_intern(fx_name_arg(argv[0]));
+  sp_RbVal body;
+  if (argc == 2) {
+    body = argv[1];
+    if (!fx_is_proc(body)) {
+      const char *cls = sp_poly_class_name(body);
+      if (!strcmp(cls, "Method") || !strcmp(cls, "UnboundMethod")) fx_gap(sp_sprintf("define_method with a %s", cls));
+      sp_raise_cls("TypeError", sp_sprintf("wrong argument type %s (expected Proc/Method/UnboundMethod)", cls));
+    }
+  } else {
+    if (!blk) sp_raise_cls("ArgumentError", "tried to create Proc object without a block");
+    body = fx_block_proc(blk);
+  }
+  if (L.nprocs == L.procs_cap) {
+    L.procs_cap = L.procs_cap ? L.procs_cap * 2 : 16;
+    L.procs = realloc(L.procs, sizeof *L.procs * (size_t)L.procs_cap);
+  }
+  L.procs[L.nprocs++] = body.v.p;
+  FxMethod *m = fx_method_new(FX_M_PROC, name, NULL, 0, k);
+  m->proc = body.v.p;
+  fx_define_method(k, m, singleton);
+  return sp_box_sym(name);
+}
+
 static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
                            const FxBlock *blk, sp_RbVal *out) {
   FxClass *k = fx_class_value(r);
@@ -841,6 +870,10 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     }
     fx_alias(k, f && f->singleton_defs == 1, s[0], s[1]);
     *out = sp_box_sym(s[0]);
+    return 1;
+  }
+  if (!strcmp(name, "define_method") || !strcmp(name, "define_singleton_method")) {
+    *out = fx_define_proc_method(k, name[7] == 's' || (f && f->singleton_defs == 1), argc, argv, blk);
     return 1;
   }
   if (!strcmp(name, "include") || !strcmp(name, "extend")) {
