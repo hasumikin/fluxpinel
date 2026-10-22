@@ -565,6 +565,9 @@ src/main.c             Fluxpinel, with FX_KERNEL=fx_kernel_init
   `sp_App_s_add`. A parameter with no caller in the program is an
   `sp_RbVal`. A caller in the program narrows the parameter to its type
   (`sp_int`). An `untyped` parameter in RBS keeps the `sp_RbVal` slot.
+  An entry that only a script calls types its parameters with inline RBS
+  (`#: (Array[Integer], String) -> Array[Integer]`). Otherwise each
+  operation on a parameter goes through the poly dispatch.
 - **The results.** An entry answers a C type: `sp_RbVal`, `sp_int`,
   `sp_float`, `sp_sym`, `const char *`, an Array, or a pointer to an
   object of the program. An object starts with its `cls_id`, so the host
@@ -575,7 +578,10 @@ src/main.c             Fluxpinel, with FX_KERNEL=fx_kernel_init
   directly.
 - **In Fluxpinel.** `tools/entry_gen.rb` reads the header and writes a wrapper
   for each entry: it converts each argument to the C type of its parameter
-  and boxes the result. Each class of the kernel is a `FxClass` with the
+  and boxes the result. An Array of the kind of the parameter (an Array of
+  Integer that an entry answered) passes as it is. Any other Array passes
+  as a copy of that kind. A Hash must be of the kind of the parameter, or
+  the wrapper raises `TypeError`. Each class of the kernel is a `FxClass` with the
   id of the kernel, so a constant names it and an AOT object has it as its
   class. An entry is a singleton method of its module (`FX_M_ENTRY`).
   `new` of a class of the kernel is a gap, as the constructor is no entry.
