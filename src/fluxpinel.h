@@ -29,6 +29,8 @@ typedef struct {
   const pm_def_node_t *def;   /* FX_M_DEF */
   sp_sym ivar;                /* FX_M_READER / FX_M_WRITER: "@name" */
   struct FxClass *owner;    /* the class or module that defines it */
+  struct FxClass *lexical;  /* FX_M_DEF: the cref where the def is written, for
+                                 the constants of the body; NULL for owner */
   int matches;                /* whether the body can set $~: 0 not known yet, 1 no, 2 yes */
   struct FxFfi *ffi;        /* FX_M_FFI: what ffi_func and its kin declared */
   int entry;                  /* FX_M_ENTRY: the row of fx_kernel_entries (host.c) */
@@ -131,8 +133,13 @@ typedef struct FxFrame {
   const pm_constant_id_list_t *names;
   sp_RbVal self;              /* rooted by the caller */
   FxClass *cref;            /* the lexical class: def target and constant scope */
+  FxClass *definee;         /* the def target when it is not cref: the class of
+                                 class_eval or instance_eval; NULL for cref */
   const FxMethod *method;   /* the running method, for super; NULL outside one */
-  int singleton_defs;         /* 1: inside class << self; 2: after module_function */
+  int singleton_defs;         /* 1: inside class << self; 2: after module_function;
+                                 3: instance_eval of an object, whose singleton
+                                 methods Fluxpinel does not model; 4: instance_eval
+                                 of a class, where only a def is a class method */
   int vis;                    /* the default visibility of a def here (FX_VIS_*): a
                                  block frame uses that of its scope (fx_vis_frame) */
   int vis_scope;              /* a block frame with a scope of its own: a class

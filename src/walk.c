@@ -216,11 +216,15 @@ static void fx_define(FxFrame *f, const pm_def_node_t *def) {
     if (!PM_NODE_TYPE_P(def->receiver, PM_SELF_NODE) || f->self.tag != SP_TAG_CLASS)
       fx_unsupported((const pm_node_t *)def, "singleton method on an object");
     FxClass *k = fx_class_value(f->self);
-    fx_define_method(k, fx_method_new(FX_M_DEF, name, def, 0, k), 1);
+    FxMethod *sm = fx_method_new(FX_M_DEF, name, def, 0, k);
+    sm->lexical = f->cref;
+    fx_define_method(k, sm, 1);
     return;
   }
-  FxClass *k = f->cref;
+  if (f->singleton_defs == 3) fx_unsupported((const pm_node_t *)def, "def in instance_eval of an object");
+  FxClass *k = f->definee ? f->definee : f->cref;
   FxMethod *m = fx_method_new(FX_M_DEF, name, def, 0, k);
+  m->lexical = f->cref;
   /* after module_function: a private instance method and a public copy
      for the module */
   if (f->singleton_defs == 2) {
@@ -228,8 +232,8 @@ static void fx_define(FxFrame *f, const pm_def_node_t *def) {
     fx_define_method(k, fx_method_copy(m, FX_VIS_PUBLIC), 1);
     return;
   }
-  /* 1: inside class << self */
-  fx_define_vis(k, m, f->singleton_defs == 1, fx_scope_vis(f));
+  /* 1: inside class << self; 4: instance_eval of a class */
+  fx_define_vis(k, m, f->singleton_defs == 1 || f->singleton_defs == 4, fx_scope_vis(f));
 }
 
 /* kws is "; required keyword: k" or "" (fx_required_keywords) */
@@ -482,7 +486,7 @@ static void fx_bind_block(FxFrame *f, const pm_node_t *params, int argc, sp_RbVa
 }
 
 static sp_RbVal fx_yield_in(const FxBlock *b, int argc, sp_RbVal *argv, int strict, const sp_RbVal *self,
-                              FxClass *cref, const FxMethod *m, const FxBlock *mblk);
+                              FxClass *definee, int sdefs, const FxMethod *m, const FxBlock *mblk);
 
 static sp_RbVal fx_invoke(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal *argv) {
   return fx_invoke_b(m, self, argc, argv, NULL);
@@ -519,13 +523,13 @@ static sp_RbVal fx_invoke_b(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal
     /* the body is a lambda: a strict arity, and a return ends the method */
     FxBlock b = ((FxProc *)m->proc)->b;
     b.lambda = 1;
-    return fx_yield_in(&b, argc, argv, 1, &me, NULL, m, blk);
+    return fx_yield_in(&b, argc, argv, 1, &me, NULL, 0, m, blk);
   }
   const pm_def_node_t *def = m->def;
   /* $~ is local to the method: the caller's registers come back on exit */
   sp_re_frame rf;
   int rx = fx_re_frame_enter(m, &rf);
-  FX_FRAME(f, &def->locals, me, m->owner);
+  FX_FRAME(f, &def->locals, me, m->lexical ? m->lexical : m->owner);
   f.method = m;
   f.block = blk;
   fx_bind_params(&f, def->parameters, argc, argv);
@@ -550,13 +554,15 @@ static void fx_block_parts(const pm_node_t *n, const pm_constant_id_list_t **loc
 
 /* Calls a block with the arguments. A next ends the block call; a break
    ends the call that passed the block; a return ends the method that
-   holds the block, or the lambda. strict is set for Proc#call. self and
-   cref replace those of the home frame when they are set (the body of
-   Class.new); the caller roots *self. m is set for the body of a method
-   that define_method made: the block is the body, super starts from m,
-   and mblk is the block of the call. */
+   holds the block, or the lambda. strict is set for Proc#call. self
+   replaces that of the home frame when it is set; the caller roots
+   *self. definee, when it is set, replaces the def target of the home
+   frame, with sdefs for its singleton_defs (the body of Class.new,
+   class_eval and instance_eval); constants stay those of the home. m is
+   set for the body of a method that define_method made: the block is the
+   body, super starts from m, and mblk is the block of the call. */
 static sp_RbVal fx_yield_in(const FxBlock *b, int argc, sp_RbVal *argv, int strict, const sp_RbVal *self,
-                              FxClass *cref, const FxMethod *m, const FxBlock *mblk) {
+                              FxClass *definee, int sdefs, const FxMethod *m, const FxBlock *mblk) {
   if (!b->node) {
     if (self) fx_gap("a Symbol block as a class body");
     if (argc < 1) sp_raise_cls("ArgumentError", "no receiver given");
@@ -571,9 +577,11 @@ static sp_RbVal fx_yield_in(const FxBlock *b, int argc, sp_RbVal *argv, int stri
   const pm_node_t *params, *body;
   fx_block_parts(b->node, &locals, &params, &body);
   if (SP_UNLIKELY(SP_SAFEPOINT_POLL())) sp_safepoint();
-  FX_FRAME(bf, locals, self ? *self : h->self, cref ? cref : h->cref);
+  FX_FRAME(bf, locals, self ? *self : h->self, h->cref);
+  bf.definee = definee ? definee : h->definee;
+  bf.singleton_defs = definee ? sdefs : h->singleton_defs;
   bf.method = m ? m : h->method;
-  bf.vis_scope = cref || m;
+  bf.vis_scope = definee || m;
   bf.parent = h;
   bf.block = m ? mblk : h->block;
   bf.lambda = b->lambda;
@@ -602,7 +610,7 @@ static sp_RbVal fx_yield_in(const FxBlock *b, int argc, sp_RbVal *argv, int stri
 }
 
 static sp_RbVal fx_yield_x(const FxBlock *b, int argc, sp_RbVal *argv, int strict) {
-  return fx_yield_in(b, argc, argv, strict, NULL, NULL, NULL, NULL);
+  return fx_yield_in(b, argc, argv, strict, NULL, NULL, 0, NULL, NULL);
 }
 
 static sp_RbVal fx_yield(const FxBlock *b, int argc, sp_RbVal *argv) {
@@ -610,10 +618,36 @@ static sp_RbVal fx_yield(const FxBlock *b, int argc, sp_RbVal *argv) {
 }
 
 /* Calls a block with self and the definee replaced: a def in it defines a
-   method of cref. */
-static sp_RbVal fx_yield_under(const FxBlock *b, sp_RbVal self, FxClass *cref, int argc, sp_RbVal *argv) {
+   method of k. */
+static sp_RbVal fx_yield_under(const FxBlock *b, sp_RbVal self, FxClass *k, int argc, sp_RbVal *argv) {
   SP_GC_ROOT_RBVAL(self);
-  return fx_yield_in(b, argc, argv, 0, &self, cref, NULL, NULL);
+  return fx_yield_in(b, argc, argv, 0, &self, k, 0, NULL, NULL);
+}
+
+/* instance_eval and instance_exec with a block: self is r. A def in the
+   block defines a singleton method of r: a class method for a class, and
+   a gap for any other object. class_eval, module_eval and their _exec
+   kin: self is the class, and a def defines an instance method. The
+   _exec forms pass their arguments, the others pass r. Answers 0 for
+   any other call. */
+static int fx_eval_block(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                           sp_RbVal *out) {
+  int inst = !strcmp(name, "instance_eval") || !strcmp(name, "instance_exec");
+  int mod = !strcmp(name, "class_eval") || !strcmp(name, "module_eval") || !strcmp(name, "class_exec") ||
+            !strcmp(name, "module_exec");
+  FxClass *k = fx_class_value(r);
+  if (!(inst || (mod && k))) return 0;
+  int exec = strstr(name, "_exec") != NULL;
+  if (!exec && argc > 0) fx_gap(sp_sprintf("%s of a String", name));
+  if (!blk && exec) sp_raise_cls("LocalJumpError", "no block given");
+  if (!blk) sp_raise_cls("ArgumentError", "wrong number of arguments (given 0, expected 1..3)");
+  SP_GC_SAVE();
+  sp_RbVal self = r;
+  SP_GC_ROOT_RBVAL(self);
+  FxClass *definee = k ? k : fx_class_of(r);
+  int sdefs = mod ? 0 : k ? 4 : 3;
+  *out = fx_yield_in(blk, exec ? argc : 1, exec ? argv : &self, 0, &self, definee, sdefs, NULL, NULL);
+  return 1;
 }
 
 static int fx_is_proc(sp_RbVal v) {
@@ -1894,7 +1928,8 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
     if (!PM_NODE_TYPE_P(a->new_name, PM_SYMBOL_NODE) || !PM_NODE_TYPE_P(a->old_name, PM_SYMBOL_NODE))
       fx_unsupported(n, "alias of an interpolated name");
     sp_RbVal to = fx_eval(f, a->new_name), from = fx_eval(f, a->old_name);
-    fx_alias(f->cref, f->singleton_defs == 1, (sp_sym)to.v.i, (sp_sym)from.v.i);
+    fx_alias(f->definee ? f->definee : f->cref, f->singleton_defs == 1 || f->singleton_defs == 4, (sp_sym)to.v.i,
+             (sp_sym)from.v.i);
     return sp_box_nil();
   }
   case PM_CALL_NODE:

@@ -347,6 +347,7 @@ static sp_RbVal fx_send(sp_RbVal recv, const char *name, int argc, sp_RbVal *arg
    one, since the generated wrappers would drop the block. */
 static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                              sp_RbVal *out) {
+  if (fx_eval_block(recv, name, argc, argv, blk, out)) return 1;
   if (fx_env_core(recv, name, argc, argv, blk, out)) return 1;
   if (fx_record_core(recv, name, argc, argv, blk, out)) return 1;
   if (fx_is_proc(recv) && fx_proc_core(recv, name, argc, argv, out)) return 1;
