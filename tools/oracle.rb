@@ -158,6 +158,12 @@ end
 
 # ---- run ----
 
+# A test writes its scratch files in the spinel tree and deletes them at its
+# end. A run that stops early leaves them there, so the oracle removes the
+# untracked files that the run adds.
+def untracked = `git -C #{SPINEL_DIR} ls-files -z --others --exclude-standard`.split("\0")
+untracked_before = untracked
+
 queue = Queue.new
 tests.each { |t| queue << t }
 results = []
@@ -180,6 +186,9 @@ workers = Array.new(opts[:jobs]) do
 end
 workers.each(&:join)
 $stderr.puts
+left = untracked - untracked_before
+left.each { |f| FileUtils.rm_f(File.join(SPINEL_DIR, f)) }
+warn "oracle: removed #{left.size} files that the tests left in the spinel tree" unless left.empty?
 results.sort_by!(&:test)
 
 # ---- report ----
