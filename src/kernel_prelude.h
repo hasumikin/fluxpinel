@@ -9,11 +9,11 @@
    kernel.
 
    The defines are those that the kernel gives before its include of
-   spinel_rt.h. The Makefile checks that the two agree. */
+   spinel_rt.h, which the Makefile copies to kernel_defines.h, so that
+   both see one spinel_rt.h. They depend on the program, for example
+   SP_TU_REOPENS_BUILTIN_CLASS for a program that reopens File. */
 
-#define SPINEL_EXT_KERNEL 1
-#define SP_SHARE_STRING_LITERALS 1
-#define SP_SHARE_BOX_HANDLES 1
+#include "kernel_defines.h"
 #define sp_class_to_s fx_class_to_s_any
 #include "spinel_rt.h"
 #undef sp_class_to_s

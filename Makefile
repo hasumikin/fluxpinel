@@ -121,10 +121,8 @@ $(HOST)/kernel.c: $(KERNEL) kernel/fluxpinel.rb src/kernel_prelude.h SPINEL_COMM
 	mkdir -p $(HOST)
 	$(SPINEL)/spinel $(KERNEL) -c -o $@ --force --int-overflow $(KERNEL_OVERFLOW) \
 	  --ext-init fx_kernel_init --ext-entry $(KERNEL_ENTRIES)
-	# each define of the kernel before spinel_rt.h is in kernel_prelude.h
-	sed '/^#include "spinel_rt.h"/q' $@ | grep '^#define' | while read -r d; do \
-	  grep -qxF "$$d" src/kernel_prelude.h || { echo "kernel_prelude.h lacks: $$d"; rm -f $@; exit 1; }; \
-	done
+	# the defines of the kernel before spinel_rt.h, for kernel_prelude.h
+	sed '/^#include "spinel_rt.h"/q' $@ | grep '^#define' > $(HOST)/kernel_defines.h || { rm -f $@; exit 1; }
 
 # the wrapper of each entry (host.c)
 $(HOST)/entries.c: $(HOST)/kernel.c tools/entry_gen.rb
@@ -132,7 +130,7 @@ $(HOST)/entries.c: $(HOST)/kernel.c tools/entry_gen.rb
 
 $(HOST)/fluxpinel: src/*.c src/*.h $(HOST)/kernel.c $(HOST)/entries.c $(BUILD)/bop_gen_out.c $(BUILD)/off.flags \
               $(NATIVE_FLAGS)
-	$(CC) $(CFLAGS) -DFX_KERNEL=fx_kernel_init -include src/kernel_prelude.h -include $(HOST)/kernel.c \
+	$(CC) $(CFLAGS) -I$(HOST) -DFX_KERNEL=fx_kernel_init -include src/kernel_prelude.h -include $(HOST)/kernel.c \
 	  -include $(HOST)/entries.c $$(cat $(BUILD)/off.flags) -o $@ src/main.c \
 	  $(if $(NATIVE_FLAGS),$$(cat $(NATIVE_FLAGS))) $(LIBS)
 

@@ -554,6 +554,12 @@ src/main.c             Fluxpinel, with FX_KERNEL=fx_kernel_init
   which calls the function of the kernel for a class of the kernel.
 - **The types.** The struct of each class of the kernel is in the TU, so
   Fluxpinel can read an ivar of an AOT object by its field.
+- **The defines.** The kernel gives some defines before its include of
+  `spinel_rt.h`, and they change what that header declares. Some depend
+  on the program: `SP_TU_REOPENS_BUILTIN_CLASS` for a program that reopens
+  `File`, as `File.foreach` does. The build copies them to
+  `kernel_defines.h`, and `kernel_prelude.h` includes that file, so both
+  sides see one `spinel_rt.h`.
 
 - **The entries.** Each export is a C function, for example
   `sp_App_s_add`. A parameter with no caller in the program is an
