@@ -920,19 +920,25 @@ static void fx_attr(FxClass *k, int reader, int writer, int singleton, int vis, 
   }
 }
 
+/* Whether an ancestor of k is a builtin class or module other than
+   Object, Kernel and BasicObject (Comparable, Exception, ...). */
+static int fx_builtin_ancestor(const FxClass *k) {
+  const FxClass *anc[128];
+  int n = fx_ancestors(k, anc, 128);
+  for (int i = 0; i < n; i++)
+    if (anc[i]->cls_id < 0 && anc[i] != L.object && strcmp(anc[i]->name, "Kernel") &&
+        strcmp(anc[i]->name, "BasicObject"))
+      return 1;
+  return 0;
+}
+
 /* Whether k has no builtin method of the name: a class or a module of
    the program whose ancestors are of the program, but Object, Kernel and
    BasicObject, and a name that those do not define. */
 static int fx_no_builtin_method(const FxClass *k, const char *name) {
   if (k->cls_id < FX_CLS_BASE || k == L.object || k->record || k->native) return 0;
   if (fx_object_method_name(name) || fx_kernel_private(name)) return 0;
-  const FxClass *anc[128];
-  int n = fx_ancestors(k, anc, 128);
-  for (int i = 0; i < n; i++)
-    if (anc[i]->cls_id < 0 && anc[i] != L.object && strcmp(anc[i]->name, "Kernel") &&
-        strcmp(anc[i]->name, "BasicObject"))
-      return 0;
-  return 1;
+  return !fx_builtin_ancestor(k);
 }
 
 /* Sets the visibility of the method name of k, or of the singleton
@@ -974,6 +980,60 @@ static sp_RbVal fx_vis_answer(int argc, sp_RbVal *argv) {
   if (argc == 1) return argv[0];
   sp_PolyArray *a = sp_PolyArray_new();
   for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
+  return sp_box_poly_array(a);
+}
+
+/* The visibilities that a reflection method asks about, as a mask of
+   1 << FX_VIS_*: method_defined? and instance_methods take public and
+   protected, public_method_defined? only public, and so on. 0 when name
+   is no such method. */
+static int fx_vis_mask(const char *name) {
+  static const struct { const char *prefix; int mask; } kinds[] = {
+    { "public_", 1 << FX_VIS_PUBLIC }, { "private_", 1 << FX_VIS_PRIVATE },
+    { "protected_", 1 << FX_VIS_PROTECTED }, { "", 1 << FX_VIS_PUBLIC | 1 << FX_VIS_PROTECTED }
+  };
+  for (size_t i = 0; i < sizeof kinds / sizeof kinds[0]; i++) {
+    size_t n = strlen(kinds[i].prefix);
+    if (strncmp(name, kinds[i].prefix, n)) continue;
+    if (!strcmp(name + n, "method_defined?") || !strcmp(name + n, "instance_methods")) return kinds[i].mask;
+  }
+  return 0;
+}
+
+/* method_defined?(name, inherit = true) and its kin. A method of the
+   program answers by its visibility. With no such method, a class of the
+   program has the methods of Object and Kernel only; any other builtin
+   method is not known here, which is a gap. */
+static int fx_method_defined(FxClass *k, int mask, sp_sym name, int inherit) {
+  FxMethod *m = inherit ? fx_find_method(k, name) : fx_table_get(&k->methods, name);
+  if (m) return (mask >> m->vis) & 1;
+  /* a record defines the accessors of its members in its table: a Data
+     class has no writer */
+  const FxClass *rec = fx_record_of(k);
+  for (int i = 0; rec && i < rec->nmembers; i++) {
+    const char *mn = sp_sym_to_s(rec->members[i]), *n = sp_sym_to_s(name);
+    size_t len = strlen(mn);
+    if (!strncmp(n, mn, len) && (!n[len] || !strcmp(n + len, "="))) return 0;
+  }
+  if (k->cls_id < FX_CLS_BASE || k->native || (inherit && fx_builtin_ancestor(k)))
+    fx_gap(sp_sprintf("%s.method_defined? of a builtin method", k->name));
+  /* a method of Object or Kernel, which a class inherits and a module
+     does not */
+  const char *n = sp_sym_to_s(name);
+  if (!inherit || k->is_module || !(fx_object_method_name(n) || fx_kernel_private(n))) return 0;
+  return (mask >> (fx_kernel_private(n) ? FX_VIS_PRIVATE : FX_VIS_PUBLIC)) & 1;
+}
+
+/* instance_methods(false) and its kin: the methods that k itself defines,
+   in the order of definition. With inherit, the list takes the builtin
+   methods of the ancestors too, which Fluxpinel does not know. */
+static sp_RbVal fx_instance_methods(FxClass *k, int mask, int inherit) {
+  if (inherit || k->cls_id < FX_CLS_BASE || k->native)
+    fx_gap(sp_sprintf("%s.instance_methods with the builtin methods", k->name));
+  sp_PolyArray *a = sp_PolyArray_new();
+  SP_GC_ROOT(a);
+  for (int i = 0; i < k->methods.n; i++)
+    if ((mask >> k->methods.items[i]->vis) & 1) sp_PolyArray_push(a, sp_box_sym(k->methods.items[i]->name));
   return sp_box_poly_array(a);
 }
 
@@ -1164,8 +1224,16 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     *out = sp_box_bool(fx_class_value(argv[0]) == k);
     return 1;
   }
-  if (argc == 1 && !strcmp(name, "method_defined?")) {
-    *out = sp_box_bool(fx_find_method(k, sp_sym_intern(fx_name_arg(argv[0]))) != NULL);
+  /* method_defined?(name, inherit = true), instance_methods(inherit = true)
+     and their kin for one visibility */
+  int mask = fx_vis_mask(name);
+  if (mask && name[strlen(name) - 1] == '?' && (argc == 1 || argc == 2)) {
+    int inherit = argc == 1 || sp_poly_truthy(argv[1]);
+    *out = sp_box_bool(fx_method_defined(k, mask, sp_sym_intern(fx_name_arg(argv[0])), inherit));
+    return 1;
+  }
+  if (mask && name[strlen(name) - 1] == 's' && argc <= 1) {
+    *out = fx_instance_methods(k, mask, argc == 0 || sp_poly_truthy(argv[0]));
     return 1;
   }
   if (argc == 1 && !strcmp(name, "const_get")) {

@@ -159,3 +159,24 @@ t("top-level send") { 5.send(:top_helper) }
 t("top-level object") { Object.new.top_helper }
 t("hook") { Hooked.new.quiet }
 t("hook super") { Hooked.new.loud }
+
+# reflection by visibility
+module Mixin
+  def mixed = 1
+  private def mixed_private = 2
+end
+
+t("instance_methods") { Account.instance_methods(false).sort }
+t("public_instance_methods") { Account.public_instance_methods(false).sort }
+t("protected_instance_methods") { Account.protected_instance_methods(false) }
+t("private_instance_methods") { Account.private_instance_methods(false).sort }
+t("subclass copies") { [Derived.public_instance_methods(false), Derived.private_instance_methods(false)] }
+t("module methods") { [Mixin.instance_methods(false), Mixin.private_instance_methods(false)] }
+t("struct members") { Struct.new(:x).instance_methods(false).sort }
+t("method_defined?") { %i[open balance secret to_s puts zork].map { |m| Account.method_defined?(m) } }
+t("method_defined? own") { [Derived.method_defined?(:kept, false), Derived.method_defined?(:secret, false)] }
+t("public_method_defined?") { %i[open balance to_s].map { |m| Account.public_method_defined?(m) } }
+t("private_method_defined?") { %i[secret initialize puts open].map { |m| Account.private_method_defined?(m) } }
+t("protected_method_defined?") { [Account.protected_method_defined?(:balance), Account.protected_method_defined?("open")] }
+t("module defined?") { [Mixin.method_defined?(:mixed), Mixin.method_defined?(:to_s), Mixin.private_method_defined?(:puts)] }
+t("inherited") { [Derived.private_method_defined?(:shown), Derived.public_method_defined?(:kept, false), Base.private_method_defined?(:kept)] }
