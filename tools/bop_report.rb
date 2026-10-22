@@ -15,7 +15,7 @@
 
 require "open3"
 
-SPINEL = ENV.fetch("SPINEL", File.expand_path("~/work/spinel"))
+SPINEL = ENV.fetch("SPINEL", File.expand_path("../deps/spinel", __dir__))
 TU_DIR = ENV.fetch("FX_TU_DIR", File.expand_path("../src", __dir__))
 RT_ARCHIVE = ENV.fetch("RT_ARCHIVE", "#{SPINEL}/lib/libspinel_rt.a")
 RT_CFLAGS = ENV.fetch("RT_CFLAGS", "").split

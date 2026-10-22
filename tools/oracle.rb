@@ -63,6 +63,9 @@ dirty = `git -C #{SPINEL_DIR} status --porcelain --untracked-files=no`.lines.siz
 rev_file = File.join(File.dirname(FLUXPINEL), "spinel.rev")
 fx_rev = File.exist?(rev_file) ? File.read(rev_file).strip : "(unknown)"
 rev_note = fx_rev == spinel_rev ? "same commit" : "DIFFERENT commit: rebuild Fluxpinel"
+pin_file = File.expand_path("../SPINEL_COMMIT", __dir__)
+pin = File.exist?(pin_file) ? File.read(pin_file).strip : "(unknown)"
+pin_note = pin == spinel_rev ? "the pin" : "not the pin #{pin[0, 12]}"
 warn "oracle: Fluxpinel was built from #{fx_rev[0, 12]}, the spinel tree is #{spinel_rev[0, 12]}" if fx_rev != spinel_rev
 mode_file = File.join(File.dirname(FLUXPINEL), "int_overflow")
 fx_mode = File.exist?(mode_file) ? File.read(mode_file).strip.downcase : "(unknown)"
@@ -191,7 +194,7 @@ ran = results.count do |r|
 end
 
 md = +"# Oracle report\n\n"
-md << "- spinel: `#{spinel_rev[0, 12]}`#{dirty > 0 ? " (#{dirty} modified files)" : ""}\n"
+md << "- spinel: `#{spinel_rev[0, 12]}` (#{pin_note}#{dirty > 0 ? ", #{dirty} modified files" : ""})\n"
 md << "- Fluxpinel built from: `#{fx_rev[0, 12]}` (#{rev_note})\n"
 md << "- integer overflow: #{opts[:mode]} (Fluxpinel and AOT)\n"
 md << "- tests: #{results.size} (Fluxpinel runs #{ran}, #{(100.0 * ran / results.size).round(1)}%)\n\n"

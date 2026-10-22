@@ -1,12 +1,34 @@
 # Fluxpinel: an interpreter on the spinel runtime.
-# SPINEL points at a built spinel checkout (make deps && make).
 #
+#   make deps   fetch spinel at the commit in SPINEL_COMMIT into deps/spinel
+#               and build it
 #   make        build build/fluxpinel
 #   make test   run test/*.rb under CRuby and Fluxpinel and compare, once as is
 #               and once under the GC stress and verify modes of spinel
 #   make oracle run the spinel test corpus under CRuby, Fluxpinel and AOT
+#
+# SPINEL points at a built spinel checkout, deps/spinel by default. Set it
+# on the command line or in config.mk (not tracked) to use another one,
+# e.g. `SPINEL = $(HOME)/src/spinel`. The checkout must be at the commit in
+# SPINEL_COMMIT; SPINEL_PIN=0 turns the check off, e.g. to run the oracle
+# on another spinel commit.
 
-SPINEL ?= $(HOME)/work/spinel
+-include config.mk
+DEPS_SPINEL = $(CURDIR)/deps/spinel
+SPINEL ?= $(DEPS_SPINEL)
+SPINEL_URL ?= https://github.com/matz/spinel.git
+SPINEL_COMMIT := $(shell cat SPINEL_COMMIT)
+SPINEL_PIN ?= 1
+ifeq ($(SPINEL_PIN),1)
+ifeq ($(filter deps clean,$(MAKECMDGOALS)),)
+SPINEL_HEAD := $(shell git -C $(SPINEL) rev-parse HEAD 2>/dev/null)
+ifneq ($(SPINEL_HEAD),$(SPINEL_COMMIT))
+$(error $(SPINEL) is at $(or $(SPINEL_HEAD),no commit), and SPINEL_COMMIT is $(SPINEL_COMMIT). \
+  $(if $(filter $(DEPS_SPINEL),$(SPINEL)),Run `make deps`,Check out SPINEL_COMMIT in $(SPINEL)), \
+  or pass SPINEL_PIN=0)
+endif
+endif
+endif
 CC ?= cc
 BUILD = build
 # RAISE, WRAP or PROMOTE: match spinel --int-overflow of the AOT side.
@@ -50,7 +72,7 @@ all: $(BUILD)/fluxpinel
 SPINEL_TABLES = $(SPINEL)/src/builtin_ops.c $(SPINEL)/src/builtin_ops.h $(SPINEL)/src/types.c \
                 $(SPINEL)/src/types.h $(wildcard $(SPINEL)/src/*.inc)
 
-$(BUILD)/bop_gen: tools/bop_gen.c $(SPINEL_TABLES)
+$(BUILD)/bop_gen: tools/bop_gen.c $(SPINEL_TABLES) SPINEL_COMMIT
 	mkdir -p $(BUILD)
 	$(CC) -std=gnu11 -include stdarg.h -include builtin_names.h -I$(SPINEL)/src -o $@ $< \
 	  $(SPINEL)/src/types.c $(SPINEL)/src/builtin_names.c
@@ -95,7 +117,7 @@ KERNEL_ENTRIES ?= FxKernel.ping,FxKernel.add,FxKernel.make,FxKernel.bump,FxKerne
 HOST = $(BUILD)/host
 KERNEL_OVERFLOW = $(shell echo $(INT_OVERFLOW) | tr A-Z a-z)
 
-$(HOST)/kernel.c: $(KERNEL) kernel/fluxpinel.rb src/kernel_prelude.h
+$(HOST)/kernel.c: $(KERNEL) kernel/fluxpinel.rb src/kernel_prelude.h SPINEL_COMMIT
 	mkdir -p $(HOST)
 	$(SPINEL)/spinel $(KERNEL) -c -o $@ --force --int-overflow $(KERNEL_OVERFLOW) \
 	  --ext-init fx_kernel_init --ext-entry $(KERNEL_ENTRIES)
@@ -131,7 +153,24 @@ oracle:
 	ruby tools/oracle.rb --spinel $(SPINEL) --fluxpinel $(BUILD)/promote/fluxpinel \
 	  --int-overflow promote --out $(BUILD)/oracle
 
+# Fetches only the pinned commit, and builds spinel in place. A checkout
+# that SPINEL names elsewhere is yours: make deps does not touch it.
+deps:
+ifneq ($(SPINEL),$(DEPS_SPINEL))
+	$(error make deps fetches into deps/spinel, and SPINEL is $(SPINEL))
+endif
+	if [ ! -d $(DEPS_SPINEL)/.git ]; then \
+	  git init -q $(DEPS_SPINEL) && git -C $(DEPS_SPINEL) remote add origin $(SPINEL_URL); fi
+	if [ "$$(git -C $(DEPS_SPINEL) rev-parse -q --verify HEAD)" != "$(SPINEL_COMMIT)" ]; then \
+	  git -C $(DEPS_SPINEL) fetch -q --depth 1 origin $(SPINEL_COMMIT) && \
+	  git -C $(DEPS_SPINEL) checkout -q --detach FETCH_HEAD; fi
+	$(MAKE) -C $(DEPS_SPINEL) deps
+	# bin/spinel-cext-build links the threaded objects of these two
+	# packages, which spinel's `all` builds after it in a fresh tree
+	$(MAKE) -C $(DEPS_SPINEL) packages/json/sp_json_mt.o packages/tmpdir/sp_tmpdir_mt.o
+	$(MAKE) -C $(DEPS_SPINEL)
+
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test host test-host oracle clean
+.PHONY: all test host test-host oracle deps clean

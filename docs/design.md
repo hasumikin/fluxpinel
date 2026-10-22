@@ -36,6 +36,16 @@ harness. Use 1 reuses the same walker.
   design.
 - Fluxpinel pins one spinel commit. The runtime API of spinel is internal and
   changes often. The pin makes each update an explicit step.
+  - `SPINEL_COMMIT` holds the pin. A change of the pin is a commit of its
+    own.
+  - `make deps` fetches the pinned commit into `deps/spinel` and builds it.
+    `SPINEL` names that checkout by default.
+  - `SPINEL` can name another checkout, on the command line or in
+    `config.mk`. `make` stops when the checkout is not at the pin.
+  - The oracle checks a spinel tree at any commit with `SPINEL_PIN=0`. Its
+    report tells whether the tree is the pin.
+  - The dynamic layer links the kernel and Fluxpinel with one runtime, so
+    both must use the pinned commit.
 - Fluxpinel links `libspinel_rt` (the C runtime in `spinel/lib/`). Fluxpinel does not
   link the spinel compiler at run time.
 
@@ -969,18 +979,6 @@ These facts apply to spinel commit `ffac8340d`.
   emits for each method, so the map exists in the codegen source.
 - How does the walker dispatch fast? Candidates are interned method names
   (`sp_sym`) and an inline cache per call node.
-- How does Fluxpinel hold its spinel dependency? Fluxpinel uses the spinel source
-  (`bop_rows[]`, `ty_traits[]`), `libspinel_rt.a` and `libprism.a` from
-  `$(SPINEL)`, an external checkout. The two uses want different things:
-  - The oracle checks the spinel tree under test, at any commit. An
-    external path fits it.
-  - The dynamic layer links with one application. It needs a fixed spinel
-    commit and a reproducible build: the kernel and Fluxpinel must use the same
-    runtime.
-
-  A candidate: a spinel submodule as the default, and `make SPINEL=...` to
-  use another tree. The oracle (M3) needs at least a recorded commit. The
-  dynamic layer (M4 and later) needs the fixed commit.
 
 ## 9. Plan
 

@@ -1,10 +1,11 @@
 # M1: generate builtin wrappers from spinel bop_rows[] and measure them.
-# SPINEL points at a built spinel checkout (make deps && make).
+# SPINEL points at a built spinel checkout, as in the top Makefile.
 #
 #   make report   generate, compile and link the wrappers; print coverage
 #   make smoke    call a few wrappers and check the answers
 
-SPINEL ?= $(HOME)/work/spinel
+-include ../../config.mk
+SPINEL ?= $(abspath ../../deps/spinel)
 CC ?= cc
 BUILD = build
 TOOLS = ../../tools

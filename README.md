@@ -125,14 +125,27 @@ spinel program flow and change while it runs.
 
 ## Build and test
 
-Fluxpinel needs a built spinel checkout (`make deps && make` in spinel) and
-Ruby for the build tools.
+Fluxpinel needs git, a C compiler, libffi and Ruby for the build tools.
+`make deps` fetches spinel at the commit in `SPINEL_COMMIT` into
+`deps/spinel`, and builds it there.
 
 ```sh
-make SPINEL=/path/to/spinel
+make deps
+make
 build/fluxpinel program.rb
 make test
 ```
+
+To use a spinel checkout of your own, set `SPINEL` on the command line or
+in `config.mk`. Git does not track `config.mk`.
+
+```make
+SPINEL = $(HOME)/src/spinel
+```
+
+The checkout must be at the commit in `SPINEL_COMMIT`, or `make` stops.
+Pass `SPINEL_PIN=0` to use another commit, for example to run the oracle
+on it.
 
 `make test` runs each program in `test/m2` and `test/m3` under CRuby and
 Fluxpinel, and compares stdout and the exit status.
@@ -153,4 +166,5 @@ make oracle
 ## Relation to spinel
 
 Fluxpinel is an independent project. It does not modify spinel. It links
-against the runtime of spinel (`libspinel_rt`) and pins one spinel commit.
+against the runtime of spinel (`libspinel_rt`) and pins one spinel commit
+in `SPINEL_COMMIT`. A change of the pin is a commit of its own.

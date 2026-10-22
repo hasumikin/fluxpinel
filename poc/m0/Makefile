@@ -1,7 +1,8 @@
 # M0: link libspinel_rt with no spinel-generated code.
-# SPINEL points at a built spinel checkout (make deps && make).
+# SPINEL points at a built spinel checkout, as in the top Makefile.
 
-SPINEL ?= $(HOME)/work/spinel
+-include ../../config.mk
+SPINEL ?= $(abspath ../../deps/spinel)
 CC ?= cc
 # RAISE, WRAP or PROMOTE: match spinel --int-overflow of the AOT side.
 INT_OVERFLOW ?= RAISE
