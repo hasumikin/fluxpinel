@@ -137,12 +137,36 @@ KERNEL_OVERFLOW = $(shell echo $(INT_OVERFLOW) | tr A-Z a-z)
 KERNEL_FLAGS =
 HOST_LIBS =
 
-$(HOST)/kernel.c: $(KERNEL) kernel/fluxpinel.rb src/kernel_prelude.h SPINEL_COMMIT
+# The variables of each step go in a file that changes only when a value
+# changes, so a new value makes the step again: kernel.args for the
+# kernel C, link.args for the link.
+KERNEL_ARGS = $(KERNEL) $(KERNEL_ENTRIES) $(KERNEL_FLAGS) $(KERNEL_OVERFLOW)
+LINK_ARGS = $(KERNEL_MAIN) $(HOST_LIBS)
+
+$(HOST)/kernel.args: FORCE
+	@mkdir -p $(HOST)
+	@echo '$(KERNEL_ARGS)' | cmp -s - $@ || echo '$(KERNEL_ARGS)' > $@
+
+$(HOST)/link.args: FORCE
+	@mkdir -p $(HOST)
+	@echo '$(LINK_ARGS)' | cmp -s - $@ || echo '$(LINK_ARGS)' > $@
+
+# kernel.d names each source file of the kernel, so a change of a file that
+# KERNEL requires makes the kernel C again. The #line directives of the
+# kernel C name the files. A name with no file (a source of a Roundhouse
+# view, for example) does not go in. Each file is also a target with no
+# rule, so a removed file does not stop make.
+-include $(HOST)/kernel.d
+
+$(HOST)/kernel.c: $(KERNEL) kernel/fluxpinel.rb src/kernel_prelude.h SPINEL_COMMIT $(HOST)/kernel.args
 	mkdir -p $(HOST)
 	$(SPINEL)/spinel $(KERNEL) -c -o $@ --force --int-overflow $(KERNEL_OVERFLOW) $(KERNEL_FLAGS) \
 	  --ext-init fx_kernel_init --ext-entry $(KERNEL_ENTRIES)
 	# the defines of the kernel before spinel_rt.h, for kernel_prelude.h
 	sed '/^#include "spinel_rt.h"/q' $@ | grep '^#define' > $(HOST)/kernel_defines.h || { rm -f $@; exit 1; }
+	{ grep -o '^#line [0-9]* "[^"<]*"' $@ || true; } | cut -d'"' -f2 | sort -u | \
+	  while read f; do if test -f "$$f"; then echo "$$f"; fi; done > $(HOST)/kernel.srcs
+	{ printf '$@:'; tr '\n' ' ' < $(HOST)/kernel.srcs; echo; sed 's/$$/:/' $(HOST)/kernel.srcs; } > $(HOST)/kernel.d
 
 # the wrapper of each entry (host.c)
 $(HOST)/entries.c: $(HOST)/kernel.c tools/entry_gen.rb tools/c_box.rb
@@ -153,7 +177,7 @@ $(HOST)/ivars.c: $(HOST)/kernel.c tools/ivar_gen.rb tools/c_box.rb
 	ruby tools/ivar_gen.rb $(HOST)/kernel.c > $@
 
 $(HOST)/$(HOST_NAME): src/*.c src/*.h $(HOST)/kernel.c $(HOST)/entries.c $(HOST)/ivars.c $(BUILD)/bop_gen_out.c \
-              $(BUILD)/off.flags $(NATIVE_FLAGS)
+              $(BUILD)/off.flags $(NATIVE_FLAGS) $(HOST)/link.args
 	$(CC) $(CFLAGS) -I$(HOST) -DFX_KERNEL=fx_kernel_init $(if $(KERNEL_MAIN),'-DFX_KERNEL_MAIN="$(KERNEL_MAIN)"') \
 	  -include src/kernel_prelude.h -include $(HOST)/kernel.c \
 	  -include $(HOST)/entries.c -include $(HOST)/ivars.c $$(cat $(BUILD)/off.flags) -o $@ src/main.c \
@@ -228,4 +252,4 @@ endif
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test host test-host oracle regress deps upgrade_spinel clean
+.PHONY: all test host test-host oracle regress deps upgrade_spinel clean FORCE

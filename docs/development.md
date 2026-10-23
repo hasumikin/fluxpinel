@@ -118,6 +118,10 @@ make host HOST=build/logq HOST_NAME=logq KERNEL=examples/logq/app.rb \
   KERNEL_ENTRIES=Logq.main,Logq.all,Logq.where,Logq.slower,Logq.where_block,Logq.top,Logq.count_by
 ```
 
+`make host` makes the kernel C again after a change of these variables or
+of a file that the kernel requires. A change of `KERNEL_MAIN` or
+`HOST_LIBS` makes only the link again.
+
 A change of spinel can break the host build and leave `make test` green.
 `make test-host` builds a host, so `make upgrade_spinel` finds such a
 break. The examples use other kernels: after a change of the pin, build

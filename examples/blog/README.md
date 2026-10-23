@@ -89,7 +89,3 @@ directory of Fluxpinel and `BLOG` is a new directory for the blog.
 
    The server serves the blog on http://localhost:3000. Connect to the
    console with `nc 127.0.0.1 4000`.
-
-The kernel C (`build/blog/kernel.c`) depends on `main.rb` only. After a
-change of `console.rb` or of `KERNEL_ENTRIES`, remove `build/blog/kernel.c`
-before `make host`.
