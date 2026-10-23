@@ -28,6 +28,10 @@
 /* types.c reads this flag of the analysis (src/analyze.c). */
 int g_infer_optimistic = 0;
 
+/* builtin_names.c calls this lookup of the analysis (src/analyze_util.c)
+   only in builtin_default_cmp, which the generator does not call. */
+int builtin_class_id(const char *name) { (void)name; abort(); }
+
 typedef struct {
   TyKind recv;     /* the concrete receiver kind */
   const char *A;   /* $A: sp_<A>Array_* prefix, or NULL */
