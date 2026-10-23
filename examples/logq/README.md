@@ -12,12 +12,12 @@ with a query DSL in plain Ruby:
 
 ```
 examples/logq/
-├── app.rb          the kernel: spinel compiles it
-├── dsl.rb          the DSL: Fluxpinel runs it at each start
-├── gen.rb          writes a sample log
+├── app.rb                  the kernel: spinel compiles it
+├── dsl.rb                  the DSL: Fluxpinel runs it at each start
+├── gen.rb                  writes a sample log
 └── queries/
-    ├── slow.rb     a query of a user
-    └── block.rb    the same kind of query, with a block for each row
+    ├── errors.rb           a query of a user
+    └── per_row_block.rb    the same kind of query, with a block for each row
 ```
 
 | File | Who writes it | When it runs | A change needs |
@@ -47,7 +47,7 @@ Each step of a query calls one entry of the kernel, for example
 AOT code. Thus the work of Fluxpinel grows with the number of steps, not
 with the number of rows.
 
-A block for each row (`queries/block.rb`) also works. Then the kernel
+A block for each row (`queries/per_row_block.rb`) also works. Then the kernel
 calls Fluxpinel once for each row, and the query is slower.
 
 ## Build and run
@@ -58,7 +58,7 @@ Run these commands in the top directory of Fluxpinel:
 make host HOST=build/logq HOST_NAME=logq KERNEL=examples/logq/app.rb KERNEL_MAIN=Logq.main \
   KERNEL_ENTRIES=Logq.main,Logq.all,Logq.where,Logq.slower,Logq.where_block,Logq.top,Logq.count_by
 ruby examples/logq/gen.rb 1000000 > access.log
-build/logq/logq access.log examples/logq/queries/slow.rb
+build/logq/logq access.log examples/logq/queries/errors.rb
 ```
 
 - `KERNEL_MAIN` makes the binary start at `Logq.main` with `ARGV`.
@@ -74,7 +74,7 @@ functions of `kernel/fluxpinel.rb`:
 
 ```sh
 echo 'Logq.main(ARGV)' > run.rb
-ruby -r ./kernel/fluxpinel_cruby.rb -r ./examples/logq/app.rb run.rb access.log examples/logq/queries/slow.rb
+ruby -r ./kernel/fluxpinel_cruby.rb -r ./examples/logq/app.rb run.rb access.log examples/logq/queries/errors.rb
 ```
 
 The output is the same as the output of the Fluxpinel build.

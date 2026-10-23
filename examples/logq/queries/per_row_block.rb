@@ -1,4 +1,4 @@
-# The same question as the "API errors" report of slow.rb, with a block
+# The same question as the "API errors" report of errors.rb, with a block
 # that runs once for each row. It works, but each row enters Fluxpinel.
 
 report "API errors (block)" do

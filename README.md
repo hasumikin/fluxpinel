@@ -27,11 +27,11 @@ the tool, and a user writes the questions in Ruby. The binary reads them
 at run time:
 
 ```sh
-build/logq/logq access.log examples/logq/queries/slow.rb
+build/logq/logq access.log examples/logq/queries/errors.rb
 ```
 
 ```ruby
-# queries/slow.rb: a user writes this file, and Fluxpinel runs it.
+# queries/errors.rb: a user writes this file, and Fluxpinel runs it.
 report "slow 5xx" do
   where_status(500..599).slower_than(1.0).top(5, by: :duration)
 end
@@ -84,7 +84,7 @@ module Logq
 end
 ```
 
-On a log of one million lines, the queries of `slow.rb` take about 0.1
+On a log of one million lines, the queries of `errors.rb` take about 0.1
 seconds in logq and about 0.6 seconds in CRuby. Spinel alone does not
 call `method_missing`, and it refuses `define_method` with a name that the
 program makes at run time.

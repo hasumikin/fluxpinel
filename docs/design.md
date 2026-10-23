@@ -531,7 +531,7 @@ Two parts of the work stay as they are:
 
 Each measure keeps the semantics. The oracle (section 4) checks this: the
 same tests must agree after each step. A step must also show its gain on
-a benchmark: `fib`, and `examples/logq/queries/block.rb`, which calls into
+a benchmark: `fib`, and `examples/logq/queries/per_row_block.rb`, which calls into
 the walker once for each row of the log.
 
 ### 3.4 User classes
