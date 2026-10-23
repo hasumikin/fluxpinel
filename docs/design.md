@@ -795,8 +795,29 @@ Requirements for all forms:
 
 The AOT program loads a Ruby file with `Fluxpinel.load` (section 3.6). The
 script calls the entries of the program and gets AOT objects as values.
-The program calls a method of the script with `Fluxpinel.call`. The console reads a line from a socket, evaluates it
-with the same walker and keeps the locals from one line to the next.
+The program calls a method of the script with `Fluxpinel.call`.
+
+The console is a session of the walker (`src/console.c`). The AOT program
+owns the socket, and gives each line to the session.
+
+- `Fluxpinel.session` makes a session. `Fluxpinel.feed(session, line)`
+  adds the line to the piece, and answers the reply and the next prompt.
+- A piece runs when prism parses it with no error. A piece is incomplete
+  when an error is at its end or names a missing close (`*_term`, `*_eof`),
+  and no stray token comes before its end. Then the session waits for more
+  lines. Any other error is a syntax error.
+- Each piece runs in a new frame whose parent is the frame of the piece
+  before. The session keeps these frames on the heap. prism gets their
+  names as the scopes around the piece, so a later piece reads an earlier
+  local as a local of an outer scope. A Proc of an earlier piece thus sees
+  a later write to its locals. The first frame holds `_`.
+- The session catches an exception of a piece and answers it. An exit or a
+  throw goes on.
+- `puts` in a piece writes to the stdout of the process, not to the
+  socket.
+- `fluxpinel --console` runs a session on stdin. `kernel/fluxpinel_cruby.rb`
+  gives the same session under CRuby, and `test/console.rb` compares the
+  two.
 
 - **Object layout.** The console reads an ivar of an AOT object through the
   `inspect` hook of the kernel. A read or a write of one ivar by name needs

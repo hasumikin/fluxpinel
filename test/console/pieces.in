@@ -1,0 +1,32 @@
+[1,
+2]
+{a: 1,
+ b: 2}
+if true
+  :yes
+end
+1 +
+2
+n = 1
+n.
+  succ
+%w[a
+b]
+<<~EOS
+  heredoc
+EOS
+case 2
+when 1 then :one
+when 2 then :two
+end
+begin
+  :body
+end
+->(a) {
+  a * 3
+}.call(5)
+end
+p 1)
+1 2
+[1, 2,)
+:after

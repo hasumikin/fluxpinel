@@ -28,7 +28,7 @@ update of spinel an explicit step.
 
 | Command | What it does | Time |
 |---|---|---|
-| `make test` | runs `test/m2` and `test/m3` under CRuby and Fluxpinel, plain and under GC stress | seconds |
+| `make test` | runs `test/m2` and `test/m3` under CRuby and Fluxpinel, and `test/console` through the console of both, plain and under GC stress | seconds |
 | `make test-host` | builds the host with `test/kernel/app.rb`, then runs the same tests and `test/host` on it | about 90 seconds from a clean build |
 | `make regress` | runs the spinel tests in `tools/oracle_agree.txt` under Fluxpinel | about 10 seconds |
 | `make oracle` | runs all the spinel tests under CRuby, Fluxpinel and AOT | more than 10 minutes |

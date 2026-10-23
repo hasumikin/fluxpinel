@@ -39,21 +39,81 @@ static char *fx_read_file(const char *path, size_t *len) {
   return buf;
 }
 
-/* Parses the bytes of a file into a new source. Answers the message of
-   the first syntax error, or NULL. */
-static const char *fx_parse(const char *path, const char *real, char *buf, size_t len, FxSource **out) {
+/* Gives prism the locals of the scopes around the code, outermost first,
+   so that it parses each of these names as a local of an outer scope.
+   prism takes the last scope of the option as the top level of the code,
+   so an empty scope follows them. */
+static void fx_options_scopes(pm_options_t *o, const pm_constant_id_list_t *const *scopes, int n) {
+  if (!n) return;
+  pm_options_scopes_init(o, (size_t)n + 1);
+  pm_options_scope_init((pm_options_scope_t *)pm_options_scope_get(o, (size_t)n), 0);
+  for (int i = 0; i < n; i++) {
+    pm_options_scope_t *sc = (pm_options_scope_t *)pm_options_scope_get(o, (size_t)i);
+    pm_options_scope_init(sc, scopes[i]->size);
+    for (size_t j = 0; j < scopes[i]->size; j++) {
+      const pm_constant_t *c = pm_constant_pool_id_to_constant(&L.pool, scopes[i]->ids[j]);
+      pm_string_constant_init(&sc->locals[j], (const char *)c->start, c->length);
+    }
+  }
+}
+
+/* pm_locals_hash of prism.c, which is static there */
+static uint32_t fx_locals_hash(pm_constant_id_t name) {
+  name = ((name >> 16) ^ name) * 0x45d9f3b;
+  name = ((name >> 16) ^ name) * 0x45d9f3b;
+  return (name >> 16) ^ name;
+}
+
+/* pm_parser_init adds the locals of the scopes option to the constant pool
+   of the parser, which fx_parse_in then replaces with the shared pool. So
+   each local gets its id in the shared pool here: the scopes hold their
+   locals in the order of the option (pm_local_t.index). A table of the hash
+   kind (pm_locals_write in prism.c) takes its locals again by the new ids. */
+static void fx_scopes_rebind(pm_parser_t *p, const pm_constant_id_list_t *const *scopes, int n) {
+  if (!n) return;
+  pm_scope_t *sc = p->current_scope->previous;   /* past the empty top level */
+  for (int i = n - 1; i >= 0 && sc; i--, sc = sc->previous) {
+    pm_locals_t *ls = &sc->locals;
+    if (ls->capacity < 9) {   /* PM_LOCALS_HASH_THRESHOLD: a plain list */
+      for (uint32_t j = 0; j < ls->size; j++) ls->locals[j].name = scopes[i]->ids[ls->locals[j].index];
+      continue;
+    }
+    pm_local_t *old = malloc(sizeof *old * ls->capacity);
+    memcpy(old, ls->locals, sizeof *old * ls->capacity);
+    memset(ls->locals, 0, sizeof *old * ls->capacity);
+    uint32_t mask = ls->capacity - 1;
+    for (uint32_t j = 0; j < ls->capacity; j++) {
+      if (old[j].name == PM_CONSTANT_ID_UNSET) continue;
+      pm_local_t l = old[j];
+      l.name = scopes[i]->ids[l.index];
+      l.hash = fx_locals_hash(l.name);
+      uint32_t h = l.hash;
+      while (ls->locals[h & mask].name != PM_CONSTANT_ID_UNSET) h++;
+      ls->locals[h & mask] = l;
+    }
+    free(old);
+  }
+}
+
+/* Parses the bytes of a file into a new source, which starts at the line
+   line, inside the scopes scopes (a piece of the console). Answers the
+   message of the first syntax error, or NULL. */
+static const char *fx_parse_in(const char *path, const char *real, char *buf, size_t len, int line,
+                               const pm_constant_id_list_t *const *scopes, int nscopes, FxSource **out) {
   FxSource *s = calloc(1, sizeof *s);
   s->path = path;
   s->real = real;
   s->start = (const uint8_t *)buf;
   s->end = (const uint8_t *)buf + len;
   pm_options_filepath_set(&s->options, path);
-  pm_options_line_set(&s->options, 1);
+  pm_options_line_set(&s->options, line);
+  fx_options_scopes(&s->options, scopes, nscopes);
   pm_parser_init(&s->parser, (const uint8_t *)buf, len, &s->options);
   /* the parser takes the shared pool, and gives it back grown */
   if (L.nsources > 0) {
     pm_constant_pool_free(&s->parser.constant_pool);
     s->parser.constant_pool = L.pool;
+    fx_scopes_rebind(&s->parser, scopes, nscopes);
   }
   s->root = pm_parse(&s->parser);
   L.pool = s->parser.constant_pool;
@@ -65,8 +125,12 @@ static const char *fx_parse(const char *path, const char *real, char *buf, size_
   *out = s;
   if (!s->parser.error_list.size) return NULL;
   const pm_diagnostic_t *d = (const pm_diagnostic_t *)s->parser.error_list.head;
-  int line = pm_newline_list_line_column(&s->parser.newline_list, d->location.start, s->parser.start_line).line;
-  return sp_sprintf("%s:%d: %s", path, line, d->message);
+  int at = pm_newline_list_line_column(&s->parser.newline_list, d->location.start, s->parser.start_line).line;
+  return sp_sprintf("%s:%d: %s", path, at, d->message);
+}
+
+static const char *fx_parse(const char *path, const char *real, char *buf, size_t len, FxSource **out) {
+  return fx_parse_in(path, real, buf, len, 1, NULL, 0, out);
 }
 
 /* Runs the top level of a source, as a program of its own. A return at

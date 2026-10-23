@@ -1,0 +1,16 @@
+x = 1 + 2
+def double(n)
+  n * 2
+end
+double(x)
+_ + 1
+y = x * 2
+y
+
+puts "hi"
+raise "boom"
+x = )
+[x, y]
+"two
+lines"
+_.size

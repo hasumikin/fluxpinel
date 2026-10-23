@@ -1,0 +1,24 @@
+x = 1
+pr = proc { x }; nil
+x = 10
+pr.call
+sum = 0
+[1, 2, 3].each do |i|
+  sum += i * x
+end
+sum
+class Box
+  LIMIT = 3
+  def initialize(v) = @v = v
+  def big? = @v > LIMIT
+end
+Box.new(5).big?
+a1 = 1; a2 = 2; a3 = 3; a4 = 4; a5 = 5; a6 = 6; a7 = 7; a8 = 8; a9 = 9; a10 = 10
+a1 + a10 + x
+a10 = 100
+a10 + a9
+counter = 0
+bump = -> { counter += 1 }; nil
+bump.call
+bump.call
+counter

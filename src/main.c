@@ -1,6 +1,7 @@
 /* main.c -- the Fluxpinel command and the root of the one TU.
 
    Usage: fluxpinel FILE.rb [ARG...]
+          fluxpinel --console    a console on stdin (console.c)
 
    A host build with FX_KERNEL_MAIN (an entry such as "Logq.main") takes
    no FILE.rb: it calls the entry with ARGV, which holds every argument.
@@ -28,6 +29,9 @@
 #include "process.c"
 #include "file.c"
 #include "host.c"
+#include "console.c"
+
+static int fx_console_mode;   /* fluxpinel --console */
 
 static void fx_body(void) {
   SP_GC_SAVE();
@@ -56,7 +60,13 @@ static void fx_body(void) {
   const char *src = FX_KERNEL_MAIN "(ARGV)";
   fx_load_main_src(L.path, L.path, strdup(src), strlen(src));
 #else
-  fx_load_main(L.path);
+  if (fx_console_mode) {
+    /* an empty main program starts the constant pool of the sources */
+    fx_load_main_src(L.path, L.path, strdup(""), 0);
+    fx_console_stdin();
+  } else {
+    fx_load_main(L.path);
+  }
 #endif
   /* a break of a Proc whose call has returned reaches the top */
   if (L.ctl == FX_CTL_BREAK_BLOCK) fx_gap("break from a block whose call has returned");
@@ -70,8 +80,9 @@ int main(int argc, char **argv) {
   L.args = argv + 1;
   L.nargs = argc - 1;
 #else
-  if (argc < 2) { fprintf(stderr, "usage: fluxpinel FILE.rb [ARG...]\n"); return 2; }
-  L.path = argv[1];
+  if (argc < 2) { fprintf(stderr, "usage: fluxpinel FILE.rb [ARG...] | fluxpinel --console\n"); return 2; }
+  fx_console_mode = !strcmp(argv[1], "--console");
+  L.path = fx_console_mode ? "(console)" : argv[1];
   L.args = argv + 2;
   L.nargs = argc - 2;
 #endif

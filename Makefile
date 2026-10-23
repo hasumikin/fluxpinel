@@ -111,6 +111,8 @@ TEST_DIRS = test/m2 test/m3
 test: $(BUILD)/fluxpinel
 	ruby test/run.rb $(BUILD)/fluxpinel $(TEST_DIRS)
 	SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1 ruby test/run.rb $(BUILD)/fluxpinel $(TEST_DIRS)
+	ruby test/console.rb $(BUILD)/fluxpinel test/console
+	SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1 ruby test/console.rb $(BUILD)/fluxpinel test/console
 
 # The host build (docs/design.md, section 3.6): a kernel, a program that
 # spinel emits as a library, and Fluxpinel in one TU. The runtime keeps its
@@ -119,7 +121,7 @@ test: $(BUILD)/fluxpinel
 # and KERNEL_ENTRIES the methods that it exports.
 KERNEL ?= test/kernel/app.rb
 KERNEL_ENTRIES ?= FxKernel.ping,FxKernel.add,FxKernel.make,FxKernel.bump,FxKernel.boom,FxKernel.pair,$\
-                  FxKernel.greet_all,FxKernel.script,FxKernel.rescue_script
+                  FxKernel.greet_all,FxKernel.script,FxKernel.rescue_script,FxKernel.console
 HOST = $(BUILD)/host
 # The binary is $(HOST)/$(HOST_NAME). With KERNEL_MAIN (an entry such as
 # App.main), it takes no script and calls that entry with ARGV.

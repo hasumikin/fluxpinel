@@ -37,6 +37,17 @@ module FxKernel
 
   def self.script(src) = Fluxpinel.eval(src)
 
+  # AOT code that drives a console session, as a socket server would
+  #: (Array[String]) -> String
+  def self.console(lines)
+    session = Fluxpinel.session
+    out = "fx> "
+    lines.each { |line| out += Fluxpinel.feed(session, line) }
+    # spinel drops the String result of an entry that the program does not
+    # call, unless a return gives it
+    return out
+  end
+
   def self.rescue_script(src)
     Fluxpinel.eval(src)
   rescue ArgumentError => e

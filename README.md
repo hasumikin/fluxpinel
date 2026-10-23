@@ -182,7 +182,12 @@ Pass `SPINEL_PIN=0` to use another commit, for example to run the oracle
 on it.
 
 `make test` runs each program in `test/m2` and `test/m3` under CRuby and
-Fluxpinel, and compares stdout and the exit status.
+Fluxpinel, and compares stdout and the exit status. It also runs each
+input in `test/console` through the console of both.
+
+`build/fluxpinel --console` reads Ruby from stdin, one line at a time, as
+irb does. A host program gives the same console to a socket with
+`Fluxpinel.session` and `Fluxpinel.feed`.
 
 ```sh
 make host KERNEL=app.rb KERNEL_ENTRIES=App.add,App.greet

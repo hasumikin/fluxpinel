@@ -11,6 +11,11 @@
 # - Fluxpinel.call(obj, name, args) calls the method name of a value of Fluxpinel
 #   with the Array args. The poly dispatch of AOT code does not know the
 #   classes of Fluxpinel, so AOT code calls their methods through this.
+# - Fluxpinel.session answers a new console session (src/console.c).
+# - Fluxpinel.feed(session, line) adds a line to the session, and evaluates
+#   the piece when it is complete. It answers the reply and the next prompt:
+#   "=> value\nfx> ", "fx* " for more lines, or the exception. A local of a
+#   piece stays for the next pieces, and `_` holds the last value.
 #
 # Call them from an entry: Fluxpinel starts after the top level of the kernel.
 # Under CRuby, fluxpinel_cruby.rb gives the same functions.
@@ -19,4 +24,6 @@ module Fluxpinel
   native_func :load, [:string], :any, "fx_api_load"
   native_func :eval, [:string], :any, "fx_api_eval"
   native_func :call, [:any, :string, :any], :any, "fx_api_call"
+  native_func :session, [], :any, "fx_api_session"
+  native_func :feed, [:any, :string], :string, "fx_api_feed"
 end
