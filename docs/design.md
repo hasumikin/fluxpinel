@@ -731,6 +731,15 @@ Classes beyond the table above: `fx_only` (spinel refuses the program,
 Fluxpinel gives the CRuby answer), `fx_unsupported`, `fx_missing` and
 `fx_crash`.
 
+Most of the time of the oracle goes to the compile of each test by spinel
+and the C compiler. `make regress` skips this part:
+
+- `make oracle` writes `tools/oracle_agree.txt`. The file names the tests
+  that Fluxpinel answers right.
+- `make regress` runs only these tests, under Fluxpinel only. It fails when
+  a test no longer gives the CRuby answer.
+- The run takes about 10 seconds, so it can follow each change of spinel.
+
 ### 4.2 The overflow mode
 
 The oracle runs Fluxpinel and AOT in promote mode. Spinel's raise mode is not a

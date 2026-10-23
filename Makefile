@@ -6,6 +6,9 @@
 #   make test   run test/*.rb under CRuby and Fluxpinel and compare, once as is
 #               and once under the GC stress and verify modes of spinel
 #   make oracle run the spinel test corpus under CRuby, Fluxpinel and AOT
+#   make regress
+#               run the tests that the last oracle found right, under
+#               Fluxpinel only
 #
 # SPINEL points at a built spinel checkout, deps/spinel by default. Set it
 # on the command line or in config.mk (not tracked) to use another one,
@@ -154,7 +157,14 @@ test-host: $(HOST)/fluxpinel
 oracle:
 	$(MAKE) BUILD=$(BUILD)/promote INT_OVERFLOW=PROMOTE $(BUILD)/promote/fluxpinel
 	ruby tools/oracle.rb --spinel $(SPINEL) --fluxpinel $(BUILD)/promote/fluxpinel \
-	  --int-overflow promote --out $(BUILD)/oracle
+	  --int-overflow promote --out $(BUILD)/oracle --write-agree tools/oracle_agree.txt
+
+# The tests that the last oracle found right, under Fluxpinel only. It
+# finds in seconds a change of spinel that breaks Fluxpinel.
+regress:
+	$(MAKE) BUILD=$(BUILD)/promote INT_OVERFLOW=PROMOTE $(BUILD)/promote/fluxpinel
+	ruby tools/oracle.rb --spinel $(SPINEL) --fluxpinel $(BUILD)/promote/fluxpinel \
+	  --int-overflow promote --out $(BUILD)/regress --regress tools/oracle_agree.txt
 
 # Fetches only the pinned commit, and builds spinel in place. A checkout
 # that SPINEL names elsewhere is yours: make deps does not touch it.
@@ -176,4 +186,4 @@ endif
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test host test-host oracle deps clean
+.PHONY: all test host test-host oracle regress deps clean

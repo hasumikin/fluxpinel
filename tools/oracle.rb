@@ -33,6 +33,12 @@
 #
 # The output directory gets results.tsv, report.md and, for each test of an
 # interesting class, the outputs under cases/.
+#
+# --write-agree FILE writes the names of the tests that Fluxpinel answers
+# right (agree and known_fixed) after a run of the whole corpus.
+# --regress FILE runs only the tests that FILE names, under Fluxpinel only,
+# and fails when one of them no longer gives the CRuby answer. A change of
+# spinel can break Fluxpinel, and this run finds it in seconds.
 
 require "etc"
 require "fileutils"
@@ -46,6 +52,8 @@ OptionParser.new do |o|
   o.on("--fluxpinel BIN") { |v| opts[:fluxpinel] = File.expand_path(v) }
   o.on("--out DIR") { |v| opts[:out] = File.expand_path(v) }
   o.on("--jobs N", Integer) { |v| opts[:jobs] = v }
+  o.on("--write-agree FILE") { |v| opts[:write_agree] = File.expand_path(v) }
+  o.on("--regress FILE") { |v| opts[:regress] = File.expand_path(v) }
 end.parse!
 %i[spinel fluxpinel out].each { |k| abort "oracle: --#{k} is required" unless opts[k] }
 
@@ -75,6 +83,13 @@ OVERFLOW_FLAG = "--int-overflow=#{opts[:mode]}"
 # ---- the corpus ----
 
 tests = ARGV.empty? ? Dir.glob(File.join(SPINEL_DIR, "test", "*.rb")).sort : ARGV.map { |f| File.expand_path(f) }
+if opts[:regress]
+  names = File.readlines(opts[:regress], chomp: true).reject { |l| l.start_with?("#") || l.empty? }
+  tests = names.map { |n| File.join(SPINEL_DIR, "test", "#{n}.rb") }
+  gone = tests.reject { |t| File.exist?(t) }
+  warn "oracle: #{gone.size} listed tests are no longer in the corpus" unless gone.empty?
+  tests -= gone
+end
 if opts[:mode] == "promote"
   pins = File.read(File.join(SPINEL_DIR, "Makefile"))[/^RAISE_MODE_PINS\s*:=(.*)$/, 1].to_s.split
   pins = pins.map { |p| File.join(SPINEL_DIR, p) }
@@ -123,6 +138,15 @@ def check(test, opts)
   fx_ok = lout == want
   if !fx_ok && lerr =~ /^fluxpinel: missing builtin (\S+)$/
     return Result.new(name, :fx_missing, $1)
+  end
+  if opts[:regress]
+    return Result.new(name, :agree, "") if fx_ok
+    dir = File.join(OUT, "cases", name)
+    FileUtils.mkdir_p(dir)
+    File.binwrite(File.join(dir, "expected"), want)
+    File.binwrite(File.join(dir, "fluxpinel.out"), lout)
+    File.write(File.join(dir, "fluxpinel.err"), lerr)
+    return Result.new(name, :fx_differs, first_diff(want, lout))
   end
 
   bin = File.join(OUT, "bin", name)
@@ -191,6 +215,16 @@ left.each { |f| FileUtils.rm_f(File.join(SPINEL_DIR, f)) }
 warn "oracle: removed #{left.size} files that the tests left in the spinel tree" unless left.empty?
 results.sort_by!(&:test)
 
+# ---- regress ----
+
+if opts[:regress]
+  bad = results.reject { |r| %i[agree known_fixed].include?(r.klass) }
+  bad.each { |r| puts "regress: #{r.test}: #{r.klass} #{r.detail}" }
+  puts "regress: #{results.size - bad.size} of #{results.size} tests give the CRuby answer"
+  puts "regress: the outputs are under #{File.join(OUT, 'cases')}" unless bad.empty?
+  exit(bad.empty? ? 0 : 1)
+end
+
 # ---- report ----
 
 File.write(File.join(OUT, "results.tsv"), results.map { |r| [r.test, r.klass, r.detail].join("\t") }.join("\n") + "\n")
@@ -228,3 +262,15 @@ end
 File.write(File.join(OUT, "report.md"), md)
 puts md.lines.take_while { |l| !l.start_with?("\n## ") && !l.start_with?("## ") }.join
 puts "\nfull report: #{File.join(OUT, 'report.md')}"
+
+if opts[:write_agree]
+  if ARGV.empty?
+    agree = results.select { |r| %i[agree known_fixed].include?(r.klass) }.map(&:test)
+    head = "# The spinel tests that Fluxpinel answers right, for make regress.\n" \
+           "# make oracle writes this file. spinel: #{spinel_rev[0, 12]}\n"
+    File.write(opts[:write_agree], head + agree.map { |t| "#{t}\n" }.join)
+    puts "agree list: #{agree.size} tests in #{opts[:write_agree]}"
+  else
+    warn "oracle: a run of some tests does not write the agree list"
+  end
+end
