@@ -835,7 +835,12 @@ one.
 - **R2P2-darwin PR #13** (bash0C7/R2P2-darwin). It calls a spinel kernel
   from the PicoRuby REPL through suppify.
 - **`crystal i`.** Crystal keeps its semantic analysis and replaces LLVM
-  codegen with a bytecode interpreter.
+  codegen with a bytecode interpreter. The interpreter cannot run inside a
+  compiled program: its type ids do not match the type ids of the compiled
+  code, so objects cannot cross. (See the forum topic "Will it be possible
+  to embed the upcoming Crystal interpreter?".) Fluxpinel avoids this: the
+  host build gives each class of the kernel its id from the kernel
+  (section 3.6).
 - **nicht.** Iced (AOT) and naked (walker) code meet at the method table
   and share one value word. Fluxpinel applies the same idea to spinel.
 - **ASTro** (ko1/astro). A framework for AST interpreters. It generates
