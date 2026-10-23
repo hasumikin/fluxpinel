@@ -82,3 +82,7 @@ module FxKernel
     "rescued in AOT: #{e.message}"
   end
 end
+
+# A thread at the top level: the init of the kernel starts the scheduler,
+# as a server does, before Fluxpinel starts (src/fiber.c, fx_sched_start)
+FxKernel::STARTED = Thread.new { :started }.value

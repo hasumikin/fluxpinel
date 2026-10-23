@@ -38,7 +38,7 @@ end
 
 ARG = { "sp_RbVal" => "%s", "sp_int" => "sp_poly_arg_int_chk(%s)", "sp_float" => "sp_poly_to_f(%s)",
         "sp_bool" => "sp_poly_truthy(%s)", "const char *" => "sp_poly_arg_str_chk(%s)",
-        "sp_sym" => "fx_entry_sym(%s)",
+        "sp_sym" => "fx_entry_sym(%s)", "sp_oint" => "fx_entry_oint_arg(%s)",
         "sp_IntArray *" => "sp_poly_as_int_array(fx_entry_array(%s))",
         "sp_FloatArray *" => "sp_poly_as_float_array(fx_entry_array(%s))",
         "sp_StrArray *" => "sp_poly_as_str_array(fx_entry_array(%s))",
@@ -79,6 +79,14 @@ out = +<<~C
 
   /* a String result: NULL is nil */
   static sp_RbVal fx_entry_str(const char *s) { return s ? sp_box_str_new(s) : sp_box_nil(); }
+
+  /* a nullable Integer result: its flag is nil */
+  static sp_RbVal fx_entry_oint(sp_oint o) { return o.nil ? sp_box_nil() : sp_box_int(o.v); }
+
+  /* a nullable Integer argument */
+  static sp_oint fx_entry_oint_arg(sp_RbVal v) {
+    return v.tag == SP_TAG_NIL ? sp_oint_nil() : sp_oint_of(sp_poly_arg_int_chk(v));
+  }
 
   /* an object of the kernel: it starts with its cls_id */
   static sp_RbVal fx_entry_obj(void *p) { return p ? sp_box_obj(p, *(sp_int *)p) : sp_box_nil(); }

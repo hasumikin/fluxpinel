@@ -201,6 +201,9 @@ make oracle
   binary. `HOST` sets the directory and `HOST_NAME` the name of the
   binary. With `KERNEL_MAIN=App.main`, the binary takes no script and
   calls `App.main` with `ARGV`. See [examples/logq](examples/logq).
+  `KERNEL_FLAGS` passes more flags to spinel for the kernel, such as the
+  flags that `spin flags` prints for a spin project. `HOST_LIBS` adds
+  libraries to the link, such as `-lsqlite3`.
 - `make test-host` runs the tests on that build, with `test/kernel/app.rb`
   as the kernel.
 - `make oracle` runs the oracle on the tests of spinel and writes

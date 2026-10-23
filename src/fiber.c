@@ -110,6 +110,10 @@ static int fx_sched_started;
 static void fx_sched_start(void) {
   if (fx_sched_started) return;
   fx_sched_started = 1;
+  /* A kernel that uses threads starts the scheduler in its init. A second
+     sp_sched_init would chain the GC hook of the scheduler to itself
+     through fx_mark_globals, and a collection would recurse forever. */
+  if (sp_Thread_current()) return;
   sp_sched_init();
 }
 

@@ -1,11 +1,12 @@
 # c_box.rb -- the C expression that boxes a value of a C type of spinel
 # into an sp_RbVal. tools/entry_gen.rb and tools/ivar_gen.rb share it; the
-# helpers fx_entry_str and fx_entry_hash_box are in the output of
-# entry_gen.rb.
+# helpers fx_entry_str, fx_entry_oint and fx_entry_hash_box are in the
+# output of entry_gen.rb.
 
 module CBox
   RET = { "sp_RbVal" => "%s", "sp_int" => "sp_box_int(%s)", "sp_float" => "sp_box_float(%s)",
           "sp_bool" => "sp_box_bool(%s)", "sp_sym" => "sp_box_sym(%s)", "const char *" => "fx_entry_str(%s)",
+          "sp_oint" => "fx_entry_oint(%s)",
           "sp_PolyArray *" => "sp_box_poly_array(%s)", "sp_IntArray *" => "sp_box_int_array(%s)",
           "sp_FloatArray *" => "sp_box_float_array(%s)", "sp_StrArray *" => "sp_box_str_array(%s)" }.freeze
 

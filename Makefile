@@ -129,10 +129,16 @@ HOST = $(BUILD)/host
 HOST_NAME = fluxpinel
 KERNEL_MAIN =
 KERNEL_OVERFLOW = $(shell echo $(INT_OVERFLOW) | tr A-Z a-z)
+# KERNEL_FLAGS: more flags of spinel for the kernel, such as the ones that
+# `spin flags` prints for a spin project (-I DIR --rbs DIR). HOST_LIBS: more
+# libraries for the link, such as the ones that the kernel binds with
+# ffi_func (-lsqlite3).
+KERNEL_FLAGS =
+HOST_LIBS =
 
 $(HOST)/kernel.c: $(KERNEL) kernel/fluxpinel.rb src/kernel_prelude.h SPINEL_COMMIT
 	mkdir -p $(HOST)
-	$(SPINEL)/spinel $(KERNEL) -c -o $@ --force --int-overflow $(KERNEL_OVERFLOW) \
+	$(SPINEL)/spinel $(KERNEL) -c -o $@ --force --int-overflow $(KERNEL_OVERFLOW) $(KERNEL_FLAGS) \
 	  --ext-init fx_kernel_init --ext-entry $(KERNEL_ENTRIES)
 	# the defines of the kernel before spinel_rt.h, for kernel_prelude.h
 	sed '/^#include "spinel_rt.h"/q' $@ | grep '^#define' > $(HOST)/kernel_defines.h || { rm -f $@; exit 1; }
@@ -150,7 +156,7 @@ $(HOST)/$(HOST_NAME): src/*.c src/*.h $(HOST)/kernel.c $(HOST)/entries.c $(HOST)
 	$(CC) $(CFLAGS) -I$(HOST) -DFX_KERNEL=fx_kernel_init $(if $(KERNEL_MAIN),'-DFX_KERNEL_MAIN="$(KERNEL_MAIN)"') \
 	  -include src/kernel_prelude.h -include $(HOST)/kernel.c \
 	  -include $(HOST)/entries.c -include $(HOST)/ivars.c $$(cat $(BUILD)/off.flags) -o $@ src/main.c \
-	  $(if $(NATIVE_FLAGS),$$(cat $(NATIVE_FLAGS))) $(LIBS)
+	  $(if $(NATIVE_FLAGS),$$(cat $(NATIVE_FLAGS))) $(LIBS) $(HOST_LIBS)
 
 host: $(HOST)/$(HOST_NAME)
 
