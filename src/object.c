@@ -457,6 +457,70 @@ static void fx_const_set(FxClass *c, sp_sym name, sp_RbVal v) {
   c->consts[c->nconsts++] = (FxConst){ name, v };
 }
 
+/* ---- class variables ---- */
+
+/* The class variable of c or of its ancestors, the nearest one first;
+   *owner is the class that holds it. */
+static FxConst *fx_cvar_find(const FxClass *c, sp_sym name, FxClass **owner) {
+  const FxClass *anc[128];
+  int n = fx_ancestors(c, anc, 128);
+  for (int i = 0; i < n; i++)
+    for (int j = 0; j < anc[i]->ncvars; j++)
+      if (anc[i]->cvars[j].name == name) {
+        if (owner) *owner = (FxClass *)anc[i];
+        return &anc[i]->cvars[j];
+      }
+  return NULL;
+}
+
+/* The class of a class variable access: the lexical class. At the top
+   level there is none, as in CRuby. */
+static FxClass *fx_cvar_base(FxClass *cref) {
+  if (!cref || cref == L.object) sp_raise_cls("RuntimeError", "class variable access from toplevel");
+  return cref;
+}
+
+static void fx_cvar_check_name(const char *n) {
+  if (!(n[0] == '@' && n[1] == '@' && n[2] && !isdigit((unsigned char)n[2])))
+    sp_raise_cls("NameError", sp_sprintf("'%s' is not allowed as a class variable name", n));
+}
+
+static sp_RbVal fx_cvar_get(FxClass *c, sp_sym name) {
+  FxConst *v = fx_cvar_find(c, name, NULL);
+  if (!v)
+    sp_raise_cls("NameError", sp_sprintf("uninitialized class variable %s in %s", sp_sym_to_s(name), c->name));
+  return v->value;
+}
+
+/* Writes the class variable where an ancestor holds it, else in c. */
+static void fx_cvar_set(FxClass *c, sp_sym name, sp_RbVal v) {
+  if (c->frozen) sp_raise_cls("FrozenError", sp_sprintf("can't modify frozen #<Class:%s>", c->name));
+  FxConst *k = fx_cvar_find(c, name, NULL);
+  if (k) { k->value = v; return; }
+  if (c->ncvars == c->cvars_cap) {
+    c->cvars_cap = c->cvars_cap ? c->cvars_cap * 2 : 4;
+    c->cvars = realloc(c->cvars, sizeof *c->cvars * (size_t)c->cvars_cap);
+  }
+  c->cvars[c->ncvars++] = (FxConst){ name, v };
+}
+
+/* class_variables: the names of c, then of its ancestors (inherit) */
+static sp_RbVal fx_cvar_names(const FxClass *c, int inherit) {
+  sp_PolyArray *a = sp_PolyArray_new();
+  SP_GC_ROOT(a);
+  const FxClass *anc[128];
+  int n = inherit ? fx_ancestors(c, anc, 128) : 1;
+  if (!inherit) anc[0] = c;
+  for (int i = 0; i < n; i++)
+    for (int j = 0; j < anc[i]->ncvars; j++) {
+      sp_RbVal s = sp_box_sym(anc[i]->cvars[j].name);
+      int seen = 0;
+      for (sp_int k = 0; k < a->len; k++) seen |= a->data[k].v.i == s.v.i;
+      if (!seen) sp_PolyArray_push(a, s);
+    }
+  return sp_box_poly_array(a);
+}
+
 /* A constant of scope or its ancestors, then a builtin class. */
 static int fx_const_scoped(const FxClass *scope, sp_sym name, sp_RbVal *out) {
   const FxClass *anc[128];
@@ -790,6 +854,10 @@ static void fx_hook_mark(void) {
     for (int j = 0; j < L.classes[i]->nconsts; j++) sp_mark_rbval(L.classes[i]->consts[j].value);
   for (int i = 0; i < L.nbuiltins; i++)
     for (int j = 0; j < L.builtins[i]->nconsts; j++) sp_mark_rbval(L.builtins[i]->consts[j].value);
+  for (int i = 0; i < L.nclasses; i++)
+    for (int j = 0; j < L.classes[i]->ncvars; j++) sp_mark_rbval(L.classes[i]->cvars[j].value);
+  for (int i = 0; i < L.nbuiltins; i++)
+    for (int j = 0; j < L.builtins[i]->ncvars; j++) sp_mark_rbval(L.builtins[i]->cvars[j].value);
   if (fx_class_ivars) sp_gc_mark(fx_class_ivars);
   for (int i = 0; i < L.nglobals; i++) sp_mark_rbval(L.globals[i].value);
   for (int i = 0; i < L.nprocs; i++) sp_gc_mark(L.procs[i]);
@@ -1302,6 +1370,34 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   }
   if (mask && name[strlen(name) - 1] == 's' && argc <= 1) {
     *out = fx_instance_methods(k, mask, argc == 0 || sp_poly_truthy(argv[0]));
+    return 1;
+  }
+  /* the reflection of class variables */
+  if (argc == 1 && (!strcmp(name, "class_variable_get") || !strcmp(name, "class_variable_defined?") ||
+                    !strcmp(name, "remove_class_variable"))) {
+    const char *cn = fx_name_arg(argv[0]);
+    fx_cvar_check_name(cn);
+    sp_sym s = sp_sym_intern(cn);
+    if (!strcmp(name, "class_variable_defined?")) { *out = sp_box_bool(fx_cvar_find(k, s, NULL) != NULL); return 1; }
+    if (!strcmp(name, "class_variable_get")) { *out = fx_cvar_get(k, s); return 1; }
+    for (int i = 0; i < k->ncvars; i++)
+      if (k->cvars[i].name == s) {
+        *out = k->cvars[i].value;
+        memmove(&k->cvars[i], &k->cvars[i + 1], sizeof *k->cvars * (size_t)(k->ncvars - i - 1));
+        k->ncvars--;
+        return 1;
+      }
+    sp_raise_cls("NameError", sp_sprintf("class variable %s not defined for %s", cn, k->name));
+  }
+  if (argc == 2 && !strcmp(name, "class_variable_set")) {
+    const char *cn = fx_name_arg(argv[0]);
+    fx_cvar_check_name(cn);
+    fx_cvar_set(k, sp_sym_intern(cn), argv[1]);
+    *out = argv[1];
+    return 1;
+  }
+  if (argc <= 1 && !strcmp(name, "class_variables")) {
+    *out = fx_cvar_names(k, argc == 0 || sp_poly_truthy(argv[0]));
     return 1;
   }
   if (argc == 1 && !strcmp(name, "const_get")) {

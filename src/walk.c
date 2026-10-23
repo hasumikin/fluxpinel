@@ -1850,6 +1850,9 @@ static void fx_mw_assign(FxFrame *f, const pm_node_t *t, sp_RbVal v, sp_PolyArra
   case PM_INSTANCE_VARIABLE_TARGET_NODE:
     fx_ivar_set(f->self, fx_sym(((const pm_instance_variable_target_node_t *)t)->name), v);
     return;
+  case PM_CLASS_VARIABLE_TARGET_NODE:
+    fx_cvar_set(fx_cvar_base(f->cref), fx_sym(((const pm_class_variable_target_node_t *)t)->name), v);
+    return;
   case PM_GLOBAL_VARIABLE_TARGET_NODE:
     fx_gvar_set(sp_sym_to_s(fx_sym(((const pm_global_variable_target_node_t *)t)->name)), v);
     return;
@@ -2362,6 +2365,47 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
     sp_RbVal v = fx_eval(f, w->value);
     if (L.ctl != FX_CTL_NONE) return sp_box_nil();
     fx_const_set(scope, name, v);
+    return v;
+  }
+  case PM_CLASS_VARIABLE_READ_NODE:
+    return fx_cvar_get(fx_cvar_base(f->cref), fx_sym(((const pm_class_variable_read_node_t *)n)->name));
+  case PM_CLASS_VARIABLE_WRITE_NODE: {
+    const pm_class_variable_write_node_t *w = (const pm_class_variable_write_node_t *)n;
+    FxClass *c = fx_cvar_base(f->cref);
+    sp_RbVal v = fx_eval(f, w->value);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    fx_cvar_set(c, fx_sym(w->name), v);
+    return v;
+  }
+  case PM_CLASS_VARIABLE_OPERATOR_WRITE_NODE: {
+    const pm_class_variable_operator_write_node_t *w = (const pm_class_variable_operator_write_node_t *)n;
+    FxClass *c = fx_cvar_base(f->cref);
+    sp_sym name = fx_sym(w->name);
+    sp_RbVal cur = fx_cvar_get(c, name);
+    SP_GC_ROOT_RBVAL(cur);
+    sp_RbVal v = fx_eval(f, w->value);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    sp_RbVal nv = fx_op(cur, w->binary_operator, v);
+    fx_cvar_set(c, name, nv);
+    return nv;
+  }
+  case PM_CLASS_VARIABLE_OR_WRITE_NODE:
+  case PM_CLASS_VARIABLE_AND_WRITE_NODE: {
+    /* @@x ||= v reads an undefined @@x as nil, as CRuby does (defined?) */
+    int is_or = PM_NODE_TYPE_P(n, PM_CLASS_VARIABLE_OR_WRITE_NODE);
+    pm_constant_id_t id = is_or ? ((const pm_class_variable_or_write_node_t *)n)->name
+                                : ((const pm_class_variable_and_write_node_t *)n)->name;
+    const pm_node_t *value = is_or ? ((const pm_class_variable_or_write_node_t *)n)->value
+                                   : ((const pm_class_variable_and_write_node_t *)n)->value;
+    FxClass *c = fx_cvar_base(f->cref);
+    sp_sym name = fx_sym(id);
+    FxConst *k = fx_cvar_find(c, name, NULL);
+    if (!k && !is_or) fx_cvar_get(c, name);
+    sp_RbVal cur = k ? k->value : sp_box_nil();
+    if (sp_poly_truthy(cur) == is_or) return cur;
+    sp_RbVal v = fx_eval(f, value);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    fx_cvar_set(c, name, v);
     return v;
   }
   case PM_INSTANCE_VARIABLE_READ_NODE:

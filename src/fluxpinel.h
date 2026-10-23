@@ -66,6 +66,8 @@ typedef struct FxClass {
   int nextends, extends_cap;
   FxConst *consts;
   int nconsts, consts_cap;
+  FxConst *cvars;                   /* the class variables (@@x) of this class */
+  int ncvars, cvars_cap;
   sp_sym *ivars;                    /* the slot names of an instance */
   int nivars, ivars_cap;
   int anon;                         /* made by Class.new or Struct.new and not yet
