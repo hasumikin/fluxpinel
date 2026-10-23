@@ -85,7 +85,7 @@ end
 ```
 
 On a log of one million lines, logq runs `errors.rb` in about 0.8 seconds.
-The same files take about 2.3 seconds in CRuby 4.0.9, and about 2.1
+The same files take about 2.2 seconds in CRuby 4.0.9, and about 2.1
 seconds with YJIT or ZJIT. Spinel alone does not
 call `method_missing`, and it refuses `define_method` with a name that the
 program makes at run time.
