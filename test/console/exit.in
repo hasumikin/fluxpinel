@@ -1,0 +1,11 @@
+x = 1
+begin
+  exit 2
+rescue SystemExit => e
+  e.status
+end
+def leave = exit
+x + 1
+leave
+puts "not here"
+x

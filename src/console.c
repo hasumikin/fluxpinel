@@ -26,6 +26,8 @@ typedef struct {
   const pm_constant_id_list_t **scopes;  /* the names of each frame, root first */
   int nscopes, scopes_cap;
   int line;                              /* the first line of the next piece */
+  int closed;                            /* a piece raised SystemExit */
+  int status;                            /* the status of that SystemExit */
 } FxSession;
 
 static FxClass *fx_session_cls;
@@ -136,7 +138,8 @@ static int fx_session_state(FxSession *s, const char **msg) {
 
 /* Runs a complete piece in a new frame under the frame of the last piece,
    and keeps that frame. Answers the reply: the inspect of the value, or
-   the exception. An exit or a throw out of the piece goes on. */
+   the exception. A SystemExit (exit, abort) closes the session, and the
+   answer is NULL. A throw out of the piece goes on. */
 static const char *fx_session_run(FxSession *s, char *buf, size_t len, int line) {
   SP_GC_SAVE();
   SP_GC_ROOT(s);
@@ -165,7 +168,12 @@ static const char *fx_session_run(FxSession *s, char *buf, size_t len, int line)
     if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
     L.ctl = FX_CTL_NONE;
     FxCaught c = fx_caught();
-    out = sp_sprintf("%s (%s)\n" FX_PROMPT, c.msg ? c.msg : "", c.cls);
+    if (sp_exc_cls_matches(c.cls, "SystemExit")) {
+      s->closed = 1;
+      s->status = (int)sp_exc_exit_status(fx_caught_obj(c));
+    } else {
+      out = sp_sprintf("%s (%s)\n" FX_PROMPT, c.msg ? c.msg : "", c.cls);
+    }
   }
   FxFrame *h = fx_frame_heap(&top);
   sp_gc_wb(s);
@@ -175,8 +183,10 @@ static const char *fx_session_run(FxSession *s, char *buf, size_t len, int line)
 }
 
 /* Adds a line to the piece, and runs the piece when it is complete.
-   Answers the reply and the next prompt. */
+   Answers the reply and the next prompt, or NULL when the session is
+   closed. */
 static const char *fx_session_feed(FxSession *s, const char *line, size_t n) {
+  if (s->closed) return NULL;
   if (s->len + n + 2 > s->cap) {
     s->cap = (s->len + n + 2) * 2;
     s->buf = realloc(s->buf, s->cap);
@@ -224,20 +234,25 @@ const char *fx_api_feed(sp_RbVal session, const char *line) {
 
 #endif
 
-/* fluxpinel --console: a session on stdin and stdout. */
+/* fluxpinel --console: a session on stdin and stdout. An exit in the
+   session ends the program with its status. */
 static void fx_console_stdin(void) {
   SP_GC_SAVE();
   sp_RbVal sv = fx_session_new();
   SP_GC_ROOT_RBVAL(sv);
+  FxSession *s = fx_session_of(sv);
   char *line = NULL;
   size_t cap = 0;
   ssize_t n;
   fputs(FX_PROMPT, stdout);
   fflush(stdout);
   while ((n = getline(&line, &cap, stdin)) >= 0) {
-    fputs(fx_session_feed(fx_session_of(sv), line, (size_t)n), stdout);
+    const char *reply = fx_session_feed(s, line, (size_t)n);
+    if (!reply) break;
+    fputs(reply, stdout);
     fflush(stdout);
   }
   free(line);
+  if (s->closed) sp_exit_raise(s->status);
   fputs("\n", stdout);
 }

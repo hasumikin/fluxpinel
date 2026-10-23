@@ -15,7 +15,8 @@
 # - Fluxpinel.feed(session, line) adds a line to the session, and evaluates
 #   the piece when it is complete. It answers the reply and the next prompt:
 #   "=> value\nfx> ", "fx* " for more lines, or the exception. A local of a
-#   piece stays for the next pieces, and `_` holds the last value.
+#   piece stays for the next pieces, and `_` holds the last value. An exit
+#   in a piece closes the session, and feed answers nil from then on.
 #
 # Call them from an entry: Fluxpinel starts after the top level of the kernel.
 # Under CRuby, fluxpinel_cruby.rb gives the same functions.

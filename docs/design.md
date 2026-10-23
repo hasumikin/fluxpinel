@@ -811,7 +811,9 @@ owns the socket, and gives each line to the session.
   names as the scopes around the piece, so a later piece reads an earlier
   local as a local of an outer scope. A Proc of an earlier piece thus sees
   a later write to its locals. The first frame holds `_`.
-- The session catches an exception of a piece and answers it. An exit or a
+- The session catches an exception of a piece and answers it. A
+  SystemExit (`exit`, `abort`) closes the session: `feed` answers nil from
+  then on, and the AOT program closes the socket. The program runs on. A
   throw goes on.
 - `puts` in a piece writes to the stdout of the process, not to the
   socket.

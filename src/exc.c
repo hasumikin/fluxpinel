@@ -74,8 +74,34 @@ static sp_RbVal fx_exc_new(FxClass *k, int argc, sp_RbVal *argv, const FxBlock *
   return v;
 }
 
-/* Kernel#raise and #fail. */
+/* The status of exit and exit!: true is 0, false is 1. */
+static int fx_exit_status(int argc, sp_RbVal *argv) {
+  if (argc > 1) fx_arity_error(argc, 0, 1, 0);
+  if (argc == 0) return 0;
+  if (argv[0].tag == SP_TAG_BOOL) return argv[0].v.b ? 0 : 1;
+  return (int)sp_poly_arg_int_chk(argv[0]);
+}
+
+/* Kernel#exit and #abort raise a SystemExit, which ends the program when
+   no rescue takes it, as the runtime does for AOT code. exit! ends it at
+   once, with no at_exit. */
+static int fx_exit_kernel(const char *name, int argc, sp_RbVal *argv) {
+  if (FX_IS("exit")) sp_exit_raise(fx_exit_status(argc, argv));
+  if (FX_IS("exit!")) {
+    int st = argc == 0 ? 1 : fx_exit_status(argc, argv);
+    fflush(NULL);
+    _exit(st);
+  }
+  if (FX_IS("abort")) {
+    if (argc > 1) fx_arity_error(argc, 0, 1, 0);
+    sp_abort_raise(argc ? sp_poly_arg_str_chk(argv[0]) : NULL);
+  }
+  return 0;
+}
+
+/* Kernel#raise and #fail, and exit and abort. */
 static int fx_exc_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (fx_exit_kernel(name, argc, argv)) return 1;
   if (!FX_IS("raise") && !FX_IS("fail")) return 0;
   (void)out;
   /* raise ..., cause: x: the runtime takes it for the next raise */

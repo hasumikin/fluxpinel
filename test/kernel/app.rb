@@ -67,7 +67,12 @@ module FxKernel
   def self.console(lines)
     session = Fluxpinel.session
     out = "fx> "
-    lines.each { |line| out += Fluxpinel.feed(session, line) }
+    lines.each do |line|
+      reply = Fluxpinel.feed(session, line)
+      # nil: an exit closed the session
+      break unless reply
+      out += reply
+    end
     # spinel drops the String result of an entry that the program does not
     # call, unless a return gives it
     return out

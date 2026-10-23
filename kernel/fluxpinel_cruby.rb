@@ -13,8 +13,13 @@ module FluxpinelCRuby
   def self.fresh = TOPLEVEL_BINDING.eval("proc { binding }").call
 
   # Fluxpinel.session and Fluxpinel.feed (src/console.c): the same pieces,
-  # replies and prompts, with one binding for the locals of the session.
+  # replies and prompts, with one binding for the locals of the session. A
+  # SystemExit closes the session, and feed answers nil from then on.
   class Session
+    attr_reader :status
+
+    def closed? = !@status.nil?
+
     def initialize
       @binding = FluxpinelCRuby.fresh
       @binding.local_variable_set(:_, nil)
@@ -23,6 +28,7 @@ module FluxpinelCRuby
     end
 
     def feed(line)
+      return nil if closed?
       @buf << line
       @buf << "\n" unless @buf.end_with?("\n")
       result = Prism.parse(@buf, filepath: "(console)", line: @line, scopes: [@binding.local_variables])
@@ -57,8 +63,9 @@ module FluxpinelCRuby
       v = @binding.eval(piece, "(console)", first)
       @binding.local_variable_set(:_, v)
       "=> #{v.inspect}\nfx> "
-    rescue SystemExit
-      raise
+    rescue SystemExit => e
+      @status = e.status
+      nil
     rescue Exception => e
       "#{e.message} (#{e.class})\nfx> "
     end
@@ -70,9 +77,12 @@ module FluxpinelCRuby
     print "fx> "
     $stdout.flush
     while (line = $stdin.gets)
-      print s.feed(line)
+      reply = s.feed(line)
+      break unless reply
+      print reply
       $stdout.flush
     end
+    exit(s.status) if s.closed?
     print "\n"
   end
 
