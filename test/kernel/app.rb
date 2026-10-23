@@ -17,6 +17,31 @@ module FxKernel
     def bump(k) = @n += k
   end
 
+  # ivars of several kinds, which a script reads with instance_variable_get
+  class Shape
+    def initialize(name, w)
+      @name = name
+      @w = w
+      @ratio = w / 2.0
+      @tags = ["a", name]
+      @sizes = { "w" => w }
+      @owner = Counter.new(name)
+      @grown = nil
+    end
+
+    # @late is set here first, so instance_variables lists it only after
+    def grow
+      @late = :late
+      @grown = @w + 1
+    end
+  end
+
+  #: (String, Integer) -> Shape
+  def self.shape(name, w) = Shape.new(name, w)
+
+  #: (Shape) -> Integer
+  def self.grow(s) = s.grow
+
   def self.ping(x) = x
   def self.add(a, b) = a + b
   def self.make(name) = Counter.new(name)

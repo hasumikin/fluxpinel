@@ -819,11 +819,18 @@ owns the socket, and gives each line to the session.
   gives the same session under CRuby, and `test/console.rb` compares the
   two.
 
-- **Object layout.** The console reads an ivar of an AOT object through the
-  `inspect` hook of the kernel. A read or a write of one ivar by name needs
-  the struct layout of the class. The struct is in the TU of the host
-  build (section 3.6), so a generated table can map each ivar name to its
-  field.
+- **Object layout.** A script reads the ivars of an AOT object with
+  `instance_variable_get` and `instance_variables`.
+  - spinel writes a table for the default `inspect` into the kernel
+    (`sp_insp_tab`). The table gives the field, the nil byte and the kind
+    of each ivar. The table is in the TU of the host build (section 3.6).
+  - `tools/ivar_gen.rb` writes a box for each kind (`ivars.c`). A scalar
+    kind takes the box from the `inspect` function of the kind. A
+    container kind takes the box from the C type of its field.
+  - An ivar that the object has not set reads as nil, as in CRuby.
+  - A class that defines its own `inspect` has no row, so its ivars are a
+    gap. A write of an ivar is a gap too: it needs a conversion to the
+    type of the field.
 - **Redefinition.** A script replaces a method only through a method table.
   AOT code that calls a method directly keeps the old method.
 

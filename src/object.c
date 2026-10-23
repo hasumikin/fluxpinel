@@ -546,7 +546,64 @@ static sp_RbVal fx_ivar_holder(sp_RbVal self) {
   return holder;
 }
 
+/* ---- the ivars of an object of the kernel ----
+
+   spinel writes a table for the default inspect into the kernel
+   (sp_insp_tab): the field of each ivar and its kind. tools/ivar_gen.rb
+   writes a box for each kind (fx_iv_box). An ivar that the object has not
+   set reads as nil, and instance_variables leaves it out. The ivars that a
+   computed instance_variable_set adds (sp_bivar) are not read. */
+
+#ifdef FX_KERNEL_IVARS
+/* The row of an object of the kernel, or NULL for any other value. */
+static const sp_insp_cls *fx_kernel_ivrow(sp_RbVal v) {
+  if (v.tag != SP_TAG_OBJ || !v.v.p || !fx_kernel_cls(v.cls_id)) return NULL;
+  const sp_insp_cls *d = v.cls_id < FX_KERNEL_NINSP ? sp_insp_tab[v.cls_id] : NULL;
+  if (!d) fx_gap("the ivars of an object of the kernel whose class defines inspect");
+  return d;
+}
+
+static sp_RbVal fx_kernel_iv_value(const sp_insp_iv *v, char *o) {
+  void *s = o + v->off;
+  if (v->obj == 2) return sp_box_nullable_obj_dyn(*(void **)s, v->arg);
+  if (v->obj) return *(void **)s ? sp_box_obj(*(void **)s, v->arg) : sp_box_nil();
+  return fx_iv_box[v->arg](s, v->nb >= 0 ? (const uint8_t *)(o + v->nb) : NULL);
+}
+
+static sp_RbVal fx_kernel_ivar_get(const sp_insp_cls *d, sp_RbVal self, sp_sym name) {
+  char *o = (char *)self.v.p;
+  const char *nm = sp_sym_to_s(name);
+  for (int i = 0; i < d->niv; i++) {
+    const sp_insp_iv *v = &d->ivs[i];
+    if (strcmp(sp_insp_pool + v->name, nm)) continue;
+    return d->any1 && !sp_insp_set(v, o) ? sp_box_nil() : fx_kernel_iv_value(v, o);
+  }
+  return sp_box_nil();
+}
+
+/* the names of the ivars that the object has set, in the order of inspect */
+static sp_RbVal fx_kernel_ivars(const sp_insp_cls *d, sp_RbVal self) {
+  char *o = (char *)self.v.p;
+  sp_PolyArray *a = sp_PolyArray_new();
+  SP_GC_ROOT(a);
+  int ix[d->niv > 0 ? d->niv : 1];
+  int n = d->niv;
+  if (d->ranked) n = d->order(o, ix);
+  else for (int i = 0; i < n; i++) ix[i] = i;
+  for (int k = 0; k < n; k++) {
+    const sp_insp_iv *v = &d->ivs[ix[k]];
+    if (d->any1 && !d->ranked && !sp_insp_set(v, o)) continue;
+    sp_PolyArray_push(a, sp_box_sym(sp_sym_intern(sp_insp_pool + v->name)));
+  }
+  return sp_box_poly_array(a);
+}
+#endif
+
 static sp_RbVal fx_ivar_get(sp_RbVal self, sp_sym name) {
+#ifdef FX_KERNEL_IVARS
+  const sp_insp_cls *d = fx_kernel_ivrow(self);
+  if (d) return fx_kernel_ivar_get(d, self, name);
+#endif
   sp_RbVal h = fx_ivar_holder(self);
   if (!fx_is_fx_object(h) || fx_is_native_obj(h)) return sp_box_nil();
   FxObject *o = (FxObject *)h.v.p;
@@ -824,6 +881,10 @@ static int fx_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       return 1;
     }
     if (!strcmp(name, "instance_variables")) {
+#ifdef FX_KERNEL_IVARS
+      const sp_insp_cls *d = fx_kernel_ivrow(r);
+      if (d) { *out = fx_kernel_ivars(d, r); return 1; }
+#endif
       sp_PolyArray *a = sp_PolyArray_new();
       SP_GC_ROOT(a);
       sp_RbVal h = fx_ivar_holder(r);
