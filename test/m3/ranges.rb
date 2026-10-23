@@ -92,3 +92,18 @@ p (..4).max(2), (1..10).last(3), (1..10).count(&:even?), (1..10).count(4)
   end
 end
 p (1.0..).count, (..1.0).count
+
+# an endless String Range walks one element at a time
+w = []
+("a"..).each { |c| break if c == "e"; w << c }
+p w, ("x"..).first(4), ("a"..).each_slice(2).first(2), ("a"..).find_index("c")
+
+# overlap? and cover? with a Range
+p (1.0..2.0).overlap?(1.5..3.0), (1.0...2.0).overlap?(2..3), (1.0..).overlap?(..0), ("a".."e").overlap?("e".."z")
+p ("a".."e").overlap?(100..200), (.."e").overlap?(..5), ("c".."a").overlap?("a".."z")
+p (1.0..5.0).cover?(2..3), (1.0..5.0).cover?(0..3), (1..3).cover?(1.5..2.5), (1..3).cover?(1...4), ("a".."z").cover?("b".."d")
+begin
+  (1..2).overlap?(3)
+rescue TypeError => e
+  p e.message
+end

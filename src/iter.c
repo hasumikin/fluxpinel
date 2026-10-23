@@ -52,6 +52,11 @@ static int fx_seq_open(sp_RbVal r, FxSeq *s) {
   s->walk = 0;
   s->hash = NULL;
   if (fx_is_array(r)) return 1;
+  /* an endless String Range: the Enumerator of the runtime that follows
+     succ, one element at a time */
+  if (r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_STR_RANGE && r.v.p && ((const sp_StrRange *)r.v.p)->first &&
+      !((const sp_StrRange *)r.v.p)->last)
+    r = s->src = sp_box_obj(sp_srange_endless_enum(r, 1), SP_BUILTIN_ENUMERATOR);
   /* an Enumerator: its items, or one item at a time from a generator, so
      that an endless one stops where the block breaks */
   if (r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_ENUMERATOR && r.v.p) {
@@ -1047,7 +1052,112 @@ static int fx_srange_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
   return 0;
 }
 
+static int fx_is_any_range(sp_RbVal v) {
+  return v.tag == SP_TAG_OBJ && v.v.p &&
+         (v.cls_id == SP_BUILTIN_RANGE || v.cls_id == SP_BUILTIN_FLOAT_RANGE || v.cls_id == SP_BUILTIN_STR_RANGE);
+}
+
+/* a <=> b as -1, 0 or 1, or 2 when they do not compare */
+static int fx_range_cmp(sp_RbVal a, sp_RbVal b) {
+  sp_RbVal c = fx_send(a, "<=>", 1, &b);
+  if (c.tag != SP_TAG_INT) return 2;
+  return c.v.i < 0 ? -1 : c.v.i > 0;
+}
+
+/* Whether no value lies between b and e: a nil side is open. */
+static int fx_range_empty(sp_RbVal b, sp_RbVal e, int excl) {
+  if (b.tag == SP_TAG_NIL || e.tag == SP_TAG_NIL) return 0;
+  int c = fx_range_cmp(b, e);
+  return c == 2 || c > 0 || (c == 0 && excl);
+}
+
+/* Range#overlap?: neither Range is empty, and each begins before the
+   other ends. */
+static sp_RbVal fx_range_overlap(sp_RbVal r, sp_RbVal o) {
+  if (!fx_is_any_range(o))
+    sp_raise_cls("TypeError", sp_sprintf("wrong argument type %s (expected Range)", sp_poly_class_name(o)));
+  SP_GC_ROOT_RBVAL(r);
+  SP_GC_ROOT_RBVAL(o);
+  sp_RbVal ab = fx_send(r, "begin", 0, NULL), ae = sp_box_nil(), bb = sp_box_nil(), be = sp_box_nil();
+  SP_GC_ROOT_RBVAL(ab);
+  SP_GC_ROOT_RBVAL(ae);
+  SP_GC_ROOT_RBVAL(bb);
+  SP_GC_ROOT_RBVAL(be);
+  ae = fx_send(r, "end", 0, NULL);
+  bb = fx_send(o, "begin", 0, NULL);
+  be = fx_send(o, "end", 0, NULL);
+  int ax = sp_poly_truthy(fx_send(r, "exclude_end?", 0, NULL));
+  int bx = sp_poly_truthy(fx_send(o, "exclude_end?", 0, NULL));
+  if (fx_range_empty(ab, ae, ax) || fx_range_empty(bb, be, bx)) return sp_box_bool(0);
+  /* two beginless (or two endless) Ranges overlap when their ends compare */
+  if (ab.tag == SP_TAG_NIL && bb.tag == SP_TAG_NIL && ae.tag != SP_TAG_NIL && be.tag != SP_TAG_NIL &&
+      fx_range_cmp(ae, be) == 2)
+    return sp_box_bool(0);
+  if (ae.tag == SP_TAG_NIL && be.tag == SP_TAG_NIL && ab.tag != SP_TAG_NIL && bb.tag != SP_TAG_NIL &&
+      fx_range_cmp(ab, bb) == 2)
+    return sp_box_bool(0);
+  return sp_box_bool(!fx_range_empty(ab, be, bx) && !fx_range_empty(bb, ae, ax));
+}
+
+/* Whether the value v lies in the sides b and e (nil is open). */
+static int fx_range_covers(sp_RbVal b, sp_RbVal e, int excl, sp_RbVal v) {
+  if (b.tag != SP_TAG_NIL) {
+    int c = fx_range_cmp(b, v);
+    if (c == 2 || c > 0) return 0;
+  }
+  if (e.tag != SP_TAG_NIL) {
+    int c = fx_range_cmp(v, e);
+    if (c == 2 || (excl ? c >= 0 : c > 0)) return 0;
+  }
+  return 1;
+}
+
+/* cover?(range) on any Range, as CRuby's r_cover_range_p: the other Range
+   is not empty and lies inside this one. */
+static sp_RbVal fx_range_cover_range(sp_RbVal r, sp_RbVal o) {
+  SP_GC_ROOT_RBVAL(r);
+  SP_GC_ROOT_RBVAL(o);
+  sp_RbVal b = fx_send(r, "begin", 0, NULL), e = sp_box_nil(), ob = sp_box_nil(), oe = sp_box_nil();
+  SP_GC_ROOT_RBVAL(b);
+  SP_GC_ROOT_RBVAL(e);
+  SP_GC_ROOT_RBVAL(ob);
+  SP_GC_ROOT_RBVAL(oe);
+  e = fx_send(r, "end", 0, NULL);
+  ob = fx_send(o, "begin", 0, NULL);
+  oe = fx_send(o, "end", 0, NULL);
+  int x = sp_poly_truthy(fx_send(r, "exclude_end?", 0, NULL));
+  int ox = sp_poly_truthy(fx_send(o, "exclude_end?", 0, NULL));
+  if ((e.tag != SP_TAG_NIL && oe.tag == SP_TAG_NIL) || (b.tag != SP_TAG_NIL && ob.tag == SP_TAG_NIL))
+    return sp_box_bool(0);
+  if (ob.tag != SP_TAG_NIL && oe.tag != SP_TAG_NIL && fx_range_empty(ob, oe, ox)) return sp_box_bool(0);
+  if (ob.tag != SP_TAG_NIL && !fx_range_covers(b, e, x, ob)) return sp_box_bool(0);
+  if (e.tag == SP_TAG_NIL) return sp_box_bool(1);
+  int c = fx_range_cmp(e, oe);
+  if (c == 2) return sp_box_bool(0);
+  if (x == ox) return sp_box_bool(c >= 0);
+  if (x) return sp_box_bool(c > 0);
+  if (c >= 0) return sp_box_bool(1);
+  /* (1..3).cover?(1...4): the last Integer of the other Range */
+  if (o.cls_id == SP_BUILTIN_RANGE && !((const sp_Range *)o.v.p)->fe && oe.tag == SP_TAG_INT) {
+    sp_RbVal m = sp_box_int(oe.v.i - 1);
+    return sp_box_bool(fx_range_cmp(e, m) >= 0 && fx_range_cmp(e, m) != 2);
+  }
+  return sp_box_bool(0);
+}
+
 static int fx_range_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (argc == 1 && FX_IS("overlap?") && fx_is_any_range(r)) {
+    *out = fx_range_overlap(r, argv[0]);
+    return 1;
+  }
+  /* cover?(range) with a side that is not an Integer; an Integer Range
+     given an Integer Range takes the path below */
+  if (argc == 1 && FX_IS("cover?") && fx_is_any_range(r) && fx_is_any_range(argv[0]) &&
+      !(fx_is_range(r) && fx_is_range(argv[0]) && !((const sp_Range *)r.v.p)->fe &&
+        !((const sp_Range *)argv[0].v.p)->fe)) {
+    *out = fx_range_cover_range(r, argv[0]);
+    return 1;
+  }
   if (r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_FLOAT_RANGE && r.v.p)
     return fx_frange_core(r, name, argc, argv, out);
   if (r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_STR_RANGE && r.v.p)

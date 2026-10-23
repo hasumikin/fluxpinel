@@ -1329,6 +1329,7 @@ float_range_boxed_methods
 float_range_endpoint_boxed_nil
 float_range_minmax
 float_range_open_bound
+float_range_overlap_cover
 float_spaceship
 float_to_s_fixed_1e15
 fold_literal_table_empty_row
@@ -1882,6 +1883,7 @@ int_ceil_floor_round
 int_elem_operand_order
 int_element_alias_not_string
 int_element_op_assign_floors
+int_float_exact_compare
 int_hash_missing_nil_check
 int_hash_nil_key_lookup
 int_hash_opw_foreign_key
@@ -2887,6 +2889,7 @@ poly_count_arg_beside_class_method_count
 poly_count_block_arg_hoist
 poly_count_nullable_arm
 poly_cover_beside_user_cover
+poly_cover_user_answer
 poly_default_reads_param
 poly_delete_dispatch
 poly_delete_upcase_chain
@@ -3364,6 +3367,8 @@ range_case_eq_type_mismatch
 range_conformance_batch2
 range_container_equality
 range_cover_boxed_other_class
+range_cover_boxed_range_arg
+range_cover_range_boxed
 range_each_fusion
 range_each_slice_answers_receiver
 range_each_slice_returns_receiver
@@ -3384,6 +3389,9 @@ range_index_unbounded_receiver
 range_min_max_empty_open
 range_mixed_endpoint_kinds
 range_negative_count_arg
+range_overlap_array_flatten_depth
+range_overlap_empty_boxed
+range_predicate_typed_argument
 range_step
 range_step_bad_stride
 range_step_block_value
