@@ -78,9 +78,10 @@ all: $(BUILD)/fluxpinel
 SPINEL_TABLES = $(SPINEL)/src/builtin_ops.c $(SPINEL)/src/builtin_ops.h $(SPINEL)/src/types.c \
                 $(SPINEL)/src/types.h $(wildcard $(SPINEL)/src/*.inc)
 
-$(BUILD)/bop_gen: tools/bop_gen.c $(SPINEL_TABLES) SPINEL_COMMIT
+$(BUILD)/bop_gen: tools/bop_gen.c tools/bop_gen_decls.h $(SPINEL_TABLES) SPINEL_COMMIT
 	mkdir -p $(BUILD)
-	$(CC) -std=gnu11 -include stdarg.h -include builtin_names.h -I$(SPINEL)/src -o $@ $< \
+	$(CC) -std=gnu11 -include stdarg.h -include builtin_names.h -include tools/bop_gen_decls.h \
+	  -I$(SPINEL)/src -o $@ $< \
 	  $(SPINEL)/src/types.c $(SPINEL)/src/builtin_names.c
 
 $(BUILD)/bop_gen_out.c: $(BUILD)/bop_gen

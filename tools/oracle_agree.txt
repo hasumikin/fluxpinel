@@ -1,5 +1,5 @@
 # The spinel tests that Fluxpinel answers right, for make regress.
-# make oracle writes this file. spinel: d36da5752fe3
+# make oracle writes this file. spinel: d693a9b3a52e
 abstract_raise_override_return
 alias_attr_reader_source
 alias_capture_outlives_redefined_alias
@@ -130,6 +130,7 @@ array_new_block_strbuf_local
 array_new_container_default
 array_new_copy
 array_new_fill_rooted
+array_new_fill_runs_before_size_check
 array_new_fill_sized
 array_new_poly_size
 array_nil_elem_in_proved_loop
@@ -1065,6 +1066,7 @@ endless_method
 endless_method_rescue
 ensure_after_rescue_raise
 ensure_in_proc_body_keeps_loop_ensure
+ensure_inline_return_oint
 ensure_keeps_string_raise_message
 ensure_reraises_into_enclosing_rescue
 ensure_retval_nil_slot
@@ -1520,6 +1522,8 @@ hash_reduce_predicate
 hash_reopen_block_fold_names
 hash_respond_to_to_hash
 hash_return_backprop_polypoly
+hash_return_nullable_calls
+hash_return_nullable_numeric
 hash_select_reject_integer_block_value
 hash_shorthand
 hash_shorthand_str
@@ -2135,6 +2139,7 @@ ivar_hash_literal_shared_string_values
 ivar_hash_or_write_shared_value
 ivar_int_table_narrowing
 ivar_lazy_init_push_via_inherited_getter
+ivar_nil_guard_reads_slot_not_hold
 ivar_nil_p_unassigned_scalar
 ivar_nil_tested_once
 ivar_object_array_narrow
@@ -2629,6 +2634,7 @@ open_class
 open_class_array_builtin
 open_class_bool_builtin
 open_class_default_arg
+operand_order_builder_chain_blocks
 opt_before_required_kwrest
 or_abort_noreturn
 or_default_never_nil
@@ -2701,6 +2707,7 @@ poly_array_assoc
 poly_array_at_user_at
 poly_array_boxed_index
 poly_array_break_no_setjmp
+poly_array_clear_stmt_frozen
 poly_array_compact
 poly_array_compact_bang
 poly_array_concat_unshift_rindex
@@ -3263,6 +3270,7 @@ recursive_default_new_constant
 recursive_implicit_yield_value
 recursive_param_default
 recv_method_splat
+redef_reopen_alias_earlier_body
 reduce_acc_shadow
 reduce_array_accumulator
 reduce_no_init_hash_merge
@@ -3372,6 +3380,8 @@ regexp_union_strings
 regexp_unknown_group_name
 regexp_unsupported_escapes
 regexp_vm_state_first_search
+reinit_bound_subclass_not_reached
+reinit_follows_class_initialize
 reopen_alias_call_name
 reopen_block_begin_body
 reopen_builtin_name_yielding
@@ -4048,6 +4058,7 @@ struct_bare_super_initialize
 struct_block_attr_not_member
 struct_block_bare_self_calls
 struct_block_constant_init
+struct_block_define_method
 struct_block_included_hook
 struct_block_local_extend
 struct_block_overrides_bracket
