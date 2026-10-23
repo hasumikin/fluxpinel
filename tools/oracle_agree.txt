@@ -1,5 +1,5 @@
 # The spinel tests that Fluxpinel answers right, for make regress.
-# make oracle writes this file. spinel: db7e74c35c62
+# make oracle writes this file. spinel: 99606b984015
 abstract_raise_override_return
 alias_attr_reader_source
 alias_capture_outlives_redefined_alias
@@ -130,6 +130,7 @@ array_new_fill_rooted
 array_new_fill_sized
 array_new_poly_size
 array_nil_elem_in_proved_loop
+array_nil_elem_through_splatted_yield
 array_op_assign_concat
 array_op_assign_untyped_rhs
 array_operand_misfit_nil_receiver
@@ -440,6 +441,7 @@ builtin_reopen_implicit_self
 builtin_reopen_implicit_to_s
 builtin_reopen_poly_slot
 builtin_reopen_runtime_name_clash
+builtin_reopen_sclass_const_own_method
 builtin_reopen_self_class
 builtin_reopen_strbuf_poly
 builtin_send_kwsplat_hash
@@ -747,6 +749,7 @@ closure_captures_pointer_locals
 cls_fact_any_recv_reader_push
 cls_fact_data_bare_new_members
 cls_fact_instance_exec_block_ivar
+cls_fact_splat_arguments
 cls_fact_super_builtin_answers_self
 cls_method_specialization_boxer
 cls_set_overlap_merge
@@ -1438,6 +1441,7 @@ hash_key_mutate_rehash
 hash_key_no_string_block_param_store
 hash_key_via_intermediate_local
 hash_keys_each_shadow
+hash_literal_conditional_receiver_key
 hash_local_not_a_strbuf
 hash_local_widened_past_initializer
 hash_many_composite_keys
@@ -1502,9 +1506,11 @@ hash_param_widen_from_callee_slot
 hash_poly_key_tag_check
 hash_poly_value_local
 hash_range_key
+hash_range_reopen_enum_names
 hash_reader_dispatch
 hash_reduce_inject_ewi
 hash_reduce_predicate
+hash_reopen_block_fold_names
 hash_respond_to_to_hash
 hash_return_backprop_polypoly
 hash_select_reject_integer_block_value
@@ -1643,6 +1649,7 @@ index_or_write_empty_hash
 index_or_write_module_class_index
 index_or_write_poly_value
 index_or_write_user_recv
+index_read_under_size_local
 index_read_unsettled_local
 index_store_stmt_receiver_first
 index_store_stmt_receiver_first_poly
@@ -2648,7 +2655,12 @@ param_narrow_from_body_call
 param_nil_default_narrowed
 param_ptr_from_callee_slot
 param_widens_when_body_assigns_string
+paren_arg_fresh_element_shared
+paren_arg_shared_string_handle
+paren_arg_shared_string_poly_receiver
+paren_call_fresh_string_value
 paren_operand_rooted_beside_alloc
+paren_receiver_each_changes_elements
 paren_receiver_shapes
 paren_sequence_stays_in_place
 paren_string_store_element_handle
@@ -2879,6 +2891,7 @@ poly_native_scan_string
 poly_new_instance_method
 poly_new_struct_arm
 poly_nil_op_assign
+poly_nil_p_user_answer
 poly_numeric_op_assign_div_mod
 poly_object_default_render
 poly_op_assign_user_op_return
@@ -3028,6 +3041,7 @@ predicate_block_next_value
 primitive_eq_user_class
 primitive_method_shadow
 primitive_method_shadow_int_recv
+print_chr_range
 print_puts_expression_and_kinds
 print_range_argument
 private_attr_writer
@@ -3466,6 +3480,7 @@ scan_block_param_renamed_by_inline
 scan_block_regexp_last_match
 scan_block_tail_value
 scan_locals_def_boundary
+scan_paren_subject_kept_match
 scan_walkers_def_boundary
 sclass_attr_body_masgn_ivar
 sclass_const_visibility
@@ -3537,6 +3552,8 @@ set_enumerable_operand
 set_from_required_file
 set_frozen_mutators
 set_hash_with_nullable_user_hash
+set_identity_paren_values
+set_identity_reflective_fresh_write
 set_identity_reflective_read_by_name
 set_identity_scalar_operand
 set_new_from_mapped_set
@@ -4150,6 +4167,7 @@ symbol_made_by_threads
 symbol_multibyte_length
 symbol_proc_absent_method
 symbol_reduce_user_method
+symbol_reopen_string_names
 symbol_upcase_interpolation
 table_row_copy_push
 tail_iter_call_receiver
@@ -4387,6 +4405,7 @@ yield_operator_diverging_block_types
 yield_override_direct_call
 yield_param_block_rebind
 yield_param_ivar_block_rebind
+yield_paren_value_diverges
 yield_receiver_builtin_dig
 yield_receiver_builtin_fetch
 yield_receiver_builtin_fetch_default
