@@ -133,6 +133,43 @@ static const char *fx_parse(const char *path, const char *real, char *buf, size_
   return fx_parse_in(path, real, buf, len, 1, NULL, 0, out);
 }
 
+/* Kernel#eval(src, binding = nil, file = "(eval)", line = 1) with no
+   binding. The code runs in a new scope under the frame of the call, as a
+   block does: it reads and writes the locals of that frame and of the
+   scopes around it, its own new locals stay in it, and self, the lexical
+   class and the block of the method are those of the call, as in CRuby.
+   prism gets the names of these frames as the scopes around the code. */
+static sp_RbVal fx_eval_string(FxFrame *f, int argc, sp_RbVal *argv) {
+  if (argc > 4) fx_arity_error(argc, 1, 3, 0);
+  if (argc >= 2 && argv[1].tag != SP_TAG_NIL) fx_gap("eval with a binding");
+  const char *src = sp_poly_arg_str_chk(argv[0]);
+  const char *path = argc >= 3 ? sp_poly_arg_str_chk(argv[2]) : "(eval)";
+  int line = argc >= 4 ? (int)sp_poly_arg_int_chk(argv[3]) : 1;
+  int n = 0;
+  for (FxFrame *p = f; p; p = p->parent) n++;
+  const pm_constant_id_list_t **scopes = malloc(sizeof *scopes * (size_t)n);
+  int i = n;
+  for (FxFrame *p = f; p; p = p->parent) scopes[--i] = p->names;
+  size_t len = sp_str_byte_len(src);
+  char *buf = malloc(len + 1);
+  memcpy(buf, src, len);
+  buf[len] = 0;
+  FxSource *s;
+  const char *err = fx_parse_in(strdup(path), strdup(path), buf, len, line, scopes, n, &s);
+  free(scopes);
+  if (err) sp_raise_cls("SyntaxError", err);
+  SP_GC_SAVE();
+  const pm_program_node_t *prog = (const pm_program_node_t *)s->root;
+  FX_FRAME(top, &prog->locals, f->self, f->cref);
+  top.parent = f;
+  top.definee = f->definee;
+  top.singleton_defs = f->singleton_defs;
+  top.vis = f->vis;
+  top.method = f->method;
+  top.block = f->block;
+  return fx_eval_stmts(&top, prog->statements);
+}
+
 /* Runs the top level of a source, as a program of its own. A return at
    its top level ends the file. */
 static sp_RbVal fx_run_source(const FxSource *s) {

@@ -872,6 +872,7 @@ static sp_RbVal fx_call(FxFrame *f, const pm_call_node_t *c) {
 }
 
 static sp_RbVal fx_loop(const FxBlock *blk);   /* the exceptions section */
+static sp_RbVal fx_eval_string(FxFrame *f, int argc, sp_RbVal *argv);   /* load.c */
 
 /* The Kernel methods that take the block of the call. Answers 1 and sets
    *out when it handles the call. */
@@ -925,6 +926,8 @@ static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *a
       return out;
   }
   if (fx_kernel_block(f, name, argc, blk, &out)) return out;
+  /* Kernel#eval needs the frame of the call for its locals */
+  if (argc >= 1 && !blk && !strcmp(name, "eval")) return fx_eval_string(f, argc, argv);
   if (blk) return fx_send_b(self, name, argc, argv, blk);
   if (fx_exc_kernel(name, argc, argv, &out)) return out;
   if (fx_fiber_kernel(name, argc, argv, &out)) return out;
