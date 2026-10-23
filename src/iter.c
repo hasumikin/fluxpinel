@@ -388,6 +388,24 @@ static int fx_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, c
     *out = best;
     return 1;
   }
+  /* minmax with a block: min and max with the same block */
+  if (argc == 0 && FX_IS("minmax")) {
+    sp_RbVal lo = sp_box_nil(), hi = sp_box_nil();
+    SP_GC_ROOT_RBVAL(lo);
+    SP_GC_ROOT_RBVAL(hi);
+    int have = 0;
+    while (fx_seq_next(&s, &v)) {
+      if (!have) { lo = hi = v; have = 1; continue; }
+      y = fx_y2(blk, v, lo);
+      FX_STOP();
+      if (fx_cmp_result(y, v, lo) < 0) lo = v;
+      y = fx_y2(blk, v, hi);
+      FX_STOP();
+      if (fx_cmp_result(y, v, hi) > 0) hi = v;
+    }
+    *out = fx_pair(lo, hi);
+    return 1;
+  }
   if (argc == 0 && (FX_IS("sort_by") || FX_IS("sort"))) {
     acc = fx_seq_array(r);
     sp_PolyArray *keys = NULL;
@@ -563,6 +581,174 @@ static int fx_str_iter(sp_RbVal r, const char *name, int argc, const FxBlock *bl
   return 1;
 }
 
+static sp_RbVal fx_srange_side(sp_StrRange g, int end);
+static sp_RbVal fx_srange_to_a(sp_StrRange g);
+
+/* How CRuby names a value in a TypeError of a coercion: the inspect of
+   nil, true, false and a Symbol, else the class name. */
+static const char *fx_coerce_name(sp_RbVal v) {
+  if (v.tag == SP_TAG_NIL || v.tag == SP_TAG_BOOL || v.tag == SP_TAG_SYM) return sp_poly_inspect(v);
+  return sp_poly_class_name(v);
+}
+
+/* One value of a step: to the block, or to the Array of a blockless step. */
+#define FX_STEP_PUT(x)                          \
+  do {                                          \
+    sp_RbVal x_ = (x);                          \
+    if (acc) {                                  \
+      sp_PolyArray_push(acc, x_);               \
+    } else {                                    \
+      fx_y1(blk, x_);                           \
+      FX_STOP();                                \
+    }                                           \
+  } while (0)
+
+/* The Enumerator of a blockless step over the values in acc, labeled
+   as the call: #<Enumerator: "a".."e":step(2)>. */
+static sp_RbVal fx_step_enum(sp_RbVal r, const char *op, sp_RbVal stride, sp_PolyArray *acc) {
+  SP_GC_ROOT_RBVAL(r);
+  SP_GC_ROOT_RBVAL(stride);
+  sp_Enumerator *e = sp_Enumerator_new_from_items(acc);
+  return sp_box_obj(sp_enum_step_labeled(e, r, op, &stride, 1), SP_BUILTIN_ENUMERATOR);
+}
+
+/* Range#step and #% of an Integer, a Float or a String Range, with a block
+   or as an Enumerator. An endless Range walks until the block breaks; with
+   no block, the Enumerator of the runtime walks it. */
+static int fx_range_step(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                         sp_RbVal *out) {
+  if (!(FX_IS("step") || FX_IS("%")) || r.tag != SP_TAG_OBJ || !r.v.p) return 0;
+  int cls = r.cls_id;
+  if (cls != SP_BUILTIN_RANGE && cls != SP_BUILTIN_FLOAT_RANGE && cls != SP_BUILTIN_STR_RANGE) return 0;
+  if (argc > 1) sp_raise_cls("ArgumentError", sp_sprintf("wrong number of arguments (given %d, expected 0..1)", argc));
+  SP_GC_ROOT_RBVAL(r);
+  sp_RbVal n = argc ? argv[0] : sp_box_int(1);
+  SP_GC_ROOT_RBVAL(n);
+  sp_PolyArray *acc = blk ? NULL : sp_PolyArray_new();
+  SP_GC_ROOT(acc);
+  if (cls == SP_BUILTIN_STR_RANGE) {
+    if (n.tag != SP_TAG_INT && n.tag != SP_TAG_FLT)
+      sp_raise_cls("TypeError", sp_sprintf("no implicit conversion of %s into String",
+                                           n.tag == SP_TAG_NIL ? "nil" : n.tag == SP_TAG_BOOL ? (n.v.b ? "true" : "false")
+                                                                                              : sp_poly_class_name(n)));
+    if (!blk) {
+      *out = sp_box_obj(sp_srange_step_enum(r, n, name), SP_BUILTIN_ENUMERATOR);
+      return 1;
+    }
+    if (n.tag == SP_TAG_FLT) sp_raise_cls("TypeError", "no implicit conversion of Float into String");
+    sp_StrRange g = SP_SRANGE_OF(r.v.p);
+    SP_GC_ROOT_SRANGE(g);
+    if (!g.first) sp_raise_cls("TypeError", "can't iterate from NilClass");
+    sp_RbVal v = fx_srange_side(g, 0);
+    SP_GC_ROOT_RBVAL(v);
+    if (n.v.i <= 0) {
+      /* a step of zero or less gives the begin alone, as CRuby 4.0 does */
+      if (!g.last || sp_poly_length(fx_srange_to_a(g)) > 0) FX_STEP_PUT(v);
+    } else if (g.last) {
+      sp_RbVal all = fx_srange_to_a(g);
+      SP_GC_ROOT_RBVAL(all);
+      for (sp_int i = 0; i < sp_poly_length(all); i += n.v.i) FX_STEP_PUT(sp_poly_arr_get(all, i));
+    } else {
+      /* an endless String Range: succ until the block breaks */
+      for (;;) {
+        FX_STEP_PUT(v);
+        for (sp_int k = 0; k < n.v.i; k++) v = fx_send(v, "succ", 0, NULL);
+      }
+    }
+    *out = r;
+    return 1;
+  }
+  const sp_Range *ig = cls == SP_BUILTIN_RANGE ? (const sp_Range *)r.v.p : NULL;
+  int flt = cls == SP_BUILTIN_FLOAT_RANGE || n.tag == SP_TAG_FLT || (ig && ig->fe);
+  if (n.tag != SP_TAG_INT && n.tag != SP_TAG_FLT)
+    sp_raise_cls("TypeError", sp_sprintf("%s can't be coerced into %s", fx_coerce_name(n), flt ? "Float" : "Integer"));
+  if (n.tag == SP_TAG_INT ? n.v.i == 0 : n.v.f == 0.0) sp_raise_cls("ArgumentError", "step can't be 0");
+  if (!flt) {
+    if (ig->nobeg) sp_raise_cls("ArgumentError", "#step iteration for beginless ranges is meaningless");
+    if (!blk && ig->noend) { *out = sp_range_endless_step_v(sp_box_int(ig->first), n); return 1; }
+    sp_int s = n.v.i;
+    for (sp_int i = ig->first;; i += s) {
+      if (!ig->noend && (s > 0 ? (ig->excl ? i >= ig->last : i > ig->last)
+                                : (ig->excl ? i <= ig->last : i < ig->last)))
+        break;
+      FX_STEP_PUT(sp_box_int(i));
+      if ((s > 0 && i > INT64_MAX - s) || (s < 0 && i < INT64_MIN - s)) break;
+    }
+  } else {
+    /* the Float walk of CRuby (ruby_float_step) over the sides as Floats */
+    sp_FloatRange fr;
+    if (ig) {
+      if (ig->nobeg) sp_raise_cls("ArgumentError", "#step iteration for beginless ranges is meaningless");
+      fr = sp_frange_new_o((sp_float)ig->first, ig->noend ? HUGE_VAL : ig->fe ? ig->fend : (sp_float)ig->last,
+                           ig->excl, ig->noend ? SP_FRANGE_NO_END : 0);
+    } else {
+      fr = *(const sp_FloatRange *)r.v.p;
+    }
+    sp_float unit = n.tag == SP_TAG_FLT ? n.v.f : (sp_float)n.v.i;
+    if (!blk && (fr.omitted & SP_FRANGE_NO_END) && !(fr.omitted & SP_FRANGE_NO_BEGIN)) {
+      *out = sp_range_endless_step_v(sp_box_float(fr.first), n);
+      return 1;
+    }
+    sp_float cnt = sp_frange_step_count(fr, unit);
+    for (sp_int i = 0; (sp_float)i < cnt; i++) FX_STEP_PUT(sp_box_float(sp_frange_step_at(fr, unit, i)));
+  }
+  *out = acc ? fx_step_enum(r, name, n, acc) : r;
+  return 1;
+}
+
+#undef FX_STEP_PUT
+
+/* min, max and minmax with an argument or a block, last(n) and count with
+   an argument or a block: the same call on the elements of the Range, as
+   Enumerable gives it. to_a raises for a Range that cannot walk. */
+static int fx_range_via_array(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                              sp_RbVal *out) {
+  if (r.tag != SP_TAG_OBJ || !r.v.p ||
+      (r.cls_id != SP_BUILTIN_RANGE && r.cls_id != SP_BUILTIN_FLOAT_RANGE && r.cls_id != SP_BUILTIN_STR_RANGE))
+    return 0;
+  int hit = ((FX_IS("min") || FX_IS("max") || FX_IS("minmax") || FX_IS("count")) && (argc > 0 || blk)) ||
+            (FX_IS("last") && argc == 1);
+  if (!hit) return 0;
+  /* a Float Range goes to Enumerable, which cannot walk it; max checks the
+     open end first, as CRuby's range_max */
+  if (r.cls_id == SP_BUILTIN_FLOAT_RANGE) {
+    const sp_FloatRange *g = (const sp_FloatRange *)r.v.p;
+    if (FX_IS("max") && (g->omitted & SP_FRANGE_NO_END))
+      sp_raise_cls("RangeError", "cannot get the maximum of endless range");
+    sp_raise_cls("TypeError", g->omitted & SP_FRANGE_NO_BEGIN ? "can't iterate from NilClass"
+                                                               : "can't iterate from Float");
+  }
+  if (argc == 1 && argv[0].tag == SP_TAG_INT && argv[0].v.i < 0 && !FX_IS("count"))
+    sp_raise_cls("ArgumentError", FX_IS("last") ? "negative array size" : "negative array size (or size too big)");
+  /* max(n) of a beginless Integer Range counts down from the end */
+  if (r.cls_id == SP_BUILTIN_RANGE && ((const sp_Range *)r.v.p)->nobeg && FX_IS("max") && argc == 1 && !blk &&
+      argv[0].tag == SP_TAG_INT) {
+    const sp_Range *g = (const sp_Range *)r.v.p;
+    if (g->noend) sp_raise_cls("RangeError", "cannot get the maximum of endless range");
+    sp_PolyArray *a = sp_PolyArray_new();
+    SP_GC_ROOT(a);
+    sp_int top = g->fe ? (sp_int)floor(g->fend) - (g->excl && floor(g->fend) == g->fend) : g->excl ? g->last - 1 : g->last;
+    for (sp_int i = 0; i < argv[0].v.i; i++) sp_PolyArray_push(a, sp_box_int(top - i));
+    *out = sp_box_poly_array(a);
+    return 1;
+  }
+  if (r.cls_id == SP_BUILTIN_RANGE && ((const sp_Range *)r.v.p)->nobeg)
+    sp_raise_cls("TypeError", "can't iterate from NilClass");
+  sp_RbVal a = fx_send(r, "to_a", 0, NULL);
+  SP_GC_ROOT_RBVAL(a);
+  /* minmax with a block: min and max with the same block */
+  if (FX_IS("minmax") && blk) {
+    sp_RbVal hi = fx_send_b(a, "max", argc, argv, blk);
+    SP_GC_ROOT_RBVAL(hi);
+    sp_RbVal lo = fx_send_b(a, "min", argc, argv, blk);
+    SP_GC_ROOT_RBVAL(lo);
+    *out = fx_pair(lo, hi);
+    return 1;
+  }
+  *out = fx_send_b(a, name, argc, argv, blk);
+  return 1;
+}
+
 /* inject(:sym) and inject(init, :sym): a method name in place of a block. */
 static int fx_inject_sym(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (!(FX_IS("inject") || FX_IS("reduce")) || argc < 1 || argc > 2) return 0;
@@ -585,7 +771,10 @@ static int fx_inject_sym(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
 
 /* The builtin methods that take a block, and inject with a Symbol. */
 static int fx_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out) {
-  if (!blk) return fx_inject_sym(r, name, argc, argv, out) || fx_int_iter(r, name, argc, argv, NULL, out);
+  if (!blk)
+    return fx_inject_sym(r, name, argc, argv, out) || fx_int_iter(r, name, argc, argv, NULL, out) ||
+           fx_range_step(r, name, argc, argv, NULL, out) || fx_range_via_array(r, name, argc, argv, NULL, out);
+  if (fx_range_step(r, name, argc, argv, blk, out) || fx_range_via_array(r, name, argc, argv, blk, out)) return 1;
   if (argc == 0 && FX_IS("tap")) {
     fx_y1(blk, r);
     FX_STOP();
@@ -702,7 +891,43 @@ static int fx_frange_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       return 1;
     }
     if (FX_IS("exclude_end?")) { *out = sp_box_bool(g->excl); return 1; }
-    if (FX_IS("size") || FX_IS("count") || FX_IS("to_a") || FX_IS("entries")) {
+    /* min and max read the sides, in the order of the checks of CRuby's
+       range_min and range_max; minmax calls max first, as CRuby does */
+    if (FX_IS("min") || FX_IS("max") || FX_IS("minmax")) {
+      int nobeg = g->omitted & SP_FRANGE_NO_BEGIN, noend = g->omitted & SP_FRANGE_NO_END;
+      sp_RbVal lo = sp_box_nil(), hi = sp_box_nil();
+      if (!FX_IS("min")) {
+        if (noend) sp_raise_cls("RangeError", "cannot get the maximum of endless range");
+        int c = nobeg ? -1 : g->first > g->last ? 1 : g->first == g->last ? 0 : -1;
+        if (c <= 0) {
+          if (g->excl && !(g->omitted & SP_FRANGE_INT_END))
+            sp_raise_cls("TypeError", "cannot exclude non Integer end value");
+          if (!(g->excl && c == 0)) {
+            if (g->excl) sp_raise_cls("TypeError", "cannot exclude end value with non Integer begin value");
+            hi = fx_frange_side(g, 1);
+          }
+        }
+      }
+      SP_GC_ROOT_RBVAL(hi);
+      if (!FX_IS("max")) {
+        if (nobeg) sp_raise_cls("RangeError", "cannot get the minimum of beginless range");
+        if (noend || !(g->first > g->last || (g->excl && g->first == g->last))) lo = fx_frange_side(g, 0);
+      }
+      SP_GC_ROOT_RBVAL(lo);
+      *out = FX_IS("minmax") ? fx_pair(lo, hi) : FX_IS("min") ? lo : hi;
+      return 1;
+    }
+    if (FX_IS("to_a") || FX_IS("entries")) {
+      if (g->omitted & SP_FRANGE_NO_BEGIN) sp_raise_cls("TypeError", "can't iterate from NilClass");
+      if (g->omitted & SP_FRANGE_NO_END) sp_raise_cls("RangeError", "cannot convert endless range to an array");
+      sp_raise_cls("TypeError", "can't iterate from Float");
+    }
+    /* count of an open Range is Infinity, as CRuby's range_count */
+    if (FX_IS("count") && (g->omitted & (SP_FRANGE_NO_BEGIN | SP_FRANGE_NO_END))) {
+      *out = sp_box_float(HUGE_VAL);
+      return 1;
+    }
+    if (FX_IS("size") || FX_IS("count")) {
       if (g->omitted & SP_FRANGE_NO_BEGIN) sp_raise_cls("TypeError", "can't iterate from NilClass");
       sp_raise_cls("TypeError", "can't iterate from Float");
     }
@@ -785,6 +1010,14 @@ static int fx_srange_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     }
     if (FX_IS("exclude_end?")) { *out = sp_box_bool(g.excl); return 1; }
     if (FX_IS("to_a") || FX_IS("entries")) { *out = fx_srange_to_a(g); return 1; }
+    if (FX_IS("minmax")) {
+      sp_RbVal hi = fx_send(r, "max", 0, NULL);
+      SP_GC_ROOT_RBVAL(hi);
+      sp_RbVal lo = fx_send(r, "min", 0, NULL);
+      SP_GC_ROOT_RBVAL(lo);
+      *out = fx_pair(lo, hi);
+      return 1;
+    }
     if (FX_IS("size")) { *out = sp_box_nil(); return 1; }
     if (FX_IS("count")) { *out = sp_box_int(sp_poly_length(fx_srange_to_a(g))); return 1; }
     return 0;
@@ -833,12 +1066,36 @@ static int fx_range_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
       return 1;
     }
     if (FX_IS("exclude_end?")) { *out = sp_box_bool(g->excl); return 1; }
+    /* min and max of an open Range or of a Float end, as CRuby's range_min
+       and range_max; minmax calls max first, as CRuby does */
+    if (FX_IS("min") || FX_IS("max") || FX_IS("minmax")) {
+      sp_RbVal lo = sp_box_nil(), hi = sp_box_nil();
+      if (!FX_IS("min")) {
+        if (g->noend) sp_raise_cls("RangeError", "cannot get the maximum of endless range");
+        if (g->fe) {
+          if (g->nobeg || (double)g->first <= g->fend) {
+            if (g->excl) sp_raise_cls("TypeError", "cannot exclude non Integer end value");
+            hi = sp_box_float(g->fend);
+          }
+        } else if (g->nobeg || size > 0) {
+          hi = sp_box_int(last);
+        }
+      }
+      SP_GC_ROOT_RBVAL(hi);
+      if (!FX_IS("max")) {
+        if (g->nobeg) sp_raise_cls("RangeError", "cannot get the minimum of beginless range");
+        int empty = g->noend ? 0 : g->fe ? ((double)g->first > g->fend || (g->excl && (double)g->first == g->fend))
+                                         : size <= 0;
+        if (!empty) lo = sp_box_int(g->first);
+      }
+      SP_GC_ROOT_RBVAL(lo);
+      *out = FX_IS("minmax") ? fx_pair(lo, hi) : FX_IS("min") ? lo : hi;
+      return 1;
+    }
     if (size < 0) return 0;
     if (FX_IS("to_a") || FX_IS("entries")) { *out = sp_box_poly_array(fx_seq_array(r)); return 1; }
     if (FX_IS("size") || FX_IS("count")) { *out = sp_box_int(size); return 1; }
-    if (FX_IS("last")) { *out = sp_box_int(g->last); return 1; }
-    if (FX_IS("min")) { *out = size ? sp_box_int(g->first) : sp_box_nil(); return 1; }
-    if (FX_IS("max")) { *out = size ? sp_box_int(last) : sp_box_nil(); return 1; }
+    if (FX_IS("last")) { *out = g->fe ? sp_box_float(g->fend) : sp_box_int(g->last); return 1; }
     if (FX_IS("sum")) { *out = sp_poly_sum(sp_box_poly_array(fx_seq_array(r))); return 1; }
     return 0;
   }
@@ -867,6 +1124,8 @@ static int fx_range_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     *out = sp_box_bool(lo && hi);
     return 1;
   }
+  if (argc == 1 && FX_IS("first") && argv[0].tag == SP_TAG_INT && argv[0].v.i < 0)
+    sp_raise_cls("ArgumentError", "negative array size (or size too big)");
   if (argc == 1 && (FX_IS("first") || FX_IS("take")) && argv[0].tag == SP_TAG_INT && !g->nobeg) {
     sp_PolyArray *a = sp_PolyArray_new();
     SP_GC_ROOT(a);

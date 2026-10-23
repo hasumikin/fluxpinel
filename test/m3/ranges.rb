@@ -57,3 +57,38 @@ begin
 rescue TypeError => e
   p e.message
 end
+
+# step and % with a block and as an Enumerator
+p (1..10).step(3).to_a, (1...10).step(3).to_a, (10..1).step(-3).to_a, (1..10).step(-1).to_a
+p (1.0..2.0).step(0.5).to_a, (1..3).step(0.5).to_a, (0.0..1.0).step(0.1).to_a.size, (1.0..6.4).step(1.8).to_a
+acc = []
+(1..10).step(4) { |i| acc << i }
+(2.0..1.0).step(-0.5) { |x| acc << x }
+(1..).step(5) { |i| acc << i; break if i > 10 }
+p acc
+p ("a".."e").step(2).to_a, (("a".."e") % 2).to_a, ("a".."e").step(2), ("a"..).step(3).first(3)
+s = []
+("a".."g").step(3) { |c| s << c }
+p s, (1..).step(3).first(3), (1.5..).step(0.5).first(3)
+[0, "x", nil].each do |n|
+  begin
+    (1.0..2.0).step(n) { }
+  rescue ArgumentError, TypeError => e
+    p [e.class, e.message]
+  end
+end
+
+# min, max and minmax read the sides; with an argument or a block they walk
+p (1.0..2.5).min, (1.0..2.5).max, (1.0..2.5).minmax, (2.0..1.0).min, (1..5.5).max, (1..5.5).last
+p (1..).min, (..5).max, (...5).max, (1..5).minmax, ("a".."e").minmax
+p (1..5).min(2), (1..5).max(2), (1..5).max { |a, b| (a % 3) <=> (b % 3) }, (1..5).minmax { |a, b| b <=> a }
+p (..4).max(2), (1..10).last(3), (1..10).count(&:even?), (1..10).count(4)
+[-> { (1.0...2.0).max }, -> { (1.0..).max }, -> { (..1.0).min }, -> { (1.0..2.0).min(1) },
+ -> { (1..5).first(-1) }, -> { (1..5).max(-1) }].each do |f|
+  begin
+    p f.call
+  rescue ArgumentError, TypeError, RangeError => e
+    p [e.class, e.message]
+  end
+end
+p (1.0..).count, (..1.0).count
