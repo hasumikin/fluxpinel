@@ -20,3 +20,14 @@ begin
 rescue ArgumentError => e
   p e.message
 end
+# a Hash of the script for a Hash[Symbol, untyped] parameter, and a value
+# that is no Hash
+h = { name: "box", n: 3 }
+p FxKernel.describe(h)
+# CRuby raises NoMethodError in the body, the host build TypeError at the
+# boundary
+begin
+  FxKernel.describe([1])
+rescue StandardError
+  p :rejected
+end

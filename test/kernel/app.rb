@@ -42,6 +42,13 @@ module FxKernel
   #: (Shape) -> Integer
   def self.grow(s) = s.grow
 
+  # A Hash whose values are of any kind: a script passes a Hash of its own,
+  # and the entry gets a copy of the kind of the parameter
+  #: (Hash[Symbol, untyped]) -> String
+  def self.describe(attrs)
+    attrs.keys.map(&:to_s).sort.join(",") + " " + attrs[:name].to_s
+  end
+
   def self.ping(x) = x
   def self.add(a, b) = a + b
   def self.make(name) = Counter.new(name)

@@ -42,7 +42,10 @@ ARG = { "sp_RbVal" => "%s", "sp_int" => "sp_poly_arg_int_chk(%s)", "sp_float" =>
         "sp_IntArray *" => "sp_poly_as_int_array(fx_entry_array(%s))",
         "sp_FloatArray *" => "sp_poly_as_float_array(fx_entry_array(%s))",
         "sp_StrArray *" => "sp_poly_as_str_array(fx_entry_array(%s))",
-        "sp_PolyArray *" => "sp_poly_to_poly_array(fx_entry_array(%s))" }.freeze
+        "sp_PolyArray *" => "sp_poly_to_poly_array(fx_entry_array(%s))",
+        "sp_SymPolyHash *" => "sp_poly_as_sym_poly_hash(fx_entry_any_hash(%s))",
+        "sp_StrPolyHash *" => "sp_poly_as_str_poly_hash(fx_entry_any_hash(%s))",
+        "sp_PolyPolyHash *" => "sp_poly_as_poly_poly_hash(fx_entry_any_hash(%s))" }.freeze
 
 RET = CBox::RET
 
@@ -67,7 +70,16 @@ out = +<<~C
     return v;
   }
 
-  /* a Hash argument: a Hash of the kind of the parameter, as it is */
+  /* a Hash argument whose values are of any kind. The runtime converts it
+     to the kind of the parameter, as an Array argument: a Hash of that
+     kind passes as it is, and any other one passes as a copy. */
+  static sp_RbVal fx_entry_any_hash(sp_RbVal v) {
+    if (!(v.tag == SP_TAG_OBJ && sp_poly_is_hash_kind(v.cls_id)))
+      sp_raise_cls("TypeError", sp_sprintf("no implicit conversion of %s into Hash", sp_poly_class_name(v)));
+    return v;
+  }
+
+  /* any other Hash argument: a Hash of the kind of the parameter, as it is */
   static void *fx_entry_hash(sp_RbVal v, sp_int cls_id) {
     if (v.tag != SP_TAG_OBJ || v.cls_id != cls_id)
       sp_raise_cls("TypeError", sp_sprintf("%s does not fit a typed Hash parameter", sp_poly_inspect(v)));
