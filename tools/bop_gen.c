@@ -25,8 +25,10 @@
 
 #include "builtin_ops.c"
 
-/* types.c reads this flag of the analysis (src/analyze.c). */
+/* types.c reads these flags of the analysis (src/analyze.c). Fluxpinel
+   links the runtime of the default String mode, so g_one_string is 0. */
 int g_infer_optimistic = 0;
+int g_one_string = 0;
 
 /* builtin_names.c calls this lookup of the analysis (src/analyze_util.c)
    only in builtin_default_cmp, which the generator does not call. */

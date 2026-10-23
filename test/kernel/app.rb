@@ -73,9 +73,7 @@ module FxKernel
       break unless reply
       out += reply
     end
-    # spinel drops the String result of an entry that the program does not
-    # call, unless a return gives it
-    return out
+    out
   end
 
   def self.rescue_script(src)

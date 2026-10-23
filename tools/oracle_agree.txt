@@ -1,5 +1,5 @@
 # The spinel tests that Fluxpinel answers right, for make regress.
-# make oracle writes this file. spinel: 99606b984015
+# make oracle writes this file. spinel: d36da5752fe3
 abstract_raise_override_return
 alias_attr_reader_source
 alias_capture_outlives_redefined_alias
@@ -18,8 +18,11 @@ alias_of_inherited_method
 alias_param_narrowed_from_callers
 alias_reader_is_no_writer
 alias_reader_subclass_ivar
+alias_resettled_in_subclass
 alias_sibling_redefined
+alias_singleton_between_subclass_include
 alias_then_accessor_same_name
+alias_then_subclass_include
 alias_to_reader_call
 alias_under_modifier
 alias_visibility
@@ -357,6 +360,7 @@ block_yield_optional_param
 bm_instance_eval
 bool_case_equality
 bool_is_a_true_false
+bool_reopen_sides_self_and_nil
 box_nullable_obj
 box_pointer_to_poly
 box_rescue_modifier_tail
@@ -748,6 +752,7 @@ closure_captures_object_array
 closure_captures_pointer_locals
 cls_fact_any_recv_reader_push
 cls_fact_data_bare_new_members
+cls_fact_hash_new_default
 cls_fact_instance_exec_block_ivar
 cls_fact_splat_arguments
 cls_fact_super_builtin_answers_self
@@ -1156,6 +1161,7 @@ exception_uncaught_own_message
 exception_uncaught_own_to_s
 exception_user_method_generic_receiver
 exception_user_subclass
+exit_bool_status
 exit_poly_status
 explicit_initialize_call
 extend_in_reopened_class
@@ -1490,6 +1496,7 @@ hash_nil_key_method_answer_rescue_mod_bare
 hash_nil_key_program_last_print
 hash_nil_key_stored_into_box
 hash_nil_value_walks
+hash_one_class_value_unbox
 hash_one_class_values
 hash_one_class_values_bounds
 hash_or_and_assign_default
@@ -1974,6 +1981,7 @@ issue_3066
 issue_3069
 issue_3071
 issue_3072
+issue_3077
 issue_3078
 issue_3079
 issue_3081
@@ -2377,6 +2385,7 @@ misc
 missing_positional_arg_warns
 missing_require_names_the_library
 mixin
+mixin_after_dynamic_send_arm
 mixin_to_s_inspect
 modifier_rescue_frame
 modifier_rescue_return_pops
@@ -3376,6 +3385,7 @@ reopened_builtin_key_without_own_method
 reopened_builtin_optional_block
 reopened_iter_with_block_and_args
 reopened_module_superclass_method
+report_on_exception_surface
 require_computed_as_condition
 require_computed_name_loaderror
 require_in_conditional
@@ -3398,6 +3408,7 @@ rescue_class_variable
 rescue_local_write_kept
 rescue_mod_yield_nil_value
 rescue_modifier_assign
+rescue_modifier_stmt_std_only
 rescue_module_bare_reader
 rescue_namespaced_exception
 rescue_operand_validation
@@ -3552,6 +3563,7 @@ set_enumerable_operand
 set_from_required_file
 set_frozen_mutators
 set_hash_with_nullable_user_hash
+set_identity_attr_reader_followed
 set_identity_paren_values
 set_identity_reflective_fresh_write
 set_identity_reflective_read_by_name
