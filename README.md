@@ -200,7 +200,8 @@ make oracle
 - `make host` builds `build/host/fluxpinel`: Fluxpinel and a kernel in one
   binary. `HOST` sets the directory and `HOST_NAME` the name of the
   binary. With `KERNEL_MAIN=App.main`, the binary takes no script and
-  calls `App.main` with `ARGV`. See [examples/logq](examples/logq).
+  calls `App.main` with `ARGV`. See [examples/calc](examples/calc), the
+  smallest one, and [examples/logq](examples/logq).
   `KERNEL_FLAGS` passes more flags to spinel for the kernel, such as the
   flags that `spin flags` prints for a spin project. `HOST_LIBS` adds
   libraries to the link, such as `-lsqlite3`.
