@@ -1127,6 +1127,310 @@ static sp_RbVal fx_case(FxFrame *f, const pm_case_node_t *c) {
   return c->else_clause ? fx_eval(f, (const pm_node_t *)c->else_clause) : sp_box_nil();
 }
 
+/* The state of one pattern match. With want set (a single pattern: `=>`,
+   or a case/in with one `in` and no else), why keeps the check that failed
+   last, for the message of NoMatchingPatternError, as CRuby gives it. */
+typedef struct {
+  int want;
+  int key_missing;  /* why is a missing key: NoMatchingPatternKeyError */
+  const char *why;
+} FxPat;
+
+/* a ++ b ++ c, in one allocation. The arguments stay rooted across it, so
+   a long inspect survives. */
+static const char *fx_cat3(const char *a, const char *b, const char *c) {
+  SP_GC_ROOT_STR(a);
+  SP_GC_ROOT_STR(b);
+  SP_GC_ROOT_STR(c);
+  size_t la = strlen(a), lb = strlen(b), lc = strlen(c);
+  char *s = sp_str_alloc(la + lb + lc);
+  memcpy(s, a, la);
+  memcpy(s + la, b, lb);
+  memcpy(s + la + lb, c, lc);
+  s[la + lb + lc] = 0;
+  return s;
+}
+
+static int fx_pat_fail(FxPat *p, const char *why, int key) {
+  p->why = why;
+  p->key_missing = key;
+  return 0;
+}
+
+/* "<inspect of v><tail>", for a check on one value. */
+static int fx_pat_fail_on(FxPat *p, sp_RbVal v, const char *tail) {
+  if (!p->want) return 0;
+  const char *s = sp_poly_inspect(v);
+  return fx_pat_fail(p, fx_cat3(s, tail, ""), 0);
+}
+
+/* A value pattern (a literal, a constant, a Range, a pin, ...): pat === v. */
+static int fx_pat_value(FxFrame *f, FxPat *p, const pm_node_t *n, sp_RbVal v) {
+  SP_GC_ROOT_RBVAL(v);
+  sp_RbVal pv = fx_eval(f, n);
+  if (L.ctl != FX_CTL_NONE) return 0;
+  SP_GC_ROOT_RBVAL(pv);
+  sp_RbVal arg = v;
+  if (sp_poly_truthy(fx_send(pv, "===", 1, &arg))) return 1;
+  if (!p->want) return 0;
+  const char *a = sp_poly_inspect(pv);
+  SP_GC_ROOT(a);
+  const char *b = sp_poly_inspect(v);
+  SP_GC_ROOT(b);
+  return fx_pat_fail(p, fx_cat3(fx_cat3(a, " === ", b), " does not return true", ""), 0);
+}
+
+static int fx_pattern(FxFrame *f, FxPat *p, const pm_node_t *n, sp_RbVal v);
+
+/* The Array that v.deconstruct gives, or nil when v has no deconstruct.
+   An Array is its own. */
+static sp_RbVal fx_pat_deconstruct(FxPat *p, sp_RbVal v) {
+  if (fx_is_array_value(v)) return v;
+  SP_GC_ROOT_RBVAL(v);
+  if (!sp_poly_truthy(fx_respond_to(v, sp_box_sym(sp_sym_intern("deconstruct")), sp_box_bool(0)))) {
+    fx_pat_fail_on(p, v, " does not respond to #deconstruct");
+    return sp_box_nil();
+  }
+  sp_RbVal d = fx_send(v, "deconstruct", 0, NULL);
+  if (!fx_is_array_value(d)) sp_raise_cls("TypeError", "deconstruct must return Array");
+  return d;
+}
+
+/* Matches the elements [from, from + list->size) of the Array d. */
+static int fx_pat_elems(FxFrame *f, FxPat *p, const pm_node_list_t *list, sp_RbVal d, sp_int from) {
+  for (size_t i = 0; i < list->size; i++)
+    if (!fx_pattern(f, p, list->nodes[i], sp_poly_arr_get(d, from + (sp_int)i))) return 0;
+  return 1;
+}
+
+/* Binds the splat `*name` to the elements [from, to) of the Array d. A
+   splat with no name, or an implicit rest (`in a,`), binds nothing. */
+static void fx_pat_rest(FxFrame *f, const pm_node_t *rest, sp_RbVal d, sp_int from, sp_int to) {
+  if (!rest || !PM_NODE_TYPE_P(rest, PM_SPLAT_NODE)) return;
+  const pm_node_t *t = ((const pm_splat_node_t *)rest)->expression;
+  if (!t) return;
+  SP_GC_ROOT_RBVAL(d);
+  sp_PolyArray *a = sp_PolyArray_new();
+  SP_GC_ROOT(a);
+  for (sp_int i = from; i < to; i++) sp_PolyArray_push(a, sp_poly_arr_get(d, i));
+  const pm_local_variable_target_node_t *x = (const pm_local_variable_target_node_t *)t;
+  *fx_local(f, t, x->name, x->depth) = sp_box_poly_array(a);
+}
+
+/* [a, *rest, b] and Const(a, b): the constant takes v, then the elements
+   of v.deconstruct take the patterns. */
+static int fx_pat_array(FxFrame *f, FxPat *p, const pm_array_pattern_node_t *n, sp_RbVal v) {
+  SP_GC_ROOT_RBVAL(v);
+  if (n->constant && !fx_pat_value(f, p, n->constant, v)) return 0;
+  sp_RbVal d = fx_pat_deconstruct(p, v);
+  if (d.tag == SP_TAG_NIL) return 0;
+  SP_GC_ROOT_RBVAL(d);
+  sp_int len = sp_poly_length(d), pre = (sp_int)n->requireds.size, post = (sp_int)n->posts.size;
+  if (n->rest ? len < pre + post : len != pre + post) {
+    if (!p->want) return 0;
+    const char *s = sp_poly_inspect(d);
+    SP_GC_ROOT(s);
+    return fx_pat_fail(p, fx_cat3(s, sp_sprintf(" length mismatch (given %lld, expected %lld%s)", (long long)len,
+                                                (long long)(pre + post), n->rest ? "+" : ""), ""), 0);
+  }
+  if (!fx_pat_elems(f, p, &n->requireds, d, 0)) return 0;
+  if (!fx_pat_elems(f, p, &n->posts, d, len - post)) return 0;
+  fx_pat_rest(f, n->rest, d, pre, len - post);
+  return 1;
+}
+
+/* [*, a, b, *]: the first run of elements that takes the patterns. */
+static int fx_pat_find(FxFrame *f, FxPat *p, const pm_find_pattern_node_t *n, sp_RbVal v) {
+  SP_GC_ROOT_RBVAL(v);
+  if (n->constant && !fx_pat_value(f, p, n->constant, v)) return 0;
+  sp_RbVal d = fx_pat_deconstruct(p, v);
+  if (d.tag == SP_TAG_NIL) return 0;
+  SP_GC_ROOT_RBVAL(d);
+  sp_int len = sp_poly_length(d), k = (sp_int)n->requireds.size;
+  if (len < k) {
+    if (!p->want) return 0;
+    const char *s = sp_poly_inspect(d);
+    SP_GC_ROOT(s);
+    return fx_pat_fail(p, fx_cat3(s, sp_sprintf(" length mismatch (given %lld, expected %lld+)", (long long)len,
+                                                (long long)k), ""), 0);
+  }
+  /* a failed try is not the reason: the message names the find pattern */
+  int want = p->want;
+  p->want = 0;
+  for (sp_int at = 0; at + k <= len; at++) {
+    int hit = fx_pat_elems(f, p, &n->requireds, d, at);
+    if (L.ctl != FX_CTL_NONE) { p->want = want; return 0; }
+    if (hit) {
+      p->want = want;
+      fx_pat_rest(f, (const pm_node_t *)n->left, d, 0, at);
+      fx_pat_rest(f, n->right, d, at + k, len);
+      return 1;
+    }
+  }
+  p->want = want;
+  return fx_pat_fail_on(p, d, " does not match to find pattern");
+}
+
+/* {a:, b: pat, **rest} and Const(a:): the constant takes v, then
+   v.deconstruct_keys gives a Hash. Each key must be there, and its value
+   takes the pattern. `**rest` binds the other pairs, and `**nil` wants
+   none. A Hash is its own deconstruct_keys. */
+static int fx_pat_hash(FxFrame *f, FxPat *p, const pm_hash_pattern_node_t *n, sp_RbVal v) {
+  SP_GC_ROOT_RBVAL(v);
+  if (n->constant && !fx_pat_value(f, p, n->constant, v)) return 0;
+  const pm_node_t *rest = n->rest;
+  int named_rest = rest && PM_NODE_TYPE_P(rest, PM_ASSOC_SPLAT_NODE) && ((const pm_assoc_splat_node_t *)rest)->value;
+  sp_RbVal d = v;
+  SP_GC_ROOT_RBVAL(d);
+  if (!fx_is_hash(v)) {
+    if (!sp_poly_truthy(fx_respond_to(v, sp_box_sym(sp_sym_intern("deconstruct_keys")), sp_box_bool(0))))
+      return fx_pat_fail_on(p, v, " does not respond to #deconstruct_keys");
+    /* the keys of the pattern, or nil for `**rest` and for no keys, as in
+       CRuby: a Struct answers all its members for nil */
+    sp_RbVal keys = sp_box_nil();
+    SP_GC_ROOT_RBVAL(keys);
+    if (!named_rest && n->elements.size > 0) {
+      sp_PolyArray *a = sp_PolyArray_new();
+      keys = sp_box_poly_array(a);
+      for (size_t i = 0; i < n->elements.size; i++) {
+        sp_RbVal k = fx_eval(f, ((const pm_assoc_node_t *)n->elements.nodes[i])->key);
+        if (L.ctl != FX_CTL_NONE) return 0;
+        sp_PolyArray_push(a, k);
+      }
+    }
+    d = fx_send(v, "deconstruct_keys", 1, &keys);
+    if (!fx_is_hash(d)) sp_raise_cls("TypeError", "deconstruct_keys must return Hash");
+  }
+  if (n->elements.size == 0 && !rest) {
+    if (sp_poly_truthy(fx_send(d, "empty?", 0, NULL))) return 1;
+    return fx_pat_fail_on(p, d, " is not empty");
+  }
+  sp_RbVal left = sp_box_nil();
+  SP_GC_ROOT_RBVAL(left);
+  if (rest) left = fx_send(d, "dup", 0, NULL);
+  for (size_t i = 0; i < n->elements.size; i++) {
+    const pm_assoc_node_t *a = (const pm_assoc_node_t *)n->elements.nodes[i];
+    sp_RbVal k = fx_eval(f, a->key);
+    if (L.ctl != FX_CTL_NONE) return 0;
+    SP_GC_ROOT_RBVAL(k);
+    if (!sp_poly_truthy(fx_send(d, "key?", 1, &k))) {
+      if (!p->want) return 0;
+      const char *s = sp_poly_inspect(k);
+      return fx_pat_fail(p, fx_cat3("key not found: ", s, ""), 1);
+    }
+    sp_RbVal e = fx_send(d, "[]", 1, &k);
+    if (!fx_pattern(f, p, a->value, e)) return 0;
+    if (rest) fx_send(left, "delete", 1, &k);
+  }
+  if (named_rest) return fx_pattern(f, p, ((const pm_assoc_splat_node_t *)rest)->value, left);
+  if (rest && PM_NODE_TYPE_P(rest, PM_NO_KEYWORDS_PARAMETER_NODE) &&
+      !sp_poly_truthy(fx_send(left, "empty?", 0, NULL))) {
+    if (!p->want) return 0;
+    const char *s = sp_poly_inspect(left);
+    return fx_pat_fail(p, fx_cat3("rest of ", s, " is not empty"), 0);
+  }
+  return 1;
+}
+
+/* Whether v takes the pattern n. A name in the pattern binds as the match
+   goes, as in CRuby. Answers 0 also when a jump is pending. */
+static int fx_pattern(FxFrame *f, FxPat *p, const pm_node_t *n, sp_RbVal v) {
+  SP_GC_ROOT_RBVAL(v);
+  switch (PM_NODE_TYPE(n)) {
+  case PM_LOCAL_VARIABLE_TARGET_NODE: {
+    const pm_local_variable_target_node_t *x = (const pm_local_variable_target_node_t *)n;
+    *fx_local(f, n, x->name, x->depth) = v;
+    return 1;
+  }
+  case PM_IMPLICIT_NODE:
+    return fx_pattern(f, p, ((const pm_implicit_node_t *)n)->value, v);
+  case PM_CAPTURE_PATTERN_NODE: {
+    const pm_capture_pattern_node_t *c = (const pm_capture_pattern_node_t *)n;
+    if (!fx_pattern(f, p, c->value, v)) return 0;
+    *fx_local(f, (const pm_node_t *)c->target, c->target->name, c->target->depth) = v;
+    return 1;
+  }
+  case PM_ALTERNATION_PATTERN_NODE: {
+    const pm_alternation_pattern_node_t *a = (const pm_alternation_pattern_node_t *)n;
+    if (fx_pattern(f, p, a->left, v)) return 1;
+    if (L.ctl != FX_CTL_NONE) return 0;
+    return fx_pattern(f, p, a->right, v);
+  }
+  case PM_PINNED_VARIABLE_NODE:
+    return fx_pat_value(f, p, ((const pm_pinned_variable_node_t *)n)->variable, v);
+  case PM_PINNED_EXPRESSION_NODE:
+    return fx_pat_value(f, p, ((const pm_pinned_expression_node_t *)n)->expression, v);
+  case PM_ARRAY_PATTERN_NODE:
+    return fx_pat_array(f, p, (const pm_array_pattern_node_t *)n, v);
+  case PM_FIND_PATTERN_NODE:
+    return fx_pat_find(f, p, (const pm_find_pattern_node_t *)n, v);
+  case PM_HASH_PATTERN_NODE:
+    return fx_pat_hash(f, p, (const pm_hash_pattern_node_t *)n, v);
+  default:
+    return fx_pat_value(f, p, n, v);
+  }
+}
+
+/* Raises the NoMatchingPatternError of a subject that no pattern took:
+   "<inspect>: <why>" for a single pattern, else the inspect alone. */
+static __attribute__((noreturn)) void fx_pat_raise(FxPat *p, sp_RbVal subject) {
+  SP_GC_ROOT_RBVAL(subject);
+  const char *s = sp_poly_inspect(subject);
+  SP_GC_ROOT(s);
+  const char *msg = p->want && p->why ? fx_cat3(s, ": ", p->why) : s;
+  sp_raise_cls(p->key_missing ? "NoMatchingPatternKeyError" : "NoMatchingPatternError", msg);
+}
+
+/* case / in: the first `in` whose pattern takes the subject, and whose
+   guard (`if` / `unless`) holds, runs. With no else, no match raises. */
+static sp_RbVal fx_case_match(FxFrame *f, const pm_case_match_node_t *c) {
+  SP_GC_SAVE();
+  sp_RbVal subject = fx_eval(f, c->predicate);
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  SP_GC_ROOT_RBVAL(subject);
+  FxPat p = { c->conditions.size == 1 && !c->else_clause, 0, NULL };
+  SP_GC_ROOT(p.why);
+  for (size_t i = 0; i < c->conditions.size; i++) {
+    const pm_in_node_t *in = (const pm_in_node_t *)c->conditions.nodes[i];
+    const pm_node_t *pat = in->pattern, *guard = NULL;
+    int unless = PM_NODE_TYPE_P(pat, PM_UNLESS_NODE);
+    if (PM_NODE_TYPE_P(pat, PM_IF_NODE) || unless) {
+      const pm_statements_node_t *st = unless ? ((const pm_unless_node_t *)pat)->statements
+                                              : ((const pm_if_node_t *)pat)->statements;
+      guard = unless ? ((const pm_unless_node_t *)pat)->predicate : ((const pm_if_node_t *)pat)->predicate;
+      pat = st->body.nodes[0];
+    }
+    int hit = fx_pattern(f, &p, pat, subject);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    if (hit && guard) {
+      sp_RbVal g = fx_eval(f, guard);
+      if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+      hit = sp_poly_truthy(g) != unless;
+      if (!hit && p.want) fx_pat_fail(&p, "guard clause does not return true", 0);
+    }
+    if (hit) return fx_eval_stmts(f, in->statements);
+  }
+  if (c->else_clause) return fx_eval(f, (const pm_node_t *)c->else_clause);
+  fx_pat_raise(&p, subject);
+}
+
+/* `v in pat` answers whether v takes pat; `v => pat` raises when not. */
+static sp_RbVal fx_match(FxFrame *f, const pm_node_t *value, const pm_node_t *pat, int required) {
+  SP_GC_SAVE();
+  sp_RbVal v = fx_eval(f, value);
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  SP_GC_ROOT_RBVAL(v);
+  FxPat p = { required, 0, NULL };
+  SP_GC_ROOT(p.why);
+  int hit = fx_pattern(f, &p, pat, v);
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  if (required) {
+    if (!hit) fx_pat_raise(&p, v);
+    return sp_box_nil();
+  }
+  return sp_box_bool(hit);
+}
+
 /* The value that return / break / next carry: nil, one value, or an Array. */
 static sp_RbVal fx_jump_value(FxFrame *f, const pm_arguments_node_t *args) {
   if (!args || args->arguments.size == 0) return sp_box_nil();
@@ -1905,6 +2209,16 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
     return fx_eval_stmts(f, ((const pm_else_node_t *)n)->statements);
   case PM_CASE_NODE:
     return fx_case(f, (const pm_case_node_t *)n);
+  case PM_CASE_MATCH_NODE:
+    return fx_case_match(f, (const pm_case_match_node_t *)n);
+  case PM_MATCH_PREDICATE_NODE: {
+    const pm_match_predicate_node_t *m = (const pm_match_predicate_node_t *)n;
+    return fx_match(f, m->value, m->pattern, 0);
+  }
+  case PM_MATCH_REQUIRED_NODE: {
+    const pm_match_required_node_t *m = (const pm_match_required_node_t *)n;
+    return fx_match(f, m->value, m->pattern, 1);
+  }
   case PM_WHILE_NODE: {
     const pm_while_node_t *w = (const pm_while_node_t *)n;
     if (PM_NODE_FLAG_P(n, PM_LOOP_FLAGS_BEGIN_MODIFIER)) fx_unsupported(n, "begin...end while");
