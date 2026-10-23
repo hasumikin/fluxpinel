@@ -9,6 +9,9 @@
 #   make regress
 #               run the tests that the last oracle found right, under
 #               Fluxpinel only
+#   make upgrade_spinel
+#               move the pin to the master of spinel, then build and run
+#               test, test-host and regress
 #
 # SPINEL points at a built spinel checkout, deps/spinel by default. Set it
 # on the command line or in config.mk (not tracked) to use another one,
@@ -23,7 +26,7 @@ SPINEL_URL ?= https://github.com/matz/spinel.git
 SPINEL_COMMIT := $(shell cat SPINEL_COMMIT)
 SPINEL_PIN ?= 1
 ifeq ($(SPINEL_PIN),1)
-ifeq ($(filter deps clean,$(MAKECMDGOALS)),)
+ifeq ($(filter deps clean upgrade_spinel,$(MAKECMDGOALS)),)
 SPINEL_HEAD := $(shell git -C $(SPINEL) rev-parse HEAD 2>/dev/null)
 ifneq ($(SPINEL_HEAD),$(SPINEL_COMMIT))
 $(error $(SPINEL) is at $(or $(SPINEL_HEAD),no commit), and SPINEL_COMMIT is $(SPINEL_COMMIT). \
@@ -178,12 +181,37 @@ endif
 	  git -C $(DEPS_SPINEL) fetch -q --depth 1 origin $(SPINEL_COMMIT) && \
 	  git -C $(DEPS_SPINEL) checkout -q --detach FETCH_HEAD; fi
 	$(MAKE) -C $(DEPS_SPINEL) deps
-	# bin/spinel-cext-build links the threaded objects of these two
-	# packages, which spinel's `all` builds after it in a fresh tree
-	$(MAKE) -C $(DEPS_SPINEL) packages/json/sp_json_mt.o packages/tmpdir/sp_tmpdir_mt.o
 	$(MAKE) -C $(DEPS_SPINEL)
+
+# Moves the pin to the master of spinel and checks Fluxpinel on it. It stops
+# when the checkout has changes. In a checkout of your own, it moves the
+# branch master forward and stops on any other branch. It does not commit:
+# run make oracle, then commit SPINEL_COMMIT and tools/oracle_agree.txt.
+upgrade_spinel:
+	@if [ ! -d $(SPINEL)/.git ]; then \
+	  echo "upgrade_spinel: $(SPINEL) is not a git checkout" >&2; exit 1; fi
+	@if [ -n "$$(git -C $(SPINEL) status --porcelain)" ]; then \
+	  echo "upgrade_spinel: $(SPINEL) has changes" >&2; \
+	  git -C $(SPINEL) status --short >&2; exit 1; fi
+ifeq ($(SPINEL),$(DEPS_SPINEL))
+	git -C $(SPINEL) fetch -q --depth 1 $(SPINEL_URL) master
+	git -C $(SPINEL) checkout -q --detach FETCH_HEAD
+else
+	@if [ "$$(git -C $(SPINEL) symbolic-ref -q --short HEAD)" != master ]; then \
+	  echo "upgrade_spinel: $(SPINEL) is not on the branch master" >&2; exit 1; fi
+	git -C $(SPINEL) fetch -q $(SPINEL_URL) master
+	git -C $(SPINEL) merge -q --ff-only FETCH_HEAD
+endif
+	$(MAKE) -C $(SPINEL) deps
+	$(MAKE) -C $(SPINEL)
+	git -C $(SPINEL) rev-parse HEAD > SPINEL_COMMIT
+	@$(MAKE) all && $(MAKE) test && $(MAKE) test-host && $(MAKE) regress || { \
+	  echo "upgrade_spinel: the check failed on $$(cat SPINEL_COMMIT)." \
+	    "The pin was $(SPINEL_COMMIT)." >&2; exit 1; }
+	@echo "upgrade_spinel: SPINEL_COMMIT is $$(cat SPINEL_COMMIT), from $(SPINEL_COMMIT)."
+	@echo "upgrade_spinel: run make oracle before the commit."
 
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test host test-host oracle regress deps clean
+.PHONY: all test host test-host oracle regress deps upgrade_spinel clean

@@ -199,6 +199,9 @@ make oracle
 - `make oracle` runs the oracle on the tests of spinel and writes
   `build/oracle/report.md`.
 
+For the checks during development and the update of the pin, see
+[docs/development.md](docs/development.md).
+
 ## Relation to spinel
 
 Fluxpinel is an independent project. It does not modify spinel. It links
