@@ -104,8 +104,10 @@ Fluxpinel generates part of its builtin dispatch from that table at build time
   emitter (`BOPE_NONE`) has its logic in the codegen C code. Fluxpinel writes
   these methods by hand.
 
-The generator reads the spinel source at the pinned commit. This keeps the
-builtin semantics of Fluxpinel equal to the AOT output.
+The generator reads the spinel source at the pinned commit. A generated
+wrapper calls the runtime function that the AOT output calls, so it gives
+the same answer. A method that Fluxpinel writes by hand has no such tie
+(section 3.2.1).
 
 Several rows can share one receiver and one name. They differ in argument
 count or argument kinds (`arg0`, `arg1`). The dispatcher selects a row by
@@ -133,6 +135,48 @@ The walker tries four sources in order (`src/builtin.c`):
 A hand-written core method follows the C that codegen emits for the same
 call. For example, `String#split(sep)` calls `sp_str_split_drop_trailing`,
 as `src/codegen_call_recv.c` does.
+
+### 3.2.1 Risks of the builtin dispatch
+
+The rows of `bop_rows[]` fall into four groups, and only one of them gives
+a runtime function to call:
+
+| Group | Example | Runtime function | Fluxpinel |
+|---|---|---|---|
+| gen | `String#upcase` (`sp_str_upcase($r)`) | yes | a generated wrapper |
+| emitter | `Array#any?` (`BOPE_ARRAY_PRED0`) | no: codegen writes the C at the call | written by hand |
+| none | `Time#utc` (`BOPE_NONE`) | the row only gives the type; codegen writes the C elsewhere | written by hand, or a gen row of the same method |
+| skip | `Array#slice!(i, n)` (result `BOPR_SELF`) | yes | none yet: `bop_gen` cannot expand the row |
+
+This gives these risks:
+
+- **The same semantics holds only for the generated wrappers.** A method
+  that Fluxpinel writes by hand is a second implementation. When spinel
+  changes the C that it emits for the method, the hand-written method does
+  not follow. The oracle finds such a difference only where a spinel test
+  covers it.
+- **A change of spinel can remove a wrapper.** When spinel moves a method
+  from a template to an emitter, its wrapper goes, and the method becomes a
+  gap until Fluxpinel writes it. `make regress` finds this for the methods
+  that its tests use, and for no other method.
+- **The build depends on the internals of spinel.** `bop_gen` links
+  `src/types.c` and `src/builtin_names.c` of spinel. When these files use
+  more of the analysis, `bop_gen` needs a stand-in for each new symbol
+  (`builtin_class_id`, `g_one_string`). The console depends on the internal
+  structs of prism (`src/load.c`). `make upgrade_spinel` finds each break.
+- **The binary keeps every wrapper.** The table of wrappers names each
+  one, so the linker keeps each wrapper and the runtime functions that it
+  calls, whatever the kernel uses. Fluxpinel alone is about 6 MB.
+
+Ways to reduce the risks:
+
+- Ask spinel for a runtime function for each emitter row, or for one
+  entry that calls a builtin method by name. Either removes most of the
+  hand-written methods. It is the same direction as section 5.3.
+- Teach `bop_gen` the rows that it skips now (`$T`, a result of no single
+  kind).
+- Name the spinel row that each hand-written method follows, so that a
+  change of the row shows at an update of the pin.
 
 ### 3.3 Walker
 
@@ -789,7 +833,9 @@ Requirements for all forms:
 - **Speed.** The walker is slower than CRuby (sections 3.3.8 and 7).
   Fluxpinel is for the glue of a program, not for its hot paths.
 - **The same semantics.** A value has the same builtin methods in Fluxpinel and
-  in AOT code. The oracle (section 4) checks this.
+  in AOT code. A generated wrapper calls the runtime function of the AOT
+  code. A hand-written method can differ (section 3.2.1). The oracle
+  (section 4) checks both where a spinel test covers them.
 
 ### 5.1 Scripts and the console
 

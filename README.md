@@ -15,8 +15,10 @@ Ruby interpreter that lives in the same binary. It opens the program again.
   compiled code. A value crosses as it is, with no copy and no conversion.
 - **One heap.** The script uses the live objects of the program. One
   garbage collector sees all of them.
-- **The same semantics.** Both sides use one runtime, so a method of a
-  builtin class gives the same result on both sides.
+- **The same semantics.** Both sides use one runtime. Where Fluxpinel calls
+  the runtime function of a builtin method, the method gives the same
+  result on both sides. Fluxpinel writes some builtin methods itself, and
+  the oracle compares them (see below).
 
 ## An example
 
