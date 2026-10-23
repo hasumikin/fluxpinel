@@ -383,6 +383,7 @@ boxed_class_name_beside_instance_name
 boxed_class_singleton_accessor
 boxed_container_read_at
 boxed_dispatch_shared_private_helper_sibling_widen
+boxed_enumerable_entries
 boxed_eq_user_answer
 boxed_float_array_empty_sum
 boxed_hash_local_walk_params
@@ -401,6 +402,9 @@ boxed_native_setter_value
 boxed_object_inspect_returns_boxed
 boxed_predicate_mutation
 boxed_push_statement
+boxed_range_eql
+boxed_range_iterators
+boxed_range_percent
 boxed_range_user_iterator
 boxed_reader_alias_after_dup
 boxed_receiver_aliases
@@ -443,6 +447,7 @@ boxed_writer_void_call_value
 boxed_writes_into_typed_param_containers
 braceless_hash_non_symbol_keys
 branch_empty_literal
+branch_value_roots
 break_from_block_in_poly_dispatch
 break_scope_return_from_block
 builtin_forwarded_yield_proc_form
@@ -575,6 +580,7 @@ case_eq_array_hash_value
 case_eq_class_value
 case_eq_scalar_poly_arg
 case_eq_subclass_defines
+case_equality_boxed_receiver
 case_fallthrough_returns_nil
 case_in_begin_value_position
 case_in_binding_inlined_block_method
@@ -598,6 +604,7 @@ case_in_nilable_typed_subject
 case_in_no_match_error
 case_in_nullable_string_class
 case_in_paren_empty_subject
+case_in_range_pattern
 case_in_value_nested_array
 case_in_value_position
 case_local_in_lambda
@@ -632,6 +639,8 @@ case_when_regex
 case_when_regex_non_string
 case_when_scalar_nil
 case_when_splat_boxed_subject
+case_when_string_range
+case_when_string_range_nil_bound
 case_when_subclass_in_inherited_method
 case_when_typed_eq_identity
 case_when_user_equality
@@ -832,6 +841,7 @@ cmethod_yield_beside_instance_method
 cmp_two_elem_reads
 codegen_class_in_module_with_explicit_parent
 codegen_const_lookup_in_toplevel_method
+codegen_settled_operand_types
 coerce_error_value_spelling
 coerce_operator_param
 coerce_poly_operand
@@ -867,6 +877,7 @@ concat_self_alias_snapshot
 concat_source_evaluated_once
 concurrency_handle_nil
 concurrency_logical_operands
+cond_and_or_unboxed
 cond_string_beside_strbuf_arm
 conditional_def_private_arm
 conditional_def_runtime_arm
@@ -1312,6 +1323,7 @@ float_elem_cmp_nil
 float_nan_payload_slots
 float_negative_zero_hash
 float_opassign_nil_marked
+float_range_endpoint_boxed_nil
 float_to_s_fixed_1e15
 fold_literal_table_empty_row
 fold_memo_to_proc
@@ -1358,6 +1370,7 @@ forwarding_leading_args_block
 forwarding_namespace_visibility_and_include
 forwarding_params_unused
 forwarding_to_receiver_sites
+frange_inspect_roots
 freeze_user_object
 frozen_array_error_inspect
 frozen_boxed_hash_delete_clear_store
@@ -1896,6 +1909,7 @@ interp_mixin_method
 interp_single_buffer
 interp_statements_run_in_place
 interp_value_obj_default_to_s
+interpolate_range
 interpolation_multistmt
 interpolation_symbol_name
 introspection_constant_path
@@ -2035,8 +2049,10 @@ issue_3055
 issue_3056
 issue_3060
 issue_3061
+issue_3063
 issue_3066
 issue_3069
+issue_3070
 issue_3071
 issue_3072
 issue_3077
@@ -2074,6 +2090,9 @@ issue_3144
 issue_3147
 issue_3148
 issue_3150
+issue_3151
+issue_3152
+issue_3153
 issue_3154
 issue_3158
 issue_3161
@@ -2254,6 +2273,7 @@ kw_splat_nil_operand_evaluated
 kw_splat_nil_typed_hash
 kw_splat_nilable_scalar_operand
 kw_splat_poly_key_hash
+kw_splat_struct_data_arg_order
 kw_splat_struct_data_key_check
 kwarg_back_propagate_callee_type
 kwarg_default_raise_only
@@ -2591,6 +2611,7 @@ nil_array_ivar_frozen_p
 nil_default_param_lsp_shape
 nil_default_param_unsupplied
 nil_default_param_widens_to_poly
+nil_default_range_param
 nil_fact_guard_loop_narrowing
 nil_free_method_version
 nil_guard_narrows_int_or_nil
@@ -2856,6 +2877,7 @@ poly_container_stores_own_element
 poly_count_arg_beside_class_method_count
 poly_count_block_arg_hoist
 poly_count_nullable_arm
+poly_cover_beside_user_cover
 poly_default_reads_param
 poly_delete_dispatch
 poly_delete_upcase_chain
@@ -3016,6 +3038,7 @@ poly_public_send_attr_writer
 poly_push_answers_receiver
 poly_push_keyword_hash
 poly_qualified_array_pattern
+poly_range_exclude_end
 poly_reader_handle_into_boxed_hash
 poly_reader_named_like_builtin
 poly_reader_named_like_proc_method
@@ -3326,21 +3349,29 @@ raising_arm_nil_receiver
 raising_arm_typed_conditional
 raising_call_value_slot
 range_begin_end_polyarr_include_delete_bang
+range_boxed_open_inspect
 range_case_eq_range
+range_case_eq_type_mismatch
+range_container_equality
+range_cover_boxed_other_class
 range_each_fusion
 range_each_slice_answers_receiver
 range_each_slice_returns_receiver
 range_enumerable_finite
+range_eq_across_numeric
 range_equality
 range_exclude_end_size
 range_exclusive_nonliteral
 range_flat_map
+range_float_end_eql
 range_held_begin
 range_held_case
 range_held_case_in
 range_held_elsif_ladder
 range_held_rescue_mod
 range_index_unbounded_receiver
+range_string_cover
+range_to_s_inspect
 rbs_array_seed_box
 rbs_hash_return_box
 rbs_inline_boxed_local_return
@@ -3680,6 +3711,7 @@ set_identity_reflective_fresh_write
 set_identity_reflective_read_by_name
 set_identity_scalar_operand
 set_new_from_mapped_set
+set_range_operand
 setbyte_handle_in_place
 setjmp_local_volatile
 setter_override_attr_value
@@ -3744,6 +3776,7 @@ singleton_class_conditional_def
 singleton_class_of_const_attr
 singleton_class_visibility_def
 size_boxed_in_lifted_block
+size_nil_receivers
 sized_poly_array_nil_n
 sleep_poly_arg
 sort_block_nil_answer
@@ -3786,6 +3819,9 @@ splat_typed_scalar_into_builtin
 split_on_unresolved_chain
 sprintf_long_interp
 sprintf_positional
+srange_hop_find_index
+srange_inspect_holds_begin
+srange_ivar_write_barrier
 stack_overflow_rescued
 stack_overflow_unhandled
 start_with_regexp_later_match
@@ -3829,6 +3865,8 @@ str_param_borrow_forward
 str_plus_literal_and_int_to_s_digits
 str_poly_hash_dup_widen
 str_poly_hash_dup_widen_from_int
+str_range_boxed_inspect
+str_range_endpoints_root
 str_rindex_position
 str_split_space_whitespace
 str_split_trailing_empty
@@ -3934,6 +3972,7 @@ string_duplicate_keyword
 string_duplicate_keyword_variable
 string_each_char_returns_self
 string_elem_append_held_operand
+string_embedded_nul_compare
 string_embedded_nul_core
 string_embedded_nul_ops
 string_empty_leading_nul
@@ -4058,6 +4097,7 @@ string_new_capacity
 string_new_poly_arg
 string_new_splat
 string_nil_ivar_calls_raise
+string_nil_ivar_range_open_end
 string_nil_ivar_run_time_pattern
 string_nul_bytes
 string_nul_regexp
@@ -4079,6 +4119,14 @@ string_poly_rest_relay
 string_prepend_boxed_arg
 string_prepend_operand_order
 string_proc_param_store
+string_range_dependent_default_roots
+string_range_each_inspect
+string_range_endless_beginless
+string_range_fresh_ends
+string_range_include_walk
+string_range_member_shared_arg
+string_range_min_max_block
+string_range_to_a
 string_reader_rebound_to_copy
 string_reader_store_routes_unaffected
 string_receiver_snapshot_copy
@@ -4110,6 +4158,7 @@ string_shl_value_store_back
 string_slice_bang_computed_index
 string_slice_bang_empty
 string_slice_bang_many_bindings
+string_slice_bang_open_range
 string_slice_bang_value
 string_slice_bang_value_rooted
 string_slice_casecmp_succ
@@ -4296,6 +4345,7 @@ symbol_inspect_quoting
 symbol_made_by_threads
 symbol_multibyte_length
 symbol_proc_absent_method
+symbol_range_enum
 symbol_reduce_user_method
 symbol_reopen_string_names
 symbol_upcase_interpolation
@@ -4498,6 +4548,8 @@ void_value_in_value_position
 volatile_strip_skips_coerced_arg
 warn_render
 warn_unresolved_call_context
+when_int_float_range
+when_string_range
 while_break_value
 while_break_value_tail
 while_hoist_skips_block

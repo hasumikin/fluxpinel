@@ -33,6 +33,8 @@ static int fx_kind_of(sp_RbVal v, const char **family, const char **variant) {
     case SP_BUILTIN_FLT_ARRAY: fam = "ANY_ARRAY"; var = "float_array"; kind = FX_TY_FLOAT_ARRAY; break;
     case SP_BUILTIN_STR_ARRAY: fam = "ANY_ARRAY"; var = "str_array"; kind = FX_TY_STR_ARRAY; break;
     case SP_BUILTIN_RANGE: fam = var = "range"; kind = FX_TY_RANGE; break;
+    case SP_BUILTIN_FLOAT_RANGE: fam = var = "float_range"; kind = FX_TY_FLOAT_RANGE; break;
+    case SP_BUILTIN_STR_RANGE: fam = var = "str_range"; kind = FX_TY_STR_RANGE; break;
     case SP_BUILTIN_EXCEPTION: fam = var = "exception"; break;
     case SP_BUILTIN_REGEX: fam = var = "regex"; kind = FX_TY_REGEX; break;
     case SP_BUILTIN_MATCHDATA: fam = var = "matchdata"; kind = FX_TY_MATCHDATA; break;

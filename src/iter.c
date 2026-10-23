@@ -70,6 +70,17 @@ static int fx_seq_open(sp_RbVal r, FxSeq *s) {
     s->hash = sp_poly_as_poly_poly_hash(r);
     return 1;
   }
+  /* a String Range walks its Array of Strings (or of Symbols); a Float
+     Range does not walk, as in CRuby */
+  if (r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_STR_RANGE && r.v.p) {
+    s->src = fx_send(r, "to_a", 0, NULL);
+    return 1;
+  }
+  if (r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_FLOAT_RANGE && r.v.p) {
+    const sp_FloatRange *g = (const sp_FloatRange *)r.v.p;
+    sp_raise_cls("TypeError", g->omitted & SP_FRANGE_NO_BEGIN ? "can't iterate from NilClass"
+                                                               : "can't iterate from Float");
+  }
   if (!fx_is_range(r)) return 0;
   const sp_Range *g = (const sp_Range *)r.v.p;
   if (g->nobeg) sp_raise_cls("TypeError", "can't iterate from NilClass");
@@ -665,7 +676,149 @@ static void fx_range_span(sp_RbVal r, sp_int n, sp_int *beg, sp_int *end) {
 }
 
 /* The methods of an Integer Range with no block. */
+/* The begin or end of a Float Range: nil for an open side, an Integer for
+   an Integer side, else the Float. */
+static sp_RbVal fx_frange_side(const sp_FloatRange *g, int end) {
+  if (g->omitted & (end ? SP_FRANGE_NO_END : SP_FRANGE_NO_BEGIN)) return sp_box_nil();
+  sp_float v = end ? g->last : g->first;
+  if (g->omitted & (end ? SP_FRANGE_INT_END : SP_FRANGE_INT_BEGIN)) return sp_box_int((sp_int)v);
+  return sp_box_float(v);
+}
+
+/* The methods of a Float Range that the generated wrappers do not cover:
+   the sides, and the tests that compare a value with them. A Float Range
+   does not walk, as in CRuby. */
+static int fx_frange_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  const sp_FloatRange *g = (const sp_FloatRange *)r.v.p;
+  if (argc == 0) {
+    if (FX_IS("begin")) { *out = fx_frange_side(g, 0); return 1; }
+    if (FX_IS("end")) { *out = fx_frange_side(g, 1); return 1; }
+    if (FX_IS("first") || FX_IS("last")) {
+      int end = FX_IS("last");
+      if (g->omitted & (end ? SP_FRANGE_NO_END : SP_FRANGE_NO_BEGIN))
+        sp_raise_cls("RangeError", end ? "cannot get the last element of endless range"
+                                       : "cannot get the first element of beginless range");
+      *out = fx_frange_side(g, end);
+      return 1;
+    }
+    if (FX_IS("exclude_end?")) { *out = sp_box_bool(g->excl); return 1; }
+    if (FX_IS("size") || FX_IS("count") || FX_IS("to_a") || FX_IS("entries")) {
+      if (g->omitted & SP_FRANGE_NO_BEGIN) sp_raise_cls("TypeError", "can't iterate from NilClass");
+      sp_raise_cls("TypeError", "can't iterate from Float");
+    }
+    return 0;
+  }
+  if (argc == 1 && (FX_IS("include?") || FX_IS("member?") || FX_IS("cover?") || FX_IS("==="))) {
+    sp_RbVal a = argv[0];
+    if (a.tag == SP_TAG_INT) *out = sp_box_bool(sp_frange_cover_i(*g, a.v.i));
+    else if (a.tag == SP_TAG_FLT) *out = sp_box_bool(sp_frange_cover(*g, a.v.f));
+    else *out = sp_box_bool(0);
+    return 1;
+  }
+  if (argc == 1 && (FX_IS("==") || FX_IS("eql?"))) {
+    sp_RbVal o = argv[0];
+    int same = o.tag == SP_TAG_OBJ && o.cls_id == SP_BUILTIN_FLOAT_RANGE && o.v.p &&
+               sp_frange_eq(*g, *(const sp_FloatRange *)o.v.p);
+    /* == compares the sides as numbers with an Integer Range: (1..5) == (1.0..5.0) */
+    if (FX_IS("==") && fx_is_range(o)) {
+      SP_GC_ROOT_RBVAL(r);
+      SP_GC_ROOT_RBVAL(o);
+      sp_RbVal a = fx_send(r, "begin", 0, NULL), b = fx_send(o, "begin", 0, NULL);
+      SP_GC_ROOT_RBVAL(a);
+      SP_GC_ROOT_RBVAL(b);
+      same = sp_poly_eq(a, b) && sp_poly_eq(fx_send(r, "end", 0, NULL), fx_send(o, "end", 0, NULL)) &&
+             g->excl == ((const sp_Range *)o.v.p)->excl;
+    }
+    *out = sp_box_bool(same);
+    return 1;
+  }
+  return 0;
+}
+
+/* An end of a String Range as a value: nil, a String, or a Symbol. */
+static sp_RbVal fx_srange_side(sp_StrRange g, int end) {
+  const char *s = end ? g.last : g.first;
+  if (!s) return sp_box_nil();
+  return g.sym ? sp_box_sym(sp_sym_intern(s)) : sp_box_str_new(sp_str_dup(s));
+}
+
+/* The text of a value that a String Range compares, or NULL when the value
+   is of another kind: a String for a String Range, a Symbol for a Symbol
+   Range. */
+static const char *fx_srange_arg(sp_StrRange g, sp_RbVal a) {
+  if (g.sym) return a.tag == SP_TAG_SYM ? sp_sym_to_s((sp_sym)a.v.i) : NULL;
+  if (a.tag == SP_TAG_STR) return a.v.s;
+  return sp_poly_strbuf_copy(a);
+}
+
+/* The elements of a String Range, as Strings, or as Symbols for a Symbol
+   Range. */
+static sp_RbVal fx_srange_to_a(sp_StrRange g) {
+  if (!g.first) sp_raise_cls("TypeError", "can't iterate from NilClass");
+  if (!g.last) sp_raise_cls("RangeError", "cannot convert endless range to an array");
+  SP_GC_ROOT_SRANGE(g);
+  sp_StrArray *a = sp_srange_to_a(g);
+  SP_GC_ROOT(a);
+  sp_PolyArray *p = sp_PolyArray_new();
+  SP_GC_ROOT(p);
+  for (sp_int i = 0; i < a->len; i++)
+    sp_PolyArray_push(p, g.sym ? sp_box_sym(sp_sym_intern(a->data[i])) : sp_box_str_new(sp_str_dup(a->data[i])));
+  return sp_box_poly_array(p);
+}
+
+/* The methods of a String Range that the generated wrappers do not cover.
+   include? walks the elements, as CRuby does, unless both ends and the
+   value are one character; cover? and === compare with the ends. */
+static int fx_srange_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  sp_StrRange g = SP_SRANGE_OF(r.v.p);
+  SP_GC_ROOT_SRANGE(g);
+  if (argc == 0) {
+    if (FX_IS("begin")) { *out = fx_srange_side(g, 0); return 1; }
+    if (FX_IS("end")) { *out = fx_srange_side(g, 1); return 1; }
+    if (FX_IS("first") || FX_IS("last")) {
+      int end = FX_IS("last");
+      if (!(end ? g.last : g.first))
+        sp_raise_cls("RangeError", end ? "cannot get the last element of endless range"
+                                       : "cannot get the first element of beginless range");
+      *out = fx_srange_side(g, end);
+      return 1;
+    }
+    if (FX_IS("exclude_end?")) { *out = sp_box_bool(g.excl); return 1; }
+    if (FX_IS("to_a") || FX_IS("entries")) { *out = fx_srange_to_a(g); return 1; }
+    if (FX_IS("size")) { *out = sp_box_nil(); return 1; }
+    if (FX_IS("count")) { *out = sp_box_int(sp_poly_length(fx_srange_to_a(g))); return 1; }
+    return 0;
+  }
+  if (argc == 1 && (FX_IS("include?") || FX_IS("member?") || FX_IS("cover?") || FX_IS("==="))) {
+    if ((FX_IS("include?") || FX_IS("member?")) && (!g.first || !g.last))
+      sp_raise_cls("TypeError", "cannot determine inclusion in beginless/endless ranges");
+    const char *x = fx_srange_arg(g, argv[0]);
+    if (!x) { *out = sp_box_bool(0); return 1; }
+    int walk = (FX_IS("include?") || FX_IS("member?")) && g.first && g.last &&
+               !(strlen(g.first) == 1 && strlen(g.last) == 1 && strlen(x) == 1);
+    if (!walk) { *out = sp_box_bool(sp_srange_cover(g, x)); return 1; }
+    sp_RbVal all = fx_srange_to_a(g);
+    SP_GC_ROOT_RBVAL(all);
+    int hit = 0;
+    for (sp_int i = 0; i < sp_poly_length(all) && !hit; i++) hit = sp_poly_eq(sp_poly_arr_get(all, i), argv[0]);
+    *out = sp_box_bool(hit);
+    return 1;
+  }
+  if (argc == 1 && (FX_IS("==") || FX_IS("eql?"))) {
+    sp_RbVal o = argv[0];
+    int same = o.tag == SP_TAG_OBJ && o.cls_id == SP_BUILTIN_STR_RANGE && o.v.p &&
+               ((const sp_StrRange *)o.v.p)->sym == g.sym && sp_srange_eq(g, SP_SRANGE_OF(o.v.p));
+    *out = sp_box_bool(same);
+    return 1;
+  }
+  return 0;
+}
+
 static int fx_range_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_FLOAT_RANGE && r.v.p)
+    return fx_frange_core(r, name, argc, argv, out);
+  if (r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_STR_RANGE && r.v.p)
+    return fx_srange_core(r, name, argc, argv, out);
   if (!fx_is_range(r)) return 0;
   const sp_Range *g = (const sp_Range *)r.v.p;
   sp_int last = g->excl ? g->last - 1 : g->last;
@@ -675,7 +828,10 @@ static int fx_range_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
       *out = g->nobeg ? sp_box_nil() : sp_box_int(g->first);
       return 1;
     }
-    if (FX_IS("end")) { *out = g->noend ? sp_box_nil() : sp_box_int(g->last); return 1; }
+    if (FX_IS("end")) {
+      *out = g->noend ? sp_box_nil() : g->fe ? sp_box_float(g->fend) : sp_box_int(g->last);
+      return 1;
+    }
     if (FX_IS("exclude_end?")) { *out = sp_box_bool(g->excl); return 1; }
     if (size < 0) return 0;
     if (FX_IS("to_a") || FX_IS("entries")) { *out = sp_box_poly_array(fx_seq_array(r)); return 1; }
@@ -695,12 +851,19 @@ static int fx_range_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     *out = sp_box_bool(lo && hi && (o->nobeg || o->noend || o->first <= olast));
     return 1;
   }
+  /* (1..5) == (1.0..5.0): the Float Range compares the sides as numbers */
+  if (argc == 1 && FX_IS("==") && argv[0].tag == SP_TAG_OBJ && argv[0].cls_id == SP_BUILTIN_FLOAT_RANGE &&
+      argv[0].v.p)
+    return fx_frange_core(argv[0], name, 1, &r, out);
   if (argc == 1 && (FX_IS("include?") || FX_IS("member?") || FX_IS("cover?") || FX_IS("==="))) {
     sp_RbVal a = argv[0];
+    /* nil..nil covers any value */
+    if (g->nobeg && g->noend && (FX_IS("cover?") || FX_IS("==="))) { *out = sp_box_bool(1); return 1; }
     if (a.tag != SP_TAG_INT && a.tag != SP_TAG_FLT) { *out = sp_box_bool(0); return 1; }
     double x = a.tag == SP_TAG_INT ? (double)a.v.i : a.v.f;
+    double e = g->fe ? g->fend : (double)g->last;
     int lo = g->nobeg || x >= (double)g->first;
-    int hi = g->noend || (g->excl ? x < (double)g->last : x <= (double)g->last);
+    int hi = g->noend || (g->excl ? x < e : x <= e);
     *out = sp_box_bool(lo && hi);
     return 1;
   }

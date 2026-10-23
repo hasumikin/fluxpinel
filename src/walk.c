@@ -1557,18 +1557,61 @@ static sp_RbVal fx_hash_lit(FxFrame *f, const pm_node_list_t *elts) {
   return sp_box_obj(h, SP_BUILTIN_POLY_POLY_HASH);
 }
 
-/* A Range of Integers. A missing end makes a beginless or endless one. */
+/* The text of a String end of a Range, or NULL for nil. */
+static const char *fx_range_text(sp_RbVal v) {
+  if (v.tag == SP_TAG_NIL) return NULL;
+  if (v.tag == SP_TAG_STR) return v.v.s;
+  return sp_poly_strbuf_copy(v);
+}
+
+/* A Range in the form of the runtime that spinel gives the same ends. A
+   missing end makes a beginless or endless one.
+
+   - Integer ends (or nil): sp_Range
+   - an Integer begin and a Float end: sp_Range with the Float end
+   - other Float ends (an Integer or nil on one side): sp_FloatRange
+   - String or Symbol ends: sp_StrRange */
 static sp_RbVal fx_range(FxFrame *f, const pm_range_node_t *n) {
+  SP_GC_SAVE();
   sp_RbVal lo = n->left ? fx_eval(f, n->left) : sp_box_nil();
   if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  SP_GC_ROOT_RBVAL(lo);
   sp_RbVal hi = n->right ? fx_eval(f, n->right) : sp_box_nil();
   if (L.ctl != FX_CTL_NONE) return sp_box_nil();
-  if ((lo.tag != SP_TAG_INT && lo.tag != SP_TAG_NIL) || (hi.tag != SP_TAG_INT && hi.tag != SP_TAG_NIL) ||
-      (lo.tag == SP_TAG_NIL && hi.tag == SP_TAG_NIL))
-    fx_unsupported((const pm_node_t *)n, "Range of values other than Integer");
-  sp_oint first = { lo.tag == SP_TAG_INT ? lo.v.i : 0, lo.tag == SP_TAG_NIL };
-  sp_oint last = { hi.tag == SP_TAG_INT ? hi.v.i : 0, hi.tag == SP_TAG_NIL };
-  return sp_box_range(sp_range_new_o(first, last, PM_NODE_FLAG_P((const pm_node_t *)n, PM_RANGE_FLAGS_EXCLUDE_END)));
+  SP_GC_ROOT_RBVAL(hi);
+  int excl = PM_NODE_FLAG_P((const pm_node_t *)n, PM_RANGE_FLAGS_EXCLUDE_END);
+  int lt = lo.tag, ht = hi.tag;
+  int lnum = lt == SP_TAG_INT || lt == SP_TAG_FLT || lt == SP_TAG_NIL;
+  int hnum = ht == SP_TAG_INT || ht == SP_TAG_FLT || ht == SP_TAG_NIL;
+  if ((lt == SP_TAG_INT || lt == SP_TAG_NIL) && (ht == SP_TAG_INT || ht == SP_TAG_NIL)) {
+    sp_oint first = { lt == SP_TAG_INT ? lo.v.i : 0, lt == SP_TAG_NIL };
+    sp_oint last = { ht == SP_TAG_INT ? hi.v.i : 0, ht == SP_TAG_NIL };
+    return sp_box_range(sp_range_new_o(first, last, excl));
+  }
+  if (lt == SP_TAG_INT && ht == SP_TAG_FLT) return sp_box_range(sp_range_new_fend(lo.v.i, hi.v.f, excl));
+  if (lnum && hnum) {
+    int om = (lt == SP_TAG_NIL ? SP_FRANGE_NO_BEGIN : lt == SP_TAG_INT ? SP_FRANGE_INT_BEGIN : 0) |
+             (ht == SP_TAG_NIL ? SP_FRANGE_NO_END : ht == SP_TAG_INT ? SP_FRANGE_INT_END : 0);
+    /* the runtime keeps an open side as an infinity */
+    sp_float a = lt == SP_TAG_FLT ? lo.v.f : lt == SP_TAG_INT ? (sp_float)lo.v.i : -HUGE_VAL;
+    sp_float b = ht == SP_TAG_FLT ? hi.v.f : ht == SP_TAG_INT ? (sp_float)hi.v.i : HUGE_VAL;
+    return sp_box_frange(sp_frange_new_o(a, b, excl, om));
+  }
+  int lsym = lt == SP_TAG_SYM, hsym = ht == SP_TAG_SYM;
+  if ((lsym || lt == SP_TAG_NIL) && (hsym || ht == SP_TAG_NIL)) {
+    sp_StrRange r = sp_srange_new(lsym ? sp_sym_to_s((sp_sym)lo.v.i) : NULL,
+                                  hsym ? sp_sym_to_s((sp_sym)hi.v.i) : NULL, excl);
+    r.sym = 1;
+    return sp_box_srange(r);
+  }
+  if ((fx_is_string(lo) || lt == SP_TAG_NIL) && (fx_is_string(hi) || ht == SP_TAG_NIL)) {
+    const char *a = fx_range_text(lo);
+    SP_GC_ROOT_STR(a);
+    const char *b = fx_range_text(hi);
+    SP_GC_ROOT_STR(b);
+    return sp_box_srange(sp_srange_new(a, b, excl));
+  }
+  fx_unsupported((const pm_node_t *)n, "Range of values other than Integer, Float, String and Symbol");
 }
 
 /* ---- classes, modules and constants ---- */
