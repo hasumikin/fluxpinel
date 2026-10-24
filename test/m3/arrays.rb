@@ -94,3 +94,30 @@ c << 3
 p Array.new, Array.new(3), a, Array.new(4) { |i| i * i }, src, c
 p Array.new(3) { |i| break :out if i == 1; i }
 p((Array.new(-1) rescue $!.message), (Array.new("x") rescue $!.class))
+
+# a splat in an Array literal spreads an Array, the to_a of a value that
+# has one, nothing for nil, and any other value as one element
+xs = [2, 3]
+Pt = Struct.new(:x, :y)
+class Bag
+  def to_a = [:a, :b]
+end
+class Bad
+  def to_a = 1
+end
+p [1, *xs, 4], [*nil], [*1..3], [*"ab"], [*:s], [*{ k: 1, j: 2 }], [*Pt.new(5, 6)], [*Bag.new]
+p [*"a".."c"], [*1.0], [*xs, *xs], [*[1, 2].each], [0, *[], 9]
+def anon(*) = [0, *, 9]
+p anon(1, 2)
+def take(*args) = args
+p take(*{ a: 1 }), take(*Bag.new), take(*"s"), take(*nil)
+case :b
+when *Bag.new then p :hit
+end
+p(([*Bad.new] rescue [$!.class, $!.message]))
+
+# return, next and break carry the values that a splat spreads
+def ret_splat = (return *xs_of(2))
+def xs_of(n) = (1..n).to_a
+x = *nil
+p ret_splat, [1, 2].map { |v| next *[v, v] }, [1].each { break *{ k: 1 } }, x

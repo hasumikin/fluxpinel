@@ -743,12 +743,26 @@ static FxFrame *fx_method_frame(FxFrame *f) {
    and any other value passes itself. */
 static void fx_spread(sp_PolyArray *out, sp_RbVal v) {
   if (v.tag == SP_TAG_NIL) return;
-  if (!(v.tag == SP_TAG_OBJ && (sp_poly_is_array_kind(v.cls_id) || v.cls_id == SP_BUILTIN_RANGE))) {
-    sp_PolyArray_push(out, v);
-    return;
-  }
   SP_GC_ROOT_RBVAL(v);
-  if (v.cls_id == SP_BUILTIN_RANGE) v = fx_send(v, "to_a", 0, NULL);
+  /* a value that is not an Array spreads its to_a, as CRuby's splat does;
+     a value with no to_a is one element */
+  if (!fx_is_array_value(v)) {
+    /* the builtin kinds that have to_a, which respond_to? may not see */
+    int seq = v.tag == SP_TAG_OBJ && v.v.p &&
+              (v.cls_id == SP_BUILTIN_RANGE || v.cls_id == SP_BUILTIN_FLOAT_RANGE || v.cls_id == SP_BUILTIN_STR_RANGE ||
+               v.cls_id == SP_BUILTIN_ENUMERATOR || sp_poly_is_hash_kind(v.cls_id));
+    if (!seq && !sp_poly_truthy(fx_respond_to(v, sp_box_sym(sp_sym_intern("to_a")), sp_box_bool(1)))) {
+      sp_PolyArray_push(out, v);
+      return;
+    }
+    sp_RbVal a = fx_send(v, "to_a", 0, NULL);
+    if (!fx_is_array_value(a)) {
+      const char *c = sp_poly_class_name(v);
+      sp_raise_cls("TypeError", sp_sprintf("can't convert %s to Array (%s#to_a gives %s)", c, c,
+                                           sp_poly_class_name(a)));
+    }
+    v = a;
+  }
   for (sp_int i = 0; i < sp_poly_length(v); i++) sp_PolyArray_push(out, sp_poly_arr_get(v, i));
 }
 
@@ -1431,13 +1445,27 @@ static sp_RbVal fx_match(FxFrame *f, const pm_node_t *value, const pm_node_t *pa
   return sp_box_bool(hit);
 }
 
-/* The value that return / break / next carry: nil, one value, or an Array. */
+/* The value that return / break / next carry: nil, one value, or an Array.
+   A splat (`next *x`) makes an Array of the values it spreads. */
 static sp_RbVal fx_jump_value(FxFrame *f, const pm_arguments_node_t *args) {
   if (!args || args->arguments.size == 0) return sp_box_nil();
-  if (args->arguments.size == 1) return fx_eval(f, args->arguments.nodes[0]);
+  if (args->arguments.size == 1 && !PM_NODE_TYPE_P(args->arguments.nodes[0], PM_SPLAT_NODE))
+    return fx_eval(f, args->arguments.nodes[0]);
   sp_PolyArray *a = sp_PolyArray_new();
   SP_GC_ROOT(a);
-  for (size_t i = 0; i < args->arguments.size; i++) sp_PolyArray_push(a, fx_eval(f, args->arguments.nodes[i]));
+  for (size_t i = 0; i < args->arguments.size; i++) {
+    const pm_node_t *e = args->arguments.nodes[i];
+    if (PM_NODE_TYPE_P(e, PM_SPLAT_NODE)) {
+      const pm_node_t *x = ((const pm_splat_node_t *)e)->expression;
+      sp_RbVal v = x ? fx_eval(f, x) : fx_method_frame(f)->anon[0];
+      if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+      fx_spread(a, v);
+      continue;
+    }
+    sp_RbVal v = fx_eval(f, e);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    sp_PolyArray_push(a, v);
+  }
   return sp_box_poly_array(a);
 }
 
@@ -1511,12 +1539,20 @@ static sp_RbVal fx_interpolate(FxFrame *f, const pm_node_list_t *parts) {
   return acc;
 }
 
+/* An Array literal. `*x` spreads x (fx_spread), and a bare `*` the
+   anonymous rest of the method. */
 static sp_RbVal fx_array(FxFrame *f, const pm_array_node_t *n) {
   sp_PolyArray *a = sp_PolyArray_new();
   SP_GC_ROOT(a);
   for (size_t i = 0; i < n->elements.size; i++) {
     const pm_node_t *e = n->elements.nodes[i];
-    if (PM_NODE_TYPE_P(e, PM_SPLAT_NODE)) fx_unsupported(e, "splat in an Array literal");
+    if (PM_NODE_TYPE_P(e, PM_SPLAT_NODE)) {
+      const pm_node_t *x = ((const pm_splat_node_t *)e)->expression;
+      sp_RbVal v = x ? fx_eval(f, x) : fx_method_frame(f)->anon[0];
+      if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+      fx_spread(a, v);
+      continue;
+    }
     sp_RbVal v = fx_eval(f, e);
     if (L.ctl != FX_CTL_NONE) return sp_box_nil();
     sp_PolyArray_push(a, v);

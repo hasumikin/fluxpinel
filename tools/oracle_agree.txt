@@ -112,7 +112,9 @@ array_join_nested
 array_join_poly_separator
 array_literal_empty_elem
 array_literal_minmax_inline
+array_literal_minmax_splat
 array_literal_range_past_end
+array_literal_splat_keeps_nil
 array_local_append_prepend_widen
 array_map_bang
 array_member_empty_var
@@ -450,7 +452,9 @@ boxed_sym_proc_user_map
 boxed_symbol_id2name_user
 boxed_tms_times
 boxed_to_h_block
+boxed_values_at_hoisted_index
 boxed_writer_arm_nilable_int_param
+boxed_writer_dispatch_forwarding_setter
 boxed_writer_subclass_value
 boxed_writer_void_call_value
 boxed_writes_into_typed_param_containers
@@ -479,6 +483,7 @@ builtin_singleton_valued_break
 builtins_integer_digits_reopen
 bundle_array_a
 bundle_array_b
+bundle_array_c
 bundle_array_d
 bundle_array_e
 bundle_array_f
@@ -1132,6 +1137,7 @@ empty_array_default_takes_caller_kind
 empty_array_dispatch
 empty_array_dup_slot
 empty_array_index_store_object
+empty_array_literal_splat
 empty_array_local_arg_widen
 empty_array_loop_intermediate_push
 empty_array_param
@@ -1661,6 +1667,7 @@ hash_sort_by
 hash_sort_by_key_rooted
 hash_sort_pairs
 hash_spaceship_equal
+hash_splat_to_a
 hash_spread_other_variant
 hash_store_boxed_chain
 hash_store_boxed_origins
@@ -2120,6 +2127,7 @@ issue_3059
 issue_3060
 issue_3061
 issue_3063
+issue_3064
 issue_3065
 issue_3066
 issue_3069
@@ -2449,6 +2457,7 @@ map_recv_emitted_once
 map_shadowed_param_poly_arg
 map_to_heap_objects
 map_to_value_type_objects
+masgn_attr_const_array
 masgn_boxed_attr_nil_receiver_calls
 masgn_boxed_attr_receivers_once
 masgn_boxed_attr_struct_order
@@ -2456,7 +2465,9 @@ masgn_boxed_ivar_typed_slot
 masgn_classvar_target
 masgn_const_array_unless_index
 masgn_const_array_unless_nil
+masgn_const_path_targets
 masgn_constpath_target
+masgn_cvar_targets
 masgn_empty_literal
 masgn_index_target_receivers_once
 masgn_ivar_empty_literals
@@ -2473,11 +2484,13 @@ masgn_nilable_value_compare
 masgn_non_array_value
 masgn_param_target_widens
 masgn_poly_receiver_const_nil_element
+masgn_poly_receiver_missing_element
 masgn_poly_rest_local
 masgn_rest_into_poly_slot
 masgn_scalar_const_targets
 masgn_setter_boxed_receiver
 masgn_splat_writer_targets
+masgn_string_key_store_gc
 masgn_target_closure_rebound
 masgn_target_receivers_once
 masgn_target_state_read_order
@@ -2486,13 +2499,16 @@ masgn_underfill_targets
 masgn_user_index_target
 masgn_value_empty_literal
 masgn_value_position_receivers
+masgn_value_rhs_once
 massign_captured_proc_cell
 massign_cell_captured_target
+massign_in_inlined_yield
 massign_leading_splat_boxed_scalar
 massign_nil_underflow
 massign_pair_of_object_and_int
 massign_poly_scalar_target
 massign_proc_cell_nil
+massign_splat_rhs
 massign_underfill_nil
 match_block_builds_value
 match_frame_pre_post_restore
@@ -2619,9 +2635,13 @@ multi_arg_lambda
 multi_assign_array_underfill
 multi_assign_ivar_type
 multi_assign_poly_rhs
+multi_assign_rest_from_splat
+multi_assign_splat_then_elements
 multi_assign_string_element_holder_unless
+multi_break_values
 multi_return
 multi_return_bare
+multi_value_return_splat
 multi_write_call_rhs_as_expr
 multi_write_ivar_const_from_array_rhs
 multi_write_scalar_rhs
@@ -2683,6 +2703,7 @@ next_in_inner_loop_keeps_outer_value
 next_in_proc_and_yield
 next_in_then_block
 next_runs_ensure
+next_splat_typed_map
 next_through_rescue_ensure
 next_value_each_index
 next_value_flat_map
@@ -2721,6 +2742,7 @@ nil_receiver_tap_then
 nil_receiver_user_object_plan
 nil_recv_cached_loop
 nil_recv_integer_builtin
+nil_scalar_slot_widen
 nil_sentinel_from_index_compact
 nil_spaceship_variable
 nil_store_through_chooser
@@ -2761,6 +2783,7 @@ numeric_compare_object_without_coerce
 numeric_method_displaced_by_user
 numeric_reopen_self_any_number
 obj_array_enum_through_if
+obj_array_literal_arg
 obj_array_param_accumulator
 obj_array_param_pushes_two_classes
 obj_array_range_index_read
@@ -3695,6 +3718,7 @@ rest_param_reassigned
 retry_beside_ensure
 return_from_block_in_spliced_yielder
 return_in_begin_value_poly_method
+return_multi_in_ensure_poly
 return_multi_in_poly_method
 return_nil_call_scalar_return
 return_object_array_across_methods
@@ -3744,6 +3768,7 @@ safe_nav_void_method
 safe_navigation_returns_nil
 same_named_attr_no_widen
 scalar_builtin_call_receiver_widens
+scalar_class_test_reads_nil
 scalar_isa_dead_branch
 scan_block_param_renamed_by_inline
 scan_block_regexp_last_match
@@ -3801,6 +3826,7 @@ send_local_literal_names_sequence
 send_method_raising_body
 send_missing_method_raises_at_run_time
 send_name_from_container
+send_name_from_container_local
 send_name_past_1024_receiver_names
 send_name_past_literal_cap
 send_override_only_super
@@ -3930,10 +3956,13 @@ splat_nil_scalar_into_rest
 splat_nil_scalar_rest
 splat_param_with_block
 splat_params_instance
+splat_poly_in_array_literal
+splat_return
 splat_slice_keys
 splat_then_positional_args
 splat_trailing_positional_keywords
 splat_typed_scalar_into_builtin
+splat_value_positions
 split_on_unresolved_chain
 sprintf_long_interp
 sprintf_positional
@@ -4398,6 +4427,7 @@ struct_to_h_block
 struct_to_h_block_composite
 struct_to_h_block_key
 struct_value_equality
+struct_values_fresh_receiver_root
 struct_valuesat_hash_set_init_wave10
 struct_yield_initialize
 sub_gsub_hash_any_values
@@ -4491,6 +4521,7 @@ tap_void_receiver
 template_self_call_shared_string
 ternary_lazy_arms
 then_block_always_breaks
+then_next_arm_array_kinds
 then_tap_nil_receiver
 thread_alloc_heavy_workers
 thread_alloc_scaling
