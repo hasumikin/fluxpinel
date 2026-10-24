@@ -368,8 +368,28 @@ static int fx_autoload(sp_sym name) {
    the name for self. Answers 1 and sets *out when it handles the call. */
 static int fx_load_call(const pm_node_t *n, sp_RbVal self, const char *name, int argc, sp_RbVal *argv,
                           sp_RbVal *out) {
-  if (!FX_IS("__dir__") && !FX_IS("require_relative") && !FX_IS("require")) return 0;
+  if (!FX_IS("__dir__") && !FX_IS("require_relative") && !FX_IS("require") && !FX_IS("load")) return 0;
   if (fx_find_method(fx_class_of(self), sp_sym_intern(name))) return 0;
+  /* load(path): the file runs at each call, from the path as given, which
+     is relative to the current directory. A true wrap is not modeled. */
+  if (FX_IS("load") && (argc == 1 || (argc == 2 && !sp_poly_truthy(argv[1])))) {
+    if (!fx_is_string(argv[0]))
+      sp_raise_cls("TypeError", sp_sprintf("no implicit conversion of %s into String",
+                                           argv[0].tag == SP_TAG_NIL ? "nil" : sp_poly_class_name(argv[0])));
+    const char *path = sp_poly_recv_s(argv[0], name);
+    SP_GC_ROOT_STR(path);
+    size_t len;
+    char *buf = fx_read_file(path, &len);
+    if (!buf) sp_raise_cls("LoadError", sp_sprintf("cannot load such file -- %s", path));
+    char *real = realpath(path, NULL);
+    FxSource *s;
+    const char *err = fx_parse(strdup(path), real ? real : strdup(path), buf, len, &s);
+    if (err) sp_raise_cls("SyntaxError", err);
+    fx_run_source(s);
+    *out = L.ctl == FX_CTL_NONE ? sp_box_bool(1) : sp_box_nil();
+    return 1;
+  }
+  if (FX_IS("load")) return 0;
   if (FX_IS("__dir__") && argc == 0) {
     char *dir = fx_dirname(fx_source_of(n)->real);
     *out = fx_new_string((const uint8_t *)dir, strlen(dir));
