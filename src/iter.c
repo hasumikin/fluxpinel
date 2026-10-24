@@ -754,6 +754,157 @@ static int fx_range_via_array(sp_RbVal r, const char *name, int argc, sp_RbVal *
   return 1;
 }
 
+/* any?(pattern), all?, none? and one? of a sequence: pattern === each
+   value, in place of a block. */
+static int fx_seq_pattern(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (argc != 1 || !(FX_IS("any?") || FX_IS("all?") || FX_IS("none?") || FX_IS("one?"))) return 0;
+  FxSeq s;
+  if (!fx_seq_open(r, &s)) return 0;
+  FX_SEQ_ROOT(s);
+  sp_RbVal pat = argv[0], v = sp_box_nil();
+  SP_GC_ROOT_RBVAL(pat);
+  SP_GC_ROOT_RBVAL(v);
+  sp_int n = 0, total = 0;
+  while (fx_seq_next(&s, &v)) {
+    total++;
+    if (sp_poly_truthy(fx_send(pat, "===", 1, &v))) n++;
+    if ((FX_IS("any?") || FX_IS("none?")) && n) break;
+    if (FX_IS("all?") && n < total) break;
+    if (FX_IS("one?") && n > 1) break;
+  }
+  *out = sp_box_bool(FX_IS("any?") ? n > 0 : FX_IS("all?") ? n == total : FX_IS("none?") ? n == 0 : n == 1);
+  return 1;
+}
+
+/* ---- Enumerable on a Fluxpinel object ---- */
+
+/* What a block of C does with each value that each yields. */
+enum { FX_EN_COLLECT, FX_EN_FIND, FX_EN_INCLUDE, FX_EN_INDEX, FX_EN_TAKE_WHILE };
+
+typedef struct {
+  int mode;
+  sp_int limit;            /* FX_EN_COLLECT: stop after this many; -1 for all */
+  sp_PolyArray *acc;       /* the values that the walk keeps */
+  const FxBlock *user;     /* the block of the call, for find and take_while */
+  sp_RbVal arg;            /* the value that include? and find_index look for */
+  sp_RbVal found;
+  sp_int index;
+  int hit;
+  const FxBlock *self;     /* the block of C, which a stop names */
+} FxEnumWalk;
+
+/* Ends the each that got the block of C, as a break of it does. */
+static sp_RbVal fx_cblock_stop(const FxBlock *b) {
+  L.ctl = FX_CTL_BREAK_BLOCK;
+  L.ctl_target = b;
+  L.ctl_val = sp_box_nil();
+  return sp_box_nil();
+}
+
+/* One value of each: several yielded values are one Array, as each_entry
+   gives them. */
+static sp_RbVal fx_enum_walk_step(void *ctx, int argc, sp_RbVal *argv) {
+  FxEnumWalk *w = (FxEnumWalk *)ctx;
+  sp_RbVal v = argc == 0 ? sp_box_nil() : argv[0];
+  SP_GC_ROOT_RBVAL(v);
+  if (argc > 1) {
+    sp_PolyArray *p = sp_PolyArray_new();
+    v = sp_box_poly_array(p);
+    for (int i = 0; i < argc; i++) sp_PolyArray_push(p, argv[i]);
+  }
+  switch (w->mode) {
+  case FX_EN_COLLECT:
+    sp_PolyArray_push(w->acc, v);
+    if (w->limit >= 0 && w->acc->len >= w->limit) return fx_cblock_stop(w->self);
+    return sp_box_nil();
+  case FX_EN_FIND:
+  case FX_EN_TAKE_WHILE: {
+    sp_RbVal t = fx_y1(w->user, v);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    if (w->mode == FX_EN_TAKE_WHILE) {
+      if (!sp_poly_truthy(t)) return fx_cblock_stop(w->self);
+      sp_PolyArray_push(w->acc, v);
+      return sp_box_nil();
+    }
+    if (!sp_poly_truthy(t)) return sp_box_nil();
+    w->found = v;
+    w->hit = 1;
+    return fx_cblock_stop(w->self);
+  }
+  default: {
+    int eq = w->user ? sp_poly_truthy(fx_y1(w->user, v)) : sp_poly_truthy(fx_send(v, "==", 1, &w->arg));
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    if (!eq) { w->index++; return sp_box_nil(); }
+    w->hit = 1;
+    return fx_cblock_stop(w->self);
+  }
+  }
+}
+
+/* Calls each of r with a block of C for w. Answers 0 when a jump of the
+   program (a break of a block of the call) is pending. */
+static int fx_enum_walk(sp_RbVal r, FxEnumWalk *w) {
+  FxBlock cb = { .cfn = fx_enum_walk_step, .ctx = w };
+  w->self = &cb;
+  fx_send_b(r, "each", 0, NULL, &cb);
+  if (L.ctl == FX_CTL_BREAK_BLOCK && L.ctl_target == &cb) L.ctl = FX_CTL_NONE;
+  return L.ctl == FX_CTL_NONE;
+}
+
+/* The methods of Enumerable on an object whose class includes Enumerable
+   and defines each, but not the method. A method that can stop early
+   (first, take, find, include?, find_index, take_while) stops the each;
+   any other one makes the same call on the Array of all the values. */
+static int fx_enum_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                        sp_RbVal *out) {
+  if (!fx_is_fx_object(r) || FX_IS("each") || !fx_builtin_module_name(r, name)) return 0;
+  /* a method of Kernel (class, inspect, ...) is not one of Enumerable;
+     select is both, and Enumerable comes first in the ancestors */
+  if (fx_object_method_name(name) && !FX_IS("select")) return 0;
+  if (!fx_is_a(r, fx_builtin("Enumerable")) || !fx_find_method(fx_class_of(r), sp_sym_intern("each"))) return 0;
+  SP_GC_ROOT_RBVAL(r);
+  FxEnumWalk w = { .mode = FX_EN_COLLECT, .limit = -1, .arg = sp_box_nil(), .found = sp_box_nil() };
+  w.acc = sp_PolyArray_new();
+  SP_GC_ROOT(w.acc);
+  SP_GC_ROOT_RBVAL(w.found);
+  if ((FX_IS("first") || FX_IS("take")) && argc <= 1 && !blk) {
+    if (argc == 1) {
+      sp_int n = sp_poly_arg_int_chk(argv[0]);
+      if (n < 0) sp_raise_cls("ArgumentError", "attempt to take negative size");
+      w.limit = n;
+    } else {
+      if (FX_IS("take")) return 0;
+      w.limit = 1;
+    }
+    if (w.limit > 0 && !fx_enum_walk(r, &w)) { *out = sp_box_nil(); return 1; }
+    *out = argc == 1 ? sp_box_poly_array(w.acc) : w.acc->len ? w.acc->data[0] : sp_box_nil();
+    return 1;
+  }
+  int find = (FX_IS("find") || FX_IS("detect")) && argc == 0 && blk;
+  int incl = (FX_IS("include?") || FX_IS("member?")) && argc == 1;
+  int index = FX_IS("find_index") && ((argc == 1 && !blk) || (argc == 0 && blk));
+  int twhile = FX_IS("take_while") && argc == 0 && blk;
+  if (find || incl || index || twhile) {
+    w.mode = find ? FX_EN_FIND : twhile ? FX_EN_TAKE_WHILE : incl ? FX_EN_INCLUDE : FX_EN_INDEX;
+    w.user = argc == 0 ? blk : NULL;
+    if (argc == 1) w.arg = argv[0];
+    SP_GC_ROOT_RBVAL(w.arg);
+    if (!fx_enum_walk(r, &w)) { *out = sp_box_nil(); return 1; }
+    *out = find ? w.found : twhile ? sp_box_poly_array(w.acc) : incl ? sp_box_bool(w.hit)
+                                   : w.hit ? sp_box_int(w.index) : sp_box_nil();
+    return 1;
+  }
+  if (!fx_enum_walk(r, &w)) { *out = sp_box_nil(); return 1; }
+  sp_RbVal a = sp_box_poly_array(w.acc);
+  SP_GC_ROOT_RBVAL(a);
+  if (FX_IS("to_a") || FX_IS("entries")) { *out = a; return 1; }
+  /* each_with_index { } and its kin answer the receiver, as CRuby does;
+     each_with_object answers the memo */
+  sp_RbVal v = fx_send_b(a, FX_IS("each_entry") ? "each" : name, argc, argv, blk);
+  *out = blk && ((!strncmp(name, "each_", 5) && !FX_IS("each_with_object")) || FX_IS("reverse_each")) ? r : v;
+  return 1;
+}
+
 /* inject(:sym) and inject(init, :sym): a method name in place of a block. */
 static int fx_inject_sym(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (!(FX_IS("inject") || FX_IS("reduce")) || argc < 1 || argc > 2) return 0;
@@ -778,7 +929,8 @@ static int fx_inject_sym(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
 static int fx_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out) {
   if (!blk)
     return fx_inject_sym(r, name, argc, argv, out) || fx_int_iter(r, name, argc, argv, NULL, out) ||
-           fx_range_step(r, name, argc, argv, NULL, out) || fx_range_via_array(r, name, argc, argv, NULL, out);
+           fx_range_step(r, name, argc, argv, NULL, out) || fx_range_via_array(r, name, argc, argv, NULL, out) ||
+           fx_seq_pattern(r, name, argc, argv, out);
   if (fx_range_step(r, name, argc, argv, blk, out) || fx_range_via_array(r, name, argc, argv, blk, out)) return 1;
   if (argc == 0 && FX_IS("tap")) {
     fx_y1(blk, r);

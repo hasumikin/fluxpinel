@@ -563,6 +563,7 @@ static void fx_block_parts(const pm_node_t *n, const pm_constant_id_list_t **loc
    body, super starts from m, and mblk is the block of the call. */
 static sp_RbVal fx_yield_in(const FxBlock *b, int argc, sp_RbVal *argv, int strict, const sp_RbVal *self,
                               FxClass *definee, int sdefs, const FxMethod *m, const FxBlock *mblk) {
+  if (b->cfn) return b->cfn(b->ctx, argc, argv);
   if (!b->node) {
     if (self) fx_gap("a Symbol block as a class body");
     if (argc < 1) sp_raise_cls("ArgumentError", "no receiver given");
@@ -1063,6 +1064,8 @@ static sp_RbVal fx_super_call(FxFrame *f, const pm_node_t *n, const pm_arguments
   /* an object of the program: the defaults of Object, which do not call
      the hooks (to_s through a hook would call the program's to_s again) */
   if (fx_is_fx_object(f->self)) {
+    /* a method of Enumerable, over the each of the object */
+    if (fx_enum_core(f->self, name, argc, argv, blk, &out)) return out;
     if (blk) fx_gap(sp_sprintf("super with a block to the builtin %s", name));
     if (fx_object_core(f->self, name, argc, argv, &out)) return out;
   } else if (fx_builtin_call(f->self, name, argc, argv, blk, &out)) {

@@ -98,6 +98,7 @@ array_get_index_ranges
 array_get_oob_negative
 array_grep
 array_grep_empty_literal
+array_grep_string_range
 array_index_and_write
 array_index_block
 array_index_gap
@@ -274,6 +275,7 @@ bignum_shift_op_assign
 bignum_variable_writes
 binary_string_index_byte_offsets
 binary_string_length_bytes
+binop_recv_root
 blk_param_kept_call_value
 blk_param_reassigned
 blk_param_stored_proc_per_iteration
@@ -297,6 +299,8 @@ block_autosplat
 block_autosplat_collectors
 block_autosplat_scalar_element
 block_body_rescue
+block_call_multi_arg_first
+block_call_multi_arg_pack
 block_escaped_param_types
 block_forward
 block_forward_anonymous_poly_receiver
@@ -367,6 +371,7 @@ block_return_through_inlined_ensure
 block_shadows_non_required_param
 block_splat_param
 block_splat_param_iterators
+block_splat_param_predicates
 block_tail_boolean_assignment
 block_tail_empty_literal
 block_tail_rescue_modifier
@@ -384,6 +389,7 @@ boxed_array_fetch_index
 boxed_array_index_symbol
 boxed_array_named_set_ops
 boxed_array_source_logic_arms
+boxed_bignum_integer_class
 boxed_block_call_beside_class_method
 boxed_block_sub_user_method
 boxed_class_is_a_module
@@ -434,6 +440,7 @@ boxed_split_regexp_limit
 boxed_start_with_regexp
 boxed_store_shared_string_unrelated_struct
 boxed_strbuf_comparable
+boxed_strbuf_string_class
 boxed_string_dump
 boxed_string_index_op_assign
 boxed_string_key_handle
@@ -480,6 +487,7 @@ builtin_reopen_strbuf_poly
 builtin_send_kwsplat_hash
 builtin_singleton_alias_user
 builtin_singleton_valued_break
+builtins_grep
 builtins_integer_digits_reopen
 bundle_array_a
 bundle_array_b
@@ -946,6 +954,7 @@ container_literal_through_sequence
 container_read_combined_set_map_bang
 container_read_max_by_element
 container_read_missing_arms
+container_read_set_enumerable
 container_string_index_write
 container_typing_compile_gaps
 control
@@ -963,6 +972,8 @@ ctor_forward_block_bare_new
 ctor_forward_block_self_new
 ctor_inline_root
 ctor_yield_kwrest
+custom_enum_inject_sym_var
+custom_enumerable_bare_yield
 cvar_default_from_module
 cvar_empty_container
 cvar_from_extended_module
@@ -1187,12 +1198,19 @@ ensure_retval_nil_slot
 ensure_retval_object_slot
 ensure_retval_value_class
 ensure_runs_on_return
+enum_each_with_index_values
 enum_each_with_object_memo_beside_open_yield
 enum_instance_eval_receiver
 enum_reader_blocks
+enum_reader_names
 enum_renamed_reader_implicit
+enum_renamed_reader_poly
+enumerable_grep_sum_entry
+enumerable_never_yields
 enumerable_reduce_proc_arg
 enumerable_reopen_beside_class_defining_builtin_name
+enumerable_reopen_redefines_builtin
+enumerable_via_each
 enumerator_bare_yield
 enumerator_dup_frozen
 enumerator_each_two_params_scalar_step
@@ -1383,6 +1401,7 @@ float_mod_pow_op_assign
 float_nan_payload_slots
 float_negative_zero_hash
 float_opassign_nil_marked
+float_past_word_shared_block_proc
 float_range_boxed_methods
 float_range_endpoint_boxed_nil
 float_range_minmax
@@ -1522,6 +1541,7 @@ gvar_opassign_value
 gvar_pid
 gvar_write_value
 hangs_548
+hash_all_pattern
 hash_arg_through_sequence
 hash_block_methods_variants
 hash_boxed_with_nullable_user_hash
@@ -1568,6 +1588,7 @@ hash_index_setop_poly_value
 hash_inspect_poly
 hash_inspect_symbol_key_label
 hash_int_and_or_assign
+hash_int_int_nested
 hash_int_key_nullable_nil
 hash_int_keyed_none_one
 hash_invert
@@ -1766,6 +1787,7 @@ include_attrs_through_nested_module
 include_chain_const_lookup
 include_chain_module_nested_const
 include_constant_path
+include_enumerable_block_each
 include_hook_namesake_module
 include_method_body_locals
 include_module_alias_const
@@ -2078,6 +2100,9 @@ issue_2949
 issue_2953
 issue_2956
 issue_2957
+issue_2958
+issue_2959
+issue_2960
 issue_2961
 issue_2966
 issue_2969
@@ -2091,6 +2116,8 @@ issue_2977
 issue_2978
 issue_2979
 issue_2980
+issue_2981
+issue_2982
 issue_2983
 issue_2984
 issue_2989
@@ -2329,6 +2356,7 @@ ivar_widen_poly_writer
 ivar_write_tail_nullable_number
 join_separator_slot
 json_parse_temp_source
+kept_block_index_write_non_string
 kept_block_param_not_hash
 kernel_dir
 kernel_fail_alias
@@ -2568,6 +2596,9 @@ method_visibility_attr
 method_visibility_inherit
 middle_splat_param
 min_by_string_key
+minmax_by_array_key
+minmax_deep_include_chain
+minmax_inherited_enumerable
 misc
 missing_positional_arg_warns
 missing_require_names_the_library
@@ -2913,6 +2944,7 @@ percent_literal_command_arg_heredoc_text
 poll_dynamic_call_reacher
 poly
 poly2
+poly_all_class_root
 poly_aref_hash_default
 poly_arg_fresh_string_handle
 poly_arg_int_keyed_hash
@@ -2989,6 +3021,7 @@ poly_concat_chain_rooted
 poly_container_delete
 poly_container_stores_own_element
 poly_count_arg_beside_class_method_count
+poly_count_arg_root
 poly_count_block_arg_hoist
 poly_count_nullable_arm
 poly_cover_beside_user_cover
@@ -3078,6 +3111,7 @@ poly_hash_key_p_kinds
 poly_hash_merge_beside_user_method
 poly_hash_merge_long_keywords
 poly_hash_slice_recv_from_dispatch
+poly_hash_slice_under_poly_user_slice
 poly_hash_with_range
 poly_heap_string_receiver
 poly_idx_int_nullable
@@ -3101,6 +3135,7 @@ poly_is_a
 poly_is_a_included_module
 poly_is_a_reopened_builtin_with_user_is_a
 poly_is_a_reopened_module_class_value
+poly_iter_to_a_params
 poly_ivar_bitwise_op_write_user_class
 poly_ivar_fetch_block
 poly_ivar_get_nil_bool
@@ -3284,6 +3319,7 @@ polypoly_hash_update
 pool_recycle_parallel_sweep
 post_rest_keyword_hash
 predicate_block_next_value
+predicate_class_arg
 primitive_eq_user_class
 primitive_method_shadow
 primitive_method_shadow_int_recv
@@ -3494,6 +3530,7 @@ range_index_unbounded_receiver
 range_min_max_empty_open
 range_mixed_endpoint_kinds
 range_negative_count_arg
+range_one_sided_search
 range_overlap_array_flatten_depth
 range_overlap_empty_boxed
 range_predicate_typed_argument
@@ -3841,7 +3878,9 @@ send_user_defined_scoped
 send_yielding_block_forward
 set_algebra_operand_enum
 set_basic
+set_block_autosplat
 set_bracket_ctor
+set_comparator_block
 set_conformance_batch2
 set_delete
 set_divide
@@ -3855,6 +3894,8 @@ set_identity_reflective_fresh_write
 set_identity_reflective_read_by_name
 set_identity_scalar_operand
 set_new_from_mapped_set
+set_operations
+set_predicate_arg
 set_range_operand
 setbyte_handle_in_place
 setjmp_local_volatile
@@ -4412,6 +4453,7 @@ struct_member_name_no_global_merge
 struct_member_named_like_method
 struct_member_shadows_enumerable
 struct_member_size_reader
+struct_minmax
 struct_new_class_value_args
 struct_new_splat_constant
 struct_new_splat_members
@@ -4663,8 +4705,10 @@ user_define_method_class_name
 user_define_method_instance_name
 user_dup_answers_its_body
 user_each_with_object_string_append
+user_enumerable_first_boxed
 user_eq_hash_operand
 user_eq_on_nil_slot
+user_hook_self_rooted
 user_inject_forwarded_block
 user_join_on_block_param
 user_map_returned_elements
@@ -4805,6 +4849,7 @@ yield_value_nil_site_diverges
 yield_value_per_site
 yield_value_return
 yield_value_returns_from_method
+yield_value_slot_types
 yield_value_through_poly_receiver
 yielding_call_in_rescue_expr
 yielding_initialize_args_evaluated_once

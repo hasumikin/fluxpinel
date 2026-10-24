@@ -117,6 +117,10 @@ typedef struct FxBlock {
   sp_sym sym;                     /* &:sym */
   int lambda;
   void *proc;                     /* the FxProc that carries the block, or NULL */
+  /* a block of C: a yield calls cfn(ctx, argc, argv). It stops the call
+     that it was given to with fx_cblock_stop. */
+  sp_RbVal (*cfn)(void *ctx, int argc, sp_RbVal *argv);
+  void *ctx;
 } FxBlock;
 
 /* A Proc value. It starts with a spinel sp_Proc, so that the runtime reads
@@ -328,6 +332,8 @@ static int fx_is_hash(sp_RbVal v);
 static int fx_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static void fx_trace_missing(const char *owner, const char *name, int argc);
 static int fx_builtin_responds(sp_RbVal r, const char *name);
+static int fx_enum_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                        sp_RbVal *out);
 static __attribute__((noreturn)) void fx_unsupported(const pm_node_t *n, const char *what);
 static __attribute__((noreturn)) void fx_gap(const char *what);
 static sp_sym fx_sym(pm_constant_id_t id);
