@@ -142,6 +142,7 @@ array_new_poly_size
 array_nil_elem_in_proved_loop
 array_nil_elem_through_splatted_yield
 array_op_assign_concat
+array_op_assign_reads_slot_first
 array_op_assign_untyped_rhs
 array_operand_misfit_nil_receiver
 array_operator_non_array_type_error
@@ -3807,6 +3808,7 @@ same_named_attr_no_widen
 scalar_builtin_call_receiver_widens
 scalar_class_test_reads_nil
 scalar_isa_dead_branch
+scalar_op_assign_reads_slot_first
 scan_block_param_renamed_by_inline
 scan_block_regexp_last_match
 scan_block_tail_value
@@ -4298,6 +4300,7 @@ string_nul_bytes
 string_nul_regexp
 string_oct_parse
 string_op_assign_nil_handle
+string_op_assign_rhs_order
 string_param_dead_each_branch
 string_param_inference_from_body
 string_param_lent_beside_symbol

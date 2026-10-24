@@ -105,9 +105,12 @@ static sp_RbVal fx_gvar_eval(FxFrame *f, const pm_node_t *n) {
   case PM_GLOBAL_VARIABLE_OPERATOR_WRITE_NODE: {
     const pm_global_variable_operator_write_node_t *w = (const pm_global_variable_operator_write_node_t *)n;
     const char *name = sp_sym_to_s(fx_sym(w->name));
+    /* $x OP= v reads $x before v runs, as CRuby does */
+    sp_RbVal cur = fx_gvar_get(name);
+    SP_GC_ROOT_RBVAL(cur);
     sp_RbVal v = fx_eval(f, w->value);
     if (L.ctl != FX_CTL_NONE) return sp_box_nil();
-    v = fx_op(fx_gvar_get(name), w->binary_operator, v);
+    v = fx_op(cur, w->binary_operator, v);
     SP_GC_ROOT_RBVAL(v);
     fx_gvar_set(name, v);
     return v;

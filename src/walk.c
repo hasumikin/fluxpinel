@@ -2479,11 +2479,14 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
   }
   case PM_LOCAL_VARIABLE_OPERATOR_WRITE_NODE: {
     const pm_local_variable_operator_write_node_t *w = (const pm_local_variable_operator_write_node_t *)n;
-    /* the operand can make a Proc, which moves the slots: look up after */
+    /* x OP= v reads x before v runs, as CRuby does. The operand can make
+       a Proc, which moves the slots: the write looks the slot up again. */
+    sp_RbVal cur = *fx_local(f, n, w->name, w->depth);
+    SP_GC_ROOT_RBVAL(cur);
     sp_RbVal v = fx_eval(f, w->value);
     if (L.ctl != FX_CTL_NONE) return sp_box_nil();
     SP_GC_ROOT_RBVAL(v);
-    sp_RbVal r = fx_send(*fx_local(f, n, w->name, w->depth), sp_sym_to_s(fx_sym(w->binary_operator)), 1, &v);
+    sp_RbVal r = fx_send(cur, sp_sym_to_s(fx_sym(w->binary_operator)), 1, &v);
     return *fx_local(f, n, w->name, w->depth) = r;
   }
   case PM_AND_NODE: {
@@ -2686,9 +2689,12 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
   case PM_INSTANCE_VARIABLE_OPERATOR_WRITE_NODE: {
     const pm_instance_variable_operator_write_node_t *w = (const pm_instance_variable_operator_write_node_t *)n;
     sp_sym name = fx_sym(w->name);
+    /* @x OP= v reads @x before v runs, as CRuby does */
+    sp_RbVal cur = fx_ivar_get(f->self, name);
+    SP_GC_ROOT_RBVAL(cur);
     sp_RbVal v = fx_eval(f, w->value);
     if (L.ctl != FX_CTL_NONE) return sp_box_nil();
-    sp_RbVal nv = fx_op(fx_ivar_get(f->self, name), w->binary_operator, v);
+    sp_RbVal nv = fx_op(cur, w->binary_operator, v);
     fx_ivar_set(f->self, name, nv);
     return nv;
   }
