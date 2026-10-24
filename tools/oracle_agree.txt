@@ -48,6 +48,7 @@ anon_struct_class_value
 anon_struct_local
 anon_struct_name_nil
 anon_struct_new_beside_user_cnew
+anon_superclass_reflection_unreached
 anon_superclass_user_reflection_method
 append_hash_literal_through_untyped_index
 append_through_delegating_reader
@@ -212,6 +213,7 @@ attr_op_assign_boxed_operand_arm
 attr_op_assign_value_mixed_writers
 attr_op_write_method_tail_branch
 attr_op_write_method_value
+attr_op_write_value
 attr_override_dispatch
 attr_reader_level_through_boxed_element
 attr_reader_override_type
@@ -404,6 +406,7 @@ boxed_merge_forwarded_proc
 boxed_module_class_name
 boxed_native_setter_beside_user_writer
 boxed_native_setter_value
+boxed_nil_string_identity
 boxed_object_inspect_returns_boxed
 boxed_param_value_into_typed_hash_slot
 boxed_predicate_mutation
@@ -667,6 +670,7 @@ class_body_bare_private_new
 class_body_constant_bare_new
 class_body_dsl_call
 class_body_listing_beside_instance_def_of_name
+class_body_local_scope
 class_body_method_defined_namespaced_string
 class_body_new_const_path_block
 class_body_private_instance_methods
@@ -680,6 +684,7 @@ class_constant_path_read
 class_def_order
 class_eqq_nullable_string
 class_escape_rescue_clause
+class_eval_block_class_ivar
 class_eval_own_method_block_ivar
 class_eval_reopen
 class_eval_string_static_override
@@ -807,6 +812,7 @@ class_value_yielding_cmethod_splat
 class_var_builtin_new
 class_var_new_arg
 class_var_read
+class_variable_inherited
 class_variable_lent_string
 class_variable_reflection
 class_writer_assign_value
@@ -937,6 +943,7 @@ container_read_max_by_element
 container_read_missing_arms
 container_string_index_write
 container_typing_compile_gaps
+control
 control_flow_break_in_case_in_loop
 control_flow_loop_cond_method_arg
 control_flow_next_in_case_in_loop
@@ -1030,6 +1037,23 @@ define_method_rest_block_params
 define_method_singleton_class_body
 define_method_user_defined_block_next
 define_singleton_method_literal
+defined_bare_builtin_method
+defined_classification
+defined_const_fallback
+defined_const_path_member_user_const_set
+defined_cvar_before_assignment
+defined_globals_methods
+defined_guard_dead_branch
+defined_guard_object_alias
+defined_guard_object_mixin
+defined_guard_require
+defined_guard_rooted_object
+defined_on_basic_object_subclass
+defined_op
+defined_paren_value
+defined_scoped_constant
+defined_visibility_call_in_class_body
+defined_yield_no_block
 destructure_splat_underflow
 destructure_typed_ptr_array_return
 devirt_call_return_box
@@ -2092,6 +2116,7 @@ issue_3046
 issue_3054
 issue_3055
 issue_3056
+issue_3059
 issue_3060
 issue_3061
 issue_3063
@@ -2225,6 +2250,7 @@ issue_3315_int_enum_with_index_block
 issue_3316_tail_index_assign_value
 issue_3317_reader_concat_splat
 issue_3319_comparable_mixed_sort
+issue_3320_defined_anchored_const
 issue_3321_dir_reopen
 issue_3322_regex_escaped_quote_scan
 issue_3325_poly_str_shl_store
@@ -2269,6 +2295,7 @@ ivar_lazy_init_push_via_inherited_getter
 ivar_nil_guard_reads_slot_not_hold
 ivar_nil_p_unassigned_scalar
 ivar_nil_tested_once
+ivar_nullable_int_never_set
 ivar_object_array_narrow
 ivar_or_write_empty_literal_variant
 ivar_polymorphic
@@ -2277,7 +2304,10 @@ ivar_recv_before_boxed_index_hash_block
 ivar_recv_before_boxed_index_user_brackets
 ivar_recv_before_call_arg
 ivar_recv_string_handle
+ivar_reflection_own_method
+ivar_reflection_super
 ivar_set_literal_nil_and_poly
+ivar_set_mark_long_class_name
 ivar_set_shared_string_slot
 ivar_table_appended_row
 ivar_table_boxed_row_store
@@ -2550,6 +2580,7 @@ module_cls_method_string_return
 module_const_array_widen
 module_def_self_ivar
 module_dispatch_param_widen
+module_eval_block_on_own_module
 module_extend_self
 module_extend_self_include
 module_extend_self_reopen
@@ -2753,6 +2784,7 @@ object_method_builtin_overrides
 object_method_ivar_append_handle
 object_method_ivar_class_main
 object_method_ivar_class_set
+object_method_ivar_presence
 object_method_ivar_receivers
 object_method_ivar_string
 object_method_mutated_array_arg
@@ -3039,6 +3071,7 @@ poly_index_user_keywords
 poly_inherited_attr_writer_siblings
 poly_inherited_yield_param
 poly_inject_sym_bitwise
+poly_instance_variable_set_any_class
 poly_int_bitops_auto_unify
 poly_io_print_puts
 poly_is_a
@@ -3484,6 +3517,7 @@ reduce_root
 reduce_seed_kinds
 reduce_symbol_only_method
 reduce_tail_element_read
+reflect_ivar_dynamic_name
 reflect_only_ivar_beside_computed_name
 reflective_ivar_get_boxed
 refused_call_many_arguments
@@ -3547,6 +3581,7 @@ regexp_match_shared_string_operand
 regexp_matchdata_caps
 regexp_multibyte_literal_atom
 regexp_named_backref
+regexp_named_capture_match
 regexp_named_disables_numbered
 regexp_names_meta
 regexp_new_boxed
@@ -3734,6 +3769,7 @@ self_class_new_in_superclass
 self_class_send_subclass_class_ivar
 self_const_inherited_walk
 self_const_path_abstract
+self_in_class_body
 self_in_instance_eval_other_class
 self_new_pins_its_own_class
 self_new_with_args
@@ -4558,8 +4594,10 @@ typed_when_class_alias
 unary_minus_on_negative_literal
 unary_operator_methods
 unassigned_global_in_and_or
+unassigned_ivar_reads_nil
 uncaught_exception_message
 undefined_constant_into_typed_slot
+undefined_constant_warns
 undefined_name_method_receiver
 undefined_name_operand_typed_chain
 unicode_case_latin1

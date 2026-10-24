@@ -676,6 +676,20 @@ static sp_RbVal fx_ivar_get(sp_RbVal self, sp_sym name) {
   return o->iv->data[slot];
 }
 
+/* Whether self has the ivar: its slot is there, as instance_variables
+   lists it. An ivar of a kernel object is there when it is not nil. */
+static int fx_ivar_defined(sp_RbVal self, sp_sym name) {
+#ifdef FX_KERNEL_IVARS
+  const sp_insp_cls *d = fx_kernel_ivrow(self);
+  if (d) return fx_kernel_ivar_get(d, self, name).tag != SP_TAG_NIL;
+#endif
+  sp_RbVal h = fx_ivar_holder(self);
+  if (!fx_is_fx_object(h) || fx_is_native_obj(h)) return 0;
+  FxObject *o = (FxObject *)h.v.p;
+  int slot = fx_ivar_slot(fx_class_by_id(o->cls_id), name, 0);
+  return slot >= 0 && o->iv && slot < o->iv->len;
+}
+
 static void fx_ivar_set(sp_RbVal self, sp_sym name, sp_RbVal v) {
   SP_GC_ROOT_RBVAL(self);
   SP_GC_ROOT_RBVAL(v);
@@ -969,6 +983,10 @@ static int fx_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
   }
   if (argc == 1) {
     sp_RbVal a = argv[0];
+    if (!strcmp(name, "instance_variable_defined?")) {
+      *out = sp_box_bool(fx_ivar_defined(r, sp_sym_intern(fx_name_arg(a))));
+      return 1;
+    }
     if (!strcmp(name, "is_a?") || !strcmp(name, "kind_of?") || !strcmp(name, "instance_of?")) {
       FxClass *k = fx_class_value(a);
       if (!k) sp_raise_cls("TypeError", "class or module required");

@@ -2176,6 +2176,228 @@ static sp_RbVal fx_rescue_modifier(FxFrame *f, const pm_rescue_modifier_node_t *
   return v;
 }
 
+/* ---- defined? ---- */
+
+/* Evaluates n for defined?: 0 when it raises a StandardError, which
+   defined? answers as nil. */
+static int fx_defined_eval(FxFrame *f, const pm_node_t *n, sp_RbVal *out) {
+  SP_GC_SAVE();
+  const int depth = fx_fs()->depth;
+  FX_TRY_PUSH();
+  if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
+    *out = fx_eval(f, n);
+    sp_exc_top--;
+    return L.ctl == FX_CTL_NONE;
+  }
+  FX_TRY_LANDED(depth);
+  if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
+  FxCaught c = fx_caught();
+  if (!sp_exc_is_standard_error(c.cls) || !strcmp(c.cls, "FiberKillSignal")) fx_reraise(c);
+  return 0;
+}
+
+/* The globals that are there with no assignment. */
+static int fx_gvar_builtin(const char *g) {
+  static const char *const names[] = { "$!", "$~", "$_", "$stdout", "$stderr", "$stdin", "$/", "$?", "$$",
+                                       "$0", "$PROGRAM_NAME", "$*", "$LOAD_PATH", "$LOADED_FEATURES",
+                                       "$VERBOSE", "$DEBUG", "$,", "$;", "$\\", "$@", NULL };
+  for (int i = 0; names[i]; i++) if (!strcmp(g, names[i])) return 1;
+  return 0;
+}
+
+static const char *fx_defined(FxFrame *f, const pm_node_t *n);
+
+/* Whether each of the nodes is defined. */
+static int fx_defined_all(FxFrame *f, const pm_node_list_t *list) {
+  for (size_t i = 0; i < list->size; i++) {
+    const pm_node_t *e = list->nodes[i];
+    if (PM_NODE_TYPE_P(e, PM_SPLAT_NODE)) e = ((const pm_splat_node_t *)e)->expression;
+    if (e && !fx_defined(f, e)) return 0;
+  }
+  return 1;
+}
+
+/* Whether a call with no receiver reaches a method: one of the program, a
+   builtin one, a method of Kernel, or a method of Module (and Class) when
+   self is a module (or a class). */
+/* An instance of a subclass of BasicObject has the methods of its class
+   and those of BasicObject, but not those of Kernel. */
+static int fx_defined_basic(sp_RbVal self, sp_RbVal name, int priv, int *hit) {
+  if (fx_is_a(self, L.object)) return 0;
+  static const char *const basic[] = { "!", "!=", "==", "equal?", "instance_eval", "instance_exec", "__send__",
+                                       "__id__", NULL };
+  const FxMethod *m = fx_find_method(fx_class_of(self), (sp_sym)name.v.i);
+  *hit = m && (priv || m->vis == FX_VIS_PUBLIC);
+  for (int i = 0; !*hit && basic[i]; i++) *hit = !strcmp(sp_sym_to_s((sp_sym)name.v.i), basic[i]);
+  return 1;
+}
+
+static int fx_defined_fcall(sp_RbVal self, sp_RbVal name) {
+  int hit;
+  if (fx_defined_basic(self, name, 1, &hit)) return hit;
+  const char *n = sp_sym_to_s((sp_sym)name.v.i);
+  FxClass *k = fx_class_value(self);
+  /* a module has no superclass, new or allocate */
+  if (k && k->is_module && (!strcmp(n, "superclass") || !strcmp(n, "new") || !strcmp(n, "allocate"))) return 0;
+  if (sp_poly_truthy(fx_respond_to(self, name, sp_box_bool(1)))) return 1;
+  if (fx_object_method_name(n)) return 1;
+  if (!k) return 0;
+  static const char *const mod[] = {
+    "name", "to_s", "inspect", "ancestors", "attr", "attr_accessor", "attr_reader", "attr_writer",
+    "private", "public", "protected", "module_function", "private_constant", "public_constant",
+    "private_class_method", "public_class_method", "define_method", "alias_method", "remove_method",
+    "undef_method", "instance_method", "public_instance_method", "method_defined?", "instance_methods",
+    "include", "include?", "prepend", "extend", "const_get", "const_set", "const_defined?", "constants",
+    "class_eval", "module_eval", "class_exec", "module_exec", "class_variable_get", "class_variable_set",
+    "class_variable_defined?", "class_variables", "remove_class_variable", NULL };
+  static const char *const cls[] = { "new", "allocate", "superclass", "subclasses", NULL };
+  for (int i = 0; mod[i]; i++) if (!strcmp(n, mod[i])) return strcmp(n, "module_function") || k->is_module;
+  if (!k->is_module)
+    for (int i = 0; cls[i]; i++) if (!strcmp(n, cls[i])) return 1;
+  return 0;
+}
+
+/* The method of the running frame, through the frames of its blocks. */
+static const FxMethod *fx_frame_method(const FxFrame *f) {
+  for (; f; f = f->parent) if (f->method) return f->method;
+  return NULL;
+}
+
+/* What defined?(n) answers, as CRuby's defined_expr: the kind of the
+   expression, or NULL (nil) when a name in it is not defined. A receiver
+   runs; a StandardError that it raises answers nil. */
+static const char *fx_defined(FxFrame *f, const pm_node_t *n) {
+  switch (PM_NODE_TYPE(n)) {
+  case PM_NIL_NODE:
+    return "nil";
+  case PM_TRUE_NODE:
+    return "true";
+  case PM_FALSE_NODE:
+    return "false";
+  case PM_SELF_NODE:
+    return "self";
+  case PM_PARENTHESES_NODE: {
+    const pm_node_t *b = ((const pm_parentheses_node_t *)n)->body;
+    if (!b) return "nil";
+    if (b && PM_NODE_TYPE_P(b, PM_STATEMENTS_NODE) && ((const pm_statements_node_t *)b)->body.size == 1)
+      return fx_defined(f, ((const pm_statements_node_t *)b)->body.nodes[0]);
+    return "expression";
+  }
+  case PM_ARRAY_NODE:
+    return fx_defined_all(f, &((const pm_array_node_t *)n)->elements) ? "expression" : NULL;
+  case PM_LOCAL_VARIABLE_READ_NODE:
+  case PM_IT_LOCAL_VARIABLE_READ_NODE:
+    return "local-variable";
+  case PM_INSTANCE_VARIABLE_READ_NODE: {
+    return fx_ivar_defined(f->self, fx_sym(((const pm_instance_variable_read_node_t *)n)->name)) ? "instance-variable"
+                                                                                                 : NULL;
+  }
+  case PM_CLASS_VARIABLE_READ_NODE: {
+    if (!f->cref || f->cref == L.object) return NULL;
+    return fx_cvar_find(f->cref, fx_sym(((const pm_class_variable_read_node_t *)n)->name), NULL) ? "class variable"
+                                                                                                 : NULL;
+  }
+  case PM_GLOBAL_VARIABLE_READ_NODE: {
+    const char *g = fx_gvar_canon(sp_sym_to_s(fx_sym(((const pm_global_variable_read_node_t *)n)->name)));
+    return fx_gvar_builtin(g) || fx_gvar_slot(sp_sym_intern(g)) ? "global-variable" : NULL;
+  }
+  case PM_BACK_REFERENCE_READ_NODE:
+    return fx_re_last().tag == SP_TAG_NIL ? NULL : "global-variable";
+  case PM_NUMBERED_REFERENCE_READ_NODE: {
+    sp_RbVal m = fx_re_last();
+    if (m.tag == SP_TAG_NIL) return NULL;
+    SP_GC_ROOT_RBVAL(m);
+    sp_RbVal i = sp_box_int((sp_int)((const pm_numbered_reference_read_node_t *)n)->number);
+    return fx_send(m, "[]", 1, &i).tag == SP_TAG_NIL ? NULL : "global-variable";
+  }
+  case PM_CONSTANT_READ_NODE: {
+    /* a lookup with no read, so that a missing constant is not a gap of
+       Fluxpinel (fx_const_missing) */
+    sp_RbVal v;
+    return fx_const_lookup(f->cref, fx_sym(((const pm_constant_read_node_t *)n)->name), &v) ? "constant" : NULL;
+  }
+  case PM_CONSTANT_PATH_NODE: {
+    const pm_constant_path_node_t *p = (const pm_constant_path_node_t *)n;
+    FxClass *scope = L.object;
+    if (p->parent) {
+      if (!fx_defined(f, p->parent)) return NULL;
+      sp_RbVal pv;
+      if (!fx_defined_eval(f, p->parent, &pv)) return NULL;
+      scope = fx_class_value(pv);
+      if (!scope) return NULL;
+    }
+    sp_RbVal v;
+    sp_sym name = fx_sym(p->name);
+    if (scope == L.object) return fx_const_scoped(L.object, name, &v) ? "constant" : NULL;
+    /* A::X looks in A and its ancestors, but not in Object, as CRuby's
+       rb_const_defined_from; a builtin class also has its nested ones */
+    const FxClass *anc[128];
+    int na = fx_ancestors(scope, anc, 128);
+    for (int i = 0; i < na; i++)
+      if (anc[i] != L.object && fx_const_own(anc[i], name)) return "constant";
+    if ((scope->cls_id < 0 || fx_kernel_cls(scope->cls_id)) && fx_const_scoped(scope, name, &v)) return "constant";
+    return NULL;
+  }
+  case PM_CALL_NODE: {
+    const pm_call_node_t *c = (const pm_call_node_t *)n;
+    if (c->arguments && !fx_defined_all(f, &c->arguments->arguments)) return NULL;
+    sp_RbVal name = sp_box_sym(fx_sym(c->name));
+    if (!c->receiver) return fx_defined_fcall(f->self, name) ? "method" : NULL;
+    if (!fx_defined(f, c->receiver)) return NULL;
+    sp_RbVal r;
+    if (!fx_defined_eval(f, c->receiver, &r)) return NULL;
+    SP_GC_ROOT_RBVAL(r);
+    /* a call with a receiver, self.x too, asks for a public method, as CRuby */
+    int hit;
+    if (fx_defined_basic(r, name, 0, &hit)) return hit ? "method" : NULL;
+    return sp_poly_truthy(fx_respond_to(r, name, sp_box_bool(0))) ? "method" : NULL;
+  }
+  case PM_YIELD_NODE:
+    return f->block ? "yield" : NULL;
+  case PM_SUPER_NODE:
+  case PM_FORWARDING_SUPER_NODE: {
+    const FxMethod *m = fx_frame_method(f);
+    if (!m) return NULL;
+    if (fx_find_super(fx_class_of(f->self), m)) return "super";
+    return fx_builtin_responds(f->self, sp_sym_to_s(m->name)) ? "super" : NULL;
+  }
+  case PM_LOCAL_VARIABLE_WRITE_NODE:
+  case PM_LOCAL_VARIABLE_OPERATOR_WRITE_NODE:
+  case PM_LOCAL_VARIABLE_OR_WRITE_NODE:
+  case PM_LOCAL_VARIABLE_AND_WRITE_NODE:
+  case PM_INSTANCE_VARIABLE_WRITE_NODE:
+  case PM_INSTANCE_VARIABLE_OPERATOR_WRITE_NODE:
+  case PM_INSTANCE_VARIABLE_OR_WRITE_NODE:
+  case PM_INSTANCE_VARIABLE_AND_WRITE_NODE:
+  case PM_CLASS_VARIABLE_WRITE_NODE:
+  case PM_CLASS_VARIABLE_OPERATOR_WRITE_NODE:
+  case PM_CLASS_VARIABLE_OR_WRITE_NODE:
+  case PM_CLASS_VARIABLE_AND_WRITE_NODE:
+  case PM_GLOBAL_VARIABLE_WRITE_NODE:
+  case PM_GLOBAL_VARIABLE_OPERATOR_WRITE_NODE:
+  case PM_GLOBAL_VARIABLE_OR_WRITE_NODE:
+  case PM_GLOBAL_VARIABLE_AND_WRITE_NODE:
+  case PM_CONSTANT_WRITE_NODE:
+  case PM_CONSTANT_OPERATOR_WRITE_NODE:
+  case PM_CONSTANT_OR_WRITE_NODE:
+  case PM_CONSTANT_AND_WRITE_NODE:
+  case PM_CONSTANT_PATH_WRITE_NODE:
+  case PM_CONSTANT_PATH_OPERATOR_WRITE_NODE:
+  case PM_CONSTANT_PATH_OR_WRITE_NODE:
+  case PM_CONSTANT_PATH_AND_WRITE_NODE:
+  case PM_CALL_OPERATOR_WRITE_NODE:
+  case PM_CALL_OR_WRITE_NODE:
+  case PM_CALL_AND_WRITE_NODE:
+  case PM_INDEX_OPERATOR_WRITE_NODE:
+  case PM_INDEX_OR_WRITE_NODE:
+  case PM_INDEX_AND_WRITE_NODE:
+  case PM_MULTI_WRITE_NODE:
+    return "assignment";
+  default:
+    return "expression";
+  }
+}
+
 /* ---- the evaluator ---- */
 
 static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
@@ -2257,6 +2479,11 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
     return fx_case(f, (const pm_case_node_t *)n);
   case PM_CASE_MATCH_NODE:
     return fx_case_match(f, (const pm_case_match_node_t *)n);
+  case PM_DEFINED_NODE: {
+    const char *k = fx_defined(f, ((const pm_defined_node_t *)n)->value);
+    /* CRuby answers a frozen String */
+    return k ? sp_box_str(k) : sp_box_nil();
+  }
   case PM_MATCH_PREDICATE_NODE: {
     const pm_match_predicate_node_t *m = (const pm_match_predicate_node_t *)n;
     return fx_match(f, m->value, m->pattern, 0);
