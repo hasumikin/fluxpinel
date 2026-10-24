@@ -46,8 +46,8 @@ This example works with these versions:
 
 ## Build and run
 
-You need Rust, Rails, the SQLite CLI and headers (`libsqlite3-dev`), and
-the jemalloc headers (`libjemalloc-dev`). In the steps, `FX` is the top
+You need Rust, Rails, Bundler, Node.js with npm, the SQLite CLI and
+headers (`libsqlite3-dev`), and the jemalloc headers (`libjemalloc-dev`). In the steps, `FX` is the top
 directory of Fluxpinel and `BLOG` is a new directory for the blog.
 
 1. Make the fixture and the Spinel output with Roundhouse:
@@ -68,7 +68,19 @@ directory of Fluxpinel and `BLOG` is a new directory for the blog.
    cp "$FX/examples/blog/console.rb" "$FX/kernel/fluxpinel.rb" .
    ```
 
-3. Build the host in the top directory of Fluxpinel. `KERNEL_FLAGS` gives
+3. Build the assets: the JavaScript of Turbo and Stimulus from the gems,
+   and the Tailwind CSS. Without them, the pages load, but the browser
+   does not connect to Action Cable, and a new record does not show up
+   on an open page:
+
+   ```sh
+   cd "$BLOG"
+   bundle config set --local path vendor/bundle
+   bundle install
+   make assets
+   ```
+
+4. Build the host in the top directory of Fluxpinel. `KERNEL_FLAGS` gives
    spinel the flags that `spin flags` prints for the project, and
    `HOST_LIBS` the libraries of the link:
 
@@ -79,7 +91,7 @@ directory of Fluxpinel and `BLOG` is a new directory for the blog.
      KERNEL_FLAGS="-I $BLOG --rbs $BLOG" HOST_LIBS="-lsqlite3 -ljemalloc"
    ```
 
-4. Seed the database and run the server with the console:
+5. Seed the database and run the server with the console:
 
    ```sh
    cd "$BLOG"
@@ -89,3 +101,10 @@ directory of Fluxpinel and `BLOG` is a new directory for the blog.
 
    The server serves the blog on http://localhost:3000. Connect to the
    console with `nc 127.0.0.1 4000`.
+
+   Open http://localhost:3000/articles/1, and type this in the console.
+   The comment shows up on the open page with no reload:
+
+   ```ruby
+   Console.create("Comment", {article_id: 1, commenter: "fx", body: "live"})
+   ```
