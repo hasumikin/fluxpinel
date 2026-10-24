@@ -219,3 +219,7 @@ For the checks during development and the update of the pin, see
 Fluxpinel is an independent project. It does not modify spinel. It links
 against the runtime of spinel (`libspinel_rt`) and pins one spinel commit
 in `SPINEL_COMMIT`. A change of the pin is a commit of its own.
+
+## License
+
+Fluxpinel is released under the MIT License. See [LICENSE](LICENSE).
