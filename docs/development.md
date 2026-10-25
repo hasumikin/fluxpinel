@@ -39,6 +39,16 @@ before a change of the pin and after a large change of the walker.
 `make regress` and `make oracle` use the promote build in
 `build/promote`. They build it when it is out of date.
 
+### CI
+
+`.github/workflows/ci.yml` has two jobs.
+
+- `check` runs on a push and a pull request to master. It runs
+  `make test`, `make test-host` and `make regress` on the pinned spinel.
+- `spinel-master` runs each week and on a manual start. It runs the same
+  checks on the master of spinel with `SPINEL_PIN=0`. A failure tells that
+  a change of spinel breaks Fluxpinel before the pin moves.
+
 ### make regress
 
 `tools/oracle_agree.txt` names the spinel tests that Fluxpinel answers

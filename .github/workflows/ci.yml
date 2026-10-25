@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+  pull_request:
+    branches: [master]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+  # The weekly check of the master of spinel (the job spinel-master)
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+# A new push to a branch cancels the run that is still in progress on it.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  # The checks of development.md on the pinned spinel.
+  check:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # test/run.rb compares the output of Fluxpinel with CRuby 4.0.
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+
+      - name: Install libffi
+        run: sudo apt-get update && sudo apt-get install -y libffi-dev
+
+      # The build of spinel takes most of the time. The cache keeps it for
+      # one pin, so only a change of SPINEL_COMMIT builds spinel again.
+      - name: Restore spinel
+        id: spinel-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: deps/spinel
+          key: spinel-${{ runner.os }}-${{ hashFiles('SPINEL_COMMIT') }}
+
+      - name: Fetch and build spinel
+        run: make -j$(nproc) deps
+
+      - name: Save spinel
+        if: steps.spinel-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: deps/spinel
+          key: ${{ steps.spinel-cache.outputs.cache-primary-key }}
+
+      - name: Build
+        run: make -j$(nproc)
+
+      - name: make test
+        run: make test
+
+      - name: make test-host
+        run: make test-host
+
+      - name: make regress
+        run: make regress
+
+      - name: Upload the regress cases
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regress-cases
+          path: build/regress/cases
+          if-no-files-found: ignore
+
+  # The same checks on the master of spinel, with no pin. A failure tells
+  # that a change of spinel breaks Fluxpinel before the pin moves. The job
+  # does not change SPINEL_COMMIT or tools/oracle_agree.txt.
+  spinel-master:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+
+      - name: Install libffi
+        run: sudo apt-get update && sudo apt-get install -y libffi-dev
+
+      - name: Fetch and build spinel master
+        run: |
+          git clone -q --depth 1 https://github.com/matz/spinel.git deps/spinel
+          git -C deps/spinel log -1 --format='spinel master: %H %s'
+          make -C deps/spinel deps
+          make -C deps/spinel -j$(nproc)
+
+      - name: Build
+        run: make -j$(nproc) SPINEL_PIN=0
+
+      - name: make test
+        run: make test SPINEL_PIN=0
+
+      - name: make test-host
+        run: make test-host SPINEL_PIN=0
+
+      - name: make regress
+        run: make regress SPINEL_PIN=0
+
+      - name: Upload the regress cases
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regress-cases-spinel-master
+          path: build/regress/cases
+          if-no-files-found: ignore
