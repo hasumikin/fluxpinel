@@ -25,10 +25,8 @@
 
 #include "builtin_ops.c"
 
-/* types.c reads these flags of the analysis (src/analyze.c). Fluxpinel
-   links the runtime of the default String mode, so g_one_string is 0. */
+/* types.c reads this flag of the analysis (src/analyze.c). */
 int g_infer_optimistic = 0;
-int g_one_string = 0;
 
 /* builtin_names.c calls this lookup of the analysis (src/analyze_util.c)
    only in builtin_default_cmp, which the generator does not call. */
@@ -129,6 +127,8 @@ static const char *expand(Str *s, const BuiltinOp *op, const Variant *v, int *oi
       if (!tr || !tr->hash_id) return "$K without a hash id";
       str_puts(s, tr->hash_id); p++; continue;
     }
+    /* $C: the suffix of a literal case map option. A wrapper maps with no option. */
+    case 'C': p++; continue;
     case 'T': return "$T (family temp)";
     case 'B': case 'E': return "$B/$E (String Range handle)";
     case 'R': return "$R";

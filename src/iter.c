@@ -1144,7 +1144,7 @@ static sp_RbVal fx_srange_to_a(sp_StrRange g) {
   sp_PolyArray *p = sp_PolyArray_new();
   SP_GC_ROOT(p);
   for (sp_int i = 0; i < a->len; i++)
-    sp_PolyArray_push(p, g.sym ? sp_box_sym(sp_sym_intern(a->data[i])) : sp_box_str_new(sp_str_dup(a->data[i])));
+    sp_PolyArray_push(p, g.sym ? sp_box_sym(sp_sym_intern(SP_SEBN(a->data[i]))) : sp_box_str_new(sp_str_dup(SP_SEBN(a->data[i]))));
   return sp_box_poly_array(p);
 }
 

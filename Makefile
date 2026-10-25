@@ -66,7 +66,8 @@ else
 FFI_LIBS =
 NATIVE_FLAGS =
 endif
-CFLAGS = -O2 -g -std=gnu11 -ffp-contract=off -DSP_INT_OVERFLOW_MODE_$(INT_OVERFLOW) $(RT_CFLAGS) \
+# The runtime of spinel holds a String as its handle (SP_ONE_STRING).
+CFLAGS = -O2 -g -std=gnu11 -ffp-contract=off -DSP_ONE_STRING -DSP_INT_OVERFLOW_MODE_$(INT_OVERFLOW) $(RT_CFLAGS) \
          -DFX_PACKAGES_DIR='"$(SPINEL)/packages"' -DFX_FFI=$(FFI) \
          -Isrc -I$(BUILD) -I$(SPINEL)/lib -I$(SPINEL)/lib/regexp -I$(SPINEL)/vendor/prism/include
 LIBS = $(RT_ARCHIVE) $(SPINEL)/build/libprism.a -lm -lcrypt $(RT_LIBS) $(FFI_LIBS)

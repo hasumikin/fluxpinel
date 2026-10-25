@@ -523,7 +523,7 @@ static int fx_re_string(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
     if (name[0] == 'r') {
       sp_StrArray *p = sp_re_rpartition(pat, s);
       SP_GC_ROOT(p);
-      for (sp_int i = 0; i < p->len; i++) sp_PolyArray_push(a, fx_re_str(p->data[i]));
+      for (sp_int i = 0; i < p->len; i++) sp_PolyArray_push(a, fx_re_str(SP_SEBN(p->data[i])));
     } else {
       sp_MatchData *m = fx_re_md_set(sp_re_matchdata(pat, s));
       SP_GC_ROOT(m);
