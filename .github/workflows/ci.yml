@@ -118,3 +118,59 @@ jobs:
           name: regress-cases-spinel-master
           path: build/regress/cases
           if-no-files-found: ignore
+
+  # The blog of Roundhouse with the console (docs/roundhouse.md), on the
+  # pinned spinel. The pinned Roundhouse runs first, so a failure there
+  # comes from Fluxpinel. Then the main of Roundhouse runs. The job does
+  # not change ROUNDHOUSE_COMMIT in the repository.
+  roundhouse:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+
+      - name: Install the libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libffi-dev libsqlite3-dev libjemalloc-dev sqlite3
+
+      # bin/rh fixture of Roundhouse makes the app with `rails new`.
+      - name: Install Rails
+        run: gem install rails -v 8.1.4 --no-document
+
+      - name: Restore spinel
+        id: spinel-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: deps/spinel
+          key: spinel-${{ runner.os }}-${{ hashFiles('SPINEL_COMMIT') }}
+
+      - name: Fetch and build spinel
+        run: make -j$(nproc) deps
+
+      # The build of Roundhouse is incremental, so an older target also
+      # helps the main.
+      - name: Restore the build of Roundhouse
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            deps/roundhouse/target
+          key: roundhouse-${{ runner.os }}-${{ hashFiles('ROUNDHOUSE_COMMIT') }}
+          restore-keys: roundhouse-${{ runner.os }}-
+
+      - name: Build
+        run: make -j$(nproc)
+
+      - name: make roundhouse (the pin)
+        run: make roundhouse
+
+      - name: make test-roundhouse (the pin)
+        run: make test-roundhouse
+
+      - name: make upgrade_roundhouse (the main of Roundhouse)
+        run: make upgrade_roundhouse
