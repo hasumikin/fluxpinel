@@ -1,6 +1,6 @@
 # Runs the host build of the blog and checks the pages and the console:
 #
-#   ruby examples/blog/test.rb BLOG HOST
+#   ruby test/roundhouse/test.rb BLOG HOST
 #
 # BLOG is the Spinel output of the blog after apply.rb, with its assets.
 # HOST is the host binary. The server runs in BLOG on free ports, with a

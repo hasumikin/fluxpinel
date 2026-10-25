@@ -1,6 +1,6 @@
 # Changes the Spinel output of the blog of Roundhouse for the console:
 #
-#   ruby examples/blog/apply.rb BLOG
+#   ruby roundhouse/apply.rb BLOG
 #
 # BLOG is the output directory of `roundhouse --target spinel`. The script
 # changes BLOG/main.rb and copies console.rb and kernel/fluxpinel.rb into
@@ -8,7 +8,7 @@
 # not there exactly once, the script stops and changes nothing, so a change
 # of the Roundhouse output cannot put a change in the wrong place.
 
-FX = File.expand_path("../..", __dir__)
+FX = File.expand_path("..", __dir__)
 
 blog = ARGV[0] or abort "usage: ruby #{$0} BLOG"
 main = File.join(blog, "main.rb")

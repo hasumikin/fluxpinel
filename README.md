@@ -212,7 +212,8 @@ make oracle
   `build/oracle/report.md`.
 
 For the checks during development and the update of the pin, see
-[docs/development.md](docs/development.md).
+[docs/development.md](docs/development.md). For the console in a Rails app
+that Roundhouse compiles, see [docs/roundhouse.md](docs/roundhouse.md).
 
 ## Relation to spinel
 

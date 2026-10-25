@@ -1,5 +1,6 @@
-# The console of the blog of Roundhouse, and its entries. Copy this file and
-# kernel/fluxpinel.rb into the Spinel output of the blog (see README.md).
+# The console of the blog of Roundhouse, and its entries. apply.rb copies
+# this file and kernel/fluxpinel.rb into the Spinel output of the blog (see
+# docs/roundhouse.md).
 #
 # Console.listen accepts connections on 127.0.0.1:port, one green thread
 # for each session, and gives each line to Fluxpinel.feed. The entries

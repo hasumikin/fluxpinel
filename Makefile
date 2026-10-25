@@ -12,9 +12,9 @@
 #   make upgrade_spinel
 #               move the pin to the master of spinel, then build and run
 #               test, test-host and regress
-#   make test-blog
-#               run the host build of the blog of Roundhouse and check it
-#               (examples/blog/README.md)
+#   make roundhouse, make test-roundhouse, make upgrade_roundhouse
+#               make the blog of Roundhouse and check it, and move its pin
+#               (roundhouse/roundhouse.mk)
 #
 # SPINEL points at a built spinel checkout, deps/spinel by default. Set it
 # on the command line or in config.mk (not tracked) to use another one,
@@ -195,13 +195,7 @@ test-host: $(HOST)/fluxpinel
 	ruby test/run.rb $(HOST_REQUIRES) $(HOST)/fluxpinel $(TEST_DIRS) test/host
 	SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1 ruby test/run.rb $(HOST_REQUIRES) $(HOST)/fluxpinel $(TEST_DIRS) test/host
 
-# The smoke test of the blog of Roundhouse (examples/blog/README.md). BLOG
-# is its Spinel output after apply.rb, and BLOG_HOST is its host build.
-BLOG ?= build/blog-src
-BLOG_HOST ?= build/blog/blog
-
-test-blog:
-	ruby examples/blog/test.rb $(BLOG) $(BLOG_HOST)
+include roundhouse/roundhouse.mk
 
 # The oracle: the spinel test corpus under CRuby (.expected), Fluxpinel and AOT,
 # in promote mode on both sides. In raise mode, spinel's analysis still
@@ -264,4 +258,4 @@ endif
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test host test-host test-blog oracle regress deps upgrade_spinel clean FORCE
+.PHONY: all test host test-host oracle regress deps upgrade_spinel clean FORCE

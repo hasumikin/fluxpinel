@@ -117,6 +117,13 @@ make -C $SPINEL
 Before the next `make upgrade_spinel`, put your checkout on the branch
 master again: `git -C $SPINEL switch master`.
 
+## Follow the main of Roundhouse
+
+`ROUNDHOUSE_COMMIT` pins Roundhouse for the blog with a console. Run
+`make roundhouse` and `make test-roundhouse` after a change of the pin of
+spinel. `make upgrade_roundhouse` moves the pin of Roundhouse. Move the pin
+of spinel first. See [roundhouse.md](roundhouse.md).
+
 ## The host build
 
 `make host` builds a kernel and Fluxpinel into one binary. Give the kernel,
