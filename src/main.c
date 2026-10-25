@@ -25,6 +25,7 @@
 #include "struct.c"
 #include "fiber.c"
 #include "load.c"
+#include "prelude.c"
 #include "ffi.c"
 #include "process.c"
 #include "file.c"

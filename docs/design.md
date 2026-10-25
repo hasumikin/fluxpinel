@@ -120,6 +120,10 @@ outside the table. Fluxpinel writes these methods by hand:
 - element access and operators (`[]`, `[]=`, `==`, `+`, `length`, `push`),
 - methods with a block (`each`, `map`, `select`, `inject`). The walker
   must call its own blocks, so these methods are walker-native anyway.
+  `src/prelude.rb` writes the rarer ones in Ruby (`each_index`, `fill`,
+  `combination`, `step`). A call takes the prelude only when no C method
+  takes the block (`src/prelude.c`). The prelude does not reopen the
+  builtin class, so the other calls keep their speed.
 - bang methods on String (`sub!`, `upcase!`). They change the receiver
   through the STRBUF handle.
 

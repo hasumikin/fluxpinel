@@ -380,6 +380,7 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
   if (fx_iter(recv, name, argc, argv, blk, out)) return 1;
   if (blk) {
     if (argc >= 1 && (!strcmp(name, "send") || !strcmp(name, "__send__") || !strcmp(name, "public_send"))) return 0;
+    if (fx_prelude_call(recv, name, argc, argv, blk, out)) return 1;
     /* a method of no builtin, with a hook that takes it */
     if (!fx_object_method_name(name) && fx_find_hook(recv, "method_missing")) return 0;
     fx_gap(sp_sprintf("block for the builtin %s#%s", sp_poly_class_name(recv), name));
@@ -477,6 +478,7 @@ static sp_RbVal fx_send_v(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
   int plain = recv.tag == SP_TAG_INT || recv.tag == SP_TAG_FLT || recv.tag == SP_TAG_NIL || recv.tag == SP_TAG_BOOL ||
               (fx_is_fx_object(recv) && !fx_is_native_obj(recv) && !fx_record_of(fx_class_of(recv)));
   if (check && plain && fx_kernel_private(name)) return fx_denied(recv, name, argc, argv, blk, FX_MISS_PRIVATE);
+  fx_prelude_gap(name, argc, argv);
   if (fx_method_missing(recv, name, argc, argv, blk, FX_MISS_METHOD, &out)) return out;
   FxClass *rk = recv.tag == SP_TAG_CLASS ? fx_class_value(recv) : NULL;
   fx_trace_missing(rk ? sp_sprintf("%s.", rk->name) : sp_sprintf("%s#", sp_poly_class_name(recv)), name, argc);

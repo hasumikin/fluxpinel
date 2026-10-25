@@ -257,6 +257,10 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
 static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                              sp_RbVal *out);
 static FxClass *fx_class_named(const char *name);
+static int fx_prelude_call(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                           sp_RbVal *out);   /* prelude.c */
+static int fx_prelude_has(sp_RbVal r, const char *name);
+static void fx_prelude_gap(const char *name, int argc, sp_RbVal *argv);
 static int fx_is_string(sp_RbVal v);
 
 /* exc.c */
