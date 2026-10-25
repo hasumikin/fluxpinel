@@ -197,6 +197,11 @@ static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_Rb
     if (!strcmp(name, "**")) { *out = sp_poly_pow(r, a); return 1; }
     /* the bit operators of Integer, which answer a Bignum too */
     if (fx_is_integer(r)) {
+      /* sp_poly_band and its pair cut a Bignum to a machine word */
+      if ((r.tag == SP_TAG_BIGINT || a.tag == SP_TAG_BIGINT) && fx_is_integer(a)) {
+        int op = !strcmp(name, "&") ? 0 : !strcmp(name, "|") ? 1 : !strcmp(name, "^") ? 2 : -1;
+        if (op >= 0) { *out = sp_poly_bitop(r, a, op); return 1; }
+      }
       if (!strcmp(name, "&")) { *out = sp_poly_band(r, a); return 1; }
       if (!strcmp(name, "|")) { *out = sp_poly_bor(r, a); return 1; }
       if (!strcmp(name, "^")) { *out = sp_poly_bxor(r, a); return 1; }

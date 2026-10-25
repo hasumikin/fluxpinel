@@ -3246,6 +3246,7 @@ poly_sign_predicate_user_zero
 poly_size_user_return
 poly_slice_assign
 poly_slice_three_keys_compare
+poly_slot_op_assign
 poly_slot_typed_array_read
 poly_splat_anonymous_rest
 poly_splice_float_array_keeps_integer
@@ -3439,6 +3440,7 @@ promote_poly_int_overflow
 promote_poly_overflow
 promote_pow_runtime_exponent
 promote_shl_pow_bigint
+promote_shl_runtime_count
 promote_typed_sinks_more
 promote_yield_operator_diverging_block_types
 protected_call_in_module_block
