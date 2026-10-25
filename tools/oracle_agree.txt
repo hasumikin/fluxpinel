@@ -1,5 +1,5 @@
 # The spinel tests that Fluxpinel answers right, for make regress.
-# make oracle writes this file. spinel: aa06013aa1f1
+# make oracle writes this file. spinel: 28851b3b61c4
 abstract_raise_override_return
 alias_attr_reader_source
 alias_capture_outlives_redefined_alias
@@ -426,6 +426,7 @@ boxed_merge_forwarded_proc
 boxed_module_class_name
 boxed_native_setter_beside_user_writer
 boxed_native_setter_value
+boxed_new_non_class_receiver
 boxed_nil_string_identity
 boxed_object_inspect_returns_boxed
 boxed_param_value_into_typed_hash_slot
@@ -2923,6 +2924,7 @@ one_line_in_deconstruct
 one_string_branch_handle_arm
 one_string_nil_element_conversion
 one_string_or_raise_kept_left
+one_string_write_unsupplied_io
 oneline_in_array
 oneline_in_hash
 oneline_in_hash_presence
@@ -3111,6 +3113,7 @@ poly_dispatch_attr_reader
 poly_dispatch_block_arg
 poly_dispatch_block_capture
 poly_dispatch_blockless_blk_method
+poly_dispatch_boxed_reader_arg
 poly_dispatch_braceless_string_key_hash
 poly_dispatch_builtin
 poly_dispatch_builtin_all
@@ -3615,6 +3618,7 @@ range_negative_count_arg
 range_one_sided_search
 range_overlap_array_flatten_depth
 range_overlap_empty_boxed
+range_poly_elem_ends
 range_predicate_typed_argument
 range_step
 range_step_bad_stride
@@ -3790,6 +3794,7 @@ require_in_method_order
 require_modifier
 require_modifier_condition
 require_parent
+require_relative_computed_head
 require_same_line
 require_unsupported_lib
 required_file_runtime_return
@@ -3825,6 +3830,7 @@ respond_to_and_call_reopened_builtin_visibility
 respond_to_class_builtins
 respond_to_def_self_method
 respond_to_implicit_self
+respond_to_missing_builtin_probe
 respond_to_module_singleton_accessor
 respond_to_other_builtin_method
 respond_to_override_super
@@ -4448,6 +4454,7 @@ string_range_fresh_ends
 string_range_include_walk
 string_range_member_shared_arg
 string_range_min_max_block
+string_range_shared_ends_enum
 string_range_step
 string_range_step_block
 string_range_to_a
