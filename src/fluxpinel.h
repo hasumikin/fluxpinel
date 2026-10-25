@@ -177,9 +177,9 @@ typedef struct FxEnv {
 /* A pending jump out of the statement under evaluation. A break in a
    block becomes FX_CTL_BREAK_BLOCK at the block boundary; it ends the
    call that passed the block (L.ctl_target). A return ends the frame
-   L.ctl_target. */
+   L.ctl_target. A redo runs the body of the loop or the block again. */
 typedef enum {
-  FX_CTL_NONE, FX_CTL_RETURN, FX_CTL_BREAK, FX_CTL_NEXT, FX_CTL_BREAK_BLOCK, FX_CTL_RETRY
+  FX_CTL_NONE, FX_CTL_RETURN, FX_CTL_BREAK, FX_CTL_NEXT, FX_CTL_BREAK_BLOCK, FX_CTL_RETRY, FX_CTL_REDO
 } FxCtl;
 
 /* A source file that Fluxpinel parsed: the main program or a file that

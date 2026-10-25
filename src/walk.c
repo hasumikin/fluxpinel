@@ -587,7 +587,12 @@ static sp_RbVal fx_yield_in(const FxBlock *b, int argc, sp_RbVal *argv, int stri
   bf.block = m ? mblk : h->block;
   bf.lambda = b->lambda;
   fx_bind_block(&bf, params, argc, argv, b->lambda, strict);
-  sp_RbVal v = body ? fx_eval(&bf, body) : sp_box_nil();
+  sp_RbVal v;
+  for (;;) {
+    v = body ? fx_eval(&bf, body) : sp_box_nil();
+    if (L.ctl != FX_CTL_REDO) break;
+    L.ctl = FX_CTL_NONE;   /* the body again, with the same arguments */
+  }
   switch (L.ctl) {
   case FX_CTL_NEXT:
     L.ctl = FX_CTL_NONE;
@@ -1087,18 +1092,84 @@ static sp_RbVal fx_eval_stmts(FxFrame *f, const pm_statements_node_t *s) {
   return v;
 }
 
-static sp_RbVal fx_while(FxFrame *f, const pm_node_t *pred, const pm_statements_node_t *body, int until) {
-  for (;;) {
+/* while and until. post is set for `begin ... end while c`, whose body
+   runs once before the first test. A redo runs the body again with no
+   test. */
+static sp_RbVal fx_while(FxFrame *f, const pm_node_t *pred, const pm_statements_node_t *body, int until,
+                         int post) {
+  for (int first = 1;; first = 0) {
     /* a back-edge lets another green thread run, as in AOT code */
     if (SP_UNLIKELY(SP_SAFEPOINT_POLL())) sp_safepoint();
-    sp_RbVal c = fx_eval(f, pred);
-    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
-    if (sp_poly_truthy(c) == until) return sp_box_nil();
-    fx_eval_stmts(f, body);
+    if (!(post && first)) {
+      sp_RbVal c = fx_eval(f, pred);
+      if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+      if (sp_poly_truthy(c) == until) return sp_box_nil();
+    }
+    do {
+      if (L.ctl == FX_CTL_REDO) L.ctl = FX_CTL_NONE;
+      fx_eval_stmts(f, body);
+    } while (L.ctl == FX_CTL_REDO);
     if (L.ctl == FX_CTL_BREAK) { L.ctl = FX_CTL_NONE; return L.ctl_val; }
     if (L.ctl == FX_CTL_NEXT) { L.ctl = FX_CTL_NONE; continue; }
     if (L.ctl != FX_CTL_NONE) return sp_box_nil();
   }
+}
+
+/* for x in c: each of c with a block of C. The index and the locals of the
+   body are those of the scope, as in CRuby. A break ends the each, and
+   answers its value; the loop answers what each answers. */
+static int fx_mw_prepare(FxFrame *f, const pm_node_t *t, sp_PolyArray *pre);
+static void fx_mw_assign(FxFrame *f, const pm_node_t *t, sp_RbVal v, sp_PolyArray *pre, sp_int *pi);
+
+typedef struct {
+  FxFrame *f;
+  const pm_for_node_t *n;
+  const FxBlock *self;
+} FxFor;
+
+static sp_RbVal fx_for_step(void *ctx, int argc, sp_RbVal *argv) {
+  SP_GC_SAVE();
+  FxFor *w = (FxFor *)ctx;
+  /* as the parameters of a block: one index takes the first value that
+     each yields, and `for a, b` takes them all */
+  sp_RbVal v = argc >= 1 ? argv[0] : sp_box_nil();
+  SP_GC_ROOT_RBVAL(v);
+  if (argc > 1 && PM_NODE_TYPE_P(w->n->index, PM_MULTI_TARGET_NODE)) {
+    sp_PolyArray *p = sp_PolyArray_new();
+    v = sp_box_poly_array(p);
+    for (int i = 0; i < argc; i++) sp_PolyArray_push(p, argv[i]);
+  }
+  sp_PolyArray *pre = sp_PolyArray_new();
+  SP_GC_ROOT(pre);
+  if (!fx_mw_prepare(w->f, w->n->index, pre)) return sp_box_nil();
+  sp_int pi = 0;
+  fx_mw_assign(w->f, w->n->index, v, pre, &pi);
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  do {
+    if (L.ctl == FX_CTL_REDO) L.ctl = FX_CTL_NONE;
+    fx_eval_stmts(w->f, w->n->statements);
+  } while (L.ctl == FX_CTL_REDO);
+  if (L.ctl == FX_CTL_NEXT) L.ctl = FX_CTL_NONE;
+  if (L.ctl == FX_CTL_BREAK) {
+    L.ctl = FX_CTL_BREAK_BLOCK;
+    L.ctl_target = w->self;
+  }
+  return sp_box_nil();
+}
+
+static sp_RbVal fx_for(FxFrame *f, const pm_for_node_t *n) {
+  sp_RbVal c = fx_eval(f, n->collection);
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  SP_GC_ROOT_RBVAL(c);
+  FxFor w = { .f = f, .n = n };
+  FxBlock cb = { .cfn = fx_for_step, .ctx = &w };
+  w.self = &cb;
+  sp_RbVal v = fx_send_b(c, "each", 0, NULL, &cb);
+  if (L.ctl == FX_CTL_BREAK_BLOCK && L.ctl_target == &cb) {
+    L.ctl = FX_CTL_NONE;
+    return L.ctl_val;
+  }
+  return v;
 }
 
 /* Whether the value v of a when clause takes the subject: v === subject,
@@ -1747,6 +1818,71 @@ static sp_RbVal fx_const_read(FxFrame *f, const pm_node_t *n) {
   return v;
 }
 
+/* A OP= v, A ||= v and A &&= v, also on a path X::A. A ||= v reads an
+   undefined A as nil, as CRuby does (defined?); the others raise
+   NameError for it. */
+static sp_RbVal fx_op(sp_RbVal cur, pm_constant_id_t op, sp_RbVal v);
+
+static sp_RbVal fx_const_logic_write(FxFrame *f, const pm_node_t *n) {
+  SP_GC_SAVE();
+  const pm_node_t *path = NULL, *value;
+  pm_constant_id_t id = 0, op = 0;
+  int kind;   /* 0: OP=, 1: ||=, 2: &&= */
+  switch (PM_NODE_TYPE(n)) {
+  case PM_CONSTANT_OPERATOR_WRITE_NODE: {
+    const pm_constant_operator_write_node_t *w = (const pm_constant_operator_write_node_t *)n;
+    id = w->name, value = w->value, op = w->binary_operator, kind = 0;
+    break;
+  }
+  case PM_CONSTANT_OR_WRITE_NODE: {
+    const pm_constant_or_write_node_t *w = (const pm_constant_or_write_node_t *)n;
+    id = w->name, value = w->value, kind = 1;
+    break;
+  }
+  case PM_CONSTANT_AND_WRITE_NODE: {
+    const pm_constant_and_write_node_t *w = (const pm_constant_and_write_node_t *)n;
+    id = w->name, value = w->value, kind = 2;
+    break;
+  }
+  case PM_CONSTANT_PATH_OPERATOR_WRITE_NODE: {
+    const pm_constant_path_operator_write_node_t *w = (const pm_constant_path_operator_write_node_t *)n;
+    path = (const pm_node_t *)w->target, value = w->value, op = w->binary_operator, kind = 0;
+    break;
+  }
+  case PM_CONSTANT_PATH_OR_WRITE_NODE: {
+    const pm_constant_path_or_write_node_t *w = (const pm_constant_path_or_write_node_t *)n;
+    path = (const pm_node_t *)w->target, value = w->value, kind = 1;
+    break;
+  }
+  default: {
+    const pm_constant_path_and_write_node_t *w = (const pm_constant_path_and_write_node_t *)n;
+    path = (const pm_node_t *)w->target, value = w->value, kind = 2;
+    break;
+  }
+  }
+  FxClass *scope;
+  sp_sym name;
+  sp_RbVal cur = sp_box_nil();
+  int hit;
+  if (path) {
+    fx_const_target(f, path, &scope, &name);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    hit = fx_const_scoped(scope, name, &cur);
+  } else {
+    scope = f->cref, name = fx_sym(id);
+    hit = fx_const_lookup(scope, name, &cur);
+  }
+  if (!hit && kind != 1) fx_const_missing(sp_sym_to_s(name));
+  SP_GC_ROOT_RBVAL(cur);
+  if (kind == 1 && sp_poly_truthy(cur)) return cur;
+  if (kind == 2 && !sp_poly_truthy(cur)) return cur;
+  sp_RbVal v = fx_eval(f, value);
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  if (kind == 0) v = fx_op(cur, op, v);
+  fx_const_set(scope, name, v);
+  return v;
+}
+
 /* x op= v on a local, an ivar or an attribute: read, send op, write. */
 static sp_RbVal fx_op(sp_RbVal cur, pm_constant_id_t op, sp_RbVal v) {
   SP_GC_ROOT_RBVAL(cur);
@@ -1760,13 +1896,16 @@ static sp_RbVal fx_call_op_write(FxFrame *f, const pm_call_operator_write_node_t
   sp_RbVal recv = fx_eval(f, n->receiver);
   SP_GC_ROOT_RBVAL(recv);
   if (L.ctl != FX_CTL_NONE) return sp_box_nil();
-  sp_RbVal cur = fx_send(recv, sp_sym_to_s(fx_sym(n->read_name)), 0, NULL);
+  /* a private reader and writer take `self.a`, not `(self).a` (prism's
+     IGNORE_VISIBILITY) */
+  int check = !PM_NODE_FLAG_P((const pm_node_t *)n, PM_CALL_NODE_FLAGS_IGNORE_VISIBILITY);
+  sp_RbVal cur = fx_send_v(recv, sp_sym_to_s(fx_sym(n->read_name)), 0, NULL, NULL, check, &f->self);
   SP_GC_ROOT_RBVAL(cur);
   sp_RbVal v = fx_eval(f, n->value);
   if (L.ctl != FX_CTL_NONE) return sp_box_nil();
   sp_RbVal nv = fx_op(cur, n->binary_operator, v);
   SP_GC_ROOT_RBVAL(nv);
-  fx_send(recv, sp_sym_to_s(fx_sym(n->write_name)), 1, &nv);
+  fx_send_v(recv, sp_sym_to_s(fx_sym(n->write_name)), 1, &nv, NULL, check, &f->self);
   return nv;
 }
 
@@ -1960,6 +2099,35 @@ static sp_RbVal fx_multi_write(FxFrame *f, const pm_multi_write_node_t *w) {
   SP_GC_ROOT_RBVAL(v);
   sp_int pi = 0;
   fx_mw_split(f, &w->lefts, w->rest, &w->rights, fx_mw_array(v), pre, &pi);
+  return v;
+}
+
+/* x.a ||= v and x.a &&= v: read, test, and write only when needed. x&.a
+   answers nil for a nil x, and does not evaluate v. */
+static sp_RbVal fx_call_logic_write(FxFrame *f, const pm_node_t *n) {
+  SP_GC_SAVE();
+  int is_or = PM_NODE_TYPE_P(n, PM_CALL_OR_WRITE_NODE);
+  const pm_node_t *recv_n, *value;
+  pm_constant_id_t read, write;
+  if (is_or) {
+    const pm_call_or_write_node_t *w = (const pm_call_or_write_node_t *)n;
+    recv_n = w->receiver, value = w->value, read = w->read_name, write = w->write_name;
+  } else {
+    const pm_call_and_write_node_t *w = (const pm_call_and_write_node_t *)n;
+    recv_n = w->receiver, value = w->value, read = w->read_name, write = w->write_name;
+  }
+  if (!recv_n) fx_unsupported(n, "attribute logic-assign with no receiver");
+  sp_RbVal recv = fx_eval(f, recv_n);
+  SP_GC_ROOT_RBVAL(recv);
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  if (PM_NODE_FLAG_P(n, PM_CALL_NODE_FLAGS_SAFE_NAVIGATION) && recv.tag == SP_TAG_NIL) return recv;
+  int check = !PM_NODE_FLAG_P(n, PM_CALL_NODE_FLAGS_IGNORE_VISIBILITY);
+  sp_RbVal cur = fx_send_v(recv, sp_sym_to_s(fx_sym(read)), 0, NULL, NULL, check, &f->self);
+  if (sp_poly_truthy(cur) == is_or) return cur;
+  sp_RbVal v = fx_eval(f, value);
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  SP_GC_ROOT_RBVAL(v);
+  fx_send_v(recv, sp_sym_to_s(fx_sym(write)), 1, &v, NULL, check, &f->self);
   return v;
 }
 
@@ -2457,6 +2625,11 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
   }
   case PM_INTERPOLATED_STRING_NODE:
     return fx_interpolate(f, &((const pm_interpolated_string_node_t *)n)->parts);
+  case PM_INTERPOLATED_SYMBOL_NODE: {
+    sp_RbVal s = fx_interpolate(f, &((const pm_interpolated_symbol_node_t *)n)->parts);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    return fx_send(s, "to_sym", 0, NULL);
+  }
   case PM_SYMBOL_NODE: {
     const pm_string_t *s = &((const pm_symbol_node_t *)n)->unescaped;
     return sp_box_sym(fx_sym_intern_n((const char *)pm_string_source(s), pm_string_length(s)));
@@ -2536,14 +2709,18 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
   }
   case PM_WHILE_NODE: {
     const pm_while_node_t *w = (const pm_while_node_t *)n;
-    if (PM_NODE_FLAG_P(n, PM_LOOP_FLAGS_BEGIN_MODIFIER)) fx_unsupported(n, "begin...end while");
-    return fx_while(f, w->predicate, w->statements, 0);
+    return fx_while(f, w->predicate, w->statements, 0, PM_NODE_FLAG_P(n, PM_LOOP_FLAGS_BEGIN_MODIFIER));
   }
   case PM_UNTIL_NODE: {
     const pm_until_node_t *u = (const pm_until_node_t *)n;
-    if (PM_NODE_FLAG_P(n, PM_LOOP_FLAGS_BEGIN_MODIFIER)) fx_unsupported(n, "begin...end until");
-    return fx_while(f, u->predicate, u->statements, 1);
+    return fx_while(f, u->predicate, u->statements, 1, PM_NODE_FLAG_P(n, PM_LOOP_FLAGS_BEGIN_MODIFIER));
   }
+  case PM_FOR_NODE:
+    return fx_for(f, (const pm_for_node_t *)n);
+  case PM_REDO_NODE:
+    L.ctl = FX_CTL_REDO;
+    L.ctl_val = sp_box_nil();
+    return sp_box_nil();
   case PM_RETURN_NODE:
     return fx_jump(f, FX_CTL_RETURN, ((const pm_return_node_t *)n)->arguments);
   case PM_BREAK_NODE:
@@ -2604,6 +2781,9 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
   case PM_INDEX_OR_WRITE_NODE:
   case PM_INDEX_AND_WRITE_NODE:
     return fx_index_logic_write(f, n);
+  case PM_CALL_OR_WRITE_NODE:
+  case PM_CALL_AND_WRITE_NODE:
+    return fx_call_logic_write(f, n);
   case PM_SELF_NODE:
     return f->self;
   case PM_CLASS_NODE: {
@@ -2636,6 +2816,13 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
     fx_const_set(scope, name, v);
     return v;
   }
+  case PM_CONSTANT_OPERATOR_WRITE_NODE:
+  case PM_CONSTANT_OR_WRITE_NODE:
+  case PM_CONSTANT_AND_WRITE_NODE:
+  case PM_CONSTANT_PATH_OPERATOR_WRITE_NODE:
+  case PM_CONSTANT_PATH_OR_WRITE_NODE:
+  case PM_CONSTANT_PATH_AND_WRITE_NODE:
+    return fx_const_logic_write(f, n);
   case PM_CLASS_VARIABLE_READ_NODE:
     return fx_cvar_get(fx_cvar_base(f->cref), fx_sym(((const pm_class_variable_read_node_t *)n)->name));
   case PM_CLASS_VARIABLE_WRITE_NODE: {
@@ -2708,10 +2895,29 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
     fx_ivar_set(f->self, name, v);
     return v;
   }
+  case PM_INSTANCE_VARIABLE_AND_WRITE_NODE: {
+    const pm_instance_variable_and_write_node_t *w = (const pm_instance_variable_and_write_node_t *)n;
+    sp_sym name = fx_sym(w->name);
+    sp_RbVal cur = fx_ivar_get(f->self, name);
+    if (!sp_poly_truthy(cur)) return cur;
+    sp_RbVal v = fx_eval(f, w->value);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    fx_ivar_set(f->self, name, v);
+    return v;
+  }
   case PM_LOCAL_VARIABLE_OR_WRITE_NODE: {
     const pm_local_variable_or_write_node_t *w = (const pm_local_variable_or_write_node_t *)n;
     sp_RbVal cur = *fx_local(f, n, w->name, w->depth);
     if (sp_poly_truthy(cur)) return cur;
+    sp_RbVal v = fx_eval(f, w->value);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    *fx_local(f, n, w->name, w->depth) = v;   /* after: the slots can move */
+    return v;
+  }
+  case PM_LOCAL_VARIABLE_AND_WRITE_NODE: {
+    const pm_local_variable_and_write_node_t *w = (const pm_local_variable_and_write_node_t *)n;
+    sp_RbVal cur = *fx_local(f, n, w->name, w->depth);
+    if (!sp_poly_truthy(cur)) return cur;
     sp_RbVal v = fx_eval(f, w->value);
     if (L.ctl != FX_CTL_NONE) return sp_box_nil();
     *fx_local(f, n, w->name, w->depth) = v;   /* after: the slots can move */

@@ -35,6 +35,7 @@ and_arm_returns_nil
 and_nullable_container_poly
 and_or_empty_literal
 and_short_circuit_nil
+and_write_value_nil_into_number
 anon_block_capture_cells
 anon_block_forward
 anon_block_forward_capture
@@ -86,9 +87,12 @@ array_escape_push_general
 array_fetch_block_next
 array_fetch_block_value_setup
 array_fetch_nil_default_block
+array_fetch_recv_root
 array_fill_poly
 array_fill_string_alias
 array_fill_widen
+array_filled_by_callee
+array_filled_by_callee_beside_user_shift
 array_filter_bang_return
 array_first_last_empty
 array_flat_map_scalar_block
@@ -149,6 +153,7 @@ array_op_assign_untyped_rhs
 array_operand_misfit_nil_receiver
 array_operator_non_array_type_error
 array_ops_boxed_to_ary
+array_or_nil_local_other_writes
 array_pack_native_ints
 array_pack_pointer_count
 array_pack_returns_string
@@ -213,6 +218,8 @@ array_values_at_float_index
 array_zip_no_args
 at_receiver_without_at
 at_receiver_without_at_arg_order
+attr
+attr_accessor_dead_writer_ptr_array_narrow
 attr_assign_value_arg_mutates
 attr_assign_value_case_in_accessor
 attr_assign_value_case_in_struct
@@ -227,6 +234,9 @@ attr_op_assign_value_mixed_writers
 attr_op_write_method_tail_branch
 attr_op_write_method_value
 attr_op_write_value
+attr_or_and_write_nil_value
+attr_or_write_slot_kinds
+attr_or_write_unset_slot
 attr_override_dispatch
 attr_reader_level_through_boxed_element
 attr_reader_override_type
@@ -242,6 +252,7 @@ bang_op_ruby_truthy
 bang_or_receiver_tail
 bang_result_through_shared_handle
 bare_arg_in_module_body
+bare_begin_no_handler
 bare_call_class_before_toplevel
 bare_call_prefers_self_over_toplevel
 bare_call_subclass_reader_over_inherited_def
@@ -269,6 +280,7 @@ begin_rescue_as_expression
 begin_rescue_else_clause
 begin_unknown_const_tail
 begin_value_body_local
+begin_while_locals_not_volatile
 bigint_div_by_zero
 bigint_inner_chain_assign
 bigint_literal_pow
@@ -427,6 +439,7 @@ boxed_module_class_name
 boxed_native_setter_beside_user_writer
 boxed_native_setter_value
 boxed_new_non_class_receiver
+boxed_nil_into_typed_slot
 boxed_nil_string_identity
 boxed_object_inspect_returns_boxed
 boxed_param_value_into_typed_hash_slot
@@ -524,6 +537,7 @@ bundle_class_15
 bundle_class_18
 bundle_class_19
 bundle_class_20
+bundle_class_21
 bundle_class_22
 bundle_class_a
 bundle_classd_04
@@ -554,6 +568,7 @@ bundle_hash
 bundle_hash_b1
 bundle_hash_b2
 bundle_int_a
+bundle_misc_b
 bundle_misc_c_10
 bundle_misc_c_26
 bundle_misc_c_30
@@ -576,6 +591,7 @@ byref_poly_receiver_takes_handle
 byref_string_param_instance_method
 cached_element_literal_eq
 cached_store_nilable_value
+call_and_write
 call_arg_eval_order
 call_arg_eval_order_scalar
 call_arg_int_to_obj_cast
@@ -588,6 +604,13 @@ call_operand_conditional_in_order
 call_operand_lifetime
 call_operand_past_64_in_order
 call_operand_past_eighth_in_order
+call_or_write
+call_or_write_attr_reader_def_writer
+call_or_write_inherited_methods
+call_or_write_poly_receiver
+call_or_write_through_writer
+call_or_write_undefined_attr
+call_or_write_writer_boxes_value
 call_plan_break_target
 call_plan_class_target
 call_plan_comparison_target
@@ -698,6 +721,7 @@ class_basicobject_superclass
 class_body_bare_private_new
 class_body_constant_bare_new
 class_body_dsl_call
+class_body_ivar_write_as_value
 class_body_listing_beside_instance_def_of_name
 class_body_local_scope
 class_body_method_defined_namespaced_string
@@ -740,6 +764,7 @@ class_macro_keyword_param_attr_reader
 class_macro_name_of_an_attr_reader
 class_macro_named_only_where_it_goes
 class_macro_never_called
+class_macro_reached_by_forwarding_or_op_assign
 class_macro_self_name
 class_macro_through_superclass
 class_maker_through_send
@@ -833,6 +858,7 @@ class_value_new_yield_keyword_fit
 class_value_new_yield_type_kw_arm
 class_value_new_yielding_init
 class_value_new_yielding_init_variants
+class_value_or_write_slots
 class_value_ordering_user_operator
 class_value_reopened_builtin_new
 class_value_respond_to
@@ -845,6 +871,7 @@ class_value_yielding_cmethod_splat
 class_var_builtin_new
 class_var_new_arg
 class_var_read
+class_var_target_write
 class_variable_inherited
 class_variable_lent_string
 class_variable_reflection
@@ -855,6 +882,7 @@ closure_captures_class_value
 closure_captures_object_array
 closure_captures_pointer_locals
 cls_fact_any_recv_reader_push
+cls_fact_call_or_write
 cls_fact_data_bare_new_members
 cls_fact_hash_new_default
 cls_fact_instance_exec_block_ivar
@@ -874,6 +902,7 @@ cmethod_cvar_reflection_self
 cmethod_default_new_subclass
 cmethod_fanout_specialization
 cmethod_inline_yield_sibling_self_cls
+cmethod_ivar_op_assign_expr
 cmethod_lambda_self_subclass
 cmethod_override_without_super_leaves_ancestor_out
 cmethod_self_and_default
@@ -914,6 +943,7 @@ compare_by_identity_user_method
 compile_time_define_method_direct
 compile_time_define_method_int
 compile_time_define_method_strings
+compound_write_conversions
 computed_ivar_get_direct
 computed_ivar_get_poly
 computed_ivar_get_self
@@ -948,6 +978,9 @@ const_alias_path_builtin_named_class
 const_alias_path_receiver
 const_aliased_class_reopen_include
 const_array_known_length_reads
+const_attr_op_assign
+const_compound_assign
+const_env_defined_parity
 const_get_class_name
 const_get_implicit_self
 const_get_literal_escapes_one_class
@@ -958,16 +991,21 @@ const_init_block_param_scan
 const_int_rows_destructure
 const_lookup_ancestors_on_collision
 const_nil_int_element_past_4096_scopes
+const_op_assign_kinds
 const_path_array_push_widens
+const_path_compound_assign
 const_path_constant_receiver
 const_path_deep_nesting
 const_path_dynamic_receiver_many
 const_path_struct_class_value
+const_path_write_beside_toplevel
 const_receiver_reaches_only_its_method
 const_recv_yield_inline
 const_reopened_class_value
 const_table_empty_row
 constant_path
+constant_path_write
+constant_path_write_undeclared
 constant_write_as_value
 constants
 container_alias_mixed_string_element
@@ -1069,15 +1107,18 @@ define_method_capture_visibility
 define_method_computed_name_implicit_rescue
 define_method_each_block_params
 define_method_each_loop_var_arg
+define_method_each_unroll_typed_apart
 define_method_in_dead_branch
 define_method_in_uncalled_method
 define_method_parameters
 define_method_proc_body
 define_method_rest_block_params
 define_method_singleton_class_body
+define_method_unrolled_name_block_next
 define_method_user_defined_block_next
 define_singleton_method_literal
 defined_bare_builtin_method
+defined_class_level_ivar
 defined_classification
 defined_const_fallback
 defined_const_path_member_user_const_set
@@ -1240,6 +1281,7 @@ enum_reader_names
 enum_renamed_reader_implicit
 enum_renamed_reader_poly
 enumerable_grep_sum_entry
+enumerable_multi_value_yield
 enumerable_never_yields
 enumerable_reduce_proc_arg
 enumerable_reopen_beside_class_defining_builtin_name
@@ -1343,12 +1385,14 @@ extend_module_attr_accessor
 extend_module_block_self
 extend_module_ivar
 extend_module_local_to_sibling
+extend_module_or_write_ivar
 extend_module_singleton_alias
 extend_rest_param_clone
 extend_self_attr_accessor
 extend_self_singleton_accessor
 extended_hook_splice
 fail_diverges_like_raise
+features
 fetch_block_ends_in_return
 ffi_array_specs_decl
 ffi_binstr_recv
@@ -1374,6 +1418,7 @@ ffi_type_list_forms
 ffi_void_return
 ffi_write_roundtrip
 fiber_block_next_expression_in_call_operand
+fiber_block_next_in_call_operand
 fiber_blocks_in_thread
 fiber_boxed_methods
 fiber_capture_no_leak_to_sibling
@@ -1432,6 +1477,7 @@ flat_map_str_array_beside_forwarding_map
 flatten_splices_to_ary
 float_array_array
 float_array_first_last_nil
+float_bignum_or_write_nil_slot
 float_coerce_typeerror
 float_div_int_literal
 float_elem_binary_nil
@@ -1455,6 +1501,14 @@ fold_sum_init_hoists
 folded_cond_empty_array
 folded_conditional_tail_raise
 folded_ternary_arm_takes_result_type
+for_index_other_writes
+for_loop_target_kinds
+for_loop_value
+for_multi_index_over_range
+for_over_paren_collection
+for_over_range_value
+for_range_nil_bound
+for_var_two_element_types
 format_held_begin
 format_held_case
 format_held_case_in
@@ -1576,6 +1630,7 @@ grep_v_runtime_recv
 gsub_block_regexp_value
 gsub_block_subject_root
 gsub_forwarded_block_param
+gsub_hash_default_proc
 gsub_sub_block
 gsub_with_hash_replacement
 gvar
@@ -2063,6 +2118,7 @@ interp_method_widening
 interp_mixin_method
 interp_single_buffer
 interp_statements_run_in_place
+interp_symbol
 interp_value_obj_default_to_s
 interpolate_range
 interpolation_multistmt
@@ -2253,6 +2309,7 @@ issue_3141
 issue_3142
 issue_3143
 issue_3144
+issue_3146
 issue_3147
 issue_3148
 issue_3150
@@ -2515,16 +2572,20 @@ long_class_name_poly_attr_write
 long_local_receiver_name
 loop_array_header_cache
 loop_bigint_return
+loop_bound_hoist_helper_appends
 loop_bounded_index_nested
 loop_bounded_index_nested_quiet
 loop_bounded_index_read
+loop_break_runs_ensure
 loop_break_value
 loop_header_cache_return
 loop_reraise_keeps_exception
 loop_return_frame_pop
+loop_return_string_handle
 loop_size_hoist_mutators
 loop_string_getbyte_unheld
 loop_tail_return_poly_array
+loop_value_break_classes
 loop_value_form_break_next
 lowered_block_given
 lowered_yield_block_value_types
@@ -2557,6 +2618,7 @@ masgn_constpath_target
 masgn_cvar_targets
 masgn_empty_literal
 masgn_index_target_receivers_once
+masgn_index_target_widening
 masgn_ivar_empty_literals
 masgn_ivar_oint_static
 masgn_ivar_targets_outside_class
@@ -2633,6 +2695,7 @@ members_class_method_boxed
 members_reader_boxed_receiver
 members_reopened_builtin_cmethod
 memo_hash_literal_regexp_keys
+memo_ivar_write_keeps_heap_object
 memo_reader_string_mutation
 merge_block_value_setup_per_pair
 merge_boxed_source_through_param
@@ -2757,6 +2820,7 @@ name_reader_two_types
 named_captures_symbolize
 namespaced_exception_boxed_method
 narrow_and_predicate
+narrowed_local_other_writes
 native_binding_poc
 native_bool_return_width
 native_func_module_value
@@ -2800,6 +2864,7 @@ new_recv_struct_unnamed_arm_unless
 next_in_inner_loop_keeps_outer_value
 next_in_proc_and_yield
 next_in_then_block
+next_inside_expression
 next_runs_ensure
 next_splat_typed_map
 next_through_rescue_ensure
@@ -2822,14 +2887,17 @@ nil_fact_guard_loop_narrowing
 nil_free_method_version
 nil_guard_narrows_int_or_nil
 nil_hash_param_boxed_as_nil
+nil_into_number_and_or_write
 nil_into_object_param_raises
 nil_ivar
 nil_ivar_written_call_raises
 nil_local_or_assign_empty_container_return
+nil_narrowing
 nil_narrowing_builtin_names
 nil_narrowing_flag_window
 nil_narrowing_nil_typed_write
 nil_narrowing_operands
+nil_narrowing_redo
 nil_narrowing_singleton_builtin_names
 nil_nonbang_shuffle_sort_names
 nil_object_local_call_raises
@@ -2888,6 +2956,7 @@ obj_array_range_index_read
 obj_array_removals
 obj_array_return_through_forward_def
 obj_array_sort_typed
+obj_array_walk_method_tail
 obj_class_cmethod_descendant_yields
 obj_class_dispatch
 obj_class_poly_yielding_cmethod
@@ -2912,6 +2981,7 @@ object_method_ivar_string
 object_method_mutated_array_arg
 object_method_poly_receiver
 object_new_sentinel
+object_reopen_bare_call_in_method
 object_reopen_implicit_self
 object_reopen_poly_dispatch
 object_reopen_predicate_any_value
@@ -2942,12 +3012,15 @@ open_class_default_arg
 operand_order_builder_chain_blocks
 opt_before_required_kwrest
 or_abort_noreturn
+or_and_write_captured_local
+or_assign_composite_rhs_once
 or_default_never_nil
 or_empty_container_literal_type
 or_empty_hash_fallback_keys
 or_return_expression
 or_write_captured_poly_local
 or_write_ivar_poly_setter
+or_write_method_reader_boxed_attr
 or_write_scalar_nil
 ordered_recv_splice_writeback
 ordered_string_recv_byte_face_writeback
@@ -3586,6 +3659,7 @@ raise_user_subclass
 raising_arm_nil_receiver
 raising_arm_typed_conditional
 raising_call_value_slot
+range
 range_begin_end_polyarr_include_delete_bang
 range_boxed_open_inspect
 range_case_eq_range
@@ -3655,6 +3729,8 @@ recursive_param_default
 recv_method_splat
 recv_read_before_args
 redef_reopen_alias_earlier_body
+redo_in_yielded_block
+redo_pops_frame_and_clause
 reduce_acc_shadow
 reduce_array_accumulator
 reduce_no_init_hash_merge
@@ -3795,6 +3871,7 @@ require_modifier
 require_modifier_condition
 require_parent
 require_relative_computed_head
+require_relative_tree
 require_same_line
 require_unsupported_lib
 required_file_runtime_return
@@ -3878,6 +3955,7 @@ rows_value_dropped_elsif
 rows_value_dropped_logic
 rows_value_dropped_rescue_mod
 ruby_engine_shadowed_by_multi_write
+ruby_engine_shadowed_by_path_or_write
 runtime_condition_single_def
 safe_nav_arg_iterators
 safe_nav_arg_mutates_receiver
@@ -3907,6 +3985,7 @@ same_named_attr_no_widen
 scalar_builtin_call_receiver_widens
 scalar_class_test_reads_nil
 scalar_isa_dead_branch
+scalar_local_read_before_write
 scalar_op_assign_reads_slot_first
 scan_block_param_renamed_by_inline
 scan_block_regexp_last_match
@@ -3968,6 +4047,7 @@ send_local_literal_names_rescue_modifier
 send_local_literal_names_sequence
 send_method_raising_body
 send_missing_method_raises_at_run_time
+send_name_from_built_name_table
 send_name_from_container
 send_name_from_container_local
 send_name_past_1024_receiver_names
@@ -4124,6 +4204,7 @@ split_local_shift_strip_each
 split_on_unresolved_chain
 sprintf_long_interp
 sprintf_positional
+srange_constructor_roots
 srange_global_constant_marks
 srange_hop_find_index
 srange_inspect_holds_begin
@@ -4188,9 +4269,12 @@ strarray_push_handle_gc
 strbuf_accumulator_lent_bare
 strbuf_append_value_alias
 strbuf_append_value_position
+strbuf_cmethod_ivar_write_alias
 strbuf_from_container_converts
 strbuf_index_after_mutation
 strbuf_ivar_chained_append
+strbuf_ivar_or_write_stmt
+strbuf_ivar_write_alias_append
 strbuf_local_fresh_rewrite
 strbuf_object_return_boxed
 strbuf_object_return_element
@@ -4420,6 +4504,7 @@ string_new_accumulator_thread
 string_new_capacity
 string_new_poly_arg
 string_new_splat
+string_nil_conditional_assignment
 string_nil_ivar_calls_raise
 string_nil_ivar_range_open_end
 string_nil_ivar_run_time_pattern
@@ -4428,6 +4513,7 @@ string_nul_regexp
 string_oct_parse
 string_op_assign_nil_handle
 string_op_assign_rhs_order
+string_op_assign_untyped_rhs
 string_param_dead_each_branch
 string_param_inference_from_body
 string_param_lent_beside_symbol
@@ -4694,8 +4780,11 @@ symbol_embedded_nul
 symbol_eql_equal_poly
 symbol_inspect_nonascii
 symbol_inspect_quoting
+symbol_intern_fresh_string_root
 symbol_made_by_threads
 symbol_multibyte_length
+symbol_nil_truthiness
+symbol_pool_grows
 symbol_proc_absent_method
 symbol_range_enum
 symbol_reduce_user_method
@@ -4785,6 +4874,8 @@ toplevel_def_redefined
 toplevel_def_redefined_body
 toplevel_ivar_empty_constructor
 toplevel_ivar_op_assign_value
+toplevel_ivar_opassign
+toplevel_ivar_or_write_value
 toplevel_ivar_write_tail_value
 toplevel_kwrest_block_param
 toplevel_method_runtime_name
@@ -4797,6 +4888,7 @@ transform_keys_symproc
 tuple_elem_local
 typed_array_assoc_nil
 typed_array_boxed_source_own_index
+typed_array_boxed_source_widen
 typed_array_concat_poly_arg
 typed_array_empty_returns_nil
 typed_array_held_into_boxed_param_store
@@ -4856,6 +4948,7 @@ user_define_method_class_name
 user_define_method_instance_name
 user_dup_answers_its_body
 user_each_with_object_string_append
+user_enumerable_each_and_for
 user_enumerable_first_boxed
 user_eq_hash_operand
 user_eq_on_nil_slot
@@ -4883,6 +4976,8 @@ value_obj_default_inspect_in_container
 value_object_nil_loop_reset
 value_object_yielded_through_a_proc_block
 value_of_call_on_undefined_constant
+value_pos_shapes
+value_position_misc
 value_type_interp_to_s
 value_type_object_in_static_slot
 value_type_tuple_gc_scan
@@ -4943,6 +5038,7 @@ yield_inside_escaping_block
 yield_inside_thread_body
 yield_into_local_divergent
 yield_kwsplat_block_keywords
+yield_lent_param_block_rebind
 yield_membership_single_site_poly_arg
 yield_method_block_tail_value
 yield_method_call_in_method_body
@@ -4983,6 +5079,7 @@ yield_self_method_return
 yield_splat
 yield_splat_elem_append
 yield_splice_loop_param_captured
+yield_splice_redo_and_break
 yield_string_mutator_tail
 yield_string_param_block_append
 yield_tail_early_return_binding
