@@ -22,25 +22,26 @@ The server serves its pages all the time. `exit` closes the session only.
 
 ## Changes to the output of Roundhouse
 
-The output of Roundhouse runs the server at its top level. This example
-changes three things by hand:
+The output of Roundhouse runs the server at its top level. `apply.rb`
+changes three things:
 
-- `main.rb.patch` moves the start of the server into an entry,
+- It moves the start of the server in `main.rb` into an entry,
   `Main.start`. Fluxpinel starts after the top level of the kernel, so the
   host build calls this entry. With `FLUXPINEL_CONSOLE=PORT`, `Main.start`
   also starts the console.
-- `console.rb` accepts the connections of the console and gives each line
-  to `Fluxpinel.feed`. It also has the entries `Console.count`,
-  `Console.find` and `Console.create`.
-- `kernel/fluxpinel.rb` of Fluxpinel goes beside `console.rb`.
+- It copies `console.rb`. This file accepts the connections of the console
+  and gives each line to `Fluxpinel.feed`. It also has the entries
+  `Console.count`, `Console.find` and `Console.create`.
+- It copies `kernel/fluxpinel.rb` of Fluxpinel beside `console.rb`.
+
+Each change of `main.rb` finds an anchor line. When an anchor is not in
+`main.rb` exactly once, `apply.rb` stops and changes nothing.
 
 ## Versions
 
 This example works with these versions:
 
-- Roundhouse `2953060d9` (main of 2026-10-23). An older Roundhouse emits a
-  `Preloader#initialize` that the Spinel of the pin refuses. The patch has
-  no context lines, so it applies to the `main.rb` of this version only.
+- Roundhouse at the commit in `ROUNDHOUSE_COMMIT`.
 - Spinel at the commit in `SPINEL_COMMIT` of Fluxpinel.
 - Rails 8.1.4 for the fixture.
 
@@ -54,7 +55,7 @@ directory of Fluxpinel and `BLOG` is a new directory for the blog.
 
    ```sh
    git clone https://github.com/rubys/roundhouse && cd roundhouse
-   git checkout 2953060d9
+   git checkout "$(cat "$FX/examples/blog/ROUNDHOUSE_COMMIT")"
    cargo build --release --bin roundhouse
    bin/rh fixture "$BLOG-rails"
    target/release/roundhouse --target spinel -o "$BLOG" "$BLOG-rails"
@@ -63,9 +64,7 @@ directory of Fluxpinel and `BLOG` is a new directory for the blog.
 2. Apply the changes:
 
    ```sh
-   cd "$BLOG"
-   patch -p1 < "$FX/examples/blog/main.rb.patch"
-   cp "$FX/examples/blog/console.rb" "$FX/kernel/fluxpinel.rb" .
+   ruby "$FX/examples/blog/apply.rb" "$BLOG"
    ```
 
 3. Build the assets: the JavaScript of Turbo and Stimulus from the gems,
@@ -108,3 +107,21 @@ directory of Fluxpinel and `BLOG` is a new directory for the blog.
    ```ruby
    Console.create("Comment", {article_id: 1, commenter: "fx", body: "live"})
    ```
+
+## Check the build
+
+`make test-blog` runs `test.rb` on the host build. Run it in the top
+directory of Fluxpinel:
+
+```sh
+make test-blog BLOG="$BLOG" BLOG_HOST=build/blog/blog
+```
+
+The test starts the server on free ports. It uses a copy of
+`db/seed.sql` in a temporary database, so `storage/` of `BLOG` does not
+change. It checks these things:
+
+- `GET /articles` answers 200 with an article of the seed.
+- The console counts, finds and creates records, and keeps a local.
+- `exit` closes the session, and the server runs after it.
+- The page of the article shows the new comment.
