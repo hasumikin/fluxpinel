@@ -351,6 +351,10 @@ static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal 
       *out = blk ? fx_io_pipe_with(blk) : sp_box_poly_array(sp_io_pipe());
       return 1;
     }
+    if (FX_IS("select") && argc >= 1 && argc <= 4 && !blk) {
+      *out = fx_io_select(argc, argv);
+      return 1;
+    }
     if (FX_IS("copy_stream") && argc == 2 && !blk) {
       *out = sp_box_int(fx_io_copy_stream(argv[0], argv[1]));
       return 1;

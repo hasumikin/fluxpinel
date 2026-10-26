@@ -698,6 +698,11 @@ static void fx_p_to(sp_RbVal so, sp_RbVal v) {
 
 /* Kernel methods. Answers 1 and sets *out when it handles the call. */
 static int fx_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  /* Kernel#select is IO.select */
+  if (!strcmp(name, "select") && argc >= 1 && argc <= 4) {
+    *out = fx_io_select(argc, argv);
+    return 1;
+  }
   /* warn(*msgs): each message on a line, as puts lays them out, in one
      write to $stderr; nothing when $VERBOSE is nil. uplevel: nil and
      category: are taken; an uplevel is a gap, as Fluxpinel keeps no

@@ -298,7 +298,10 @@ static void fx_builtin_consts(void) {
   fx_const_set(re, sp_sym_intern("NOENCODING"), sp_box_int(32));
 }
 
+static sp_File *fx_hook_to_io(sp_RbVal v);   /* the IO methods below */
+
 static void fx_global_init(void) {
+  sp_user_to_io_hook = fx_hook_to_io;
   fx_const_set(L.object, sp_sym_intern("STDIN"), fx_io_box(sp_io_stdin()));
   fx_const_set(L.object, sp_sym_intern("STDOUT"), fx_io_box(sp_io_stdout()));
   fx_const_set(L.object, sp_sym_intern("STDERR"), fx_io_box(sp_io_stderr()));
@@ -342,6 +345,37 @@ static void fx_global_init(void) {
 /* ---- IO ---- */
 
 /* The writes of an IO that spinel emits from codegen code. */
+/* The IO of an object of the program for the runtime (sp_user_to_io_hook):
+   the answer of its to_io, as IO.select and the IO methods ask of a
+   wrapper. NULL for an object with no to_io. */
+static sp_File *fx_hook_to_io(sp_RbVal v) {
+  if (!fx_is_fx_object(v) || fx_is_native_obj(v)) return NULL;
+  if (!fx_find_method(fx_class_of(v), sp_sym_intern("to_io"))) return NULL;
+  sp_RbVal io = fx_send(v, "to_io", 0, NULL);
+  return fx_is_io(io) ? (sp_File *)io.v.p : NULL;
+}
+
+/* IO.select and Kernel#select(read, write = nil, error = nil, timeout =
+   nil), as codegen emits the boxed form (emit_io_select): each set nil or
+   an Array, the timeout nil (no limit) or an interval. The interval reads
+   as sp_io_wait_interval reads it, so a negative one is ArgumentError, as
+   in CRuby, and does not mean "no limit". Answers [readers, writers,
+   errors], or nil at the timeout. */
+static sp_RbVal fx_io_select(int argc, sp_RbVal *argv) {
+  sp_PolyArray *sets[3] = { NULL, NULL, NULL };
+  for (int k = 0; k < 3 && k < argc; k++) {
+    sp_RbVal v = argv[k];
+    if (v.tag == SP_TAG_NIL) continue;
+    if (v.tag == SP_TAG_OBJ && sp_poly_is_array_kind(v.cls_id)) sets[k] = sp_poly_to_poly_array(v);
+    else sp_bm_arg_mismatch(v, "Array");
+  }
+  SP_GC_ROOT(sets[0]);
+  SP_GC_ROOT(sets[1]);
+  SP_GC_ROOT(sets[2]);
+  double timeout = argc < 4 || argv[3].tag == SP_TAG_NIL ? -1.0 : sp_io_wait_interval(argv[3]);
+  return sp_io_select(sets[0], sets[1], sets[2], timeout);
+}
+
 static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (!fx_is_io(r)) return 0;
   sp_File *io = (sp_File *)r.v.p;
@@ -377,6 +411,25 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
     const char *s = sp_io_read_splat(io, a);
     *out = s ? sp_box_str_new(s) : sp_box_nil();
+    return 1;
+  }
+  /* wait_readable(t), wait_writable(t), wait_priority(t) and wait(t, kind),
+     as codegen emits them (emit_io_wait): the IO when it is ready, nil at
+     the timeout */
+  if (!kw && argc <= 2 && (FX_IS("wait_readable") || FX_IS("wait_writable") || FX_IS("wait_priority") || FX_IS("wait"))) {
+    if (argc == 2 && !FX_IS("wait")) return 0;
+    sp_RbVal t = argc >= 1 ? argv[0] : sp_box_nil();
+    if (FX_IS("wait_writable")) {
+      *out = sp_box_nullable_obj(sp_io_wait_writable_timeout(io, t), SP_BUILTIN_IO);
+      return 1;
+    }
+    int ev = FX_IS("wait_priority") ? 2 : 0;
+    if (argc == 2) {
+      if (argv[1].tag != SP_TAG_SYM) return 0;
+      const char *k = sp_sym_to_s((sp_sym)argv[1].v.i);
+      ev = !strcmp(k, "write") ? 1 : !strcmp(k, "priority") ? 2 : !strcmp(k, "read_write") ? 3 : 0;
+    }
+    *out = sp_io_wait_timeout_value(io, t, ev, FX_IS("wait") && argc > 0);
     return 1;
   }
   /* pread(len, offset), pwrite(str, offset), readpartial(n), sysread(n)

@@ -2316,6 +2316,7 @@ io_line_read_boxed_splat
 io_lines_chomp_paragraph
 io_nul_bytes
 io_pipe
+io_pipe_sync_write
 io_poly_print_puts
 io_popen_comment_beside_eval
 io_popen_text_not_a_call
@@ -2329,9 +2330,14 @@ io_reader_forwards
 io_readlines_limit_args
 io_readpartial_negative_length
 io_respond_to_winsize_no_console
+io_select_high_fd
+io_select_nonio_array_elements
 io_stdout_tty_chain
 io_sync_assign_value
 io_syswrite_offset
+io_wait_timeout_parks_thread
+io_wait_writable_readonly_error
+io_waiters_leave_out_of_order
 io_write_print_splat
 io_write_stdout_stderr
 iow_float_nil_rhs
@@ -2704,6 +2710,7 @@ kernel_puts_nul
 kernel_reopen_bare_call_self
 kernel_reopen_private_by_name
 kernel_reopen_public_receiver
+kernel_select
 kernel_underscore_id
 keyword_computed_key
 keyword_error_symbol_inspect
@@ -5272,6 +5279,7 @@ thread_fiber_param_push
 thread_file_gets
 thread_gc_start
 thread_index_or_write
+thread_io_wake_storm
 thread_join_timeout
 thread_join_timeout_nil
 thread_join_wakes_every_joiner
@@ -5293,6 +5301,7 @@ thread_pipe_read_parks
 thread_pipe_slurp_parks
 thread_poly_join_answers_thread
 thread_preempt
+thread_preempt_after_io_wake
 thread_priority
 thread_queue
 thread_raise_answers_nil

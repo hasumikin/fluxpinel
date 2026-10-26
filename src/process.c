@@ -198,5 +198,10 @@ static int fx_process_class(const FxClass *k, const char *name, int argc, sp_RbV
   if (!strcmp(k->name, "Process")) return fx_process_fn(name, argc, argv, out);
   if (!strcmp(k->name, "GC")) return fx_gc_fn(name, argc, argv, out);
   if (!strcmp(k->name, "Math")) return fx_math_fn(name, argc, argv, out);
+  /* Kernel.select, the module function of Kernel#select */
+  if (!strcmp(k->name, "Kernel") && FX_IS("select") && argc >= 1 && argc <= 4) {
+    *out = fx_io_select(argc, argv);
+    return 1;
+  }
   return 0;
 }
