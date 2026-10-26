@@ -46,7 +46,8 @@ static int fx_kind_of(sp_RbVal v, const char **family, const char **variant) {
     case SP_BUILTIN_MUTEX: fam = var = "mutex"; kind = FX_TY_MUTEX; break;
     case SP_BUILTIN_CONDVAR: fam = var = "condvar"; kind = FX_TY_CONDVAR; break;
     case SP_BUILTIN_TMS: fam = var = "tms"; break;
-    case SP_BUILTIN_TIME: fam = var = "time"; break;
+    case SP_BUILTIN_TIME: fam = var = "time"; kind = FX_TY_TIME; break;
+    case SP_BUILTIN_RATIONAL: fam = var = "rational"; kind = FX_TY_RATIONAL; break;
     case SP_BUILTIN_STR_INT_HASH: fam = "ANY_HASH"; var = "str_int_hash"; kind = FX_TY_STR_INT_HASH; break;
     case SP_BUILTIN_STR_STR_HASH: fam = "ANY_HASH"; var = "str_str_hash"; kind = FX_TY_STR_STR_HASH; break;
     case SP_BUILTIN_INT_INT_HASH: fam = "ANY_HASH"; var = "int_int_hash"; kind = FX_TY_INT_INT_HASH; break;
@@ -172,9 +173,10 @@ static int fx_poly_helper(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
    low digits of an Integer past 2**53; it serves the other cases
    (sp_poly_prec_n, a Float at or below the decimal point, a Bignum). A
    Float digit count reads as sp_poly_ndigits_f reads it. With no
-   argument, a Float rounds and truncates as sp_poly_round and
-   sp_poly_truncate do (FloatDomainError for NaN and Infinity); to_i and
-   to_int truncate. */
+   argument, a Float or a Rational rounds and truncates as sp_poly_round
+   and sp_poly_truncate do (FloatDomainError for NaN and Infinity); to_i
+   and to_int truncate. A Rational with a digit count goes to the helpers
+   of a boxed number too. */
 static int fx_num_prec(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (argc == 0) {
     if (!strcmp(name, "round")) *out = sp_poly_round(r);
@@ -188,17 +190,33 @@ static int fx_num_prec(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
   if (!round && op < 0) return 0;
   sp_RbVal half = sp_box_nil();
   int has_half = 0;
-  if (fx_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash) {
+  /* only round takes a keyword: floor, ceil and truncate read the Hash as
+     the digit count, and raise for it below */
+  if (round && fx_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash) {
     sp_PolyPolyHash *h = sp_poly_as_poly_poly_hash(argv[argc - 1]);
     sp_RbVal k = sp_box_sym(sp_sym_intern("half"));
-    if (!round || h->len != 1 || !sp_PolyPolyHash_has_key(h, k)) return 0;
-    half = sp_PolyPolyHash_get(h, k);
-    has_half = 1;
+    /* a key other than half: ArgumentError, though Integer#round of
+       CRuby lets it pass */
+    sp_int unknown = h->len - (sp_PolyPolyHash_has_key(h, k) ? 1 : 0);
+    if (!fx_is_integer(r) && unknown > 0) {
+      const char *s = "";
+      SP_GC_ROOT_STR(s);
+      for (sp_int i = 0; i < h->len; i++) {
+        sp_RbVal key = h->keys[h->order[i]];
+        if (!sp_poly_eq(key, k)) s = sp_sprintf("%s%s%s", s, *s ? ", " : "", sp_poly_inspect(key));
+      }
+      sp_raise_cls("ArgumentError", sp_sprintf("unknown keyword%s: %s", unknown > 1 ? "s" : "", s));
+    }
+    has_half = sp_PolyPolyHash_has_key(h, k);
+    if (has_half) half = sp_PolyPolyHash_get(h, k);
     argc--;
   }
   if (argc > 1) fx_arity_error(argc, 0, 1, 0);
   sp_int n = 0;
-  if (argc == 1) n = argv[0].tag == SP_TAG_FLT ? sp_poly_ndigits_f(r, argv[0].v.f) : sp_poly_round_digits(r, argv[0]);
+  /* a Rational takes an Integer count only (sp_poly_round_digits) */
+  if (argc == 1)
+    n = argv[0].tag == SP_TAG_FLT && !sp_poly_is_rat_kind(r) ? sp_poly_ndigits_f(r, argv[0].v.f)
+                                                             : sp_poly_round_digits(r, argv[0]);
   if (!round) {
     *out = sp_poly_prec_n(r, n, op);
   } else if (r.tag == SP_TAG_FLT && has_half) {
@@ -219,8 +237,55 @@ static int fx_num_prec(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
   return 1;
 }
 
+/* The queries of a big Rational (a part past sp_int), which has no
+   generated wrapper. The helpers of a boxed number answer them, as codegen
+   calls them for a receiver of no single type. */
+static int fx_brat_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  static const struct {
+    const char *name;
+    sp_bool (*p)(sp_RbVal);
+    sp_RbVal (*fn)(sp_RbVal);
+  } q[] = {
+    { "finite?", sp_poly_finite_p, NULL }, { "zero?", sp_poly_zero_p, NULL },
+    { "positive?", sp_poly_positive_p, NULL }, { "negative?", sp_poly_negative_p, NULL },
+    { "real?", sp_poly_real_p, NULL }, { "integer?", sp_poly_integer_p, NULL },
+    { "infinite?", NULL, sp_poly_infinite }, { "nonzero?", NULL, sp_poly_nonzero },
+    { "abs", NULL, sp_poly_abs }, { "magnitude", NULL, sp_poly_abs }, { "abs2", NULL, sp_poly_abs2 },
+    { "numerator", NULL, sp_poly_numerator }, { "denominator", NULL, sp_poly_denominator },
+  };
+  (void)argv;
+  if (!sp_poly_is_brat(r) || argc) return 0;
+  for (size_t i = 0; i < sizeof q / sizeof q[0]; i++)
+    if (!strcmp(name, q[i].name)) {
+      *out = q[i].p ? sp_box_bool(q[i].p(r)) : q[i].fn(r);
+      return 1;
+    }
+  if (!strcmp(name, "to_f")) { *out = sp_box_float(sp_poly_to_f(r)); return 1; }
+  return 0;
+}
+
 static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
-  if (((argc >= 1 && fx_is_integer(r)) || r.tag == SP_TAG_FLT) && fx_num_prec(r, name, argc, argv, out)) return 1;
+  if (fx_brat_core(r, name, argc, argv, out)) return 1;
+  if (((argc >= 1 && fx_is_integer(r)) || r.tag == SP_TAG_FLT || sp_poly_is_rational(r) || sp_poly_is_brat(r)) &&
+      fx_num_prec(r, name, argc, argv, out))
+    return 1;
+  /* quo, to_r and rationalize of a number (and of nil), as the helpers of
+     a boxed number answer them */
+  if (fx_is_integer(r) || r.tag == SP_TAG_FLT || sp_poly_is_rational(r) || sp_poly_is_brat(r) ||
+      (r.tag == SP_TAG_NIL && strcmp(name, "quo"))) {
+    if (argc == 1 && !strcmp(name, "quo")) { *out = sp_poly_quo(r, argv[0]); return 1; }
+    /* a Bignum is a big Rational over 1, as codegen makes it */
+    if (argc <= 1 && r.tag == SP_TAG_BIGINT && (!strcmp(name, "to_r") || !strcmp(name, "rationalize"))) {
+      if (argc && !strcmp(name, "to_r")) return 0;
+      *out = sp_box_brat((sp_Bigint *)r.v.p, sp_bigint_new_int(1));
+      return 1;
+    }
+    if (argc == 0 && !strcmp(name, "to_r")) { *out = sp_poly_to_r_m(r); return 1; }
+    if (argc <= 1 && !strcmp(name, "rationalize")) {
+      *out = sp_poly_rationalize_m(r, argc, argc ? argv[0] : sp_box_nil());
+      return 1;
+    }
+  }
   if (argc == 0) {
     if (!strcmp(name, "!")) { *out = sp_box_bool(!sp_poly_truthy(r)); return 1; }
     if (!strcmp(name, "nil?")) { *out = sp_box_bool(r.tag == SP_TAG_NIL); return 1; }
@@ -698,6 +763,56 @@ static void fx_p_to(sp_RbVal so, sp_RbVal v) {
   }
 }
 
+/* An argument of Rational(a, b), as codegen converts it (emit_rat_kernel_arg
+   of spinel): a String parses strictly, and any other value converts as
+   sp_poly_kernel_rational_arg converts it. */
+static sp_Rational fx_rational_arg(sp_RbVal v) {
+  if (fx_is_string(v)) return sp_str_to_r_strict(sp_poly_arg_str_chk(v));
+  return sp_poly_kernel_rational_arg(v);
+}
+
+/* The parts of a big Rational: an Integer past sp_int, or one that fits. */
+static sp_Bigint *fx_rational_big(sp_RbVal v) {
+  return v.tag == SP_TAG_BIGINT ? (sp_Bigint *)v.v.p : sp_bigint_new_int(v.v.i);
+}
+
+/* Kernel#Rational. With raise 0 (exception: false), nil, a String that
+   does not parse and a value with no conversion give nil. */
+static sp_RbVal fx_kernel_rational(int argc, sp_RbVal *argv, int raise) {
+  sp_RbVal a = argv[0], b = argc == 2 ? argv[1] : sp_box_int(1);
+  if (!raise) {
+    if (a.tag == SP_TAG_NIL || b.tag == SP_TAG_NIL || sp_poly_no_rational(a) || sp_poly_no_rational(b))
+      return sp_box_nil();
+    sp_convert_soft = 1;
+    sp_convert_failed = 0;
+    sp_Rational x = fx_rational_arg(a), y = fx_rational_arg(b);
+    sp_convert_soft = 0;
+    return sp_convert_failed ? sp_box_nil() : sp_box_rational(argc == 2 ? sp_rational_div(x, y) : x);
+  }
+  /* an Integer past sp_int makes a big Rational, as a literal of one does */
+  if (a.tag == SP_TAG_BIGINT || b.tag == SP_TAG_BIGINT) {
+    if ((a.tag != SP_TAG_INT && a.tag != SP_TAG_BIGINT) || (b.tag != SP_TAG_INT && b.tag != SP_TAG_BIGINT))
+      fx_gap("Rational of a big Integer and a value that is not an Integer");
+    if (b.tag == SP_TAG_INT && b.v.i == 0) sp_raise_cls("ZeroDivisionError", "divided by 0");
+    sp_Bigint *n = fx_rational_big(a);
+    SP_GC_ROOT(n);
+    return sp_box_brat(n, fx_rational_big(b));
+  }
+  if (argc == 1) {
+#ifdef SP_INT_OVERFLOW_MODE_PROMOTE
+    /* a part past sp_int makes a big Rational */
+    if (fx_is_string(a)) return sp_str_to_r_strict_v(sp_poly_arg_str_chk(a));
+#else
+    if (fx_is_string(a)) return sp_box_rational(sp_str_to_r_strict(sp_poly_arg_str_chk(a)));
+#endif
+    /* a Rational is the answer itself */
+    if (sp_poly_is_rational(a)) return a;
+    return sp_box_rational(sp_poly_kernel_rational1(a));
+  }
+  sp_Rational x = fx_rational_arg(a);
+  return sp_box_rational(sp_rational_div(x, fx_rational_arg(b)));
+}
+
 /* Kernel methods. Answers 1 and sets *out when it handles the call. */
 static int fx_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   /* Kernel#select is IO.select */
@@ -752,6 +867,19 @@ static int fx_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) 
   }
   if (!strcmp(name, "Float") && argc == 1) {
     *out = sp_box_float(sp_poly_Float(argv[0]));
+    return 1;
+  }
+  /* Rational(a), Rational(a, b) and exception: false */
+  if (!strcmp(name, "Rational") && argc >= 1 && argc <= 3) {
+    int raise = 1;
+    if (fx_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash) {
+      sp_RbVal key = sp_box_sym(sp_sym_intern("exception"));
+      sp_RbVal ex = fx_send(argv[argc - 1], "[]", 1, &key);
+      raise = ex.tag != SP_TAG_BOOL || ex.v.b;
+      argc--;
+    }
+    if (argc < 1 || argc > 2) return 0;
+    *out = fx_kernel_rational(argc, argv, raise);
     return 1;
   }
   /* after `$stdout = obj`, puts, print and p write to obj */

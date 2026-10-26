@@ -1304,7 +1304,7 @@ static int fx_frange_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     sp_RbVal a = argv[0];
     if (a.tag == SP_TAG_INT) *out = sp_box_bool(sp_frange_cover_i(*g, a.v.i));
     else if (a.tag == SP_TAG_FLT) *out = sp_box_bool(sp_frange_cover(*g, a.v.f));
-    else *out = sp_box_bool(0);
+    else *out = sp_box_bool(sp_frange_cover_poly(*g, a));
     return 1;
   }
   if (argc == 1 && (FX_IS("==") || FX_IS("eql?"))) {
@@ -1588,6 +1588,12 @@ static int fx_range_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     sp_RbVal a = argv[0];
     /* nil..nil covers any value */
     if (g->nobeg && g->noend && (FX_IS("cover?") || FX_IS("==="))) { *out = sp_box_bool(1); return 1; }
+    /* a Rational compares exactly with the ends, and a Bignum lies past
+       every finite end */
+    if (a.tag == SP_TAG_BIGINT || sp_poly_is_rat_kind(a)) {
+      *out = sp_box_bool(sp_range_cover_poly((sp_Range *)g, a));
+      return 1;
+    }
     if (a.tag != SP_TAG_INT && a.tag != SP_TAG_FLT) { *out = sp_box_bool(0); return 1; }
     double x = a.tag == SP_TAG_INT ? (double)a.v.i : a.v.f;
     double e = g->fe ? g->fend : (double)g->last;

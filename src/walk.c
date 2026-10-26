@@ -2782,6 +2782,12 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
   }
   case PM_INTEGER_NODE:
     return fx_integer(n, &((const pm_integer_node_t *)n)->value);
+  case PM_RATIONAL_NODE: {
+    /* prism gives the parts reduced: 1.5r is 3/2 */
+    const pm_rational_node_t *r = (const pm_rational_node_t *)n;
+    sp_RbVal num = fx_integer(n, &r->numerator), den = fx_integer(n, &r->denominator);
+    return sp_box_rational(sp_rational_new(num.v.i, den.v.i));
+  }
   case PM_FLOAT_NODE:
     return sp_box_float(((const pm_float_node_t *)n)->value);
   case PM_STRING_NODE: {

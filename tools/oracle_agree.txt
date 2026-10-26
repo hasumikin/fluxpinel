@@ -308,6 +308,7 @@ begin_rescue_else_clause
 begin_unknown_const_tail
 begin_value_body_local
 begin_while_locals_not_volatile
+big_rational_to_s_root
 bigint_div_by_zero
 bigint_float_mixed_arith
 bigint_inner_chain_assign
@@ -319,11 +320,16 @@ bigint_poly_container
 bigint_pow_shift
 bigint_propagation_chain
 bigint_return_int_literal
+bigint_shift_count_and_quo
 bigint_shift_limbs
+bigint_to_s_is_a_heap_string
 bigint_volatile_combo
 bignum_bit_range_float_end
+bignum_rational_arith
+bignum_rational_basic
 bignum_shift_op_assign
 bignum_variable_writes
+bigrational_integer_surface
 binary_string_index_byte_offsets
 binary_string_length_bytes
 binop_recv_root
@@ -499,6 +505,7 @@ boxed_range_eql
 boxed_range_iterators
 boxed_range_percent
 boxed_range_user_iterator
+boxed_rational_abs2
 boxed_reader_alias_after_dup
 boxed_reader_named_like_time_method
 boxed_receiver_aliases
@@ -1020,6 +1027,7 @@ codegen_class_in_module_with_explicit_parent
 codegen_const_lookup_in_toplevel_method
 codegen_settled_operand_types
 coerce_error_value_spelling
+coerce_factory_and_explicit_call
 coerce_operator_param
 coerce_poly_operand
 compact_class_alias_head_scope
@@ -1034,6 +1042,7 @@ comparable_eq_boxed
 comparable_nil_spaceship
 comparable_no_block_cmp
 comparable_object_reopened
+comparable_rational_operand
 compare_by_identity_predicate
 compare_by_identity_user_method
 compile_time_define_method_direct
@@ -1123,6 +1132,7 @@ control_flow_next_in_case_in_loop
 control_flow_until_cond_method_arg
 control_flow_until_modifier_method
 control_flow_while_modifier_method
+conv_typeerror_names_the_right_class
 count_block_poly_pred
 crashers_536
 ctor_default_reads_self
@@ -1633,6 +1643,7 @@ float_negative_zero_hash
 float_op_assign_nil
 float_opassign_nil_marked
 float_past_word_shared_block_proc
+float_quo_step_by
 float_range_boxed_methods
 float_range_cover_nan
 float_range_endpoint_boxed_nil
@@ -1640,6 +1651,8 @@ float_range_endpoint_kind
 float_range_minmax
 float_range_open_bound
 float_range_overlap_cover
+float_rational_arith
+float_rationalize_simplest
 float_round_digits_cruby
 float_round_half
 float_round_ndigits_return_type
@@ -1650,6 +1663,7 @@ float_round_zero
 float_spaceship
 float_step_block
 float_to_i_inline
+float_to_r
 float_to_s_fixed_1e15
 flock_nonblock_held
 fold_literal_table_empty_row
@@ -2120,6 +2134,7 @@ initialize_forwarding_params
 initialize_override_param_inference
 initialize_yield
 inject_block_fewer_params
+inject_seed_keeps_its_class
 inject_symbol_op
 inject_symbol_root
 inject_symbol_to_proc
@@ -2254,6 +2269,7 @@ int_bit_beginless_raises
 int_bitop_mutable_string_operand
 int_bitwise_raise_operand
 int_bracket_skip_sym_idx
+int_case_eq_rational
 int_ceil_floor_round
 int_ceil_floor_round_truncate_ndigits
 int_elem_operand_order
@@ -2408,6 +2424,7 @@ issue_2912
 issue_2913
 issue_2916
 issue_2917
+issue_2918
 issue_2919
 issue_2921
 issue_2923
@@ -2484,9 +2501,12 @@ issue_3043
 issue_3044
 issue_3045
 issue_3046
+issue_3047
+issue_3047b
 issue_3054
 issue_3055
 issue_3056
+issue_3057
 issue_3059
 issue_3060
 issue_3061
@@ -2509,6 +2529,7 @@ issue_3085
 issue_3087
 issue_3089
 issue_3090
+issue_3091
 issue_3092
 issue_3093
 issue_3094
@@ -2553,6 +2574,7 @@ issue_3153
 issue_3154
 issue_3157
 issue_3158
+issue_3159
 issue_3161
 issue_3164
 issue_3165
@@ -2570,7 +2592,9 @@ issue_3178
 issue_3179
 issue_3180
 issue_3181
+issue_3184
 issue_3185
+issue_3186
 issue_3187
 issue_3188
 issue_3189
@@ -2593,8 +2617,10 @@ issue_3216
 issue_3217
 issue_3218
 issue_3219
+issue_3220
 issue_3222
 issue_3223
+issue_3224
 issue_3227
 issue_3227_bang_mutators
 issue_3227_captured_shared
@@ -2609,6 +2635,7 @@ issue_3227_matrix
 issue_3227_poly_mutators
 issue_3227_reflection_reads
 issue_3231
+issue_3233
 issue_3235
 issue_3238
 issue_3239
@@ -2633,6 +2660,7 @@ issue_3299_integer_base_poly
 issue_3301_case_regex_last_match
 issue_3303_paren_write_poly_shift
 issue_3306_shared_strarray_insert_delete_at
+issue_3308_mixed_fold_seed
 issue_3309_lambda_param_reassign
 issue_3310_lambda_loop_tail
 issue_3311_time_poly_compare
@@ -2725,6 +2753,8 @@ kernel_integer_float_errors
 kernel_integer_true_message
 kernel_integer_with_base
 kernel_puts_nul
+kernel_rational_strict
+kernel_rational_string_zerodenom
 kernel_reopen_bare_call_self
 kernel_reopen_private_by_name
 kernel_reopen_public_receiver
@@ -3121,6 +3151,7 @@ name_reader_two_types
 named_captures_symbolize
 namespaced_class_named_like_builtin_module
 namespaced_exception_boxed_method
+nan_compare_unordered
 narrow_and_predicate
 narrowed_element_local_pin
 narrowed_local_other_writes
@@ -3211,6 +3242,7 @@ nil_nonbang_shuffle_sort_names
 nil_object_local_call_raises
 nil_only_local_into_number
 nil_push_arguments_run_first
+nil_rationalize_variable
 nil_receiver_reassigned_by_argument
 nil_receiver_tap_then
 nil_receiver_user_object_plan
@@ -3229,11 +3261,13 @@ nil_time_return_narrow_case
 nil_time_return_narrow_case_in
 nil_time_return_narrow_logic
 nil_time_return_narrow_rescue_mod
+nil_to_r_rational
 nil_typed_arg_object_param
 nil_typed_call_equality
 nil_typed_equality
 nil_unset_recv_no_line_map
 nil_value_class_union
+nil_write_boxes_bool_symbol_slot
 nil_write_boxes_range_time_slot
 nilable_container_class_tests
 nilable_int_constant_default_and_return
@@ -3323,6 +3357,7 @@ oneline_in_array
 oneline_in_hash
 oneline_in_hash_presence
 oneline_in_pattern_bind
+op_assign_operand_conversions
 op_assign_param_as_value
 op_assign_tail_return
 op_assign_unresolved_rhs
@@ -3699,6 +3734,7 @@ poly_push_answers_receiver
 poly_push_keyword_hash
 poly_qualified_array_pattern
 poly_range_exclude_end
+poly_rational_arithmetic
 poly_readbyte_nilable_int_io_arm
 poly_reader_alias_named_like_proc_method
 poly_reader_handle_into_boxed_hash
@@ -3742,6 +3778,7 @@ poly_recv_range_sym_hash_dispatch
 poly_recv_str_transform_class_method
 poly_recv_string_shortcut_beside_class_method
 poly_recv_two_arg_slice
+poly_recv_user_operator_arg
 poly_reduce_operator_symbol
 poly_regexp_match_at
 poly_relop_boxed_in_builtin_arm
@@ -3962,6 +3999,7 @@ program_name_guard
 promote_arith_typed_operand
 promote_array_sum_overflow
 promote_bigint_toom3_negative_eval
+promote_bigrational_to_i
 promote_block_loop_bigint
 promote_block_param_nil
 promote_global_op_assign
@@ -3969,6 +4007,7 @@ promote_poly_int_overflow
 promote_poly_overflow
 promote_poly_slot_method_call
 promote_pow_runtime_exponent
+promote_rational_bignum
 promote_shl_pow_bigint
 promote_shl_runtime_count
 promote_typed_sinks_more
@@ -4048,6 +4087,7 @@ range_conformance_batch2
 range_container_equality
 range_cover_boxed_other_class
 range_cover_boxed_range_arg
+range_cover_poly_rational
 range_cover_range_boxed
 range_each_fusion
 range_each_no_block_param
@@ -4076,6 +4116,7 @@ range_overlap_array_flatten_depth
 range_overlap_empty_boxed
 range_poly_elem_ends
 range_predicate_typed_argument
+range_rational_membership
 range_step
 range_step_bad_stride
 range_step_block_value
@@ -4086,6 +4127,25 @@ range_step_negative
 range_step_paren_empty_stride
 range_string_cover
 range_to_s_inspect
+rational_arithmetic
+rational_boxed_nil
+rational_cmp_float_hash
+rational_coerce_user_object
+rational_ctor_exact
+rational_div_family
+rational_eq_poly_operand
+rational_from_sum_rounding
+rational_named_division_boxed
+rational_non_numeric_arg
+rational_pow_boxed_exponent
+rational_predicates_boxed
+rational_predicates_boxed_user_dispatch
+rational_reduce_wide_and_min
+rational_round_digits_integer
+rational_round_half_keyword
+rational_round_inferred_plan
+rational_to_i_from_sum
+rationalize_epsilon_nil_boxed
 rbs_array_seed_box
 rbs_hash_return_box
 rbs_inline_boxed_local_return
@@ -4116,6 +4176,7 @@ redo_in_yielded_block
 redo_pops_frame_and_clause
 reduce_acc_shadow
 reduce_array_accumulator
+reduce_nil_seed
 reduce_no_init_hash_merge
 reduce_numeric_promotion
 reduce_root
@@ -4392,6 +4453,7 @@ safe_nav_string_mutator_user_override
 safe_nav_typed_receiver
 safe_nav_void_method
 safe_navigation_returns_nil
+same_name_forwarder_union_receiver
 same_named_attr_no_widen
 scalar_builtin_call_receiver_widens
 scalar_class_test_reads_nil
@@ -4624,6 +4686,7 @@ sort_block_poly_receiver
 sort_by_array_key
 sort_by_bool_key
 sort_by_object_key
+sort_by_rational_key
 sort_by_time_key
 sort_min_max_block_comparator
 sort_mixed_type_raises
@@ -4644,6 +4707,7 @@ sp_net_recv_timeout
 sp_net_recv_timeout_threads
 sp_net_write_partial
 spaceship_incomparable_nil
+spaceship_nil_guard_poly_compare
 splat_builtin_predicate_family
 splat_call
 splat_delete_and_block_tail_iter
@@ -4865,6 +4929,7 @@ string_flat_ternary_handle_arm
 string_format_empty_array
 string_format_poly_array_rhs
 string_format_polyarr
+string_format_scalar_operands
 string_forward_poly_chain
 string_forward_rest_past16
 string_freeze_append_chain
@@ -5109,6 +5174,7 @@ string_thread_method_param_arg
 string_to_i_base
 string_to_i_base_zero
 string_to_i_signed_minimum
+string_to_r_forms
 string_to_s_receiver_rebind
 string_to_s_store_boxed_local
 string_unary_minus_poly
@@ -5221,6 +5287,7 @@ subclass_via_parent_accessor
 subjectless_when_truthiness
 sum_block_nil_coercion
 sum_block_string_handle_param
+sum_builtin_reachability
 sum_empty_block_body
 sum_next_values
 sum_non_numeric_raises
@@ -5378,14 +5445,17 @@ throw_boxed_symbol_tag
 throw_method_block_value
 time_asctime
 time_at_in_offset
+time_at_kinds_string_ctor
 time_at_subsec
 time_at_subsecond_carry
 time_at_unit_form
+time_at_zone_argument
 time_between_clamp
 time_cmp_nilable_operand
 time_compare_nontime
 time_deconstruct_keys
 time_fixed_offset_zone
+time_fractional_seconds
 time_hash_pattern
 time_in_container
 time_in_container_accessors
@@ -5404,9 +5474,12 @@ time_localtime_param_ivar_arg
 time_localtime_param_keyword
 time_localtime_through_param
 time_min_poly_slot
+time_minus_untyped
 time_minus_untyped_reopen
 time_mktime_local_utc
 time_month_name_arg
+time_new_fractional_sec
+time_new_fractional_sec_long
 time_new_in_kwarg
 time_new_year_string
 time_new_zone_argument
@@ -5415,6 +5488,7 @@ time_numeric_string_args
 time_object_method_type
 time_operand_type_errors
 time_operator_assignment
+time_plus_rational
 time_predicates_getgm
 time_respond_to
 time_round_floor_ceil
@@ -5431,9 +5505,11 @@ time_threaded_conversion
 time_to_a_to_r
 time_to_f_nanosecond_count
 time_to_s
+time_utc_boxed_usec
 time_xmlschema
 time_year_format
 time_year_zero_padded
+time_zone_argument_validation
 time_zone_inplace
 times_upto_boxed_nil_recv
 to_h_with_block
