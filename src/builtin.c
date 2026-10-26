@@ -13,6 +13,8 @@
 
 #include "fluxpinel.h"
 
+#define FX_IS(s) (!strcmp(name, (s)))
+
 /* The family, variant and TyKind of a value, in the spelling of the
    generated table. Answers 0 for a value outside the table. */
 static int fx_kind_of(sp_RbVal v, const char **family, const char **variant) {
@@ -178,6 +180,22 @@ static int fx_poly_helper(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
    and sp_poly_truncate do (FloatDomainError for NaN and Infinity); to_i
    and to_int truncate. A Rational with a digit count goes to the helpers
    of a boxed number too. */
+/* round, floor, ceil or truncate (op, SP_PREC_*) of a Bignum to n digits,
+   exactly (sp_bigint_round_prec). It rounds a half away from zero, as
+   CRuby does, so a negative Bignum rounds by its magnitude. */
+static sp_RbVal fx_bigint_prec(sp_Bigint *b, sp_int n, int op) {
+  sp_int_round_check_ndigits(n);
+  if (n >= 0) return sp_box_bigint(b);
+  int neg = sp_bigint_sign(b) < 0;
+  if (op == SP_PREC_TRUNC) op = neg ? SP_PREC_CEIL : SP_PREC_FLOOR;
+  if (op == SP_PREC_ROUND && neg) {
+    sp_Bigint *a = sp_bigint_round_prec(sp_bigint_abs_v(b), n, SP_PREC_ROUND);
+    SP_GC_ROOT(a);
+    return sp_box_bigint(sp_bigint_sub(sp_bigint_new_int(0), a));
+  }
+  return sp_box_bigint(sp_bigint_round_prec(b, n, op));
+}
+
 static int fx_num_prec(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (argc == 0) {
     if (!strcmp(name, "round")) *out = sp_poly_round(r);
@@ -218,7 +236,9 @@ static int fx_num_prec(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
   if (argc == 1)
     n = argv[0].tag == SP_TAG_FLT && !sp_poly_is_rat_kind(r) ? sp_poly_ndigits_f(r, argv[0].v.f)
                                                              : sp_poly_round_digits(r, argv[0]);
-  if (!round) {
+  if (r.tag == SP_TAG_BIGINT && !has_half) {
+    *out = fx_bigint_prec((sp_Bigint *)r.v.p, n, round ? SP_PREC_ROUND : op);
+  } else if (!round) {
     *out = sp_poly_prec_n(r, n, op);
   } else if (r.tag == SP_TAG_FLT && has_half) {
     *out = sp_float_round_half_v(r.v.f, n, half);
@@ -265,8 +285,122 @@ static int fx_brat_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
   return 0;
 }
 
+/* The methods of an Integer that no generated wrapper gives: the rows of
+   an Integer that codegen emits inline (lcm, pow, between?, ...), and
+   nearly all methods of a Bignum, which has no rows. The helpers of a
+   boxed number answer them, as codegen calls them for a receiver of no
+   single type (SP_NUM_ARM of spinel's codegen_poly_plan.c). */
+static int fx_int_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (!fx_is_integer(r)) return 0;
+  sp_Bigint *b = r.tag == SP_TAG_BIGINT ? (sp_Bigint *)r.v.p : NULL;
+  if (b && argc <= 1 && FX_IS("chr")) sp_raise_cls("RangeError", "bignum out of char range");
+  if (argc == 0) {
+    if (FX_IS("numerator")) *out = r;
+    else if (FX_IS("denominator")) *out = sp_box_int(1);
+    else if (!b) return 0;
+    else if (FX_IS("abs") || FX_IS("magnitude")) *out = sp_poly_abs(r);
+    else if (FX_IS("abs2")) *out = sp_poly_abs2(r);
+    else if (FX_IS("nonzero?")) *out = sp_poly_nonzero(r);
+    else if (FX_IS("infinite?")) *out = sp_poly_infinite(r);
+    else if (FX_IS("bit_length")) *out = sp_box_int(sp_bigint_bit_length(b));
+    else if (FX_IS("size")) *out = sp_box_int(sp_bigint_int_size(b));
+    else if (FX_IS("succ") || FX_IS("next")) *out = sp_poly_add(r, sp_box_int(1));
+    else if (FX_IS("pred")) *out = sp_poly_sub(r, sp_box_int(1));
+    else if (FX_IS("to_f")) *out = sp_box_float(sp_bigint_to_double(b));
+    else if (FX_IS("to_i") || FX_IS("to_int") || FX_IS("ord")) *out = r;
+    else if (FX_IS("integer?") || FX_IS("finite?")) *out = sp_box_bool(1);
+    else if (FX_IS("zero?")) *out = sp_box_bool(sp_bigint_sign(b) == 0);
+    else if (FX_IS("positive?")) *out = sp_box_bool(sp_bigint_sign(b) > 0);
+    else if (FX_IS("negative?")) *out = sp_box_bool(sp_bigint_sign(b) < 0);
+    else if (FX_IS("even?") || FX_IS("odd?")) *out = sp_box_bool(sp_bigint_even_p(b) == (name[0] == 'e'));
+    else if (FX_IS("digits")) *out = sp_box_int_array(sp_poly_int_digits(r, 10));
+    else return 0;
+    return 1;
+  }
+  if (argc == 1) {
+    sp_RbVal a = argv[0];
+    /* gcd, lcm and gcdlcm take an Integer only, and compute in Bignums,
+       so lcm does not overflow */
+    if (FX_IS("gcd") || FX_IS("lcm") || FX_IS("gcdlcm")) {
+      if (!fx_is_integer(a)) sp_raise_cls("TypeError", "not an integer");
+      sp_Bigint *x = sp_poly_as_bigint(r);
+      SP_GC_ROOT(x);
+      sp_Bigint *y = sp_poly_as_bigint(a);
+      SP_GC_ROOT(y);
+      if (name[0] == 'l') {
+        *out = sp_box_bigint(sp_bigint_lcm(x, y));
+      } else if (name[3] == 0) {
+        *out = sp_box_bigint(sp_bigint_gcd(x, y));
+      } else {
+        sp_PolyArray *pair = sp_PolyArray_new();
+        SP_GC_ROOT(pair);
+        sp_PolyArray_push(pair, sp_box_bigint(sp_bigint_gcd(x, y)));
+        sp_PolyArray_push(pair, sp_box_bigint(sp_bigint_lcm(x, y)));
+        *out = sp_box_poly_array(pair);
+      }
+      return 1;
+    }
+    /* ceildiv is -div(0 - other), as in CRuby, which gives its errors */
+    if (FX_IS("ceildiv")) {
+      *out = sp_poly_sub(sp_box_int(0), sp_poly_div_m(r, sp_poly_sub(sp_box_int(0), a)));
+      return 1;
+    }
+    /* fdiv of a value that is not a real number: the error of a coerce */
+    if (FX_IS("fdiv") && !fx_is_integer(a) && a.tag != SP_TAG_FLT && !sp_poly_is_rat_kind(a)) {
+      *out = sp_poly_binop_bad("fdiv", r, a);
+      return 1;
+    }
+    if (FX_IS("digits") && a.tag == SP_TAG_NIL) sp_raise_cls("TypeError", "no implicit conversion of nil into Integer");
+    /* a Bignum base: the receiver is one digit, unless it is a Bignum */
+    if (FX_IS("digits") && a.tag == SP_TAG_BIGINT && !b) {
+      if (r.v.i < 0) sp_raise_cls("Math::DomainError", "out of domain");
+      if (sp_bigint_sign((sp_Bigint *)a.v.p) > 0) {
+        sp_IntArray *d = sp_IntArray_new();
+        SP_GC_ROOT(d);
+        sp_IntArray_push(d, r.v.i);
+        *out = sp_box_int_array(d);
+        return 1;
+      }
+    }
+    if (FX_IS("pow")) *out = sp_poly_int_pow(r, a);
+    else if (FX_IS("remainder")) *out = sp_poly_remainder(r, a);
+    else if (FX_IS("allbits?")) *out = sp_box_bool(sp_poly_int_bits_test(r, a, 0));
+    else if (FX_IS("anybits?")) *out = sp_box_bool(sp_poly_int_bits_test(r, a, 1));
+    else if (FX_IS("nobits?")) *out = sp_box_bool(sp_poly_int_bits_test(r, a, 2));
+    else if (FX_IS("coerce")) *out = sp_poly_coerce(r, a);
+    else if (FX_IS("digits")) *out = sp_box_int_array(sp_poly_int_digits(r, sp_poly_arg_int_chk(a)));
+    else if (FX_IS("fdiv") && (b || a.tag == SP_TAG_BIGINT)) *out = sp_box_float(sp_poly_fdiv(r, a));
+    else if (!b) return 0;
+    else if (FX_IS("to_s") || FX_IS("inspect")) {
+      sp_int base = sp_poly_arg_int_chk(a);
+      if (base < 2 || base > 36) sp_raise_cls("ArgumentError", sp_sprintf("invalid radix %lld", (long long)base));
+      *out = sp_box_str(sp_bigint_to_s_base(b, base));
+    } else {
+      return 0;
+    }
+    return 1;
+  }
+  if (argc == 2) {
+    /* a Bignum modulus bounds the answer, not the steps: run it in Bignums */
+    if (FX_IS("pow") && argv[1].tag == SP_TAG_BIGINT) {
+      sp_Bigint *x = sp_poly_as_bigint(r);
+      SP_GC_ROOT(x);
+      *out = sp_box_bigint(sp_bigint_powmod_arg(x, argv[0], (sp_Bigint *)argv[1].v.p));
+      return 1;
+    }
+    if (FX_IS("pow")) *out = sp_poly_int_powmod_recv(r, argv[0], argv[1]);
+    else if (FX_IS("between?"))
+      *out = sp_box_bool(sp_poly_cmp_ck(r, argv[0]) >= 0 && sp_poly_cmp_ck(r, argv[1]) <= 0);
+    else if (FX_IS("clamp")) *out = sp_poly_clamp(r, argv[0], argv[1]);
+    else return 0;
+    return 1;
+  }
+  return 0;
+}
+
 static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (fx_brat_core(r, name, argc, argv, out)) return 1;
+  if (fx_int_core(r, name, argc, argv, out)) return 1;
   if (((argc >= 1 && fx_is_integer(r)) || r.tag == SP_TAG_FLT || sp_poly_is_rational(r) || sp_poly_is_brat(r)) &&
       fx_num_prec(r, name, argc, argv, out))
     return 1;

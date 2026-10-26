@@ -313,8 +313,12 @@ begin_rescue_else_clause
 begin_unknown_const_tail
 begin_value_body_local
 begin_while_locals_not_volatile
+between_ivar_widened_by_module_write
 big_rational_to_s_root
+bigint_bit_length_negative
 bigint_bitwise_negative
+bigint_boxed_introspection
+bigint_boxed_ord
 bigint_branch_arm
 bigint_compare_object_operand
 bigint_div_by_zero
@@ -332,6 +336,7 @@ bigint_operand_rooted
 bigint_poly_arith
 bigint_poly_container
 bigint_pow_shift
+bigint_powmod_signs
 bigint_propagation_chain
 bigint_return_int_literal
 bigint_shift_count_and_quo
@@ -339,12 +344,23 @@ bigint_shift_limbs
 bigint_slot_nil
 bigint_to_s_is_a_heap_string
 bigint_volatile_combo
+bignum_bit_length
 bignum_bit_range_float_end
+bignum_boxed_division
+bignum_coerce_float
+bignum_modulo_bit_pow
+bignum_query_to_i
 bignum_rational_arith
 bignum_rational_basic
 bignum_receiver_bitwise
+bignum_receiver_methods
+bignum_recv_int_ord_float_toi
 bignum_shift_op_assign
 bignum_shift_poly_count
+bignum_size_magnitude
+bignum_to_f
+bignum_to_i_slot_width
+bignum_to_s_base_rooted
 bignum_variable_writes
 bigrational_integer_surface
 binary_string_index_byte_offsets
@@ -365,6 +381,7 @@ block_arg_one_of_two_lambdas_case_in
 block_arg_one_of_two_lambdas_logic
 block_arg_one_of_two_lambdas_rescue_modifier
 block_arg_paren_sequence_proc
+block_arg_poly_symbol
 block_arg_poly_symbol_begin
 block_arg_poly_symbol_case
 block_arg_poly_symbol_case_in
@@ -486,6 +503,7 @@ boxed_array_source_logic_arms
 boxed_bignum_integer_class
 boxed_block_call_beside_class_method
 boxed_block_sub_user_method
+boxed_chr_bignum_range
 boxed_class_is_a_module
 boxed_class_name_beside_instance_name
 boxed_class_name_survives_gc
@@ -571,6 +589,7 @@ boxed_time_deconstruct_keys
 boxed_time_round_ctime
 boxed_tms_times
 boxed_to_h_block
+boxed_to_s_base_from_call
 boxed_values_at_hoisted_index
 boxed_writer_arm_nilable_int_param
 boxed_writer_dispatch_forwarding_setter
@@ -596,6 +615,7 @@ builtin_iter_step_frame
 builtin_kwarg_user_clone
 builtin_recv_call_reaches_no_program_method
 builtin_reopen_array_hash_poly
+builtin_reopen_bignum_receiver
 builtin_reopen_hash_time_methods
 builtin_reopen_implicit_self
 builtin_reopen_implicit_to_s
@@ -611,7 +631,10 @@ builtin_singleton_alias_user
 builtin_singleton_valued_break
 builtin_splice_heredoc_opening_line
 builtins_grep
+builtins_integer_bit_length
+builtins_integer_digits
 builtins_integer_digits_reopen
+builtins_integer_gcd_lcm
 bundle_array_a
 bundle_array_b
 bundle_array_c
@@ -1174,6 +1197,7 @@ container_alias_mixed_string_element
 container_alias_widen_holders
 container_alias_widen_readers
 container_literal_through_sequence
+container_read_builtin_methods
 container_read_combined_set_map_bang
 container_read_max_by_element
 container_read_missing_arms
@@ -1688,9 +1712,11 @@ flatten_splices_to_ary
 float_arg_signed_zero_nan
 float_array_array
 float_array_first_last_nil
+float_bignum_compare
 float_bignum_or_write_nil_slot
 float_coerce_typeerror
 float_div_int_literal
+float_div_integer_quotient
 float_elem_binary_nil
 float_elem_cmp_nil
 float_ivar_unset_by_ctor_reads_nil
@@ -1698,6 +1724,7 @@ float_limit_constants
 float_mod_pow_op_assign
 float_nan_payload_slots
 float_negative_zero_hash
+float_no_fma_contraction
 float_op_assign_nil
 float_opassign_nil_marked
 float_past_word_shared_block_proc
@@ -2331,6 +2358,7 @@ int_array_tally
 int_array_uniq_bang
 int_bit_beginless_raises
 int_bitop_mutable_string_operand
+int_bits_bignum_mask
 int_bitwise_raise_operand
 int_bracket_skip_sym_idx
 int_case_eq_rational
@@ -2350,7 +2378,9 @@ int_keyed_hash_lookup_as_array
 int_keyed_hash_variant
 int_loop_to_int64_ends
 int_min32_twin
+int_min_arith
 int_min_array_lazy_fill
+int_min_compare_case
 int_min_hash_default_fetch
 int_min_int_array
 int_min_int_hash
@@ -2361,6 +2391,7 @@ int_min_nullable_slot_holds
 int_min_param_return
 int_min_plain_locals
 int_min_sign_mask
+int_named_division_boxed_divisor
 int_nil_shift_recv
 int_opt_p_inspect
 int_overflow_promote
@@ -2370,8 +2401,20 @@ integer_0d_prefix
 integer_argument_error
 integer_bit_index_clamped
 integer_bit_read_never_nil
+integer_clamp_float_bound
+integer_digits_base
+integer_digits_invalid_radix
+integer_div_by_zero
+integer_div_zero_float
+integer_extra_methods
+integer_gcd_arg_check
 integer_leading_zero_octal
 integer_literal_no_int32_overflow
+integer_poly_arg_methods
+integer_pow_negative_exponent
+integer_pow_negative_unit
+integer_pow_negative_unit_huge_exponent
+integer_powmod_large_residues
 integer_rational_complex_ops
 integer_round_large_precision
 integer_shift_float_and_coerce
@@ -2444,6 +2487,8 @@ is_a_toplevel_scoped_const
 is_a_undefined_const
 isa_fold_leading_statements
 isa_guarded_return_narrow
+isa_integer_bignum
+isa_integer_bignum_read
 isa_namespaced_exception_collision
 isa_narrow
 isa_narrowed_array_mutation
@@ -2455,6 +2500,7 @@ issue229_uncalled_cls_method
 issue236_chain_empty_literal
 issue239_cls_method_default_args
 issue_266_def_length_inference
+issue_2863
 issue_2864
 issue_2865
 issue_2866
@@ -2478,6 +2524,7 @@ issue_2888
 issue_2889
 issue_2890
 issue_2892
+issue_2893
 issue_2894
 issue_2896
 issue_2899
@@ -2508,6 +2555,7 @@ issue_2929
 issue_2930
 issue_2931
 issue_2933
+issue_2934
 issue_2935
 issue_2936
 issue_2937
@@ -2628,6 +2676,8 @@ issue_3116
 issue_3119
 issue_3121
 issue_3124
+issue_3125
+issue_3129
 issue_3130
 issue_3132
 issue_3135_norequire
@@ -3378,6 +3428,7 @@ nullable_array_keyword_box
 nullable_array_param_fresh_push
 nullable_elem_recursive_concat
 nullable_hash_recv_bracket
+nullable_int_right_operand
 nullable_int_sentinel_boxing
 nullable_int_to_s_evaluates_once
 nullable_num_compare
@@ -3599,6 +3650,8 @@ poly_attr_reader_box_dispatch
 poly_attr_reader_shadows_builtin
 poly_attr_writer
 poly_attr_writer_distinct_family_override
+poly_bignum_bits_predicates
+poly_bignum_integer_surface
 poly_binop_arm_fills_default
 poly_bitop_bignum_width
 poly_bitop_recv_before_operand
@@ -3805,6 +3858,7 @@ poly_multi_write_index_target
 poly_mutator_answers_receiver
 poly_mutator_block_break
 poly_mutator_stmt_beside_blockless_user
+poly_named_division_collision
 poly_narrowed_append_value
 poly_native_arity_arm
 poly_native_scan
@@ -3813,6 +3867,7 @@ poly_new_instance_method
 poly_new_struct_arm
 poly_nil_op_assign
 poly_nil_p_user_answer
+poly_numeric_collision
 poly_numeric_op_assign_div_mod
 poly_numeric_query_methods
 poly_object_default_render
@@ -3895,6 +3950,7 @@ poly_shift_n_user_arm
 poly_shl_recv_root
 poly_shr_bignum_count
 poly_shr_wide_count
+poly_sign_predicate_float
 poly_sign_predicate_user_zero
 poly_size_user_return
 poly_slice_assign
@@ -4080,6 +4136,7 @@ proc_post_param_typed
 proc_range_time_return
 proc_reads_attr_reader
 proc_reads_outer_two_frames_up
+proc_rebound_local_arg_order
 proc_recursive
 proc_regexp_arg_unrooted
 proc_rest_post_params
@@ -4114,16 +4171,19 @@ promote_bigint_toom3_negative_eval
 promote_bigrational_to_i
 promote_block_loop_bigint
 promote_block_param_nil
+promote_float_div_bignum
 promote_global_op_assign
 promote_literal_overflow
 promote_poly_int_overflow
 promote_poly_overflow
 promote_poly_slot_method_call
+promote_poly_unbox_bigint
 promote_pow_runtime_exponent
 promote_rational_bignum
 promote_shl_pow_bigint
 promote_shl_runtime_count
 promote_typed_sinks_more
+promote_xorshift_mask
 promote_yield_operator_diverging_block_types
 protected_call_in_module_block
 ptr_array
@@ -4447,6 +4507,7 @@ require_relative_computed_head
 require_relative_tree
 require_same_line
 require_unsupported_lib
+require_value_line_numbers
 required_file_runtime_return
 reraise_nested_rescue
 rescue
