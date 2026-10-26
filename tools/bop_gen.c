@@ -13,7 +13,8 @@
      sp_RbVal fx_bop_N(sp_RbVal recv, sp_RbVal *argv);
 
    The wrapper unboxes the receiver and the arguments, evaluates the
-   template and boxes the result, with the spellings of ty_traits[]. A row
+   template and boxes the result, with the spellings of ty_traits[]. A
+   String argument goes through fx_bop_str, which checks its class. A row
    that needs a fact only the compiler has (a family temp, an argument of
    no single kind, ...) is skipped, and the manifest names the reason.
 
@@ -141,7 +142,7 @@ static const char *expand(Str *s, const BuiltinOp *op, const Variant *v, int *oi
     case 'b': str_puts(s, arg); break;
     case 'i': case 'o': unbox(s, TY_INT, arg); break;
     case 'f': unbox(s, TY_FLOAT, arg); break;
-    case 's': unbox(s, TY_STRING, arg); break;
+    case 's': str_printf(s, "fx_bop_str(%s)", arg); break;
     case 'c': str_printf(s, "sp_poly_as_complex(%s)", arg); break;
     case 'q': str_printf(s, "sp_poly_as_rational(%s)", arg); break;
     case 'F': return "$F (Float coercion)";
@@ -220,7 +221,12 @@ int main(int argc, char **argv) {
         "   Include it after fx_tu.c, in the same TU. */\n"
         "#include \"fx_tu.h\"\n"
         "#define FX_BOX_INT(x) _Generic((x), sp_oint: sp_box_oint, default: sp_box_int)(x)\n"
-        "#define FX_BOX_FLOAT(x) _Generic((x), sp_ofloat: sp_box_ofloat, default: sp_box_float)(x)\n",
+        "#define FX_BOX_FLOAT(x) _Generic((x), sp_ofloat: sp_box_ofloat, default: sp_box_float)(x)\n"
+        "/* A String argument ($s): nil stays NULL as sp_poly_unbox_s gives it,\n"
+        "   and any other value that is not a String is the TypeError of CRuby. */\n"
+        "static const char *fx_bop_str(sp_RbVal v) {\n"
+        "  return v.tag == SP_TAG_NIL ? sp_poly_unbox_s(v) : sp_poly_arg_str_chk(v);\n"
+        "}\n",
         out);
   /* the TyKind numbers of the pinned spinel, for the argument kind masks */
   static const struct { const char *name; TyKind kind; } kinds[] = {
@@ -235,7 +241,7 @@ int main(int argc, char **argv) {
     { "POLY_POLY_HASH", TY_POLY_POLY_HASH }, { "REGEX", TY_REGEX }, { "MATCHDATA", TY_MATCHDATA },
     { "IO", TY_IO }, { "FIBER", TY_FIBER }, { "THREAD", TY_THREAD }, { "ENUMERATOR", TY_ENUMERATOR },
     { "QUEUE", TY_QUEUE }, { "MUTEX", TY_MUTEX }, { "CONDVAR", TY_CONDVAR },
-    { "RATIONAL", TY_RATIONAL }, { "TIME", TY_TIME },
+    { "RATIONAL", TY_RATIONAL }, { "TIME", TY_TIME }, { "COMPLEX", TY_COMPLEX },
   };
   for (size_t k = 0; k < sizeof kinds / sizeof kinds[0]; k++)
     fprintf(out, "#define FX_TY_%s %d\n", kinds[k].name, (int)kinds[k].kind);

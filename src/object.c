@@ -128,6 +128,7 @@ static const struct {
   { "Hash", "Object", "Enumerable", 0 },
   { "Range", "Object", "Enumerable", 0 },
   { "Struct", "Object", "Enumerable", 0 },
+  { "Time", "Object", "Comparable", 0 },
   { "Enumerator", "Object", "Enumerable", 0 },
   { "Exception", "Object", NULL, 0 },
   { "ScriptError", "Exception", NULL, 0 },
@@ -1051,10 +1052,11 @@ static int fx_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       *out = fx_class_box(k);
       return 1;
     }
-    /* an immediate value is frozen; a heap value carries the flag, and a
-       class keeps its own */
+    /* an immediate value is frozen, and so is a number on the heap (a
+       Bignum, a Rational, a Complex); another heap value carries the flag,
+       and a class keeps its own */
     if (!strcmp(name, "frozen?")) {
-      int heap = r.tag == SP_TAG_OBJ && r.v.p;
+      int heap = r.tag == SP_TAG_OBJ && r.v.p && !sp_poly_is_rat_kind(r) && r.cls_id != SP_BUILTIN_COMPLEX;
       FxClass *k = fx_class_value(r);
       *out = sp_box_bool(k ? k->frozen : heap ? sp_gc_is_frozen(r.v.p) : 1);
       return 1;
@@ -1365,6 +1367,8 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   if (fx_file_class(k, name, argc, argv, blk, out)) return 1;
   /* Time.now, Time.at, Time.new and the civil forms */
   if (!blk && fx_time_class(k, name, argc, argv, out)) return 1;
+  /* Complex.rect and Complex.polar */
+  if (!blk && fx_complex_class(k, name, argc, argv, out)) return 1;
   if (!strcmp(name, "new") || !strcmp(name, "allocate")) {
     if (k->is_module) return 0;
     /* an exception is a runtime sp_Exception, for a builtin class too */

@@ -393,6 +393,12 @@ static int fx_file_responds(sp_RbVal r, const char *name);
 static int fx_time_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int fx_time_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 
+/* complex.c */
+static sp_RbVal fx_kernel_complex(int argc, sp_RbVal *argv, int raise);
+static int fx_complex_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int fx_complex_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int fx_to_c(sp_RbVal r, const char *name, int argc, sp_RbVal *out);
+
 /* host.c */
 static void fx_host_init(void);
 static sp_RbVal fx_entry_invoke(int i, int argc, sp_RbVal *argv);

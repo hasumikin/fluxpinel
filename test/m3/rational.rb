@@ -15,6 +15,7 @@ p r.round, r.floor, r.ceil, r.truncate, r.to_i, r.round(1), Rational(1, 3).round
 p r.hash == Rational(3, 4).hash, { r => 1 }[Rational(6, 8)]
 
 # Integer, Float and nil give a Rational
+p 7.div(2r), 7.modulo(2r), 7.divmod(2r), 1r.frozen?
 p 1.quo(3), 3.to_r, 0.5.to_r, 0.1.rationalize(Rational(1, 100)), 0.333.rationalize, nil.to_r, 3.rationalize
 
 # a Range of Integers or Floats covers a Rational by its value

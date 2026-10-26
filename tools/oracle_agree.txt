@@ -217,8 +217,11 @@ array_store_empty_container_widens
 array_sum_block_seed_other_class
 array_sum_concat_init
 array_sum_float_init
+array_sum_float_seed_compensated
+array_sum_float_seed_complex
 array_sum_float_seed_non_number
 array_sum_kahan
+array_sum_mixed_compensated
 array_sum_native_paths
 array_sum_user_block
 array_sum_user_coerce
@@ -473,6 +476,7 @@ boxed_class_name_beside_instance_name
 boxed_class_name_survives_gc
 boxed_class_own_singleton_accessor_first
 boxed_class_singleton_accessor
+boxed_complex_finite
 boxed_container_read_at
 boxed_dispatch_shared_private_helper_sibling_widen
 boxed_enumerable_entries
@@ -506,6 +510,7 @@ boxed_range_iterators
 boxed_range_percent
 boxed_range_user_iterator
 boxed_rational_abs2
+boxed_rational_value_surface
 boxed_reader_alias_after_dup
 boxed_reader_named_like_time_method
 boxed_receiver_aliases
@@ -575,6 +580,7 @@ builtin_reopen_array_hash_poly
 builtin_reopen_hash_time_methods
 builtin_reopen_implicit_self
 builtin_reopen_implicit_to_s
+builtin_reopen_named_superclass
 builtin_reopen_poly_slot
 builtin_reopen_runtime_name_clash
 builtin_reopen_sclass_const_own_method
@@ -797,6 +803,7 @@ case_when_subclass_in_inherited_method
 case_when_typed_eq_identity
 case_when_user_equality
 case_when_value_constant
+case_when_value_type_classes
 casecmp_p_binary_bytes
 casecmp_p_fold
 catch_depth_bounded
@@ -806,6 +813,8 @@ catch_throw_ensure
 catch_throw_string_value
 catch_throw_tags_values
 catch_throw_through_loop
+cell_value_struct_capture
+celled_op_assign_types
 cext_no_extension_names
 chain_append_captured_strbuf
 chained_aset_on_poly_hash_recv
@@ -1028,8 +1037,10 @@ codegen_const_lookup_in_toplevel_method
 codegen_settled_operand_types
 coerce_error_value_spelling
 coerce_factory_and_explicit_call
+coerce_factory_param_types
 coerce_operator_param
 coerce_poly_operand
+coerce_result_reader_local
 compact_class_alias_head_scope
 compact_class_path_namespace
 compact_path_ancestor_parent
@@ -1048,6 +1059,27 @@ compare_by_identity_user_method
 compile_time_define_method_direct
 compile_time_define_method_int
 compile_time_define_method_strings
+complex_arithmetic
+complex_as_real_component
+complex_boxed_component
+complex_boxed_float_operand
+complex_case_equality
+complex_coerce_boxed
+complex_coerce_error_names
+complex_component_class
+complex_component_part_class
+complex_conversions_boxed
+complex_div_boxed_divisor
+complex_division
+complex_nil_arg_and_nomethod
+complex_numerator_denominator
+complex_polar
+complex_poly_arith
+complex_rational_class
+complex_rational_interop
+complex_rect_arg_polar
+complex_string_number_syntax
+complex_string_zero_denominator
 compound_write_conversions
 computed_ivar_get_direct
 computed_ivar_get_poly
@@ -1652,6 +1684,8 @@ float_range_minmax
 float_range_open_bound
 float_range_overlap_cover
 float_rational_arith
+float_rationalize_abs_epsilon
+float_rationalize_invalid_epsilon
 float_rationalize_simplest
 float_round_digits_cruby
 float_round_half
@@ -2301,12 +2335,14 @@ int_nil_shift_recv
 int_opt_p_inspect
 int_overflow_promote
 int_round_large_precision
+int_sentinel_class_nilclass
 integer_0d_prefix
 integer_argument_error
 integer_bit_index_clamped
 integer_bit_read_never_nil
 integer_leading_zero_octal
 integer_literal_no_int32_overflow
+integer_rational_complex_ops
 integer_round_large_precision
 integer_shift_float_and_coerce
 integer_step_no_limit
@@ -2365,6 +2401,7 @@ io_waiters_leave_out_of_order
 io_write_print_splat
 io_write_stdout_stderr
 iow_float_nil_rhs
+is_a_builtin_classes
 is_a_builtin_module_of_boxed_object
 is_a_builtin_module_of_subclass_in_inherited_method
 is_a_cond_nil_object_slot
@@ -2399,9 +2436,12 @@ issue_2875
 issue_2876
 issue_2877
 issue_2879
+issue_2881
+issue_2882
 issue_2883
 issue_2884
 issue_2885
+issue_2886
 issue_2887
 issue_2888
 issue_2889
@@ -2443,6 +2483,7 @@ issue_2937
 issue_2938
 issue_2939
 issue_2940
+issue_2941
 issue_2942
 issue_2943
 issue_2944
@@ -2457,6 +2498,10 @@ issue_2958
 issue_2959
 issue_2960
 issue_2961
+issue_2962
+issue_2963
+issue_2964
+issue_2965
 issue_2966
 issue_2969
 issue_2971
@@ -2737,6 +2782,7 @@ ivar_table_row_store_retyped
 ivar_tail_write_return
 ivar_ternary_mixed
 ivar_type_per_owning_class
+ivar_unset_by_ctor_reads_nil
 ivar_value_write_poly_array
 ivar_widen_poly_writer
 ivar_write_tail_nullable_number
@@ -2745,6 +2791,9 @@ join_separator_slot
 json_parse_temp_source
 kept_block_index_write_non_string
 kept_block_param_not_hash
+kernel_complex
+kernel_complex_bool_exception
+kernel_complex_boolean
 kernel_dir
 kernel_fail_alias
 kernel_float_integer_strict
@@ -2767,6 +2816,7 @@ keyword_splat_empty_positional
 keyword_splat_rest_copy
 kind_query_class_var_override
 kind_query_computed_class
+kind_query_computed_nil
 kind_query_nested_nil
 kind_query_override_untyped
 kw_arg_raise_hoisted
@@ -2844,6 +2894,7 @@ literal_int_rows_block_param
 literal_string_markers
 load_error_is_script_error
 local_empty_array_push_promotion_propagates
+local_op_assign_reads_slot_first
 local_or_write_first_assign
 local_read_before_widen
 local_rebind_after_self_returning_mutator
@@ -3300,6 +3351,8 @@ nullable_string_identity
 numbered_param_arity
 numeric_coerce
 numeric_compare_object_without_coerce
+numeric_convert_nil_exception
+numeric_i_boxed
 numeric_method_displaced_by_user
 numeric_reopen_self_any_number
 numeric_tower_remainder
@@ -3528,6 +3581,7 @@ poly_call_result_method
 poly_call_unanswered_unrelated_class
 poly_call_user_call_arity_shadow
 poly_callable_keywords_user_call
+poly_callable_struct_args
 poly_channel_root_survives_other_workers_gc
 poly_class_dispatch
 poly_class_is_a_module
@@ -3535,6 +3589,7 @@ poly_class_singleton_attr
 poly_class_value_keyword_once
 poly_class_writer_value
 poly_compare_recv_before_operand
+poly_complex_float_edges
 poly_concat_chain_rooted
 poly_container_delete
 poly_container_stores_own_element
@@ -3578,6 +3633,7 @@ poly_dispatch_nil_scalar_arg
 poly_dispatch_proc_form_reopened
 poly_dispatch_proc_form_untyped_param
 poly_dispatch_ptr_array
+poly_dispatch_quo_modulo_div_collision
 poly_dispatch_reader_unbox
 poly_dispatch_recv_gc_root
 poly_dispatch_splat
@@ -3606,8 +3662,10 @@ poly_enum_range_and_scalar_recv
 poly_enum_to_a_builtin_arm
 poly_eq_large_integers
 poly_eq_nil_user_eq
+poly_eq_number_hands_back
 poly_eq_user_cross_class
 poly_equality_mixed_sites
+poly_exact_numeric_ops
 poly_exception_reopen_nearest
 poly_face_nilable_param
 poly_fetch_block
@@ -3837,6 +3895,7 @@ poly_time_iso8601_frac
 poly_time_strftime_beside_user_strftime
 poly_time_surface
 poly_times_block_param_typed
+poly_to_c_flags
 poly_to_f_via_str_poly_hash
 poly_to_h_builtin_arm
 poly_to_i_base_beside_class_to_i
@@ -3845,6 +3904,7 @@ poly_to_s_base_user_to_s
 poly_to_s_into_string_slot
 poly_to_s_user_class
 poly_to_sym
+poly_unary_minus_tower
 poly_unsettled_user_answer
 poly_user_arm_handle_return
 poly_user_at_builtin_arm
@@ -3905,6 +3965,7 @@ proc_body_block_fresh_binding
 proc_body_inline_keeps_caller_renames
 proc_body_local_across_rescue
 proc_boxed_param_hash_int_key
+proc_boxed_struct_arg_root
 proc_call_array_autosplat
 proc_call_blk_gc_root
 proc_call_empty_literal_arg
@@ -3958,6 +4019,7 @@ proc_optional_params
 proc_param_container_input
 proc_param_default_and_kwarg_escape
 proc_param_returns_of_every_call
+proc_param_value_struct_types
 proc_pattern_from_container
 proc_poly_call_boxed_result
 proc_poly_param
@@ -4128,18 +4190,26 @@ range_step_paren_empty_stride
 range_string_cover
 range_to_s_inspect
 rational_arithmetic
+rational_bigint_and_complex_zero
 rational_boxed_nil
 rational_cmp_float_hash
 rational_coerce_user_object
+rational_complex_literals
+rational_complex_reopen_shared_name
+rational_complex_wave9
 rational_ctor_exact
 rational_div_family
 rational_eq_poly_operand
 rational_from_sum_rounding
+rational_i_to_complex
+rational_mod_cmp_slice_default_wave10
 rational_named_division_boxed
 rational_non_numeric_arg
+rational_opassign_and_destructured_range
 rational_pow_boxed_exponent
 rational_predicates_boxed
 rational_predicates_boxed_user_dispatch
+rational_rationalize_eps_abs
 rational_reduce_wide_and_min
 rational_round_digits_integer
 rational_round_half_keyword
@@ -5171,6 +5241,7 @@ string_thread_fiber_arg
 string_thread_global_arg
 string_thread_ivar_arg
 string_thread_method_param_arg
+string_to_c_lenient
 string_to_i_base
 string_to_i_base_zero
 string_to_i_signed_minimum
@@ -5384,6 +5455,7 @@ thread_body_block_param_condition
 thread_body_local_cell
 thread_boxed_alive_status
 thread_boxed_termination
+thread_captures_value_struct
 thread_concurrent_alloc
 thread_condvar
 thread_ensure_inside_block
@@ -5637,6 +5709,9 @@ value_object_yielded_through_a_proc_block
 value_of_call_on_undefined_constant
 value_pos_shapes
 value_position_misc
+value_type_frozen
+value_type_hash_id
+value_type_identity
 value_type_interp_to_s
 value_type_object_in_static_slot
 value_type_tuple_gc_scan
@@ -5668,6 +5743,7 @@ warn_render
 warn_through_stderr_object_write
 warn_unresolved_call_context
 when_int_float_range
+when_splat_rational_complex
 when_string_range
 while_break_value
 while_break_value_tail

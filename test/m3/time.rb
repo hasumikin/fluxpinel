@@ -16,7 +16,7 @@ p Time.now.class, Time.now(in: "+01:00").utc_offset, Time.new.is_a?(Time)
 p u + 1, u - 1.5, u - Time.utc(2020, 3, 4)
 p u == Time.utc(2020, 3, 4, 5, 6, 7), u.eql?(u + 0), u < u + 1, u <=> u - 1, u <=> 1
 p u.between?(u - 1, u + 1), u.clamp(u + 1, u + 2) == u + 1, [u + 2, u, u + 1].max == u + 2
-p u.hash == Time.utc(2020, 3, 4, 5, 6, 7).hash, Time.at(u) == u, Time.at(u).equal?(u)
+p u.hash == Time.utc(2020, 3, 4, 5, 6, 7).hash, Time.at(u) == u, Time.at(u).equal?(u), u.is_a?(Comparable)
 
 # the zone: utc and localtime change the receiver, the get* forms do not
 p u.getlocal("+02:00"), u.round, u.to_r, u.iso8601, u.deconstruct_keys([:year, :hour])

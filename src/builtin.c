@@ -48,6 +48,7 @@ static int fx_kind_of(sp_RbVal v, const char **family, const char **variant) {
     case SP_BUILTIN_TMS: fam = var = "tms"; break;
     case SP_BUILTIN_TIME: fam = var = "time"; kind = FX_TY_TIME; break;
     case SP_BUILTIN_RATIONAL: fam = var = "rational"; kind = FX_TY_RATIONAL; break;
+    case SP_BUILTIN_COMPLEX: fam = var = "complex"; kind = FX_TY_COMPLEX; break;
     case SP_BUILTIN_STR_INT_HASH: fam = "ANY_HASH"; var = "str_int_hash"; kind = FX_TY_STR_INT_HASH; break;
     case SP_BUILTIN_STR_STR_HASH: fam = "ANY_HASH"; var = "str_str_hash"; kind = FX_TY_STR_STR_HASH; break;
     case SP_BUILTIN_INT_INT_HASH: fam = "ANY_HASH"; var = "int_int_hash"; kind = FX_TY_INT_INT_HASH; break;
@@ -269,11 +270,18 @@ static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_Rb
   if (((argc >= 1 && fx_is_integer(r)) || r.tag == SP_TAG_FLT || sp_poly_is_rational(r) || sp_poly_is_brat(r)) &&
       fx_num_prec(r, name, argc, argv, out))
     return 1;
-  /* quo, to_r and rationalize of a number (and of nil), as the helpers of
-     a boxed number answer them */
+  /* quo, div, modulo, divmod, to_r and rationalize of a number (and to_r
+     and rationalize of nil), as the helpers of a boxed number answer them */
   if (fx_is_integer(r) || r.tag == SP_TAG_FLT || sp_poly_is_rational(r) || sp_poly_is_brat(r) ||
       (r.tag == SP_TAG_NIL && strcmp(name, "quo"))) {
     if (argc == 1 && !strcmp(name, "quo")) { *out = sp_poly_quo(r, argv[0]); return 1; }
+    /* div, modulo and divmod with an operand that no wrapper takes (a
+       Rational) */
+    if (argc == 1 && r.tag != SP_TAG_NIL) {
+      if (!strcmp(name, "div")) { *out = sp_poly_div_m(r, argv[0]); return 1; }
+      if (!strcmp(name, "modulo")) { *out = sp_poly_modulo(r, argv[0]); return 1; }
+      if (!strcmp(name, "divmod")) { *out = sp_poly_divmod(r, argv[0]); return 1; }
+    }
     /* a Bignum is a big Rational over 1, as codegen makes it */
     if (argc <= 1 && r.tag == SP_TAG_BIGINT && (!strcmp(name, "to_r") || !strcmp(name, "rationalize"))) {
       if (argc && !strcmp(name, "to_r")) return 0;
@@ -638,6 +646,8 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
   if (fx_fiber_core(recv, name, argc, argv, blk, out)) return 1;
   if (!blk && fx_io_core(recv, name, argc, argv, out)) return 1;
   if (!blk && fx_time_core(recv, name, argc, argv, out)) return 1;
+  if (!blk && fx_complex_core(recv, name, argc, argv, out)) return 1;
+  if (!blk && fx_to_c(recv, name, argc, out)) return 1;
   if (fx_iter(recv, name, argc, argv, blk, out)) return 1;
   if (blk) {
     if (argc >= 1 && (!strcmp(name, "send") || !strcmp(name, "__send__") || !strcmp(name, "public_send"))) return 0;
@@ -763,6 +773,19 @@ static void fx_p_to(sp_RbVal so, sp_RbVal v) {
   }
 }
 
+/* The keyword exception: of Integer(), Rational() and Complex(): 0 for
+   false, else 1. A value that is not true or false is the ArgumentError
+   of CRuby. */
+static int fx_kw_exception(sp_RbVal kw) {
+  sp_PolyPolyHash *h = sp_poly_as_poly_poly_hash(kw);
+  sp_RbVal k = sp_box_sym(sp_sym_intern("exception"));
+  if (!sp_PolyPolyHash_has_key(h, k)) return 1;
+  sp_RbVal v = sp_PolyPolyHash_get(h, k);
+  if (v.tag != SP_TAG_BOOL)
+    sp_raise_cls("ArgumentError", sp_sprintf("expected true or false as exception: %s", sp_poly_inspect(v)));
+  return v.v.b;
+}
+
 /* An argument of Rational(a, b), as codegen converts it (emit_rat_kernel_arg
    of spinel): a String parses strictly, and any other value converts as
    sp_poly_kernel_rational_arg converts it. */
@@ -856,9 +879,7 @@ static int fx_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) 
   if (!strcmp(name, "Integer") && argc >= 1 && argc <= 3) {
     int raise = 1;
     if (argv[argc - 1].tag == SP_TAG_OBJ && argv[argc - 1].v.p == L.kwhash && sp_poly_is_hash_kind(argv[argc - 1].cls_id)) {
-      sp_RbVal key = sp_box_sym(sp_sym_intern("exception"));
-      sp_RbVal ex = fx_send(argv[argc - 1], "[]", 1, &key);
-      raise = ex.tag != SP_TAG_BOOL || ex.v.b;
+      raise = fx_kw_exception(argv[argc - 1]);
       argc--;
     }
     sp_int base = argc == 2 && argv[1].tag == SP_TAG_INT ? argv[1].v.i : 0;
@@ -873,13 +894,22 @@ static int fx_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) 
   if (!strcmp(name, "Rational") && argc >= 1 && argc <= 3) {
     int raise = 1;
     if (fx_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash) {
-      sp_RbVal key = sp_box_sym(sp_sym_intern("exception"));
-      sp_RbVal ex = fx_send(argv[argc - 1], "[]", 1, &key);
-      raise = ex.tag != SP_TAG_BOOL || ex.v.b;
+      raise = fx_kw_exception(argv[argc - 1]);
       argc--;
     }
     if (argc < 1 || argc > 2) return 0;
     *out = fx_kernel_rational(argc, argv, raise);
+    return 1;
+  }
+  /* Complex(a), Complex(a, b) and exception: false */
+  if (!strcmp(name, "Complex") && argc >= 1 && argc <= 3) {
+    int raise = 1;
+    if (fx_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash) {
+      raise = fx_kw_exception(argv[argc - 1]);
+      argc--;
+    }
+    if (argc < 1 || argc > 2) return 0;
+    *out = fx_kernel_complex(argc, argv, raise);
     return 1;
   }
   /* after `$stdout = obj`, puts, print and p write to obj */

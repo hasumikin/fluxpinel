@@ -2788,6 +2788,13 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
     sp_RbVal num = fx_integer(n, &r->numerator), den = fx_integer(n, &r->denominator);
     return sp_box_rational(sp_rational_new(num.v.i, den.v.i));
   }
+  case PM_IMAGINARY_NODE: {
+    /* 2i, 1.5i and 3ri: the number is the imaginary part, and a Float
+       or a Rational makes it Float-classed (a Rational is its Float) */
+    sp_RbVal v = fx_eval(f, ((const pm_imaginary_node_t *)n)->numeric);
+    int fl = v.tag == SP_TAG_FLT || sp_poly_is_rational(v) ? SP_CPLX_IM_F : 0;
+    return sp_box_complex((sp_Complex){ 0.0, sp_poly_to_f_with_rational(v), (unsigned char)fl });
+  }
   case PM_FLOAT_NODE:
     return sp_box_float(((const pm_float_node_t *)n)->value);
   case PM_STRING_NODE: {
