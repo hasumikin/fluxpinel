@@ -1363,6 +1363,8 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   if (!blk && fx_process_class(k, name, argc, argv, out)) return 1;
   /* the class methods of File on paths */
   if (fx_file_class(k, name, argc, argv, blk, out)) return 1;
+  /* Time.now, Time.at, Time.new and the civil forms */
+  if (!blk && fx_time_class(k, name, argc, argv, out)) return 1;
   if (!strcmp(name, "new") || !strcmp(name, "allocate")) {
     if (k->is_module) return 0;
     /* an exception is a runtime sp_Exception, for a builtin class too */
