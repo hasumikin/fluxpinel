@@ -410,6 +410,7 @@ static int fx_rs_responds(sp_RbVal r, const char *mn);
 /* global.c */
 static sp_RbVal fx_gvar_eval(FxFrame *f, const pm_node_t *n);
 static int fx_gvar_stdout(sp_RbVal *out);
+static sp_RbVal fx_gvar_get(const char *name);
 static void fx_gvar_set(const char *name, sp_RbVal v);
 static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int fx_env_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,

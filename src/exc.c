@@ -60,7 +60,22 @@ static void fx_exc_init(sp_RbVal v, int argc, sp_RbVal *argv) {
         if (!strcmp(k->name, more[i])) fx_gap(sp_sprintf("%s.new with %d arguments", k->name, argc));
     sp_raise_cls("ArgumentError", sp_sprintf("wrong number of arguments (given %d, expected 0..1)", argc));
   }
-  if (argc >= 1) fx_exc_set_msg((sp_Exception *)v.v.p, argv[0]);
+  sp_Exception *e = (sp_Exception *)v.v.p;
+  /* SystemCallError and Errno::*: the text of the number, then " - msg",
+     as rb_syserr_initialize builds it, and the number for #errno */
+  sp_int num = 0;
+  int kind = sp_syserr_kind(e->cls_name, &num);
+  if (kind == SP_SYSERR_BASE && argc == 0) fx_arity_error(0, 1, 2, 0);
+  if (kind == SP_SYSERR_NUM || kind == SP_SYSERR_BASE) {
+    const char *m = argc >= 1 && argv[0].tag != SP_TAG_NIL ? sp_poly_to_s(argv[0]) : NULL;
+    SP_GC_ROOT_STR(m);
+    const char *text = sp_syserr_text(kind == SP_SYSERR_NUM, num, NULL, m);
+    SP_GC_ROOT_STR(text);
+    fx_exc_set_msg(e, fx_new_string((const uint8_t *)text, strlen(text)));
+    sp_exc_syserr_init(e);
+    return;
+  }
+  if (argc >= 1) fx_exc_set_msg(e, argv[0]);
 }
 
 /* k.new(*args) for an exception class k: the program's initialize if it

@@ -161,7 +161,65 @@ static int fx_poly_helper(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
 }
 
 /* The core methods. Answers 1 and sets *out when it handles the call. */
+/* round, floor, ceil and truncate of an Integer or a Float with a digit
+   count, and round with half:. The arms are the ones that codegen gives a
+   typed receiver: sp_float_prec_op for a Float above the decimal point,
+   which compensates the error of the scaled product as CRuby does, the
+   exact sp_int_round for an Integer, and sp_float_round_half_v and
+   sp_int_round_half_v for half:. sp_poly_round_n of a boxed number scales
+   in double, so it answers 64.78199 for 64.781995.round(5) and drops the
+   low digits of an Integer past 2**53; it serves the other cases
+   (sp_poly_prec_n, a Float at or below the decimal point, a Bignum). A
+   Float digit count reads as sp_poly_ndigits_f reads it. With no
+   argument, a Float rounds and truncates as sp_poly_round and
+   sp_poly_truncate do (FloatDomainError for NaN and Infinity); to_i and
+   to_int truncate. */
+static int fx_num_prec(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (argc == 0) {
+    if (!strcmp(name, "round")) *out = sp_poly_round(r);
+    else if (!strcmp(name, "truncate") || !strcmp(name, "to_i") || !strcmp(name, "to_int")) *out = sp_poly_truncate(r);
+    else return 0;
+    return 1;
+  }
+  int round = !strcmp(name, "round");
+  int op = !strcmp(name, "floor") ? SP_PREC_FLOOR : !strcmp(name, "ceil") ? SP_PREC_CEIL
+         : !strcmp(name, "truncate") ? SP_PREC_TRUNC : -1;
+  if (!round && op < 0) return 0;
+  sp_RbVal half = sp_box_nil();
+  int has_half = 0;
+  if (fx_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash) {
+    sp_PolyPolyHash *h = sp_poly_as_poly_poly_hash(argv[argc - 1]);
+    sp_RbVal k = sp_box_sym(sp_sym_intern("half"));
+    if (!round || h->len != 1 || !sp_PolyPolyHash_has_key(h, k)) return 0;
+    half = sp_PolyPolyHash_get(h, k);
+    has_half = 1;
+    argc--;
+  }
+  if (argc > 1) fx_arity_error(argc, 0, 1, 0);
+  sp_int n = 0;
+  if (argc == 1) n = argv[0].tag == SP_TAG_FLT ? sp_poly_ndigits_f(r, argv[0].v.f) : sp_poly_round_digits(r, argv[0]);
+  if (!round) {
+    *out = sp_poly_prec_n(r, n, op);
+  } else if (r.tag == SP_TAG_FLT && has_half) {
+    *out = sp_float_round_half_v(r.v.f, n, half);
+  } else if (r.tag == SP_TAG_FLT && n > 0) {
+    /* a nonzero value that rounds to zero is +0.0, as in CRuby */
+    double x = r.v.f, v = sp_float_prec_op(x, n, SP_PREC_ROUND);
+    *out = sp_box_float(x != 0.0 && v == 0.0 ? 0.0 : v);
+  } else if (r.tag == SP_TAG_INT && has_half) {
+    sp_int_round_check_ndigits(n);
+    *out = sp_box_int(sp_int_round_half_v(r.v.i, n, half));
+  } else if (r.tag == SP_TAG_INT) {
+    sp_int_round_check_ndigits(n);
+    *out = n >= 0 ? r : sp_box_int(sp_int_round(r.v.i, n));
+  } else {
+    *out = has_half ? sp_poly_round_half(r, n, half) : sp_poly_round_n(r, n);
+  }
+  return 1;
+}
+
 static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (((argc >= 1 && fx_is_integer(r)) || r.tag == SP_TAG_FLT) && fx_num_prec(r, name, argc, argv, out)) return 1;
   if (argc == 0) {
     if (!strcmp(name, "!")) { *out = sp_box_bool(!sp_poly_truthy(r)); return 1; }
     if (!strcmp(name, "nil?")) { *out = sp_box_bool(r.tag == SP_TAG_NIL); return 1; }
@@ -640,6 +698,38 @@ static void fx_p_to(sp_RbVal so, sp_RbVal v) {
 
 /* Kernel methods. Answers 1 and sets *out when it handles the call. */
 static int fx_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  /* warn(*msgs): each message on a line, as puts lays them out, in one
+     write to $stderr; nothing when $VERBOSE is nil. uplevel: nil and
+     category: are taken; an uplevel is a gap, as Fluxpinel keeps no
+     locations of the calls */
+  if (!strcmp(name, "warn")) {
+    if (argc > 0 && fx_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash) {
+      sp_PolyPolyHash *h = sp_poly_as_poly_poly_hash(argv[argc - 1]);
+      sp_RbVal up = sp_PolyPolyHash_get(h, sp_box_sym(sp_sym_intern("uplevel")));
+      if (up.tag != SP_TAG_NIL) fx_gap("warn with uplevel:");
+      argc--;
+    }
+    *out = sp_box_nil();
+    if (argc == 0 || fx_gvar_get("$VERBOSE").tag == SP_TAG_NIL) return 1;
+    sp_PolyArray *a = sp_PolyArray_new();
+    SP_GC_ROOT(a);
+    for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
+    sp_PolyArray *flat = sp_PolyArray_flatten(a);
+    SP_GC_ROOT(flat);
+    sp_String *text = sp_String_new("");
+    SP_GC_ROOT(text);
+    for (sp_int i = 0; i < flat->len; i++) {
+      const char *s = sp_poly_to_s(flat->data[i]);
+      SP_GC_ROOT_STR(s);
+      size_t n = sp_str_byte_len(s);
+      sp_String_append_n(text, s, n);
+      if (!n || s[n - 1] != '\n') sp_String_append_n(text, "\n", 1);
+    }
+    sp_RbVal msg = sp_box_str_new(sp_String_cstr(text));
+    SP_GC_ROOT_RBVAL(msg);
+    fx_send(fx_gvar_get("$stderr"), "write", 1, &msg);
+    return 1;
+  }
   /* Integer(v), Integer(s, base) and exception: false */
   if (!strcmp(name, "Integer") && argc >= 1 && argc <= 3) {
     int raise = 1;

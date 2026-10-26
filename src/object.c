@@ -180,6 +180,8 @@ static sp_int fx_builtin_id(const char *name) {
   return 0;
 }
 
+static void fx_const_set(FxClass *c, sp_sym name, sp_RbVal v);   /* the constants section */
+
 /* The FxClass of a builtin class name, made on first use, or NULL. */
 static FxClass *fx_builtin(const char *name) {
   /* the top-level names of the thread classes */
@@ -194,15 +196,23 @@ static FxClass *fx_builtin(const char *name) {
   /* an exception class that only the runtime knows (LoadError, ...): an id
      of its own below the table, and the runtime's superclass */
   const char *exc_parent = id ? NULL : sp_exc_parent_of_name(name);
+  /* the runtime takes any name under Errno; a class of Errno is one that
+     has a number, as CRuby defines them (Errno::ENOENT::Errno) */
+  sp_int errnum = strncmp(name, "Errno::", 7) ? -1 : sp_errno_num(name);
+  if (errnum == 0) return NULL;
+  /* two names of one number are one class (EWOULDBLOCK is EAGAIN) */
+  if (errnum > 0 && strcmp(sp_errno_class_name((int)errnum), name)) return fx_builtin(sp_errno_class_name((int)errnum));
   if (exc_parent) {
     FxClass *c = fx_class_alloc(FX_EXC_CLS_BASE - L.nbuiltins, strdup(name), 0, NULL, NULL);
     fx_push_class(&L.builtins, &L.nbuiltins, &L.builtins_cap, c);
     c->super = fx_builtin(exc_parent);
+    if (errnum > 0) fx_const_set(c, sp_sym_intern("Errno"), sp_box_int(errnum));
     return c;
   }
-  /* a module that spinel's codegen answers by name (process.c): an id of
-     its own below the table too */
-  if (!id && (!strcmp(name, "Process") || !strcmp(name, "GC"))) {
+  /* a module that spinel's codegen answers by name (process.c), and Errno,
+     whose classes (Errno::ENOENT) the runtime names: an id of its own below
+     the table too */
+  if (!id && (!strcmp(name, "Process") || !strcmp(name, "GC") || !strcmp(name, "Errno"))) {
     FxClass *c = fx_class_alloc(FX_EXC_CLS_BASE - L.nbuiltins, strdup(name), 1, NULL, NULL);
     fx_push_class(&L.builtins, &L.nbuiltins, &L.builtins_cap, c);
     if (name[0] == 'P') fx_process_consts(c);

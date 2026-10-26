@@ -1,9 +1,8 @@
-/* process.c -- the module functions of Process and GC.
+/* process.c -- the module functions of Process, GC and Math.
 
-   spinel's class table names neither module: codegen emits a call of the
-   runtime for each function (src/codegen_call_module.c of spinel). Fluxpinel
-   makes each one a builtin module of its own (fx_builtin) and calls the
-   same helpers of the runtime here.
+   codegen emits a call of the runtime or of libc for each function of these
+   modules (src/codegen_call_module.c of spinel). Fluxpinel makes each one a
+   builtin module (fx_builtin) and calls the same functions here.
 
    The control of processes (spawn, wait, kill, daemon, ...) is not here. */
 
@@ -124,11 +123,80 @@ static int fx_process_responds(sp_RbVal r, const char *name) {
   return 0;
 }
 
-/* A module function of Process or GC. Answers 1 and sets *out when it
-   handles the call. */
+/* Math.cbrt as CRuby computes it (ruby_cbrt of math.c): the cbrt of glibc
+   is off by a unit in the last place for some cubes (27.0), and one step
+   of Newton's method puts it right. */
+static double fx_cbrt(double x) {
+  double f = cbrt(x);
+#ifdef __GLIBC__
+  if (isfinite(f) && !(f == 0.0 && x == 0.0)) f = (2.0 * f + x / f / f) / 3.0;
+#endif
+  return f;
+}
+
+/* A function of Math, as codegen emits it: libc for a function that takes
+   any real, sp_math_* for one with a domain (Math::DomainError outside).
+   An argument converts as sp_num_to_f converts it (TypeError for nil or a
+   String). */
+static int fx_math_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  static const struct { const char *name; double (*fn)(double); } one[] = {
+    { "sin", sin }, { "cos", cos }, { "tan", tan }, { "asin", sp_math_asin }, { "acos", sp_math_acos },
+    { "atan", atan }, { "sinh", sinh }, { "cosh", cosh }, { "tanh", tanh }, { "asinh", asinh },
+    { "acosh", sp_math_acosh }, { "atanh", sp_math_atanh }, { "exp", exp }, { "sqrt", sp_math_sqrt },
+    { "cbrt", fx_cbrt }, { "expm1", expm1 }, { "log1p", sp_math_log1p }, { "erf", erf }, { "erfc", erfc },
+    { "gamma", sp_math_gamma }, { "log2", sp_math_log2 }, { "log10", sp_math_log10 },
+  };
+  if (argc == 1) {
+    for (size_t i = 0; i < sizeof one / sizeof one[0]; i++)
+      if (FX_IS(one[i].name)) {
+        *out = sp_box_float(one[i].fn(sp_num_to_f(argv[0])));
+        return 1;
+      }
+    if (FX_IS("lgamma")) {
+      *out = sp_box_poly_array(sp_math_lgamma(sp_num_to_f(argv[0])));
+      return 1;
+    }
+    if (FX_IS("frexp")) {
+      int e;
+      double f = frexp(sp_num_to_f(argv[0]), &e);
+      sp_PolyArray *a = sp_PolyArray_new();
+      SP_GC_ROOT(a);
+      sp_PolyArray_push(a, sp_box_float(f));
+      sp_PolyArray_push(a, sp_box_int(e));
+      *out = sp_box_poly_array(a);
+      return 1;
+    }
+  }
+  if (FX_IS("log") && (argc == 1 || argc == 2)) {
+    double x = sp_num_to_f(argv[0]);
+    if (argc == 1) {
+      *out = sp_box_float(sp_math_log(x));
+      return 1;
+    }
+    /* log base 1 is NaN in CRuby */
+    double b = sp_num_to_f(argv[1]);
+    *out = sp_box_float(b == 1.0 ? 0.0 / 0.0 : sp_math_log(x) / sp_math_log(b));
+    return 1;
+  }
+  if (argc == 2 && (FX_IS("atan2") || FX_IS("hypot"))) {
+    double y = sp_num_to_f(argv[0]), x = sp_num_to_f(argv[1]);
+    *out = sp_box_float(name[0] == 'a' ? atan2(y, x) : hypot(y, x));
+    return 1;
+  }
+  if (argc == 2 && FX_IS("ldexp")) {
+    if (argv[1].tag == SP_TAG_BIGINT) sp_raise_cls("RangeError", "bignum too big to convert into `long'");
+    *out = sp_box_float(ldexp(sp_num_to_f(argv[0]), (int)sp_poly_arg_int_chk(argv[1])));
+    return 1;
+  }
+  return 0;
+}
+
+/* A module function of Process, GC or Math. Answers 1 and sets *out when
+   it handles the call. */
 static int fx_process_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (k->cls_id >= 0 || !k->is_module) return 0;
   if (!strcmp(k->name, "Process")) return fx_process_fn(name, argc, argv, out);
   if (!strcmp(k->name, "GC")) return fx_gc_fn(name, argc, argv, out);
+  if (!strcmp(k->name, "Math")) return fx_math_fn(name, argc, argv, out);
   return 0;
 }

@@ -199,6 +199,8 @@ static void fx_run_main(void) {
 }
 #endif
 
+static int fx_main_rc;   /* the exit status of a program that ends at its last line */
+
 static void fx_body(void) {
   SP_GC_SAVE();
   fx_tu_init();
@@ -236,8 +238,13 @@ static void fx_body(void) {
 #endif
   /* a break of a Proc whose call has returned reaches the top */
   if (L.ctl == FX_CTL_BREAK_BLOCK) fx_gap("break from a block whose call has returned");
+  /* the at_exit hooks, then the finalizers: a hook that exits or raises
+     decides the status, as in the main of AOT code. The hooks run before
+     the drain of the scheduler, as on the paths of exit and of an uncaught
+     raise: Fluxpinel always runs the threaded runtime, and a collection in
+     a hook after the drain waits for the workers that the drain stopped */
+  fx_main_rc = sp_at_exit_run(0);
   fx_sched_end();
-  sp_fin_run_exit();
 }
 
 int main(int argc, char **argv) {
@@ -256,5 +263,5 @@ int main(int argc, char **argv) {
   L.nargs = argc - i;
 #endif
   sp_main_stack_run(fx_body);
-  return 0;
+  return fx_main_rc;
 }

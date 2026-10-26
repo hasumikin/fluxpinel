@@ -984,6 +984,17 @@ static sp_RbVal fx_loop(const FxBlock *blk);   /* the exceptions section */
 static sp_RbVal fx_catch(int argc, sp_RbVal *argv, const FxBlock *blk);
 static sp_RbVal fx_eval_string(FxFrame *f, int argc, sp_RbVal *argv);   /* load.c */
 
+/* The hook of at_exit: the runtime keeps a Proc of its own in its table of
+   hooks (sp_at_exit_push), whose fn yields to the block of the Proc of
+   Fluxpinel (cap). A jump out of the hook ends there. */
+static sp_int fx_at_exit_fn(void *cap, sp_int argc, sp_int *args) {
+  (void)argc;
+  (void)args;
+  fx_yield(&((FxProc *)cap)->b, 0, NULL);
+  L.ctl = FX_CTL_NONE;
+  return 0;
+}
+
 /* The Kernel methods that take the block of the call. Answers 1 and sets
    *out when it handles the call. */
 static int fx_kernel_block(FxFrame *f, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
@@ -1011,6 +1022,18 @@ static int fx_kernel_block(FxFrame *f, const char *name, int argc, sp_RbVal *arg
   }
   if (argc <= 1 && !strcmp(name, "catch")) {
     *out = fx_catch(argc, argv, blk);
+    return 1;
+  }
+  /* at_exit: the Proc of the block, which the runtime runs as a hook when
+     the program ends (sp_at_exit_run) */
+  if (argc == 0 && !strcmp(name, "at_exit")) {
+    FxBlock l = *blk;
+    l.site = NULL;
+    sp_RbVal pv = fx_block_proc(&l);
+    SP_GC_ROOT_RBVAL(pv);
+    sp_Proc *h = sp_proc_new((void *)fx_at_exit_fn, pv.v.p, sp_bm_cap_scan);
+    sp_at_exit_push(h);
+    *out = pv;
     return 1;
   }
   return 0;
