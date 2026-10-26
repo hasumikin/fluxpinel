@@ -367,6 +367,46 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     *out = r;
     return 1;
   }
+  /* read(length[, buffer]), gets(sep[, limit], chomp:) and readlines(...):
+     the arguments read as CRuby reads them (sp_io_read_splat,
+     sp_io_line_args) */
+  int kw = argc > 0 && fx_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash;
+  if (FX_IS("read") && argc >= 1 && !kw) {
+    sp_PolyArray *a = sp_PolyArray_new();
+    SP_GC_ROOT(a);
+    for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
+    const char *s = sp_io_read_splat(io, a);
+    *out = s ? sp_box_str_new(s) : sp_box_nil();
+    return 1;
+  }
+  if ((FX_IS("gets") && argc >= 1) || FX_IS("readlines")) {
+    int chomp = 0;
+    if (kw) {
+      sp_PolyPolyHash *h = sp_poly_as_poly_poly_hash(argv[argc - 1]);
+      sp_RbVal kc = sp_box_sym(sp_sym_intern("chomp"));
+      if (h->len != 1 || !sp_PolyPolyHash_has_key(h, kc)) return 0;
+      chomp = sp_poly_truthy(sp_PolyPolyHash_get(h, kc));
+      argc--;
+    }
+    sp_PolyArray *a = sp_PolyArray_new();
+    SP_GC_ROOT(a);
+    for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
+    const char *sep;
+    if (FX_IS("gets")) {
+      sp_oint lim = sp_io_gets_args(a, &sep);
+      const char *s = sp_File_gets_limit(io, sep, lim, chomp);
+      *out = s ? sp_box_str_new(s) : sp_box_nil();
+      return 1;
+    }
+    sp_int lim;
+    sp_io_line_args(a, &sep, &lim, "readlines");
+    SP_GC_ROOT_STR(sep);
+    sp_StrArray *lines = sp_StrArray_new();
+    SP_GC_ROOT(lines);
+    for (const char *s; (s = sp_File_gets_sep(io, sep, lim, chomp)) != NULL;) sp_StrArray_push(lines, s);
+    *out = sp_box_nullable_obj((void *)lines, SP_BUILTIN_STR_ARRAY);
+    return 1;
+  }
   if (FX_IS("sync") && argc == 0) { *out = sp_box_bool(sp_File_sync_p(io)); return 1; }
   if (FX_IS("sync=") && argc == 1) {
     sp_File_set_sync(io, sp_poly_truthy(argv[0]));

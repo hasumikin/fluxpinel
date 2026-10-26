@@ -65,15 +65,18 @@ static void fx_prelude_parse(void) {
 }
 
 /* The method name of the prelude for the receiver r, or NULL. Numeric
-   serves Integer and Float. */
+   serves Integer and Float, and IO serves each IO of the runtime (a File
+   too). */
 static const FxMethod *fx_prelude_find(sp_RbVal r, const char *name) {
   if (!fx_prelude.parsed) fx_prelude_parse();
   const char *cls = sp_poly_class_name(r);
   int num = fx_is_integer(r) || r.tag == SP_TAG_FLT;
+  int io = r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_IO && r.v.p;
   sp_sym s = sp_sym_intern(name);
   for (int i = 0; i < fx_prelude.n; i++) {
     const FxPreludeMethod *p = &fx_prelude.items[i];
-    if (p->m->name == s && (!strcmp(p->cls, cls) || (num && !strcmp(p->cls, "Numeric")))) return p->m;
+    if (p->m->name != s) continue;
+    if (!strcmp(p->cls, cls) || (num && !strcmp(p->cls, "Numeric")) || (io && !strcmp(p->cls, "IO"))) return p->m;
   }
   return NULL;
 }

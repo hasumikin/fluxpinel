@@ -420,6 +420,7 @@ block_splat_param_iterators
 block_splat_param_predicates
 block_tail_boolean_assignment
 block_tail_empty_literal
+block_tail_prelude_inside
 block_tail_rescue_modifier
 block_value_cond_boxed
 block_yield_keyword_param
@@ -436,6 +437,7 @@ bound_method_oint_boxed_call
 bound_method_proc_loop_param_captured
 bound_method_rest_args
 bound_method_single_eval
+box_nullable_builtin
 box_nullable_obj
 box_pointer_to_poly
 box_rescue_modifier_tail
@@ -461,6 +463,7 @@ boxed_float_array_empty_sum
 boxed_hash_local_walk_params
 boxed_index_elements_passed_strict
 boxed_index_or_write_no_aref
+boxed_io_to_i
 boxed_kill_user_and_thread
 boxed_local_container_unaffected
 boxed_match_user_method
@@ -1544,12 +1547,23 @@ fiber_transfer_root
 fiber_wide_router
 file_basename_extname_rooted
 file_basename_gc
+file_close_without_dev_null
 file_delete_no_args
 file_delete_splat
 file_expand_path
+file_foreach_long_nul_lines
+file_io_foreach_break_result
 file_join_poly_component
+file_open_block_next
+file_open_param_captured_by_proc
+file_pid_closed
+file_read_count
 file_read_length_at_run_time
+file_read_negative_length
 file_read_offset
+file_readlines_long_line
+file_reopen_closed
+file_seek_tell_rewind
 file_size
 file_string_consts_frozen
 file_write_at_tail_position
@@ -1591,6 +1605,7 @@ float_range_overlap_cover
 float_spaceship
 float_step_block
 float_to_s_fixed_1e15
+flock_nonblock_held
 fold_literal_table_empty_row
 fold_memo_to_proc
 fold_nonempty_array_seed
@@ -1943,6 +1958,7 @@ hash_variant_unify
 hash_write_through_getter_alias
 hash_write_through_super_getter
 hash_zero_arguments_own_methods
+helper_results_rooted
 heterogeneous_tuple_return
 hoisted_arg_keeps_nil
 hoisted_begin_value_held
@@ -1950,6 +1966,7 @@ hoisted_handle_arg_into_boxed_param
 hoisted_read_after_nil_store
 hoisted_store_clears_nil_bit
 hook_param_class
+i1006
 i1007
 i1009
 i1011
@@ -2243,9 +2260,16 @@ interpolation_operand_order
 interpolation_symbol_name
 introspection_constant_path
 invalid_utf8_split_one_and_setbyte
+io_each_line_splat_args
+io_gets_long_line
+io_handle_value_surface
 io_poly_print_puts
 io_popen_comment_beside_eval
 io_popen_text_not_a_call
+io_puts_nul_boxed
+io_puts_print_binary
+io_read_short_read_rooted
+io_readlines_limit_args
 io_stdout_tty_chain
 io_sync_assign_value
 io_write_stdout_stderr
@@ -2418,6 +2442,7 @@ issue_3114
 issue_3119
 issue_3121
 issue_3124
+issue_3130
 issue_3132
 issue_3135_norequire
 issue_3136
@@ -3039,6 +3064,7 @@ new_recv_struct_unnamed_arm_if
 new_recv_struct_unnamed_arm_logic
 new_recv_struct_unnamed_arm_unless
 next_in_inner_loop_keeps_outer_value
+next_in_io_loop_under_ensure
 next_in_proc_and_yield
 next_in_then_block
 next_inside_expression
@@ -3433,6 +3459,7 @@ poly_fetch_block
 poly_fetch_block_param_after_read
 poly_fetch_empty_literal_default
 poly_fetch_keyword_block
+poly_file_read_user_read
 poly_fill_boxed_recv_in_place
 poly_fill_boxed_recv_value_gc_root
 poly_filter_bang_stmt_block
@@ -3477,6 +3504,8 @@ poly_inject_sym_bitwise
 poly_instance_variable_set_any_class
 poly_int_bit_range_index
 poly_int_bitops_auto_unify
+poly_io_each_iterators
+poly_io_file_seek
 poly_io_print_puts
 poly_is_a
 poly_is_a_included_module
@@ -3534,6 +3563,7 @@ poly_poly_hash_each_value
 poly_poly_hash_fetch_dup
 poly_predicate_dispatch
 poly_predicate_method_dispatch
+poly_print_handle_arg_default_arm
 poly_proc_form_super
 poly_proc_form_super_mid_override
 poly_public_send_attr_writer
@@ -3615,6 +3645,7 @@ poly_str_hash_keys_boxed
 poly_str_search_oint_beside_user_method
 poly_string_append_integer
 poly_string_aref_regexp
+poly_string_at_path_slot
 poly_string_bang_non_string_receiver
 poly_string_binary_methods
 poly_string_char_index
@@ -4156,6 +4187,7 @@ respond_to_static_to_set
 respond_to_struct_data
 respond_to_toplevel_def_include_all
 respond_to_user_definition
+respond_to_variable_name_io
 rest_leading_optional_slot
 rest_param_keyword_argument
 rest_param_reassigned
@@ -4270,6 +4302,7 @@ scan_subject_interp_to_s_in_block
 scan_subject_itself_alias_changed
 scan_subject_join_to_s_in_block
 scan_subject_lambda_in_block
+scan_subject_read_buffer_in_block
 scan_subject_two_strings_one_changed
 scan_subject_yield_in_block
 scan_walkers_def_boundary
@@ -4512,6 +4545,7 @@ step_boxed_operands
 step_stmt_receiver_before_begin_arg
 store_into_nested_container_literal
 stored_block_call_returns_value
+stored_block_param_fresh_yields
 str_append_accumulator
 str_array_delete_boxed_needle
 str_array_include_nil_arg
@@ -4936,6 +4970,7 @@ string_unpack_directives
 string_with_embedded_nul
 string_yield_block_param_captured
 string_yield_captured_param
+string_yield_line_read_after
 string_yield_line_user_each_line
 string_yield_line_user_foreach
 string_yield_poly_param_alias
@@ -4945,6 +4980,9 @@ stringio_binary_ivar
 stringio_boxed_shl
 stringio_boxed_shl_reopen
 stringio_close_answers_nil
+stringio_multibyte_chars
+stringio_print_puts_many_args
+stringio_readbyte_readchar_putc
 strip_nul
 strscan_match_rooted
 strscan_regexp_param
@@ -5134,6 +5172,7 @@ thread_ensure_inside_block
 thread_enumerator_preempt
 thread_fiber_current_override
 thread_fiber_param_push
+thread_file_gets
 thread_gc_start
 thread_index_or_write
 thread_join_timeout

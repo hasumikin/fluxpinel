@@ -385,7 +385,8 @@ static int fx_process_class(const FxClass *k, const char *name, int argc, sp_RbV
 static int fx_process_responds(sp_RbVal r, const char *name);
 
 /* file.c */
-static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                         sp_RbVal *out);
 static int fx_file_responds(sp_RbVal r, const char *name);
 
 /* host.c */

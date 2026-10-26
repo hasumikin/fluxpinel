@@ -7,8 +7,9 @@
 # class here is not the builtin class, and does not reopen it.
 #
 # Each class names the builtin class of the receiver (Array, String, ...).
-# Numeric serves Integer and Float. The body can call any method that
-# Fluxpinel knows. A call with no block never comes here.
+# Numeric serves Integer and Float, and IO serves a File too. The body can
+# call any method that Fluxpinel knows. A call with no block never comes
+# here.
 #
 # Write each call on the receiver as `self.name`. A call with no receiver
 # also finds a top-level def of the program, which a builtin method of
@@ -467,6 +468,40 @@ class String
 
   def upto(last, exclusive = false)
     (exclusive ? (self...last) : (self..last)).each { |s| yield s }
+    self
+  end
+end
+
+class IO
+  # gets takes the separator and the limit; a limit of 0 would read ""
+  # for ever, so it raises as CRuby does
+  def each_line(*args, chomp: false)
+    raise ArgumentError, "invalid limit: 0 for each_line" if args.last == 0
+    while (line = self.gets(*args, chomp: chomp))
+      yield line
+    end
+    self
+  end
+
+  def each(*args, chomp: false)
+    raise ArgumentError, "invalid limit: 0 for each_line" if args.last == 0
+    while (line = self.gets(*args, chomp: chomp))
+      yield line
+    end
+    self
+  end
+
+  def each_char
+    while (c = self.getc)
+      yield c
+    end
+    self
+  end
+
+  def each_byte
+    while (b = self.getbyte)
+      yield b
+    end
     self
   end
 end

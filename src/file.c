@@ -5,7 +5,10 @@
    here. A path argument takes the protocol of sp_poly_arg_path: a String,
    or an object with to_path or to_str (fx_hook_to_path).
 
-   File.open and the other methods that make an IO are not here. */
+   File.open and File.new make a File (an IO of the runtime). With a block,
+   File.open closes it when the block ends. The methods of an open File
+   are the wrappers of the runtime, and the prelude writes the ones with a
+   block (IO#each_line and its kin). */
 
 #include "fluxpinel.h"
 
@@ -93,6 +96,18 @@ static sp_RbVal fx_file_delete(int argc, sp_RbVal *argv) {
 
 static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (FX_IS("join")) { *out = sp_box_str_new(sp_file_join_vals(argv, argc)); return 1; }
+  /* File.readlines(path) and File.readlines(path, chomp: true) */
+  if (FX_IS("readlines") && (argc == 1 || (argc == 2 && fx_is_kwargs(argv[1])))) {
+    static const char *const keys[] = { "chomp", NULL };
+    if (argc == 2 && !fx_kwargs_only(argv[1], keys)) return 0;
+    int chomp = argc == 2 && sp_poly_truthy(sp_PolyPolyHash_get(sp_poly_as_poly_poly_hash(argv[1]),
+                                                               sp_box_sym(sp_sym_intern("chomp"))));
+    const char *path = sp_poly_arg_path(argv[0]);
+    SP_GC_ROOT_STR(path);
+    sp_StrArray *a = chomp ? sp_file_readlines_chomp(path) : sp_file_readlines(path);
+    *out = sp_box_nullable_obj((void *)a, SP_BUILTIN_STR_ARRAY);
+    return 1;
+  }
   if (FX_IS("delete") || FX_IS("unlink")) { *out = fx_file_delete(argc, argv); return 1; }
   if ((FX_IS("write") || FX_IS("binwrite")) && (argc == 2 || argc == 3)) return fx_file_write(argc, argv, out);
   if ((FX_IS("read") || FX_IS("binread")) && argc >= 1 && argc <= 3 && !fx_is_kwargs(argv[argc - 1])) {
@@ -130,16 +145,133 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
   return 0;
 }
 
-/* A class method of File on paths. Answers 1 and sets *out when it
-   handles the call. */
-static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
-  if (k->cls_id >= 0 || strcmp(k->name, "File")) return 0;
+/* File.open(path[, mode[, perm]]) and File.new: mode is a String, an
+   Integer of flags or nil, and the keywords mode: and perm: can give
+   them. The keywords of the encoding are taken and do nothing: the runtime
+   has one encoding. Answers NULL for a keyword that this does not take. */
+static sp_File *fx_file_open(int argc, sp_RbVal *argv) {
+  static const char *const keys[] = { "mode", "perm", "encoding", "external_encoding", "internal_encoding",
+                                       "binmode", "textmode", NULL };
+  sp_RbVal kw = sp_box_nil();
+  if (argc >= 2 && fx_is_kwargs(argv[argc - 1])) {
+    kw = argv[--argc];
+    if (!fx_kwargs_only(kw, keys)) return NULL;
+  }
+  const char *path = sp_poly_arg_path(argv[0]);
+  SP_GC_ROOT_STR(path);
+  sp_RbVal mode = argc >= 2 ? argv[1] : sp_box_nil(), perm = argc >= 3 ? argv[2] : sp_box_nil();
+  if (kw.tag != SP_TAG_NIL) {
+    sp_PolyPolyHash *h = sp_poly_as_poly_poly_hash(kw);
+    sp_RbVal km = sp_box_sym(sp_sym_intern("mode")), kp = sp_box_sym(sp_sym_intern("perm"));
+    if (sp_PolyPolyHash_has_key(h, km)) mode = sp_PolyPolyHash_get(h, km);
+    if (sp_PolyPolyHash_has_key(h, kp)) perm = sp_PolyPolyHash_get(h, kp);
+  }
+  return sp_File_open_val(path, mode, sp_poly_arg_perm(perm));
+}
+
+/* File.open with a block: the block takes the File, and the File closes
+   when the block ends, also by a raise or a jump. Answers the value of the
+   block. */
+static sp_RbVal fx_file_with(sp_File *f, const FxBlock *blk) {
+  SP_GC_SAVE();
+  SP_GC_ROOT(f);
+  sp_RbVal v = sp_box_nil(), io = sp_box_obj(f, SP_BUILTIN_IO);
+  SP_GC_ROOT_RBVAL(v);
+  SP_GC_ROOT_RBVAL(io);
+  const int depth = fx_fs()->depth;
+  FX_TRY_PUSH();
+  if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
+    v = fx_y1(blk, io);
+    sp_exc_top--;
+  } else {
+    FX_TRY_LANDED(depth);
+    if (!sp_File_closed_p(f)) sp_File_close(f);
+    /* a throw or a proc return goes on to its target */
+    if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
+    fx_reraise(fx_caught());
+  }
+  if (!sp_File_closed_p(f)) sp_File_close(f);
+  return v;
+}
+
+/* File.foreach(path[, sep[, limit]]) and IO.foreach with a block: each
+   line of the file, read as it goes. The separator and the limit read as
+   CRuby reads them (sp_io_line_args), and chomp: takes off the separator.
+   mode: opens the file in that mode, and the keywords of the encoding do
+   nothing. */
+static int fx_file_foreach(int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out) {
+  static const char *const keys[] = { "chomp", "mode", "encoding", "external_encoding", "internal_encoding",
+                                      NULL };
+  int chomp = 0;
+  sp_RbVal mode = sp_box_nil();
+  if (argc >= 2 && fx_is_kwargs(argv[argc - 1])) {
+    if (!fx_kwargs_only(argv[argc - 1], keys)) return 0;
+    sp_PolyPolyHash *h = sp_poly_as_poly_poly_hash(argv[argc - 1]);
+    sp_RbVal kc = sp_box_sym(sp_sym_intern("chomp")), km = sp_box_sym(sp_sym_intern("mode"));
+    chomp = sp_PolyPolyHash_has_key(h, kc) && sp_poly_truthy(sp_PolyPolyHash_get(h, kc));
+    if (sp_PolyPolyHash_has_key(h, km)) mode = sp_PolyPolyHash_get(h, km);
+    argc--;
+  }
+  if (argc < 1) return 0;
+  SP_GC_ROOT_RBVAL(mode);
+  sp_PolyArray *rest = sp_PolyArray_new();
+  SP_GC_ROOT(rest);
+  for (int i = 1; i < argc; i++) sp_PolyArray_push(rest, argv[i]);
+  const char *sep;
+  sp_int limit;
+  sp_io_line_args(rest, &sep, &limit, "foreach");
+  SP_GC_ROOT_STR(sep);
+  const char *path = sp_poly_arg_path(argv[0]);
+  SP_GC_ROOT_STR(path);
+  sp_File *f = sp_File_open_val(path, mode, sp_oint_nil());
+  SP_GC_SAVE();
+  SP_GC_ROOT(f);
+  sp_RbVal line = sp_box_nil();
+  SP_GC_ROOT_RBVAL(line);
+  const int depth = fx_fs()->depth;
+  FX_TRY_PUSH();
+  if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
+    for (const char *s; (s = sp_File_gets_sep(f, sep, limit, chomp)) != NULL;) {
+      line = sp_box_str_new(s);
+      fx_y1(blk, line);
+      if (L.ctl != FX_CTL_NONE) break;
+    }
+    sp_exc_top--;
+  } else {
+    FX_TRY_LANDED(depth);
+    sp_File_close(f);
+    if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
+    fx_reraise(fx_caught());
+  }
+  sp_File_close(f);
+  *out = sp_box_nil();
+  return 1;
+}
+
+/* A class method of File on paths, or one that opens a File. Answers 1
+   and sets *out when it handles the call. */
+static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                         sp_RbVal *out) {
+  if (k->cls_id >= 0) return 0;
+  /* IO.foreach reads a path, as File.foreach does */
+  if (!strcmp(k->name, "IO")) return FX_IS("foreach") && blk && fx_file_foreach(argc, argv, blk, out);
+  if (strcmp(k->name, "File")) return 0;
+  if ((FX_IS("open") || FX_IS("new")) && argc >= 1 && argc <= 4) {
+    sp_File *f = fx_file_open(argc, argv);
+    if (!f) return 0;
+    /* File.new takes no block, as CRuby only warns about one */
+    *out = blk && FX_IS("open") ? fx_file_with(f, blk) : sp_box_obj(f, SP_BUILTIN_IO);
+    return 1;
+  }
+  if (FX_IS("foreach") && blk) return fx_file_foreach(argc, argv, blk, out);
+  if (blk) return 0;
   return fx_file_fn(name, argc, argv, out);
 }
 
 /* respond_to? on File: the methods above. */
 static int fx_file_responds(sp_RbVal r, const char *name) {
-  static const char *const names[] = { "join", "delete", "unlink", "write", "binwrite", "read", "binread",
+  static const char *const names[] = { "open", "new", "foreach", "readlines", "join", "delete", "unlink",
+                                       "write", "binwrite", "read", "binread",
                                        "exist?", "directory?", "file?", "size", "basename", "dirname",
                                        "extname", "expand_path", "absolute_path", NULL };
   FxClass *k = fx_class_value(r);
