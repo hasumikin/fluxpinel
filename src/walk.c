@@ -859,9 +859,11 @@ static int fx_args_spread(FxFrame *f, const pm_arguments_node_t *args, sp_PolyAr
 
 /* Declares argc and argv for a call site and evaluates the arguments: into
    a C array when the count is fixed, else into a rooted Array. kw is the
-   keyword Hash of the call, or NULL. */
-#define FX_ARGS(f, args, argc, argv, kw, ok)                                            \
-  int argc = fx_args_dynamic(args) ? -1 : (args) ? (int)(args)->arguments.size : 0;       \
+   keyword Hash of the call, or NULL. dyn is fx_args_dynamic(args), which a
+   call node keeps in its record. */
+#define FX_ARGS(f, args, argc, argv, kw, ok) FX_ARGS_DYN(f, args, fx_args_dynamic(args), argc, argv, kw, ok)
+#define FX_ARGS_DYN(f, args, dyn, argc, argv, kw, ok)                                    \
+  int argc = (dyn) ? -1 : (args) ? (int)(args)->arguments.size : 0;                        \
   sp_RbVal argc##_vla[argc > 0 ? argc : 1];                                                \
   sp_RbVal *argv = argc##_vla;                                                             \
   sp_PolyArray *argc##_spread = NULL;                                                      \
@@ -902,10 +904,42 @@ static sp_RbVal fx_catch_break(const FxBlock *lit, sp_RbVal v) {
   return v;
 }
 
+static int fx_vis_denied(const FxMethod *m, int check, const sp_RbVal *caller);   /* builtin.c */
+
+/* A call on an object of the program, with the method that the cache cc
+   of the call node keeps for the class of the object. The object is recv,
+   or self for a call with no receiver. For such an object, fx_call_self
+   and fx_send_v also look up the method first, so the cache changes no
+   order. Answers 0 for any other value, for no method and for a method
+   that the visibility denies: the general path then takes the call. */
+static int fx_call_cached(FxFrame *f, const pm_call_node_t *c, FxCallCache *cc, sp_sym sym, sp_RbVal recv,
+                          int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out) {
+  sp_RbVal r = c->receiver ? recv : f->self;
+  if (!fx_is_fx_object(r)) return 0;
+  if (cc->cls_id != r.cls_id || cc->gen != fx_methods_gen) {
+    cc->m = fx_find_method(fx_class_by_id(r.cls_id), sym);
+    cc->cls_id = r.cls_id;
+    cc->gen = fx_methods_gen;
+  }
+  const FxMethod *m = cc->m;
+  if (!m) return 0;
+  /* a receiver other than `self.` sees the public methods, and the
+     protected ones of a class of self */
+  if (c->receiver && fx_vis_denied(m, !PM_NODE_TYPE_P(c->receiver, PM_SELF_NODE), &f->self)) return 0;
+  *out = fx_invoke_b(m, r, argc, argv, blk);
+  return 1;
+}
+
 static sp_RbVal fx_call(FxFrame *f, const pm_call_node_t *c) {
   SP_GC_SAVE();
   const sp_sym sym = fx_sym(c->name);
   const char *name = sp_sym_to_s(sym);
+  FxCallCache *cc = &fx_side((const pm_node_t *)c)->call;
+  if (!cc->ready) {
+    cc->dyn = (uint8_t)fx_args_dynamic(c->arguments);
+    cc->fwd = (uint8_t)fx_has_forwarding(c->arguments);
+    cc->ready = 1;
+  }
   sp_RbVal recv = sp_box_nil();
   SP_GC_ROOT_RBVAL(recv);
   if (c->receiver) {
@@ -914,14 +948,14 @@ static sp_RbVal fx_call(FxFrame *f, const pm_call_node_t *c) {
     if (PM_NODE_FLAG_P((const pm_node_t *)c, PM_CALL_NODE_FLAGS_SAFE_NAVIGATION) && recv.tag == SP_TAG_NIL)
       return recv;
   }
-  FX_ARGS(f, c->arguments, argc, argv, kw, ok);
+  FX_ARGS_DYN(f, c->arguments, cc->dyn, argc, argv, kw, ok);
   if (!ok) return sp_box_nil();
   FxBlock lit;
   sp_RbVal holder = sp_box_nil();
   SP_GC_ROOT_RBVAL(holder);
   const FxBlock *blk = fx_make_block(f, c->block, &lit, &holder);
   if (L.ctl != FX_CTL_NONE) return sp_box_nil();
-  if (!c->block && fx_has_forwarding(c->arguments)) blk = fx_method_frame(f)->block;
+  if (!c->block && cc->fwd) blk = fx_method_frame(f)->block;
   /* the callee's binder takes the keyword Hash; a builtin leaves it, so
      it is cleared after the call, before its address can be reused */
   L.kwhash = kw;
@@ -930,6 +964,7 @@ static sp_RbVal fx_call(FxFrame *f, const pm_call_node_t *c) {
      the program defines its own */
   if (c->receiver && !blk && !kw && fx_fast_call(recv, sym, argc, argv, &v)) {
   } else if (!c->receiver && !blk && fx_load_call((const pm_node_t *)c, f->self, name, argc, argv, &v)) {
+  } else if (fx_call_cached(f, c, cc, sym, recv, argc, argv, blk, &v)) {
   } else {
     L.vcall = PM_NODE_FLAG_P((const pm_node_t *)c, PM_CALL_NODE_FLAGS_VARIABLE_CALL);
     /* a receiver other than `self.` sees the public methods, and the

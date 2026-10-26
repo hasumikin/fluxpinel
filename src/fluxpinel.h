@@ -220,9 +220,22 @@ typedef struct {
    node kind that keeps fields adds its struct to the union. Only the case
    of the walker for that kind reads or writes the field, so the case
    makes sure of the kind. */
+/* The record of a call node: the shape of its arguments, and the method
+   that the last call on an object of the program found. */
+typedef struct {
+  uint8_t ready;    /* dyn and fwd are set */
+  uint8_t dyn;      /* fx_args_dynamic of the arguments */
+  uint8_t fwd;      /* fx_has_forwarding of the arguments */
+  int cls_id;       /* the class id of the last object of the program that
+                       the call took as its receiver or self */
+  unsigned gen;     /* fx_methods_gen of the lookup; 0 never hits */
+  FxMethod *m;      /* the method of cls_id, or NULL */
+} FxCallCache;
+
 typedef struct {
   union {
     FxIvarCache ivar;   /* a node of @x: read, write, op-write, target */
+    FxCallCache call;   /* a call node */
   };
 } FxSide;
 

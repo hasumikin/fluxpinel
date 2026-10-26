@@ -1,5 +1,6 @@
-# The ivar caches of the nodes and of the accessors see each class, and
-# the locals of the nested frames stay right
+# The ivar caches of the nodes and of the accessors see each class, the
+# method caches of the call nodes see each class and each change, and the
+# locals of the nested frames stay right
 
 # one @x site, objects of two classes with the slot of @x in other places
 class P
@@ -98,3 +99,85 @@ end
 p locals, locals
 pr = proc { |v| s = v; s *= 2; s }
 p pr.call(3), pr.call(4)
+
+# one call site, receivers of other classes and of builtin classes
+class Dog
+  def speak = :woof
+end
+class Cat
+  def speak = :meow
+end
+class Kitten < Cat
+end
+[Dog.new, Cat.new, Kitten.new, 3, Dog.new].each do |o|
+  p(o.respond_to?(:speak) ? o.speak : o.to_s)
+end
+
+# a redefinition and an include between two calls at one site
+class Cat
+  def speak = :purr
+end
+module Loud
+  def speak = :ROAR
+end
+def call_speak(o) = o.speak
+k = Kitten.new
+p call_speak(k)
+class Kitten
+  include Loud
+end
+p call_speak(k)
+
+# a private and a protected method at one site, after a public call
+class Guard
+  def open = :open
+  def run(o) = o.peek
+  def peek = :peek
+  protected :peek
+  def close = :close
+  private :close
+end
+g = Guard.new
+p g.open, g.run(Guard.new)
+[:open, :close, :peek].each do |m|
+  begin
+    p g.public_send(m)
+  rescue NoMethodError => e
+    p e.message[/private|protected/]
+  end
+end
+def visit(o) = o.close
+begin
+  visit(g)
+rescue NoMethodError => e
+  p e.message[/private/]
+end
+
+# a self call in a method of two classes, and method_missing
+class Base
+  def go = step
+  def step = :base
+end
+class Kid < Base
+  def step = :kid
+end
+p Base.new.go, Kid.new.go, Base.new.go
+class Ghost
+  def method_missing(name, *args) = [:missing, name, *args]
+  def respond_to_missing?(*) = true
+  def try = boo(1)
+end
+p Ghost.new.try
+class Ghost
+  def boo(x) = [:real, x]
+end
+p Ghost.new.try
+
+# a splat, a forward and a block at a call site
+def sum3(a, b, c) = a + b + c
+def fwd(...) = sum3(...)
+args = [1, 2, 3]
+p sum3(*args), fwd(4, 5, 6)
+def yielder = yield(5)
+def pass_on(&b) = yielder(&b)
+p pass_on { |x| x * 2 }

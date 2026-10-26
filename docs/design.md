@@ -491,10 +491,11 @@ work that each call does again on each run:
   of two Symbols, `Array#[]`, `[]=`, `<<`, `size`, `length` and `Hash#[]`.
   A program that reopens a builtin class turns it off.
 - **Lookup.** `fx_find_method` builds the list of the ancestors
-  (`fx_ancestors`) and searches each method table. One global cache keeps
-  the answer for each (class, Symbol), a miss included. A change of a
-  method table or of the ancestors increments one generation, and thus
-  clears every entry.
+  (`fx_ancestors`) and searches each method table. The record of a call
+  node keeps the last answer for an object of the program (measure 3).
+  One global cache keeps the answer for each (class, Symbol), a miss
+  included. A change of a method table or of the ancestors increments one
+  generation, and thus clears every entry.
 - **The name.** `fx_sym` keeps the Symbol of each constant id of prism,
   so the walker interns a name once. A call still passes the name to the
   builtin dispatch as a C string. `fx_name_sym` turns the text of a Symbol
@@ -520,14 +521,15 @@ The walker removes them. The measures, in order:
    Builtin dispatch finds a core method in one table by (receiver kind,
    Symbol), not by a chain of comparisons.
 3. **A method cache for each call node.** The record of a call node keeps
-   the class of the last receiver, the method that it found and a serial
-   number. The cache hits when the class and the serial are the same. A
-   definition, an `include`, an `extend` or a change of visibility
-   increments one global serial, and thus clears every cache. A program defines its methods
-   mostly at the start, so the caches stay valid at run time. The code of
-   a miss stays out of line (`noinline`), but not in a cold section: a
-   call site with more than one class takes the miss path often. The
-   global cache of `fx_find_method` stays for a miss.
+   the class id of the last receiver, the method that it found and the
+   generation (`FxCallCache`). The cache serves only an object of the
+   program, as the receiver or as self. It hits when the class id and the
+   generation are the same. A definition, an `include` or an `extend`
+   increments the generation, and thus clears every cache. A change of
+   visibility writes the method in place, and the call checks the
+   visibility of the method each time. A program defines its methods
+   mostly at the start, so the caches stay valid at run time. The global
+   cache of `fx_find_method` stays for a miss. This measure is in place.
 4. **Jumps in the result.** Each evaluation returns the value and a state
    (`return`, `break`, `next`) in two words, which stay in registers. A
    method boundary clears its state with one operation. An exception

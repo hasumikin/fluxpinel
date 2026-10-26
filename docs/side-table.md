@@ -160,41 +160,27 @@ Each stage is one commit. Each stage gets these checks:
 
 ### S2 Call nodes
 
-`fx_call` takes 30%, the largest share. Its record keeps these fields:
+`fx_call` takes 30% on fib, the largest share. The record of a call node
+(`FxCallCache`) keeps these fields:
 
-- The Symbol of the name.
-- The shape of the arguments. A call with no splat, no keyword, no `&blk`
-  and no `...` is "simple". `FX_ARGS` now calls `fx_args_dynamic` on each
-  call to find the shape. S2 adds no third way to collect the arguments.
-  `FX_ARGS` gets the shape from the record and skips `fx_args_dynamic`.
-- The presence of a block: a block literal (`m(x) { }`) or `&blk`. A block
-  does not change the count of the arguments, but it changes the path of
-  the call. Thus it has its own field.
-- A method cache for the node: the class of the receiver, the generation
-  and the `FxMethod*`. The global cache stays for a miss.
-- A mark that allows the fast path (`fx_fast_call`):
-  - `fx_call` tries the fast path only when `c->receiver && !blk && !kw`.
-    The call must have an explicit receiver, no block and no keyword
-    arguments.
-  - The walker makes the mark once, from the syntax. A call gets the mark
-    when all of these are true:
-    - It has a receiver node.
-    - It has no block node.
-    - It has no `...`.
-    - Its last argument is not a `PM_KEYWORD_HASH_NODE`.
-  - This condition agrees with the way `kw` gets its value. `FX_ARGS` and
-    `fx_args_spread` set `kw` when the last argument is a
-    `PM_KEYWORD_HASH_NODE`. prism puts both `k: v` and `**h` in that node.
-    A Hash literal `{k: v}` is a different node and sets no `kw`. The only
-    other source of `kw` is a `...` that forwards keywords.
-  - `blk` is a run-time value: a `...` can forward a block, and `&expr` can
-    give nil. Thus the mark is a sufficient condition only. A call with no
-    mark takes the usual path.
-  - When `fx_reopened_builtins` is set, the walker does not try the fast
-    path, as now.
+- The shape of the arguments: `fx_args_dynamic` and `fx_has_forwarding`
+  of the arguments. The first evaluation of the node sets them, from the
+  syntax. S2 adds no third way to collect the arguments: `FX_ARGS_DYN`
+  takes the shape from the record, and the other callers of `FX_ARGS`
+  still call `fx_args_dynamic`.
+- A method cache: the class id of the last receiver, the generation and
+  the `FxMethod*`. The cache serves only an object of the program, as the
+  receiver or as self. For such an object, `fx_call_self` and `fx_send_v`
+  also look up the method first, so the cache changes no order.
+  - A call with a receiver other than `self.` still checks the
+    visibility. A denied method takes the general path.
+  - When the class has no such method, the call takes the general path.
+  - The global cache of `fx_find_method` stays for a miss.
 
-The expected gain: a large drop of `fx_call`, `fx_args`, `fx_args_dynamic`
-and `fx_find_method`.
+The record keeps no Symbol of the name: `fx_sym` already answers it from
+one table. The record keeps no mark for the fast path (`fx_fast_call`)
+either. Its run-time test (`c->receiver && !blk && !kw`) costs about the
+same as a mark, and `blk` is a run-time value.
 
 ### S3 Ivars
 
@@ -288,7 +274,9 @@ oracle. Speed must not damage them or the ease of maintenance.
 These conditions stop the work, so that the optimization does not go on
 by itself:
 
-- If a stage gives less than 10%, do not start the next stage.
+- If a stage gives less than 10%, do not start the next stage. The time
+  of optcarrot, 30 frames, decides. The count of user instructions
+  (`perf stat`) helps against the noise of the times.
 - When optcarrot runs at more than 20 fps, keep S4 and later on hold.
 
 ## 7. Decisions
