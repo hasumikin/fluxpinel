@@ -962,7 +962,7 @@ static sp_RbVal fx_send_v(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
   } else if (fx_reopened_builtins || fx_is_exc(recv)) {
     /* a reopened builtin class, or an exception of a class of the program */
     m = fx_find_method(fx_class_of(recv), fx_name_sym(name));
-    if (m && m->owner == L.object) m = NULL;
+    if (m && (m->owner == L.object || fx_builtin_shadows(recv, m, name))) m = NULL;
   }
   if (m) {
     int why = fx_vis_denied(m, check, caller);

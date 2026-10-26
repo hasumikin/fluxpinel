@@ -1154,6 +1154,7 @@ static int fx_method_value_new(sp_RbVal r, sp_RbVal name, int public_only, sp_Rb
     m = fx_find_method(fx_class_of(r), s);
     /* a top-level def does not hide a builtin method of the value */
     if (m && m->owner == L.object && !fx_is_fx_object(r) && fx_builtin_responds(r, mn)) m = NULL;
+    if (m && fx_builtin_shadows(r, m, mn)) m = NULL;
   }
   if (m && public_only && m->vis != FX_VIS_PUBLIC) return 0;
   if (!m && !sp_poly_truthy(fx_respond_to(r, name, sp_box_bool(!public_only)))) return 0;

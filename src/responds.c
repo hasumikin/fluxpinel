@@ -58,6 +58,13 @@ static int fx_rs_instance(const char *cls, const char *mn) {
   return 0;
 }
 
+/* Whether the builtin class of r has the public method mn of its own, not
+   from an ancestor. */
+static int fx_rs_own(sp_RbVal r, const char *mn) {
+  const FxRespondRow *row = fx_rs_row(sp_poly_class_name(r));
+  return row && fx_rs_in(row->inst, mn);
+}
+
 /* Whether the builtin class or module cls itself has the public method mn:
    a singleton method of it or of a superclass, or a method of Class (of
    Module for a module). */

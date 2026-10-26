@@ -1163,11 +1163,13 @@ static sp_RbVal fx_super_call(FxFrame *f, const pm_node_t *n, const pm_arguments
   }
   L.kwhash = kw;
   const FxMethod *m = f->method;
-  FxMethod *s;
-  if (f->self.tag == SP_TAG_CLASS && fx_table_get(&m->owner->smethods, m->name) == m)
-    s = m->owner->super ? fx_find_smethod(m->owner->super, m->name) : NULL;
-  else
-    s = fx_find_super(fx_class_of(f->self), m);
+  FxMethod *s = NULL;
+  int found = 0;
+  /* a class method, or a method of a module that the class extends: the
+     singleton path of the class */
+  if (f->self.tag == SP_TAG_CLASS && fx_class_value(f->self))
+    s = fx_find_ssuper(fx_class_value(f->self), m, &found);
+  if (!found) s = fx_find_super(fx_class_of(f->self), m);
   if (s) return fx_invoke_b(s, f->self, argc, argv, blk);
   const char *name = sp_sym_to_s(m->name);
   sp_RbVal out;

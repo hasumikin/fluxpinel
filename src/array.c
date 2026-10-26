@@ -317,6 +317,13 @@ static sp_int fx_hook_cmp(sp_RbVal a, sp_RbVal b, sp_bool *comparable) {
     return fx_kernel_hooks.cmp(a, b, comparable);
   FxMethod *m = fx_hook_method(a, "<=>");
   *comparable = !m && a.tag == b.tag && a.v.p == b.v.p;
+  /* Object#<=> is 0 also for an == of the program that answers true */
+  FxMethod *eq = m || *comparable || !a.v.p ? NULL : fx_hook_method(a, "==");
+  if (eq) {
+    SP_GC_ROOT_RBVAL(a);
+    SP_GC_ROOT_RBVAL(b);
+    *comparable = sp_poly_truthy(fx_invoke(eq, a, 1, &b));
+  }
   if (!m || !a.v.p) return 0;
   SP_GC_ROOT_RBVAL(a);
   SP_GC_ROOT_RBVAL(b);

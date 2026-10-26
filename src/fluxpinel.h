@@ -71,6 +71,8 @@ typedef struct FxClass {
   FxMethodTable smethods;         /* singleton methods (class methods) */
   struct FxClass **includes;      /* in include order */
   int nincludes, includes_cap;
+  struct FxClass **prepends;      /* in prepend order */
+  int nprepends, prepends_cap;
   struct FxClass **extends;       /* modules extended into the singleton */
   int nextends, extends_cap;
   FxConst *consts;
@@ -418,6 +420,8 @@ static int fx_autoload(sp_sym name);
 /* responds.c */
 static int fx_rs_responds(sp_RbVal r, const char *mn);
 static int fx_rs_known(sp_RbVal r, const char *mn);
+static int fx_rs_own(sp_RbVal r, const char *mn);
+static int fx_rs_instance(const char *cls, const char *mn);
 
 /* global.c */
 static sp_RbVal fx_gvar_eval(FxFrame *f, const pm_node_t *n);

@@ -392,26 +392,81 @@ static int fx_kernel_private(const char *name) {
   return 0;
 }
 
-/* The ancestors of c, in method lookup order: c, its mixins (the last
-   included first, each with its own mixins), then the same for the
-   superclass. Answers the count. */
+/* m and its mixins, into the ancestors out: the modules that m prepends
+   (the last prepended first), m, then the modules that m includes (the
+   last included first), each with its own mixins. A module that is there
+   already, or among the ancestors of the superclass (above, na of them),
+   is not added. */
+static void fx_ancestors_add(const FxClass *m, const FxClass **out, int *n, int cap, int depth,
+                             const FxClass *const *above, int na) {
+  for (int i = 0; i < *n; i++) if (out[i] == m) return;
+  for (int i = 0; i < na; i++) if (above[i] == m) return;
+  if (depth > 64) return;
+  for (int i = m->nprepends - 1; i >= 0; i--) fx_ancestors_add(m->prepends[i], out, n, cap, depth + 1, above, na);
+  for (int i = 0; i < *n; i++) if (out[i] == m) return;
+  if (*n < cap) out[(*n)++] = m;
+  for (int i = m->nincludes - 1; i >= 0; i--) fx_ancestors_add(m->includes[i], out, n, cap, depth + 1, above, na);
+}
+
+/* The ancestors of c, in method lookup order: c with its mixins, then the
+   ancestors of the superclass. A module that the superclass has already
+   comes at its place there, as CRuby skips it at the include. Answers the
+   count. */
 static int fx_ancestors(const FxClass *c, const FxClass **out, int cap) {
-  int n = 0;
+  const FxClass *above[128];
+  int na = c->super ? fx_ancestors(c->super, above, 128) : 0, n = 0;
+  fx_ancestors_add(c, out, &n, cap, 0, above, na);
+  for (int i = 0; i < na && n < cap; i++) out[n++] = above[i];
+  return n;
+}
+
+/* Whether the method m comes before the class c in the ancestors of c: a
+   method of c, or of a module that c prepends. */
+static int fx_method_before(const FxClass *c, const FxMethod *m) {
+  if (m->owner == c) return 1;
+  const FxClass *anc[128];
+  int n = fx_ancestors(c, anc, 128);
+  for (int i = 0; i < n && anc[i] != c; i++)
+    if (anc[i] == m->owner) return 1;
+  return 0;
+}
+
+/* Whether the builtin class of recv answers name itself ahead of m, a
+   method of a module that the class includes: the own methods of a
+   builtin class come before its included modules, as in CRuby. */
+static int fx_builtin_shadows(sp_RbVal recv, const FxMethod *m, const char *name) {
+  if (fx_is_fx_object(recv) || !m || !m->owner->is_module) return 0;
+  if (fx_method_before(fx_class_of(recv), m)) return 0;
+  return fx_rs_own(recv, name);
+}
+
+/* The method that super calls from m, for a class method of the class c:
+   along the singleton methods of c and of its superclasses, each with the
+   modules that it extends. *found is 0 when m is not on that path. */
+static FxMethod *fx_find_ssuper(const FxClass *c, const FxMethod *m, int *found) {
+  *found = 0;
   for (const FxClass *k = c; k; k = k->super) {
-    const FxClass *stack[64];
-    int sp = 0;
-    stack[sp++] = k;
-    while (sp > 0) {
-      const FxClass *m = stack[--sp];
-      int seen = 0;
-      for (int i = 0; i < n; i++) if (out[i] == m) seen = 1;
-      if (seen) continue;
-      if (n < cap) out[n++] = m;
-      /* push in include order, so that the last included pops first */
-      for (int i = 0; i < m->nincludes && sp < 64; i++) stack[sp++] = m->includes[i];
+    FxMethod *s = fx_table_get(&k->smethods, m->name);
+    if (s && *found) return s;
+    if (s == m) *found = 1;
+    for (int i = k->nextends - 1; i >= 0; i--) {
+      const FxClass *anc[128];
+      int n = fx_ancestors(k->extends[i], anc, 128);
+      for (int j = 0; j < n; j++) {
+        s = fx_table_get(&anc[j]->methods, m->name);
+        if (s && *found) return s;
+        if (s == m) *found = 1;
+      }
     }
   }
-  return n;
+  return NULL;
+}
+
+/* Whether the builtin module k (Enumerable, Comparable, ...) answers name
+   in CRuby. Its methods are not in its table, so a lookup stops at it and
+   the builtin methods answer. Kernel is left out. */
+static int fx_builtin_module_has(const FxClass *k, sp_sym name) {
+  return k->is_module && k->cls_id < 0 && strcmp(k->name, "Kernel") && fx_rs_instance(k->name, sp_sym_to_s(name));
 }
 
 static SP_NOINLINE FxMethod *fx_find_method_slow(const FxClass *c, sp_sym name) {
@@ -420,6 +475,7 @@ static SP_NOINLINE FxMethod *fx_find_method_slow(const FxClass *c, sp_sym name) 
   for (int i = 0; i < n; i++) {
     FxMethod *m = fx_table_get(&anc[i]->methods, name);
     if (m) return m;
+    if (fx_builtin_module_has(anc[i], name)) return NULL;
   }
   return NULL;
 }
@@ -467,6 +523,7 @@ static FxMethod *fx_find_super(const FxClass *c, const FxMethod *m) {
   for (i++; i < n; i++) {
     FxMethod *s = fx_table_get(&anc[i]->methods, m->name);
     if (s) return s;
+    if (fx_builtin_module_has(anc[i], m->name)) return NULL;
   }
   return NULL;
 }
@@ -921,8 +978,14 @@ static int fx_comparable(const char *op, sp_RbVal a, sp_RbVal b, sp_RbVal *out) 
   FxClass *comparable = fx_builtin("Comparable");
   if (eq && !fx_is_a(a, comparable)) return 0;
   FxMethod *cmp = fx_find_method(fx_class_of(a), sp_sym_intern("<=>"));
-  if (!cmp) return 0;
-  sp_RbVal c = fx_invoke(cmp, a, 1, &b);
+  if (!cmp && !fx_is_a(a, comparable)) return 0;
+  /* no <=> in the program: Object#<=>, 0 for the same object or for an
+     == of the program that answers true (Comparable#== would come back
+     here), else nil */
+  int same = a.tag == b.tag && a.v.p == b.v.p;
+  FxMethod *eqm = cmp || same ? NULL : fx_find_method(fx_class_of(a), sp_sym_intern("=="));
+  if (eqm && sp_poly_truthy(fx_invoke(eqm, a, 1, &b))) same = 1;
+  sp_RbVal c = cmp ? fx_invoke(cmp, a, 1, &b) : same ? sp_box_int(0) : sp_box_nil();
   if (c.tag != SP_TAG_INT) {
     if (eq) { *out = sp_box_bool(0); return 1; }
     fx_cmp_failed(a, b);
@@ -1419,6 +1482,18 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     *out = sp_box_poly_array(a);
     return 1;
   }
+  /* include?(mod): a module among the ancestors other than k itself */
+  if (argc == 1 && !strcmp(name, "include?")) {
+    FxClass *m = fx_class_value(argv[0]);
+    if (!m || !m->is_module)
+      sp_raise_cls("TypeError", sp_sprintf("wrong argument type %s (expected Module)",
+                                           m ? "Class" : sp_poly_class_name(argv[0])));
+    const FxClass *anc[128];
+    int n = fx_ancestors(k, anc, 128), in = 0;
+    for (int i = 0; i < n; i++) if (anc[i] == m && m != k) in = 1;
+    *out = sp_box_bool(in);
+    return 1;
+  }
   if (!strcmp(name, "attr_accessor") || !strcmp(name, "attr_reader") || !strcmp(name, "attr_writer")) {
     int reader = name[5] != 'w', writer = name[5] != 'r';
     fx_attr(k, reader, writer, f && f->singleton_defs == 1, fx_scope_vis(f), argc, argv);
@@ -1450,17 +1525,25 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
                                  argc, argv, blk);
     return 1;
   }
-  if (!strcmp(name, "include") || !strcmp(name, "extend")) {
+  if (!strcmp(name, "include") || !strcmp(name, "extend") || !strcmp(name, "prepend")) {
     for (int i = argc - 1; i >= 0; i--) {
       SP_GC_ROOT_RBVAL(r);
       FxClass *m = fx_class_value(argv[i]);
       if (!m || !m->is_module) sp_raise_cls("TypeError", "wrong argument type (expected Module)");
-      if (name[0] == 'i') fx_push_class(&k->includes, &k->nincludes, &k->includes_cap, m);
+      /* a module among the ancestors already stays where it is */
+      const FxClass *anc[128];
+      int na = name[0] == 'i' ? fx_ancestors(k, anc, 128) : 0, have = 0;
+      for (int j = 0; j < na; j++) have |= anc[j] == m;
+      if (name[0] == 'i') {
+        if (!have) fx_push_class(&k->includes, &k->nincludes, &k->includes_cap, m);
+      } else if (name[0] == 'p') fx_push_class(&k->prepends, &k->nprepends, &k->prepends_cap, m);
       else fx_push_class(&k->extends, &k->nextends, &k->extends_cap, m);
       /* a module in a builtin class reopens it, as a def does */
-      if (name[0] == 'i' && k->cls_id < 0 && k != L.object) fx_reopened_builtins++;
-      /* the hook of the module: included(base) / extended(base) */
-      FxMethod *hook = fx_table_get(&m->smethods, sp_sym_intern(name[0] == 'i' ? "included" : "extended"));
+      if (name[0] != 'e' && k->cls_id < 0 && k != L.object) fx_reopened_builtins++;
+      /* the hook of the module: included(base), prepended(base) or
+         extended(base) */
+      const char *hk = name[0] == 'i' ? "included" : name[0] == 'p' ? "prepended" : "extended";
+      FxMethod *hook = fx_table_get(&m->smethods, sp_sym_intern(hk));
       if (hook) fx_invoke(hook, argv[i], 1, &r);
     }
     *out = r;
@@ -1474,10 +1557,11 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     if (!o) sp_raise_cls("TypeError", "compared with non class/module");
     const FxClass *anc[128];
     int below = 0, above = 0;
+    /* a prepended module comes before the class in its ancestors */
     int n = fx_ancestors(k, anc, 128);
-    for (int i = 1; i < n; i++) if (anc[i] == o) below = 1;
+    for (int i = 0; i < n; i++) if (anc[i] == o && o != k) below = 1;
     n = fx_ancestors(o, anc, 128);
-    for (int i = 1; i < n; i++) if (anc[i] == k) above = 1;
+    for (int i = 0; i < n; i++) if (anc[i] == k && o != k) above = 1;
     int strict = name[1] == 0;
     if (name[2] == '>') *out = k == o ? sp_box_int(0) : below ? sp_box_int(-1) : above ? sp_box_int(1) : sp_box_nil();
     else if (k == o) *out = sp_box_bool(!strict);
