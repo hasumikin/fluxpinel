@@ -102,7 +102,6 @@ stays as it is.
 A field on each node gives what measure 1 needs:
 
 - The Symbol of a name
-- The slot of a local variable
 - The caches
 - A function pointer for the evaluation (only if S4 goes ahead)
 
@@ -197,13 +196,25 @@ Each stage is one commit. Each stage gets these checks:
 The expected gain: a large drop of `fx_call`, `fx_args`, `fx_args_dynamic`
 and `fx_find_method`.
 
-### S3 Locals and ivars
+### S3 Ivars
 
-- On each call, `fx_local` does a linear search of the names of the frame
-  (4%). The prism node already gives the count of the frames to go up
-  (`depth`). Thus the record keeps only the slot.
-- A node of `@x` keeps the class and the slot. This is one step closer
-  than the global cache.
+S3 comes before S2: on optcarrot, the ivar functions take about 11%.
+
+- A node of `@x` keeps the class id and the slot of its last access
+  (`FxIvarCache`). This covers the read, the write, the op-writes and the
+  target of a multiple assignment.
+  - A hit compares only the class id in the box of `self`. The cache
+    keeps only the id of an object of the program, which is not a native
+    object, and a slot never moves.
+  - A miss takes the general path (`fx_ivar_get`, `fx_ivar_set`), and
+    then keeps the slot.
+  - A write through a hit still refuses a frozen object.
+- An accessor (`attr_reader`, `attr_writer`) has no node, so its
+  `FxMethod` keeps the same cache.
+- A local variable keeps no slot. `fx_local` does a linear search of the
+  names of the frame, but the frames are small. A measurement showed that
+  a slot in the record costs more than the search: 0.7% more instructions
+  on optcarrot, and 1.2% more on fib.
 
 ### S4 Evaluation functions (on hold)
 

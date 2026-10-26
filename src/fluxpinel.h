@@ -22,12 +22,21 @@ enum { FX_VIS_PUBLIC, FX_VIS_PRIVATE, FX_VIS_PROTECTED };
 /* Why a call missed, for the words of NoMethodError (fx_no_method). */
 enum { FX_MISS_METHOD, FX_MISS_VCALL, FX_MISS_PRIVATE, FX_MISS_PROTECTED };
 
+/* The class id and the slot of the last access of one ivar. An object of
+   that class id keeps the ivar at that slot, because a slot never moves.
+   A cls_id below FX_CLS_BASE (0 at the start) never hits (FX_IC_HIT). */
+typedef struct {
+  int cls_id;
+  int slot;
+} FxIvarCache;
+
 typedef struct {
   sp_sym name;
   FxMethodKind kind;
   int vis;                    /* FX_VIS_* */
   const pm_def_node_t *def;   /* FX_M_DEF */
   sp_sym ivar;                /* FX_M_READER / FX_M_WRITER: "@name" */
+  FxIvarCache ic;             /* FX_M_READER / FX_M_WRITER: the slot of ivar */
   struct FxClass *owner;    /* the class or module that defines it */
   struct FxClass *lexical;  /* FX_M_DEF: the cref where the def is written, for
                                  the constants of the body; NULL for owner */
@@ -208,10 +217,12 @@ typedef struct {
 } FxSource;
 
 /* The record of a prism node in the side table (docs/side-table.md). A
-   node kind that keeps fields adds its struct to the union. */
+   node kind that keeps fields adds its struct to the union. Only the case
+   of the walker for that kind reads or writes the field, so the case
+   makes sure of the kind. */
 typedef struct {
   union {
-    uint64_t none;   /* no node kind keeps a field yet */
+    FxIvarCache ivar;   /* a node of @x: read, write, op-write, target */
   };
 } FxSide;
 

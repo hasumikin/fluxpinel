@@ -762,6 +762,44 @@ static void fx_ivar_set(sp_RbVal self, sp_sym name, sp_RbVal v) {
   sp_PolyArray_set(o->iv, slot, v);
 }
 
+/* Keeps the slot of name in ic, when self is an object of the program
+   that has the slot. Only such an object keeps its ivars in o->iv. */
+static void fx_ivar_learn(sp_RbVal self, sp_sym name, FxIvarCache *ic) {
+  if (!fx_is_fx_object(self) || fx_is_native_obj(self)) return;
+  int slot = fx_ivar_slot(fx_class_by_id(self.cls_id), name, 0);
+  if (slot < 0) return;
+  ic->cls_id = self.cls_id;
+  ic->slot = slot;
+}
+
+/* fx_ivar_get and fx_ivar_set with the cache ic of one site. A hit needs
+   only the class id of the box: ic keeps the id of an object of the
+   program, which is no native object. */
+#define FX_IC_HIT(self, ic) ((self).tag == SP_TAG_OBJ && (self).cls_id == (ic)->cls_id && (self).cls_id >= FX_CLS_BASE && (self).v.p)
+
+static sp_RbVal fx_ivar_get_c(sp_RbVal self, sp_sym name, FxIvarCache *ic) {
+  if (FX_IC_HIT(self, ic)) {
+    const FxObject *o = (const FxObject *)self.v.p;
+    return o->iv && ic->slot < o->iv->len ? o->iv->data[ic->slot] : sp_box_nil();
+  }
+  sp_RbVal v = fx_ivar_get(self, name);
+  fx_ivar_learn(self, name, ic);
+  return v;
+}
+
+static void fx_ivar_set_c(sp_RbVal self, sp_sym name, sp_RbVal v, FxIvarCache *ic) {
+  if (FX_IC_HIT(self, ic)) {
+    FxObject *o = (FxObject *)self.v.p;
+    if (o->iv && ic->slot < o->iv->len && !sp_gc_is_frozen(o)) {
+      sp_PolyArray_set(o->iv, ic->slot, v);
+      return;
+    }
+  }
+  SP_GC_ROOT_RBVAL(self);
+  fx_ivar_set(self, name, v);
+  fx_ivar_learn(self, name, ic);
+}
+
 /* ---- the runtime hooks ---- */
 
 static const char *fx_hook_class_name(sp_int cls_id) {

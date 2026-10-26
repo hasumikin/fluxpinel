@@ -499,7 +499,9 @@ work that each call does again on each run:
   so the walker interns a name once. A call still passes the name to the
   builtin dispatch as a C string. `fx_name_sym` turns the text of a Symbol
   back into the Symbol by its pointer, with no intern.
-- **Instance variables.** One global cache keeps the slot for each (class,
+- **Instance variables.** The record of each node of `@x`, and each
+  accessor, keeps the class id and the slot of its last access (measure
+  6). A miss goes to one global cache of the slot for each (class,
   Symbol). A slot never moves, so an entry stays right.
 - **Jumps.** After each evaluation, the caller reads `L.ctl` in memory to
   see a pending `return`, `break` or `next`.
@@ -510,9 +512,8 @@ The walker removes them. The measures, in order:
 1. **A side table of the nodes.** Each prism node has one record
    (`FxSide`) in a side table, and `fx_side` finds it by the node id. The
    parses number their nodes with one count, so a node id is unique in
-   the process. A record keeps what the walker resolves once: the Symbol
-   of a name, the slot of a local, and the cache fields of the measures
-   below. The prism tree stays as it is. [side-table.md](side-table.md)
+   the process. A record keeps what the walker resolves once, such as
+   the cache fields of the measures below. The prism tree stays as it is. [side-table.md](side-table.md)
    gives the design and the stages.
 2. **Symbols, no strings.** The walker interns each name once. A
    lookup compares Symbols and does no `strcmp` and no `sp_sym_intern`.
@@ -539,8 +540,9 @@ The walker removes them. The measures, in order:
    that redefines a builtin operator turns off each such node. This
    measure is on hold for the cost of maintenance (side-table.md, S4).
 6. **An instance variable cache.** The record of a node of `@x` keeps the
-   class and the slot that it found last. The global slot cache stays for
-   a miss.
+   class id and the slot that it found last (`FxIvarCache`). An accessor
+   keeps the same cache in its `FxMethod`. The global slot cache stays
+   for a miss. This measure is in place.
 7. **Accessors.** A method that `attr_reader` or `attr_writer` defines
    runs with no frame (`fx_invoke_b`).
 8. **Frames.** The slots of a frame are one root frame of the runtime

@@ -540,13 +540,15 @@ static sp_RbVal fx_invoke(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal *
 }
 
 static sp_RbVal fx_invoke_b(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal *argv, const FxBlock *blk) {
+  /* an accessor keeps the slot of its ivar in the method, which is heap
+     memory that the callers see as const */
   if (m->kind == FX_M_READER) {
     if (argc != 0) fx_arity_error(argc, 0, 0, 0);
-    return fx_ivar_get(self, m->ivar);
+    return fx_ivar_get_c(self, m->ivar, (FxIvarCache *)&m->ic);
   }
   if (m->kind == FX_M_WRITER) {
     if (argc != 1) fx_arity_error(argc, 1, 0, 0);
-    fx_ivar_set(self, m->ivar, argv[0]);
+    fx_ivar_set_c(self, m->ivar, argv[0], (FxIvarCache *)&m->ic);
     return argv[0];
   }
   if (m->kind == FX_M_FFI) return fx_ffi_invoke(m->ffi, self, argc, argv);
@@ -2094,7 +2096,7 @@ static void fx_mw_assign(FxFrame *f, const pm_node_t *t, sp_RbVal v, sp_PolyArra
     return;
   }
   case PM_INSTANCE_VARIABLE_TARGET_NODE:
-    fx_ivar_set(f->self, fx_sym(((const pm_instance_variable_target_node_t *)t)->name), v);
+    fx_ivar_set_c(f->self, fx_sym(((const pm_instance_variable_target_node_t *)t)->name), v, &fx_side(t)->ivar);
     return;
   case PM_CLASS_VARIABLE_TARGET_NODE:
     fx_cvar_set(fx_cvar_base(f->cref), fx_sym(((const pm_class_variable_target_node_t *)t)->name), v);
@@ -2969,44 +2971,47 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
     return v;
   }
   case PM_INSTANCE_VARIABLE_READ_NODE:
-    return fx_ivar_get(f->self, fx_sym(((const pm_instance_variable_read_node_t *)n)->name));
+    return fx_ivar_get_c(f->self, fx_sym(((const pm_instance_variable_read_node_t *)n)->name), &fx_side(n)->ivar);
   case PM_INSTANCE_VARIABLE_WRITE_NODE: {
     const pm_instance_variable_write_node_t *w = (const pm_instance_variable_write_node_t *)n;
     sp_RbVal v = fx_eval(f, w->value);
     if (L.ctl != FX_CTL_NONE) return sp_box_nil();
-    fx_ivar_set(f->self, fx_sym(w->name), v);
+    fx_ivar_set_c(f->self, fx_sym(w->name), v, &fx_side(n)->ivar);
     return v;
   }
   case PM_INSTANCE_VARIABLE_OPERATOR_WRITE_NODE: {
     const pm_instance_variable_operator_write_node_t *w = (const pm_instance_variable_operator_write_node_t *)n;
     sp_sym name = fx_sym(w->name);
+    FxIvarCache *ic = &fx_side(n)->ivar;
     /* @x OP= v reads @x before v runs, as CRuby does */
-    sp_RbVal cur = fx_ivar_get(f->self, name);
+    sp_RbVal cur = fx_ivar_get_c(f->self, name, ic);
     SP_GC_ROOT_RBVAL(cur);
     sp_RbVal v = fx_eval(f, w->value);
     if (L.ctl != FX_CTL_NONE) return sp_box_nil();
     sp_RbVal nv = fx_op(cur, w->binary_operator, v);
-    fx_ivar_set(f->self, name, nv);
+    fx_ivar_set_c(f->self, name, nv, ic);
     return nv;
   }
   case PM_INSTANCE_VARIABLE_OR_WRITE_NODE: {
     const pm_instance_variable_or_write_node_t *w = (const pm_instance_variable_or_write_node_t *)n;
     sp_sym name = fx_sym(w->name);
-    sp_RbVal cur = fx_ivar_get(f->self, name);
+    FxIvarCache *ic = &fx_side(n)->ivar;
+    sp_RbVal cur = fx_ivar_get_c(f->self, name, ic);
     if (sp_poly_truthy(cur)) return cur;
     sp_RbVal v = fx_eval(f, w->value);
     if (L.ctl != FX_CTL_NONE) return sp_box_nil();
-    fx_ivar_set(f->self, name, v);
+    fx_ivar_set_c(f->self, name, v, ic);
     return v;
   }
   case PM_INSTANCE_VARIABLE_AND_WRITE_NODE: {
     const pm_instance_variable_and_write_node_t *w = (const pm_instance_variable_and_write_node_t *)n;
     sp_sym name = fx_sym(w->name);
-    sp_RbVal cur = fx_ivar_get(f->self, name);
+    FxIvarCache *ic = &fx_side(n)->ivar;
+    sp_RbVal cur = fx_ivar_get_c(f->self, name, ic);
     if (!sp_poly_truthy(cur)) return cur;
     sp_RbVal v = fx_eval(f, w->value);
     if (L.ctl != FX_CTL_NONE) return sp_box_nil();
-    fx_ivar_set(f->self, name, v);
+    fx_ivar_set_c(f->self, name, v, ic);
     return v;
   }
   case PM_LOCAL_VARIABLE_OR_WRITE_NODE: {
