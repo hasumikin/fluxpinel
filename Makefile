@@ -73,16 +73,17 @@ else
 FFI_LIBS =
 NATIVE_FLAGS =
 endif
-# The version of Fluxpinel (VERSION: one integer, from 1 up), the commit of
-# the spinel checkout, and the version of Ruby that spinel gives
-# (SP_RUBY_VERSION), for `fluxpinel -v`.
+# The version of Fluxpinel (VERSION: one integer, from 1 up) and the commit
+# of the spinel checkout, for `fluxpinel -v`. The engine constants that
+# spinel gives a program (RUBY_VERSION and its kin) come from the spinel
+# source (tools/engine_flags.rb).
 FX_VERSION := $(shell cat VERSION)
 FX_SPINEL_REV := $(shell git -C $(SPINEL) rev-parse --short=9 HEAD 2>/dev/null)
-FX_RUBY_VERSION := $(shell sed -n 's/^\#define SP_RUBY_VERSION "\(.*\)"/\1/p' $(SPINEL)/src/analyze.h)
+FX_ENGINE_FLAGS := $(if $(wildcard $(SPINEL)/src/analyze.h),$(shell ruby tools/engine_flags.rb $(SPINEL)))
 # The runtime of spinel holds a String as its handle (SP_ONE_STRING).
 CFLAGS = -O2 -g -std=gnu11 -ffp-contract=off -DSP_ONE_STRING -DSP_INT_OVERFLOW_MODE_$(INT_OVERFLOW) $(RT_CFLAGS) \
          -DFX_PACKAGES_DIR='"$(SPINEL)/packages"' -DFX_FFI=$(FFI) \
-         -DFX_VERSION='"$(FX_VERSION)"' -DFX_SPINEL_REV='"$(FX_SPINEL_REV)"' -DFX_RUBY_VERSION='"$(FX_RUBY_VERSION)"' \
+         -DFX_VERSION='"$(FX_VERSION)"' -DFX_SPINEL_REV='"$(FX_SPINEL_REV)"' $(FX_ENGINE_FLAGS) \
          -Isrc -I$(BUILD) -I$(SPINEL)/lib -I$(SPINEL)/lib/regexp -I$(SPINEL)/vendor/prism/include
 LIBS = $(RT_ARCHIVE) $(SPINEL)/build/libprism.a -lm -lcrypt $(RT_LIBS) $(FFI_LIBS)
 

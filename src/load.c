@@ -336,7 +336,23 @@ static int fx_lib_in(const char *name, const char *const *list) {
   return 0;
 }
 
-/* require "name" of a library, as spinel_parse.c resolves it:
+/* The file of require "name" in a directory of $LOAD_PATH (-I, or a push
+   of the program), as a new realpath; NULL for none. */
+static char *fx_load_path_find(const char *name) {
+  sp_StrArray *lp = sp_get_load_path();
+  size_t nl = strlen(name);
+  int rb = nl > 3 && !strcmp(name + nl - 3, ".rb");
+  for (sp_int i = 0; i < lp->len; i++) {
+    const char *dir = sp_StrArray_get(lp, i);
+    if (!dir) continue;
+    char *real = realpath(sp_sprintf("%s/%s%s", dir, name, rb ? "" : ".rb"), NULL);
+    if (real) return real;
+  }
+  return NULL;
+}
+
+/* require "name" of a library: first a file in $LOAD_PATH, as ruby finds
+   it, then as spinel_parse.c resolves it:
    - packages/<first>/<name>.rb, the package of the first segment of the
      name, runs once, with <name>.share.rb after it when that exists.
    - A feature of the runtime (socket, ostruct, ...) and a core capability
@@ -349,6 +365,11 @@ static sp_RbVal fx_require_lib(const char *name) {
                                          "thread", "enumerator", "fiber", "ffi", "rational", "complex",
                                          "io/wait", "rbconfig", "rubygems", NULL };
   static const char *const preloaded[] = { "set", NULL };
+  char *found = fx_load_path_find(name);
+  if (found) {
+    if (!fx_load_once(found, NULL)) return sp_box_bool(0);
+    return L.ctl == FX_CTL_NONE ? sp_box_bool(1) : sp_box_nil();
+  }
   const char *path = NULL, *extra = NULL;
   SP_GC_ROOT_STR(path);
   SP_GC_ROOT_STR(extra);

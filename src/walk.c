@@ -1910,7 +1910,7 @@ static sp_RbVal fx_const_read(FxFrame *f, const pm_node_t *n) {
     scope = fx_class_value(pv);
     if (!scope) sp_raise_cls("TypeError", sp_sprintf("%s is not a class/module", sp_poly_inspect(pv)));
   }
-  if (!fx_const_scoped(scope, name, &v)) fx_const_missing(sp_sym_to_s(name));
+  if (!fx_const_path(scope, name, &v)) fx_const_missing(fx_const_full(scope, name));
   return v;
 }
 
@@ -1963,12 +1963,12 @@ static sp_RbVal fx_const_logic_write(FxFrame *f, const pm_node_t *n) {
   if (path) {
     fx_const_target(f, path, &scope, &name);
     if (L.ctl != FX_CTL_NONE) return sp_box_nil();
-    hit = fx_const_scoped(scope, name, &cur);
+    hit = fx_const_path(scope, name, &cur);
   } else {
     scope = f->cref, name = fx_sym(id);
     hit = fx_const_lookup(scope, name, &cur);
   }
-  if (!hit && kind != 1) fx_const_missing(sp_sym_to_s(name));
+  if (!hit && kind != 1) fx_const_missing(path ? fx_const_full(scope, name) : sp_sym_to_s(name));
   SP_GC_ROOT_RBVAL(cur);
   if (kind == 1 && sp_poly_truthy(cur)) return cur;
   if (kind == 2 && !sp_poly_truthy(cur)) return cur;

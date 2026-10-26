@@ -36,11 +36,6 @@
 #include "host.c"
 #include "console.c"
 
-/* RUBY_DESCRIPTION of Fluxpinel: the version of Fluxpinel, the commit of
-   spinel and the version of Ruby that spinel gives. */
-#define FX_DESCRIPTION \
-  "fluxpinel " FX_VERSION " (spinel " FX_SPINEL_REV ", ruby " FX_RUBY_VERSION ") [" SP_RUBY_ARCH "-" SP_RUBY_OS "]"
-
 #ifndef FX_KERNEL_MAIN
 /* The options of the command line, as ruby takes them. */
 static struct {

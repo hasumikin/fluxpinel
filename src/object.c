@@ -551,20 +551,21 @@ static sp_RbVal fx_cvar_names(const FxClass *c, int inherit) {
   return sp_box_poly_array(a);
 }
 
-/* A constant of scope or its ancestors, then a builtin class. */
-static int fx_const_scoped(const FxClass *scope, sp_sym name, sp_RbVal *out) {
+/* A constant of scope or its ancestors, then a builtin class. With top,
+   the lookup goes on to Object and its ancestors. */
+static int fx_const_in(const FxClass *scope, sp_sym name, sp_RbVal *out, int top) {
   const FxClass *anc[128];
   int n = fx_ancestors(scope, anc, 128);
-  for (int i = 0; i < n; i++) {
+  for (int i = 0; i < n && (top || anc[i] != L.object); i++) {
     FxConst *k = fx_const_own(anc[i], name);
     if (k) { *out = k->value; return 1; }
   }
-  if (scope == L.object || scope->is_module) {
+  if (top && (scope == L.object || scope->is_module)) {
     FxConst *k = fx_const_own(L.object, name);
     if (k) { *out = k->value; return 1; }
     FxClass *b = fx_builtin(sp_sym_to_s(name));
     if (b) { *out = fx_class_box(b); return 1; }
-    if (fx_autoload(name)) return fx_const_scoped(scope, name, out);
+    if (fx_autoload(name)) return fx_const_in(scope, name, out, top);
   }
   /* a builtin class nested in a builtin one (Thread::Queue), or a class of
      the kernel nested in another one */
@@ -573,6 +574,18 @@ static int fx_const_scoped(const FxClass *scope, sp_sym name, sp_RbVal *out) {
     if (b) { *out = fx_class_box(b); return 1; }
   }
   return 0;
+}
+
+static int fx_const_scoped(const FxClass *scope, sp_sym name, sp_RbVal *out) {
+  return fx_const_in(scope, name, out, 1);
+}
+
+/* A constant of a path (A::B), as CRuby reads it: the ancestors of A,
+   but not Object and its ancestors unless A is Object. Thus M::String of
+   a module M is a NameError, and so is a RUBY_ENGINE that only Object
+   has. */
+static int fx_const_path(const FxClass *scope, sp_sym name, sp_RbVal *out) {
+  return fx_const_in(scope, name, out, scope == L.object);
 }
 
 /* A constant as a bare name reads it: the lexical scopes from cref out
@@ -589,6 +602,11 @@ static int fx_const_lookup(const FxClass *cref, sp_sym name, sp_RbVal *out) {
 static __attribute__((noreturn)) void fx_const_missing(const char *name) {
   fx_trace_missing("const#", name, 0);
   sp_raise_cls("NameError", sp_sprintf("uninitialized constant %s", name));
+}
+
+/* The name of a constant of a path in a message: "A::B", or "B" in Object. */
+static const char *fx_const_full(const FxClass *scope, sp_sym name) {
+  return scope == L.object ? sp_sym_to_s(name) : sp_sprintf("%s::%s", scope->name, sp_sym_to_s(name));
 }
 
 /* ---- objects and instance variables ---- */

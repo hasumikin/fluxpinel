@@ -397,6 +397,12 @@ static int fx_load_call(const pm_node_t *n, sp_RbVal self, const char *name, int
                           sp_RbVal *out);
 static int fx_autoload(sp_sym name);
 
+/* RUBY_DESCRIPTION of Fluxpinel, which `fluxpinel -v` prints: the version
+   of Fluxpinel, the commit of spinel and the version of Ruby that spinel
+   gives (the Makefile). */
+#define FX_DESCRIPTION \
+  "fluxpinel " FX_VERSION " (spinel " FX_SPINEL_REV ", ruby " FX_RUBY_VERSION ") [" SP_RUBY_ARCH "-" SP_RUBY_OS "]"
+
 /* global.c */
 static sp_RbVal fx_gvar_eval(FxFrame *f, const pm_node_t *n);
 static int fx_gvar_stdout(sp_RbVal *out);

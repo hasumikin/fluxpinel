@@ -250,6 +250,25 @@ static void fx_global_init(void) {
     sp_PolyArray_push(argv, fx_send(s, "freeze", 0, NULL));
   }
   fx_const_set(L.object, sp_sym_intern("ARGV"), sp_box_poly_array(argv));
+  /* the engine constants, frozen Strings with the values that spinel gives
+     a program (emit_engine_const_str of codegen_expr.c), but the
+     description of Fluxpinel itself */
+  const char *const engine[][2] = {
+    { "RUBY_VERSION", FX_RUBY_VERSION },
+    { "RUBY_ENGINE", "spinel" },
+    { "RUBY_ENGINE_VERSION", FX_RUBY_VERSION },
+    { "RUBY_PLATFORM", SP_RUBY_ARCH "-" SP_RUBY_OS },
+    { "RUBY_RELEASE_DATE", FX_RUBY_RELEASE_DATE },
+    { "RUBY_REVISION", FX_RUBY_REVISION },
+    { "RUBY_COPYRIGHT", FX_RUBY_COPYRIGHT },
+    { "RUBY_DESCRIPTION", FX_DESCRIPTION },
+  };
+  for (size_t i = 0; i < sizeof engine / sizeof engine[0]; i++) {
+    sp_RbVal s = fx_new_string((const uint8_t *)engine[i][1], strlen(engine[i][1]));
+    SP_GC_ROOT_RBVAL(s);
+    fx_const_set(L.object, sp_sym_intern(engine[i][0]), fx_send(s, "freeze", 0, NULL));
+  }
+  fx_const_set(L.object, sp_sym_intern("RUBY_PATCHLEVEL"), sp_box_int(0));
   /* the modules that a nonblocking error includes, which the class table
      of the runtime does not name */
   FxClass *io = fx_builtin("IO");

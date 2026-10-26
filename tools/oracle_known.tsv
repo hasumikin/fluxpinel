@@ -4,3 +4,4 @@
 # only when the fix is on spinel's master and the oracle on that master
 # reports known_fixed. A fix on a branch of the tested tree is not enough.
 class_value_method_call	the .expected pins a limitation of AOT (NoMethodError); CRuby and Fluxpinel answer "no raise"	-
+struct_block_constant_init	the .expected is not the CRuby answer: FLAGS in the Struct.new block is a constant of Object, and CRuby 4.0.9 raises NameError (uninitialized constant Line::FLAGS), as Fluxpinel does	-

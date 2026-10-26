@@ -27,6 +27,18 @@ CLI_CASES = [
   { args: ["-Ilib", "-Iother", "-e", "p $LOAD_PATH.first(2).map { |d| File.basename(d) }"] },
   { args: ["-r", "./lib/greet.rb", "-e", "p Greet.hi"] },
   { args: ["-r./lib/greet", "args.rb", "x"] },
+  # a library of $LOAD_PATH, by its name
+  { args: ["-Ilib", "-rgreet", "-e", "p Greet.hi"] },
+  { args: ["-I", "lib", "-e", "p require('greet'), require('greet.rb'), Greet.hi"] },
+  { args: ["-e", "$LOAD_PATH.unshift(File.expand_path('lib')); p require('greet'), Greet.hi"] },
+  { args: ["-e", "begin; require 'greet'; rescue LoadError => e; p e.message; end"] },
+  # the engine constants: the values of spinel, frozen
+  { args: ["-e", "p RUBY_ENGINE, RUBY_VERSION, RUBY_PATCHLEVEL, RUBY_PLATFORM"],
+    out: /\A"spinel"\n"\d+\.\d+\.\d+"\n0\n"\w+-\w[\w-]*"\n\z/ },
+  { args: ["-e", "p [RUBY_VERSION, RUBY_ENGINE, RUBY_PLATFORM, RUBY_DESCRIPTION].all?(&:frozen?)"] },
+  { args: ["-e", "puts RUBY_DESCRIPTION"], out: /#{DESCRIPTION}\z/ },
+  { args: ["-e", "p RUBY_RELEASE_DATE, RUBY_REVISION.size, RUBY_COPYRIGHT.start_with?('ruby - Copyright')"],
+    out: /\A"\d{4}-\d\d-\d\d"\n40\ntrue\n\z/ },
   # a wrong command line
   { args: ["nofile.rb"], err: true },
   { args: ["-Z"], err: true },

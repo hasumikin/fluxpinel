@@ -166,7 +166,7 @@ arguments after the script go to `ARGV`:
 
 ```sh
 build/promote/fluxpinel script.rb arg1 arg2
-build/promote/fluxpinel -r ./mylib.rb -e 'p MyLib.answer'
+build/promote/fluxpinel -Ilib -rmylib -e 'p MyLib.answer'
 echo 'p 1 + 2' | build/promote/fluxpinel
 build/promote/fluxpinel -v
 ```
@@ -189,6 +189,13 @@ The command line takes a part of the options of `ruby`:
 With no script and no `-e`, Fluxpinel reads the program from stdin. `-v`
 prints the version of Fluxpinel (one integer in `VERSION`), the commit of
 spinel and the version of Ruby that spinel gives.
+
+`require "name"` looks for `name.rb` in each directory of `$LOAD_PATH`
+(`-I`, or a change of the program), then in the packages of spinel.
+`RUBY_ENGINE` is `"spinel"`, and `RUBY_VERSION` is the version that spinel
+gives. Thus a branch on `RUBY_ENGINE == "spinel"` goes the same way in
+Fluxpinel and in AOT code. `RUBY_DESCRIPTION` is the line that `-v`
+prints.
 
 The walker keeps a side table next to the nodes of prism, for the caches
 of each call and each instance variable. See
