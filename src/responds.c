@@ -98,3 +98,12 @@ static int fx_rs_responds(sp_RbVal r, const char *mn) {
   const FxClass *b = fx_rs_builtin_of(fx_class_of(r));
   return b && fx_rs_instance(b->name, mn);
 }
+
+/* Whether CRuby can have the method mn on r: a public builtin method, a
+   private method of Kernel, or any method after a require of a feature
+   or of a value whose class has no row (the table cannot tell). A miss of
+   such a method is a gap of Fluxpinel, not NoMethodError. */
+static int fx_rs_known(sp_RbVal r, const char *mn) {
+  if (fx_feature_loaded || fx_kernel_private(mn) || fx_rs_responds(r, mn)) return 1;
+  return r.tag != SP_TAG_CLASS && !fx_is_fx_object(r) && !fx_rs_row(sp_poly_class_name(r));
+}

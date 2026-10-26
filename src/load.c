@@ -387,7 +387,10 @@ static sp_RbVal fx_require_lib(const char *name) {
     if (!ran || fx_lib_in(name, preloaded)) return sp_box_bool(0);
     return L.ctl == FX_CTL_NONE ? sp_box_bool(1) : sp_box_nil();
   }
-  if (fx_lib_in(name, builtin)) return sp_box_bool(0);
+  if (fx_lib_in(name, builtin)) {
+    fx_feature_loaded = 1;
+    return sp_box_bool(0);
+  }
   sp_raise_cls("LoadError", sp_sprintf("cannot load such file -- %s", name));
 }
 

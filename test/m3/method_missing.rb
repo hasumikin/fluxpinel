@@ -87,3 +87,12 @@ t("class") { Ghost.zork }
 t("module") { Mod.zork }
 t("main") { zork }
 t("main call") { zork(1) }
+
+# a block does not change a miss: NoMethodError, or a top-level def
+def zap = yield(:zapped)
+t("nil block") { nil.map { |x| x } }
+t("integer block") { 5.each { |x| x } }
+t("string block") { "ab".each { |x| x } }
+t("array block") { [1].zork { |x| x } }
+t("top-level def block") { 5.zap { |x| x } }
+t("top-level def send block") { 5.send(:zap) { |x| x } }

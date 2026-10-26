@@ -1193,6 +1193,10 @@ static sp_RbVal fx_super_call(FxFrame *f, const pm_node_t *n, const pm_arguments
     if (fx_object_core(f->self, name, argc, argv, &out)) return out;
   } else if (fx_builtin_call(f->self, name, argc, argv, blk, &out)) {
     return out;
+  } else if (blk) {
+    /* the method that CRuby finds is not a builtin one that Fluxpinel
+       knows (a method of a module that a singleton class includes) */
+    fx_gap(sp_sprintf("super with a block to the builtin %s", name));
   }
   fx_trace_missing("super#", name, argc);
   sp_raise_cls("NoMethodError", sp_sprintf("super: no superclass method '%s'", name));

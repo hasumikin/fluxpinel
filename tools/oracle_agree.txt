@@ -85,6 +85,7 @@ array_delete_block_float_past_int
 array_delete_user_eq_return
 array_dig_nested_index_conversion
 array_dup_sort_gc
+array_each_nil_receiver_raises
 array_eq_cross_kind
 array_eq_to_ary_operand
 array_eql_strict
@@ -124,6 +125,7 @@ array_index_range_variable
 array_index_string_typeerror
 array_insert_no_values
 array_insert_pads_nil
+array_ivar_unset_nil_receiver_raises
 array_join_nested
 array_join_poly_separator
 array_literal_empty_elem
@@ -479,6 +481,7 @@ boxed_class_singleton_accessor
 boxed_complex_finite
 boxed_container_read_at
 boxed_dispatch_shared_private_helper_sibling_widen
+boxed_each_line_block
 boxed_enumerable_entries
 boxed_eq_user_answer
 boxed_file_gets_args
@@ -489,6 +492,8 @@ boxed_index_or_write_no_aref
 boxed_io_to_i
 boxed_kill_user_and_thread
 boxed_local_container_unaffected
+boxed_map_bang_dispatch_write_barrier
+boxed_map_bang_write_barrier
 boxed_match_user_method
 boxed_matchdata_readers
 boxed_matchdata_string
@@ -515,6 +520,7 @@ boxed_reader_alias_after_dup
 boxed_reader_named_like_time_method
 boxed_receiver_aliases
 boxed_receiver_nil_argument_converted_after
+boxed_recv_block_param_shapes
 boxed_recv_class_set_binding
 boxed_reopen_self_call_block
 boxed_respond_to_override_answers
@@ -700,6 +706,7 @@ call_or_write_through_writer
 call_or_write_undefined_attr
 call_or_write_writer_boxes_value
 call_plan_break_target
+call_plan_builtin_object
 call_plan_class_target
 call_plan_comparison_target
 call_plan_conversion
@@ -814,6 +821,7 @@ catch_throw_string_value
 catch_throw_tags_values
 catch_throw_through_loop
 cell_value_struct_capture
+cell_value_struct_time_capture
 celled_op_assign_types
 cext_no_extension_names
 chain_append_captured_strbuf
@@ -924,6 +932,7 @@ class_value_builtin_and_nested
 class_value_builtin_new
 class_value_call_nullable_int
 class_value_chained_cmethod
+class_value_cmethod_block
 class_value_cmethod_kwargs_instance_clash
 class_value_cmethod_raise_only_value
 class_value_cmethod_splat
@@ -1204,6 +1213,7 @@ data_ivar_set_value_gc
 data_new_kwsplat
 data_new_positional_keyword_init
 data_no_member_writers
+data_no_struct_iterators
 data_reopen_beside_colliding_const
 data_reopen_reader
 data_respond_to
@@ -1433,6 +1443,7 @@ enum_reader_blocks
 enum_reader_names
 enum_renamed_reader_implicit
 enum_renamed_reader_poly
+enumerable_def_nomethod_name
 enumerable_extrema_leading_nil
 enumerable_find_ifnone
 enumerable_grep_sum_entry
@@ -1552,6 +1563,7 @@ extend_self_attr_accessor
 extend_self_singleton_accessor
 extended_hook_splice
 extrema_by_single_walk
+face_probe_dropped_arm_keeps_loop_state
 fail_diverges_like_raise
 fallback_block_argument
 fallback_block_gets_the_missing_key
@@ -1712,6 +1724,7 @@ for_index_other_writes
 for_loop_target_kinds
 for_loop_value
 for_multi_index_over_range
+for_over_boxed_collection
 for_over_paren_collection
 for_over_range_value
 for_range_nil_bound
@@ -1733,6 +1746,7 @@ forward_args
 forward_args_after_leading_param
 forward_args_block
 forward_args_mixed_targets
+forward_block_to_yielding
 forward_call_param_type_inference
 forward_dots_into_instance_exec
 forward_to_callees_of_differing_shapes
@@ -2764,6 +2778,7 @@ ivar_nil_tested_once
 ivar_nullable_int_never_set
 ivar_object_array_narrow
 ivar_or_write_empty_literal_variant
+ivar_orwrite_raiseall_typed_slot
 ivar_polymorphic
 ivar_queue_not_array_evidence
 ivar_recv_before_boxed_index_hash_block
@@ -3035,6 +3050,7 @@ members_class_method_boxed
 members_reader_boxed_receiver
 members_reopened_builtin_cmethod
 memo_hash_literal_regexp_keys
+memo_ivar_nil_receiver_raises
 memo_ivar_write_keeps_heap_object
 memo_reader_string_mutation
 merge_block_value_setup_per_pair
@@ -3198,6 +3214,7 @@ mutex_synchronize_ensure
 mutex_synchronize_inner_rescue
 mutex_synchronize_nested_ensure
 mutex_synchronize_next
+mutex_synchronize_poly
 name_reader_two_types
 named_captures_symbolize
 namespaced_class_named_like_builtin_module
@@ -3276,6 +3293,7 @@ nil_fact_guard_loop_narrowing
 nil_free_method_version
 nil_guard_narrows_int_or_nil
 nil_guard_param_narrow
+nil_guard_post_test_loop
 nil_hash_param_boxed_as_nil
 nil_into_number_and_or_write
 nil_into_object_param_raises
@@ -3353,6 +3371,7 @@ numeric_coerce
 numeric_compare_object_without_coerce
 numeric_convert_nil_exception
 numeric_i_boxed
+numeric_iter_boxed_recv_value
 numeric_method_displaced_by_user
 numeric_reopen_self_any_number
 numeric_tower_remainder
@@ -3380,6 +3399,7 @@ object_id_nil_true
 object_identity_eq
 object_identity_predicates
 object_local_boxed_write
+object_lowered_yield_block_arg
 object_method_builtin_hash_dispatch
 object_method_builtin_overrides
 object_method_ivar_append_handle
@@ -3397,6 +3417,7 @@ object_reopen_poly_dispatch
 object_reopen_predicate_any_value
 object_reopen_private_explicit_receiver
 object_reopen_time_file_receiver
+object_reopen_yield_no_block
 object_space_word_in_string
 object_spaceship_default
 object_spaceship_exception_own_cmp
@@ -3653,11 +3674,13 @@ poly_each_dispatch_unreached_yielder
 poly_each_mutating_block
 poly_each_receiver_gc_root
 poly_each_reopened_object
+poly_each_returns_receiver
 poly_each_with_index
 poly_each_with_index_block
 poly_element_methods
 poly_empty_p_user_length
 poly_empty_with_user_method
+poly_enum_builtin_arm_nil
 poly_enum_range_and_scalar_recv
 poly_enum_to_a_builtin_arm
 poly_eq_large_integers
@@ -3816,6 +3839,7 @@ poly_recv_aref_box_arm
 poly_recv_aref_str_key
 poly_recv_aset_poly_key
 poly_recv_block_dispatch_blk_param
+poly_recv_block_dispatch_no_candidate
 poly_recv_builtin_name_class_method
 poly_recv_bytes_boxed_local
 poly_recv_class_method_string_face
@@ -3831,6 +3855,7 @@ poly_recv_fetch_arm_incompat
 poly_recv_fetch_hash_arms
 poly_recv_hash_dup
 poly_recv_hash_each_dispatch
+poly_recv_int_iterators
 poly_recv_map_join
 poly_recv_range_sym_hash_dispatch
 poly_recv_str_transform_class_method
@@ -3863,6 +3888,7 @@ poly_splice_typed_recv_boxed_src
 poly_splice_value_rooted
 poly_split_beside_module_split
 poly_split_module_value_arm
+poly_step_int_and_float
 poly_store_lifted_string
 poly_str_append
 poly_str_delete_chain
@@ -3909,6 +3935,7 @@ poly_unsettled_user_answer
 poly_user_arm_handle_return
 poly_user_at_builtin_arm
 poly_user_binop_object_result
+poly_user_enum_reverse_each
 poly_user_exception_methods
 poly_user_include_value
 poly_user_join_dispatch
@@ -4030,6 +4057,7 @@ proc_positional_hash_user_call
 proc_post_param_typed
 proc_range_time_return
 proc_reads_attr_reader
+proc_reads_outer_two_frames_up
 proc_recursive
 proc_regexp_arg_unrooted
 proc_rest_post_params
@@ -5092,6 +5120,7 @@ string_inline_yield_sequence_tail
 string_inspect_invalid_utf8
 string_inspect_nonprint_unicode
 string_iter_answers_ivar_receiver
+string_iter_nil_receiver_raises
 string_ivar_alias_lent_arg
 string_ivar_alias_lent_call
 string_ivar_alias_lent_super
@@ -5852,6 +5881,7 @@ yielding_method_shadows_toplevel_def
 zip_block_nil_elem
 zip_block_tuples
 zip_block_unrelated_method
+zip_boxed_receiver_argument_order
 zip_poly_operands
 zip_product_splat
 zip_range_word_ends

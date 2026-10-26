@@ -654,6 +654,10 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
     if (fx_prelude_call(recv, name, argc, argv, blk, out)) return 1;
     /* a method of no builtin, with a hook that takes it */
     if (!fx_object_method_name(name) && fx_find_hook(recv, "method_missing")) return 0;
+    /* a method that CRuby does not give the receiver either: the caller
+       goes on as for a call with no block (a top-level def, else
+       NoMethodError) */
+    if (!fx_rs_known(recv, name)) return 0;
     fx_gap(sp_sprintf("block for the builtin %s#%s", sp_poly_class_name(recv), name));
   }
   if (fx_core(recv, name, argc, argv, out)) return 1;

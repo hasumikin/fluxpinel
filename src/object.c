@@ -56,6 +56,10 @@ static int fx_always_private(sp_sym name) {
 /* the number of builtin classes that the program reopened with a def */
 static int fx_reopened_builtins;
 
+/* 1 after a require of a feature of the runtime (io/console, ...): it
+   gives builtin classes methods that the table of responds.c lacks */
+static int fx_feature_loaded;
+
 static void fx_define_method(FxClass *c, FxMethod *m, int singleton) {
   if (!singleton && fx_always_private(m->name)) m->vis = FX_VIS_PRIVATE;
   fx_table_put(singleton ? &c->smethods : &c->methods, m);
