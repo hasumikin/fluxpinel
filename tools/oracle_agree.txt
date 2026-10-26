@@ -80,6 +80,7 @@ array_concat_raising_arg
 array_concat_several_classes
 array_const_aset_reaches_no_user_aset
 array_constructor_splat
+array_delete_block_float_past_int
 array_delete_user_eq_return
 array_dig_nested_index_conversion
 array_dup_sort_gc
@@ -185,6 +186,7 @@ array_push_stmt_ctor_aliased
 array_push_stmt_ivar_set_by_name
 array_push_value_poly_elem
 array_reduce_search_methods
+array_repeat_float_count
 array_rotate_bang_kinds
 array_sample_min_max_mutates_element
 array_select_bang
@@ -476,6 +478,7 @@ boxed_object_inspect_returns_boxed
 boxed_param_value_into_typed_hash_slot
 boxed_predicate_mutation
 boxed_push_statement
+boxed_range_eq_float_range
 boxed_range_eql
 boxed_range_iterators
 boxed_range_percent
@@ -546,6 +549,7 @@ builtin_reopen_poly_slot
 builtin_reopen_runtime_name_clash
 builtin_reopen_sclass_const_own_method
 builtin_reopen_self_class
+builtin_reopen_self_const
 builtin_reopen_strbuf_poly
 builtin_send_kwsplat_hash
 builtin_singleton_alias_user
@@ -691,6 +695,7 @@ case_container_arm_dispatch
 case_empty_literal_branch
 case_eq_array_hash_value
 case_eq_class_value
+case_eq_int_float_exact
 case_eq_scalar_poly_arg
 case_eq_subclass_defines
 case_equality_boxed_receiver
@@ -872,6 +877,7 @@ class_singleton_def
 class_spaceship
 class_superclass
 class_superclass_class_new
+class_value_attr_or_write
 class_value_builtin_and_nested
 class_value_builtin_new
 class_value_call_nullable_int
@@ -1045,6 +1051,7 @@ const_array_known_length_reads
 const_attr_op_assign
 const_compound_assign
 const_env_defined_parity
+const_get_builtin
 const_get_class_name
 const_get_implicit_self
 const_get_literal_escapes_one_class
@@ -1544,6 +1551,7 @@ file_join_poly_component
 file_read_length_at_run_time
 file_read_offset
 file_size
+file_string_consts_frozen
 file_write_at_tail_position
 filter_map
 filter_map_next_guard_conditional_tail
@@ -1558,6 +1566,7 @@ flat_map_poly_receiver
 flat_map_poly_return
 flat_map_str_array_beside_forwarding_map
 flatten_splices_to_ary
+float_arg_signed_zero_nan
 float_array_array
 float_array_first_last_nil
 float_bignum_or_write_nil_slot
@@ -1565,13 +1574,17 @@ float_coerce_typeerror
 float_div_int_literal
 float_elem_binary_nil
 float_elem_cmp_nil
+float_limit_constants
 float_mod_pow_op_assign
 float_nan_payload_slots
 float_negative_zero_hash
+float_op_assign_nil
 float_opassign_nil_marked
 float_past_word_shared_block_proc
 float_range_boxed_methods
+float_range_cover_nan
 float_range_endpoint_boxed_nil
+float_range_endpoint_kind
 float_range_minmax
 float_range_open_bound
 float_range_overlap_cover
@@ -2711,6 +2724,7 @@ lowered_block_given
 lowered_yield_block_value_types
 lowered_yield_lends_param
 lowered_yield_never_given_block
+lrama_features
 lv_widen_from_callee_arg_slot
 lvar_reassigned_in_operand
 main_self_paths
@@ -2869,6 +2883,7 @@ method_runtime_name_arity
 method_runtime_name_call
 method_runtime_name_module_shadowed
 method_runtime_name_unrelated_method_override
+method_speculative_int_arg
 method_splat_float_arg
 method_table_int_evidence
 method_to_proc_keywords
@@ -3720,6 +3735,7 @@ proc_form_kwrest_forward
 proc_form_rest_param
 proc_form_uncalled_source
 proc_form_yield_boxed_kept
+proc_form_yield_boxed_pointer
 proc_form_yield_boxed_regex
 proc_forward_arity
 proc_from_container_literal
@@ -3995,6 +4011,7 @@ regexp_inline_options
 regexp_large_program
 regexp_last_match_capture
 regexp_line_anchors
+regexp_linebreak_escape
 regexp_literal_slots_compile
 regexp_local_if_else_union
 regexp_local_per_scope
@@ -4314,6 +4331,7 @@ share_builder_local_fresh
 share_builder_local_kept_block_value
 share_builder_local_lambda_default
 share_builder_local_lambda_return
+share_builtin_const_path
 share_call_past_plan_fresh
 share_call_past_plan_held_answer
 share_call_past_plan_method_missing

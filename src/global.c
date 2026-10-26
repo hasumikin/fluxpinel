@@ -236,6 +236,68 @@ static int fx_env_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, c
   return 1;
 }
 
+/* A frozen String, as the String constants of CRuby are. */
+static sp_RbVal fx_frozen_cstr(const char *s) {
+  sp_RbVal v = fx_new_string((const uint8_t *)s, strlen(s));
+  SP_GC_ROOT_RBVAL(v);
+  return fx_send(v, "freeze", 0, NULL);
+}
+
+/* The constants of the builtin classes, with the values that spinel gives
+   a program ("well-known module constants" of codegen_expr.c). */
+static void fx_builtin_consts(void) {
+  FxClass *fl = fx_builtin("Float");
+  const struct { const char *name; double v; } floats[] = {
+    { "MAX", DBL_MAX }, { "MIN", DBL_MIN }, { "EPSILON", DBL_EPSILON },
+    { "INFINITY", 1.0 / 0.0 }, { "NAN", 0.0 / 0.0 },
+  };
+  for (size_t i = 0; i < sizeof floats / sizeof floats[0]; i++)
+    fx_const_set(fl, sp_sym_intern(floats[i].name), sp_box_float(floats[i].v));
+  const struct { const char *name; sp_int v; } float_ints[] = {
+    { "DIG", DBL_DIG }, { "MANT_DIG", DBL_MANT_DIG }, { "RADIX", FLT_RADIX },
+    { "MAX_EXP", DBL_MAX_EXP }, { "MIN_EXP", DBL_MIN_EXP },
+    { "MAX_10_EXP", DBL_MAX_10_EXP }, { "MIN_10_EXP", DBL_MIN_10_EXP },
+  };
+  for (size_t i = 0; i < sizeof float_ints / sizeof float_ints[0]; i++)
+    fx_const_set(fl, sp_sym_intern(float_ints[i].name), sp_box_int(float_ints[i].v));
+
+  FxClass *math = fx_builtin("Math");
+  fx_const_set(math, sp_sym_intern("PI"), sp_box_float(M_PI));
+  fx_const_set(math, sp_sym_intern("E"), sp_box_float(M_E));
+
+  /* IO#seek whence, in IO and in File, as spinel takes them of both
+     (is_io_class_name): the File of Fluxpinel is no subclass of IO */
+  FxClass *file = fx_builtin("File");
+  FxClass *ios[] = { fx_builtin("IO"), file };
+  const char *const seeks[] = { "SEEK_SET", "SEEK_CUR", "SEEK_END" };
+  for (int k = 0; k < 2; k++)
+    for (int i = 0; i < 3; i++) fx_const_set(ios[k], sp_sym_intern(seeks[i]), sp_box_int(i));
+
+  fx_const_set(file, sp_sym_intern("SEPARATOR"), fx_frozen_cstr("/"));
+  fx_const_set(file, sp_sym_intern("PATH_SEPARATOR"), fx_frozen_cstr(":"));
+  fx_const_set(file, sp_sym_intern("NULL"), fx_frozen_cstr("/dev/null"));
+  fx_const_set(file, sp_sym_intern("ALT_SEPARATOR"), sp_box_nil());
+  /* the flags of open(2) and flock(2), and the flags of File.fnmatch with
+     the values of CRuby (SP_FNM_*) */
+  const struct { const char *name; sp_int v; } file_ints[] = {
+    { "RDONLY", O_RDONLY }, { "WRONLY", O_WRONLY }, { "RDWR", O_RDWR },
+    { "CREAT", O_CREAT }, { "EXCL", O_EXCL }, { "TRUNC", O_TRUNC },
+    { "APPEND", O_APPEND }, { "NONBLOCK", O_NONBLOCK }, { "NOFOLLOW", O_NOFOLLOW },
+    { "NOCTTY", O_NOCTTY }, { "SYNC", O_SYNC }, { "DSYNC", O_DSYNC }, { "BINARY", 0 },
+    { "LOCK_SH", LOCK_SH }, { "LOCK_EX", LOCK_EX }, { "LOCK_UN", LOCK_UN }, { "LOCK_NB", LOCK_NB },
+    { "FNM_NOESCAPE", SP_FNM_NOESCAPE }, { "FNM_PATHNAME", SP_FNM_PATHNAME },
+    { "FNM_DOTMATCH", SP_FNM_DOTMATCH }, { "FNM_CASEFOLD", SP_FNM_CASEFOLD },
+    { "FNM_EXTGLOB", SP_FNM_EXTGLOB }, { "FNM_SYSCASE", 0 }, { "FNM_SHORTNAME", 0 },
+  };
+  for (size_t i = 0; i < sizeof file_ints / sizeof file_ints[0]; i++)
+    fx_const_set(file, sp_sym_intern(file_ints[i].name), sp_box_int(file_ints[i].v));
+
+  /* the encoding bits that Regexp#options reports; re.c sets the others */
+  FxClass *re = fx_builtin("Regexp");
+  fx_const_set(re, sp_sym_intern("FIXEDENCODING"), sp_box_int(16));
+  fx_const_set(re, sp_sym_intern("NOENCODING"), sp_box_int(32));
+}
+
 static void fx_global_init(void) {
   fx_const_set(L.object, sp_sym_intern("STDIN"), fx_io_box(sp_io_stdin()));
   fx_const_set(L.object, sp_sym_intern("STDOUT"), fx_io_box(sp_io_stdout()));
@@ -263,12 +325,10 @@ static void fx_global_init(void) {
     { "RUBY_COPYRIGHT", FX_RUBY_COPYRIGHT },
     { "RUBY_DESCRIPTION", FX_DESCRIPTION },
   };
-  for (size_t i = 0; i < sizeof engine / sizeof engine[0]; i++) {
-    sp_RbVal s = fx_new_string((const uint8_t *)engine[i][1], strlen(engine[i][1]));
-    SP_GC_ROOT_RBVAL(s);
-    fx_const_set(L.object, sp_sym_intern(engine[i][0]), fx_send(s, "freeze", 0, NULL));
-  }
+  for (size_t i = 0; i < sizeof engine / sizeof engine[0]; i++)
+    fx_const_set(L.object, sp_sym_intern(engine[i][0]), fx_frozen_cstr(engine[i][1]));
   fx_const_set(L.object, sp_sym_intern("RUBY_PATCHLEVEL"), sp_box_int(0));
+  fx_builtin_consts();
   /* the modules that a nonblocking error includes, which the class table
      of the runtime does not name */
   FxClass *io = fx_builtin("IO");
