@@ -99,9 +99,14 @@ static int fx_exit_kernel(const char *name, int argc, sp_RbVal *argv) {
   return 0;
 }
 
-/* Kernel#raise and #fail, and exit and abort. */
+/* Kernel#raise and #fail, throw, and exit and abort. */
 static int fx_exc_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (fx_exit_kernel(name, argc, argv)) return 1;
+  /* the runtime finds the catch of the tag, or raises UncaughtThrowError */
+  if (FX_IS("throw")) {
+    if (argc < 1 || argc > 2) fx_arity_error(argc, 1, 2, 0);
+    sp_throw_boxed(argv[0], argc == 2 ? argv[1] : sp_box_nil());
+  }
   if (!FX_IS("raise") && !FX_IS("fail")) return 0;
   (void)out;
   /* raise ..., cause: x: the runtime takes it for the next raise */
@@ -161,10 +166,9 @@ static int fx_exc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
     *out = sp_box_str_new(sp_sprintf("%s (%s)", sp_exc_message(e), e->cls_name));
     return 1;
   }
+  /* the same class and message; two UncaughtThrowErrors are equal */
   if (argc == 1 && FX_IS("==")) {
-    sp_RbVal o = argv[0];
-    *out = sp_box_bool(fx_is_exc(o) && !strcmp(e->cls_name, ((sp_Exception *)o.v.p)->cls_name) &&
-                       !strcmp(sp_exc_message(e), sp_exc_message((sp_Exception *)o.v.p)));
+    *out = sp_box_bool(fx_is_exc(argv[0]) && sp_exc_eq(e, (sp_Exception *)argv[0].v.p));
     return 1;
   }
   return 0;

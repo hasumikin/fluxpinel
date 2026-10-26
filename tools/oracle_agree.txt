@@ -520,6 +520,7 @@ bsearch_nilable_int_elements
 builtin_forwarded_yield_proc_form
 builtin_iter_block_keyword_params
 builtin_iter_block_param_shapes
+builtin_iter_block_stragglers
 builtin_iter_scalar_yield_shapes
 builtin_iter_step_frame
 builtin_kwarg_user_clone
@@ -737,6 +738,13 @@ case_when_user_equality
 case_when_value_constant
 casecmp_p_binary_bytes
 casecmp_p_fold
+catch_depth_bounded
+catch_in_fiber_body
+catch_nil_and_boolean_tags
+catch_throw_ensure
+catch_throw_string_value
+catch_throw_tags_values
+catch_throw_through_loop
 chain_append_captured_strbuf
 chained_aset_on_poly_hash_recv
 chained_attr_write_empty_hash
@@ -1220,6 +1228,7 @@ dynamic_new_toplevel_ivar
 dynamic_send
 dynamic_send_block
 dynamic_send_defined_names
+dynamic_send_diverging_method
 dynamic_send_many_literals
 dynamic_send_nomethod_recv
 dynamic_send_push_arm_receiver
@@ -1246,6 +1255,7 @@ each_with_object_seed_widens
 elem_assign_non_string_value
 elem_mutation_through_param_and_builtin
 element_string_handed_on_to_appender
+else_runs_ensure
 elsif_condition_args_wait_for_their_branch
 elsif_isa_chain
 empty_array_arg_typed_by_pushes
@@ -1296,6 +1306,7 @@ empty_symbol_literal
 endless_method
 endless_method_rescue
 ensure_after_rescue_raise
+ensure_dropped_exception_no_cause
 ensure_in_proc_body_keeps_loop_ensure
 ensure_inline_return_oint
 ensure_keeps_string_raise_message
@@ -1887,6 +1898,7 @@ hash_write_through_super_getter
 hash_zero_arguments_own_methods
 heterogeneous_tuple_return
 hoisted_arg_keeps_nil
+hoisted_begin_value_held
 hoisted_handle_arg_into_boxed_param
 hoisted_read_after_nil_store
 hoisted_store_clears_nil_bit
@@ -2332,6 +2344,7 @@ issue_3082
 issue_3083
 issue_3084
 issue_3085
+issue_3087
 issue_3096
 issue_3098
 issue_3100
@@ -2868,6 +2881,7 @@ mutex_boxed_receiver
 mutex_boxed_synchronize_yield_values
 mutex_contended_pool_rounds
 mutex_handoff_race
+mutex_synchronize_ensure
 mutex_synchronize_inner_rescue
 mutex_synchronize_nested_ensure
 mutex_synchronize_next
@@ -2890,6 +2904,7 @@ nested_array_pattern_binding
 nested_array_pattern_deconstruct
 nested_block_captures_outer_param
 nested_bundled_name_lexical
+nested_catch
 nested_class_inherits_outer_same_name
 nested_class_module_const_resolution
 nested_container_array_surface
@@ -2987,6 +3002,7 @@ no_value_call_typed_slot
 nomethod_message_shapes
 nomethod_scalar_slot
 nonlocal_return_in_block_of_non_yielding_method
+noreturn_call_value
 not_match_op
 not_user_object
 null_pointer_nil_protocol
@@ -3592,6 +3608,7 @@ proc_escaped_arg_types
 proc_float_arg
 proc_float_return
 proc_form_block_given_in_lifted_block
+proc_form_fiber_body_yield
 proc_form_kwrest_forward
 proc_form_rest_param
 proc_form_uncalled_source
@@ -3628,6 +3645,7 @@ proc_recursive
 proc_regexp_arg_unrooted
 proc_rest_post_params
 proc_ret_rederived_after_params
+proc_return_catch_no_leak
 proc_return_ensure_raise
 proc_return_escape_localjump
 proc_return_fiber_isolation
@@ -3684,6 +3702,7 @@ public_send
 public_send_computed_name_empty_part
 public_send_computed_name_shape
 public_send_visibility
+push_onto_boxed_builtin_array
 push_splat_poly_receiver
 push_through_boxed_param_into_literal
 push_widens_through_boxed_and_sequence
@@ -3713,6 +3732,7 @@ raise_class_alias
 raise_class_message_binding
 raise_class_value
 raise_constant_exception_instance
+raise_drops_catch_entries
 raise_non_exception
 raise_non_exception_typeerror
 raise_only_method_more_positions
@@ -3738,6 +3758,7 @@ range_cover_boxed_other_class
 range_cover_boxed_range_arg
 range_cover_range_boxed
 range_each_fusion
+range_each_no_block_param
 range_each_slice_answers_receiver
 range_each_slice_returns_receiver
 range_enumerable_finite
@@ -3921,6 +3942,7 @@ reinit_follows_class_initialize
 reopen_alias_call_name
 reopen_block_begin_body
 reopen_builtin_name_yielding
+reopen_pf_nested_tail_box
 reopen_redef_versions
 reopen_self_defaults
 reopen_yield_return
@@ -4954,6 +4976,8 @@ thread_value_through_container
 thread_wake_preempt
 thread_yield_handle_and_ensure
 three_level_array_outer_index
+throw_boxed_symbol_tag
+throw_method_block_value
 times_upto_boxed_nil_recv
 to_h_with_block
 tools_bisect_search
@@ -5110,6 +5134,7 @@ yield_argument_diverging_block_types
 yield_beside_block_param_value
 yield_block_loop_break_value
 yield_block_params_follow_self_lookup
+yield_block_tail_diverges
 yield_call_assigned_return
 yield_chain_depth
 yield_condition_block_calls_missing_method
@@ -5135,6 +5160,7 @@ yield_lent_param_block_rebind
 yield_membership_single_site_poly_arg
 yield_method_block_tail_value
 yield_method_call_in_method_body
+yield_method_only_in_subclass
 yield_mixed_block_types
 yield_nested_block_alias
 yield_no_block_raises

@@ -892,11 +892,13 @@ static sp_RbVal fx_call(FxFrame *f, const pm_call_node_t *c) {
 }
 
 static sp_RbVal fx_loop(const FxBlock *blk);   /* the exceptions section */
+static sp_RbVal fx_catch(int argc, sp_RbVal *argv, const FxBlock *blk);
 static sp_RbVal fx_eval_string(FxFrame *f, int argc, sp_RbVal *argv);   /* load.c */
 
 /* The Kernel methods that take the block of the call. Answers 1 and sets
    *out when it handles the call. */
-static int fx_kernel_block(FxFrame *f, const char *name, int argc, const FxBlock *blk, sp_RbVal *out) {
+static int fx_kernel_block(FxFrame *f, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                             sp_RbVal *out) {
   if (argc == 0 && (!strcmp(name, "block_given?") || !strcmp(name, "iterator?"))) {
     *out = sp_box_bool(f->block != NULL);
     return 1;
@@ -916,6 +918,10 @@ static int fx_kernel_block(FxFrame *f, const char *name, int argc, const FxBlock
   }
   if (argc == 0 && !strcmp(name, "loop")) {
     *out = fx_loop(blk);
+    return 1;
+  }
+  if (argc <= 1 && !strcmp(name, "catch")) {
+    *out = fx_catch(argc, argv, blk);
     return 1;
   }
   return 0;
@@ -945,7 +951,7 @@ static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *a
         fx_class_core(f, fx_class_box(L.object), name, argc, argv, blk, &out))
       return out;
   }
-  if (fx_kernel_block(f, name, argc, blk, &out)) return out;
+  if (fx_kernel_block(f, name, argc, argv, blk, &out)) return out;
   /* Kernel#eval needs the frame of the call for its locals */
   if (argc >= 1 && !blk && !strcmp(name, "eval")) return fx_eval_string(f, argc, argv);
   if (blk) return fx_send_b(self, name, argc, argv, blk);
@@ -2353,9 +2359,46 @@ static sp_RbVal fx_loop(const FxBlock *blk) {
     return sp_box_nil();
   }
   FX_TRY_LANDED(depth);
+  if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
   FxCaught c = fx_caught();
   if (!sp_exc_cls_matches(c.cls, "StopIteration")) fx_reraise(c);
   return sp_exc_result(fx_caught_obj(c));
+}
+
+/* Kernel#catch: the block under a catch entry, as the code that spinel
+   emits does (src/codegen_call_kernel.c). A throw of the tag lands here,
+   and the catch answers the value of the throw. With no tag, a new Object
+   is the tag. The landing restores the GC roots, the frame stack, and the
+   exception that an ensure clause had in flight when it threw. */
+static sp_RbVal fx_catch(int argc, sp_RbVal *argv, const FxBlock *blk) {
+  SP_GC_SAVE();
+  sp_RbVal tag = argc ? argv[0] : fx_new_object(L.object);
+  SP_GC_ROOT_RBVAL(tag);
+  sp_RbVal v = sp_box_nil();
+  SP_GC_ROOT_RBVAL(v);
+  const int depth = fx_fs()->depth;
+  void *const cause = sp_inflight_cause;
+  const int rescue_sp = sp_rescue_sp;
+  sp_catch_check_depth();
+  const int top = sp_catch_top;
+  sp_catch_tag[top] = sp_catch_tag_of(tag, &sp_catch_tag_kind[top]);
+  sp_catch_val[top] = sp_box_nil();
+  sp_catch_exc_top[top] = sp_exc_top;
+  sp_catch_rootmark[top] = sp_gc_nroots;
+  sp_catch_top++;
+  if (setjmp(sp_catch_stack[top]) == 0) {
+    v = fx_yield(blk, 1, &tag);
+    sp_catch_top = top;
+    return v;
+  }
+  sp_catch_top = top;
+  sp_gc_nroots = sp_catch_rootmark[top];
+  sp_inflight_cause = cause;
+  sp_rescue_sp = rescue_sp;
+  fx_fs()->depth = depth;
+  L.ctl = FX_CTL_NONE;
+  L.kwhash = NULL;
+  return sp_catch_val[top];
 }
 
 /* expr rescue fallback: a StandardError from expr gives fallback. */

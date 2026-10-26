@@ -250,9 +250,9 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   writes these methods on the poly API: the Enumerable methods of Array
   and of an Integer Range, the Array mutators (`map!`, `select!`, ...),
   `Integer#times`/`upto`/`downto`/`step`, `String#each_char`, `tap`,
-  `then`, `Array.new(n) { }` and `loop`. A builtin method with a block
-  that `iter.c` does not have stops as a gap, since a generated wrapper
-  would drop the block.
+  `then`, `Array.new(n) { }` and `loop`. The prelude writes rarer ones
+  in Ruby (section 3.2). A builtin method with a block that neither has
+  stops as a gap, since a generated wrapper would drop the block.
 
 ### 3.3.2 Exceptions
 
@@ -277,6 +277,12 @@ The walker evaluates the prism AST directly (`src/walk.c`).
 - **Landing.** A landing restores the GC roots and the rescue stack from
   the marks of the handler, as generated code does. It also cuts the
   frame stack of Fluxpinel (section 3.3.1).
+- **Catch.** `catch` pushes a catch entry of the runtime, in the shape of
+  the code that spinel emits. `throw` calls `sp_throw_boxed`, which runs
+  the ensure clauses between and lands at the entry of the tag. A catch
+  with no tag makes a new Object as the tag. Each handler of the walker
+  lets a throw that passes it go on (`sp_unwind_resume`). No rescue
+  clause takes a throw.
 - **Missing methods.** A program that rescues `NoMethodError` can hide a
   method that Fluxpinel lacks. The oracle still sees the trace of the missing
   method when the output differs.

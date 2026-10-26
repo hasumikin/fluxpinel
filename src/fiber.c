@@ -266,9 +266,10 @@ static sp_RbVal fx_synchronize(sp_mutex *m, const FxBlock *blk) {
     sp_exc_top--;
   } else {
     FX_TRY_LANDED(depth);
-    FxCaught c = fx_caught();
     sp_Mutex_unlock(m);
-    fx_reraise(c);
+    /* a throw or a proc return goes on to its target */
+    if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
+    fx_reraise(fx_caught());
   }
   sp_Mutex_unlock(m);
   return v;
