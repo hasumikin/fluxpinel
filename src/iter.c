@@ -526,10 +526,92 @@ static int fx_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, c
   return 0;
 }
 
+static int fx_big_upto(sp_RbVal r, const char *name, sp_RbVal lim, const FxBlock *blk, sp_RbVal *out);
+
+/* Numeric#step with no block, of an Integer or a Float: an Enumerator over
+   the values that the step with a block (Numeric#step of the prelude)
+   gives, with the same errors. CRuby answers an
+   Enumerator::ArithmeticSequence, which spinel does not have. An Integer
+   walk goes to sp_int_step_enum, as a blockless upto does; a Float walk
+   takes the count of CRuby's ruby_float_step. */
+static int fx_num_step(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (!FX_IS("step") || (r.tag != SP_TAG_INT && r.tag != SP_TAG_FLT)) return 0;
+  sp_RbVal by = sp_box_nil(), to = sp_box_nil();
+  int has_by = 0, has_to = 0;
+  if (argc && fx_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash) {
+    sp_PolyPolyHash *h = sp_poly_as_poly_poly_hash(argv[argc - 1]);
+    sp_RbVal kb = sp_box_sym(sp_sym_intern("by")), kt = sp_box_sym(sp_sym_intern("to"));
+    if ((has_by = sp_PolyPolyHash_has_key(h, kb))) by = sp_PolyPolyHash_get(h, kb);
+    if ((has_to = sp_PolyPolyHash_has_key(h, kt))) to = sp_PolyPolyHash_get(h, kt);
+    if (h->len > has_by + has_to) fx_gap("Numeric#step with a keyword other than by: and to:");
+    argc--;
+  }
+  if (argc > 2) sp_raise_cls("ArgumentError", sp_sprintf("wrong number of arguments (given %d, expected 0..2)", argc));
+  if (argc >= 1 && has_to) sp_raise_cls("ArgumentError", "to is given twice");
+  if (argc == 2 && has_by) sp_raise_cls("ArgumentError", "step is given twice");
+  sp_RbVal lim = argc ? argv[0] : to;
+  sp_RbVal st = argc == 2 ? argv[1] : by.tag == SP_TAG_NIL ? sp_box_int(1) : by;
+  SP_GC_ROOT_RBVAL(lim);
+  SP_GC_ROOT_RBVAL(st);
+  /* CRuby raises for a step or a limit that is not a number only when
+     the walk starts, which an Enumerator over the values cannot do */
+  int st_num = fx_is_integer(st) || st.tag == SP_TAG_FLT || sp_poly_is_rat_kind(st);
+  int lim_num = fx_is_integer(lim) || lim.tag == SP_TAG_FLT || sp_poly_is_rat_kind(lim);
+  if (!st_num || (lim.tag != SP_TAG_NIL && !lim_num)) fx_gap("Numeric#step with no block and a value that is not a number");
+  if (sp_poly_eq(st, sp_box_int(0))) sp_raise_cls("ArgumentError", "step can't be 0");
+  if (r.tag == SP_TAG_FLT || lim.tag == SP_TAG_FLT || st.tag == SP_TAG_FLT) {
+    if (sp_poly_is_rat_kind(lim) || sp_poly_is_rat_kind(st)) fx_gap("Numeric#step of a Float and a Rational");
+    double b = sp_poly_to_f(r), u = sp_poly_to_f(st);
+    if (lim.tag == SP_TAG_NIL || (isinf(sp_poly_to_f(lim)) && (sp_poly_to_f(lim) > 0) == (u > 0))) {
+      *out = sp_range_endless_step_v(sp_box_float(b), sp_box_float(u));
+      return 1;
+    }
+    double e = sp_poly_to_f(lim), n = (e - b) / u;
+    double err = (fabs(b) + fabs(e) + fabs(e - b)) / fabs(u) * 2.220446049250313e-16;
+    if (err > 0.5) err = 0.5;
+    sp_PolyArray *acc = sp_PolyArray_new();
+    SP_GC_ROOT(acc);
+    /* an infinite step gives the start alone, when it heads to the limit */
+    if (isinf(u)) {
+      if (u > 0 ? b <= e : b >= e) sp_PolyArray_push(acc, sp_box_float(b));
+    } else if (n >= 0) {
+      sp_int k = (sp_int)floor(n + err);
+      for (sp_int i = 0; i <= k; i++) {
+        double d = i * u + b;
+        if (u >= 0 ? e < d : d < e) d = e;
+        sp_PolyArray_push(acc, sp_box_float(d));
+      }
+    }
+    *out = sp_box_obj(sp_Enumerator_new_from_items(acc), SP_BUILTIN_ENUMERATOR);
+    return 1;
+  }
+  if (st.tag != SP_TAG_INT || (lim.tag != SP_TAG_NIL && !fx_is_integer(lim)))
+    fx_gap("Numeric#step with a Bignum or a Rational step or limit");
+  if (lim.tag == SP_TAG_NIL) {
+    *out = sp_range_endless_step_v(r, st);
+    return 1;
+  }
+  sp_int l = sp_int_step_lim(lim, st.v.i > 0);
+  sp_Range rng = sp_range_new_step(r.v.i, l, 0, st.v.i);
+  *out = sp_box_obj(sp_int_step_enum(rng, r.v.i, "step", lim), SP_BUILTIN_ENUMERATOR);
+  return 1;
+}
+
 /* Integer#times, #upto, #downto and #step with Integer bounds. */
 static int fx_int_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                          sp_RbVal *out) {
+  if (argc == 1 && (FX_IS("upto") || FX_IS("downto")) && fx_is_integer(r) && fx_is_integer(argv[0]) &&
+      (r.tag == SP_TAG_BIGINT || argv[0].tag == SP_TAG_BIGINT) && (blk || r.tag == SP_TAG_BIGINT))
+    return fx_big_upto(r, name, argv[0], blk, out);
   if (r.tag != SP_TAG_INT) return 0;
+  /* a blockless upto or downto: the Enumerator of the runtime, which walks
+     a long span lazily and reads a Float or a Bignum limit */
+  if (!blk && argc == 1 && (FX_IS("upto") || FX_IS("downto"))) {
+    int up = name[0] == 'u';
+    sp_Range rng = sp_range_new_step(r.v.i, sp_int_step_lim(argv[0], up), 0, up ? 1 : -1);
+    *out = sp_box_obj(sp_int_step_enum(rng, r.v.i, name, argv[0]), SP_BUILTIN_ENUMERATOR);
+    return 1;
+  }
   sp_int from = r.v.i, to, step = 1;
   if (argc == 0 && FX_IS("times")) {
     from = 0;
@@ -615,6 +697,24 @@ static sp_RbVal fx_step_enum(sp_RbVal r, const char *op, sp_RbVal stride, sp_Pol
   SP_GC_ROOT_RBVAL(stride);
   sp_Enumerator *e = sp_Enumerator_new_from_items(acc);
   return sp_box_obj(sp_enum_step_labeled(e, r, op, &stride, 1), SP_BUILTIN_ENUMERATOR);
+}
+
+/* Integer#upto and #downto from a Bignum: the values one at a time, with
+   the helpers of a boxed number. With no block, an Enumerator over them,
+   labeled as CRuby labels it. */
+static int fx_big_upto(sp_RbVal r, const char *name, sp_RbVal lim, const FxBlock *blk, sp_RbVal *out) {
+  int up = name[0] == 'u';
+  SP_GC_ROOT_RBVAL(r);
+  SP_GC_ROOT_RBVAL(lim);
+  sp_RbVal span = up ? sp_poly_sub(lim, r) : sp_poly_sub(r, lim);
+  if (!blk && span.tag == SP_TAG_BIGINT) fx_gap(sp_sprintf("Integer#%s over more values than a word counts", name));
+  sp_PolyArray *acc = blk ? NULL : sp_PolyArray_new();
+  SP_GC_ROOT(acc);
+  sp_RbVal i = r;
+  SP_GC_ROOT_RBVAL(i);
+  for (; sp_poly_cmp_ck(i, lim) * (up ? 1 : -1) <= 0; i = sp_poly_add(i, sp_box_int(up ? 1 : -1))) FX_STEP_PUT(i);
+  *out = acc ? fx_step_enum(r, name, lim, acc) : r;
+  return 1;
 }
 
 /* Range#step and #% of an Integer, a Float or a String Range, with a block
@@ -927,8 +1027,26 @@ static int fx_inject_sym(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
 
 /* The builtin methods that take a block, and inject with a Symbol. */
 static int fx_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out) {
+  /* then with no block: an Enumerator over the receiver, #<Enumerator: 1:then> */
+  if (!blk && argc == 0 && (FX_IS("then") || FX_IS("yield_self"))) {
+    SP_GC_ROOT_RBVAL(r);
+    sp_PolyArray *one = sp_PolyArray_new();
+    SP_GC_ROOT(one);
+    sp_PolyArray_push(one, r);
+    /* CRuby names yield_self by its alias then */
+    const char *m = sp_sprintf("then");
+    SP_GC_ROOT_STR(m);
+    sp_Enumerator *e = sp_Enumerator_new_from_items(one);
+    sp_gc_wb(e);
+    e->source = r;
+    e->has_src = TRUE;
+    e->meth = m;
+    *out = sp_box_obj(e, SP_BUILTIN_ENUMERATOR);
+    return 1;
+  }
   if (!blk)
-    return fx_inject_sym(r, name, argc, argv, out) || fx_int_iter(r, name, argc, argv, NULL, out) ||
+    return fx_inject_sym(r, name, argc, argv, out) || fx_num_step(r, name, argc, argv, out) ||
+           fx_int_iter(r, name, argc, argv, NULL, out) ||
            fx_range_step(r, name, argc, argv, NULL, out) || fx_range_via_array(r, name, argc, argv, NULL, out) ||
            fx_seq_pattern(r, name, argc, argv, out);
   if (fx_range_step(r, name, argc, argv, blk, out) || fx_range_via_array(r, name, argc, argv, blk, out)) return 1;

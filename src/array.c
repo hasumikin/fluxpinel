@@ -276,14 +276,15 @@ static int fx_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
   if (FX_IS("difference")) { *out = fx_ary_setop(r, '-', argc, argv); return 1; }
   if (argc >= 1 && FX_IS("dig")) { *out = sp_poly_dig_n(r, argc, argv); return 1; }
   if (FX_IS("values_at")) { *out = sp_poly_values_at_n(r, argc, argv); return 1; }
-  /* zip(*others): a Range operand gives its first members, as many as the
-     receiver has (the Range can be endless) */
+  /* zip(*others): a Range or an Enumerator operand gives its first
+     members, as many as the receiver has (it can be endless) */
   if (FX_IS("zip")) {
     sp_PolyArray *ops = fx_ary_args(argc, argv);
     SP_GC_ROOT(ops);
     sp_int n = sp_poly_length(r);
     for (sp_int i = 0; i < ops->len; i++) {
-      if (!fx_is_range(ops->data[i])) continue;
+      sp_RbVal o = ops->data[i];
+      if (!fx_is_range(o) && !(o.tag == SP_TAG_OBJ && o.cls_id == SP_BUILTIN_ENUMERATOR && o.v.p)) continue;
       w = sp_PolyArray_new();
       FxSeq s;
       sp_RbVal v;

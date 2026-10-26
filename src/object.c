@@ -1373,6 +1373,8 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   if (!blk && fx_time_class(k, name, argc, argv, out)) return 1;
   /* Complex.rect and Complex.polar */
   if (!blk && fx_complex_class(k, name, argc, argv, out)) return 1;
+  /* Integer.sqrt */
+  if (!blk && fx_integer_class(k, name, argc, argv, out)) return 1;
   if (!strcmp(name, "new") || !strcmp(name, "allocate")) {
     if (k->is_module) return 0;
     /* an exception is a runtime sp_Exception, for a builtin class too */

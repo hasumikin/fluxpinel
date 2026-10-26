@@ -107,6 +107,7 @@ array_filter_bang_return
 array_first_last_empty
 array_flat_map_scalar_block
 array_flatten_typed_elements
+array_float_conformance
 array_fold_delete_flatten_rindex
 array_frozen_slice_bang
 array_gap_is_nil
@@ -348,6 +349,7 @@ bignum_bit_length
 bignum_bit_range_float_end
 bignum_boxed_division
 bignum_coerce_float
+bignum_downto_upto_to_a
 bignum_modulo_bit_pow
 bignum_query_to_i
 bignum_rational_arith
@@ -358,9 +360,11 @@ bignum_recv_int_ord_float_toi
 bignum_shift_op_assign
 bignum_shift_poly_count
 bignum_size_magnitude
+bignum_step_blockless_enumerator
 bignum_to_f
 bignum_to_i_slot_width
 bignum_to_s_base_rooted
+bignum_truncate
 bignum_variable_writes
 bigrational_integer_surface
 binary_string_index_byte_offsets
@@ -513,6 +517,7 @@ boxed_complex_finite
 boxed_container_read_at
 boxed_dispatch_shared_private_helper_sibling_widen
 boxed_each_line_block
+boxed_endless_float_step
 boxed_enumerable_entries
 boxed_eq_user_answer
 boxed_file_gets_args
@@ -536,6 +541,7 @@ boxed_native_setter_value
 boxed_new_non_class_receiver
 boxed_nil_into_typed_slot
 boxed_nil_string_identity
+boxed_numeric_polar
 boxed_object_inspect_returns_boxed
 boxed_param_value_into_typed_hash_slot
 boxed_predicate_mutation
@@ -544,6 +550,7 @@ boxed_range_eq_float_range
 boxed_range_eql
 boxed_range_iterators
 boxed_range_percent
+boxed_range_step
 boxed_range_user_iterator
 boxed_rational_abs2
 boxed_rational_value_surface
@@ -553,6 +560,7 @@ boxed_receiver_aliases
 boxed_receiver_nil_argument_converted_after
 boxed_recv_block_param_shapes
 boxed_recv_class_set_binding
+boxed_regexp_named_capture_index
 boxed_reopen_self_call_block
 boxed_respond_to_override_answers
 boxed_respond_to_size_values_at
@@ -623,18 +631,23 @@ builtin_reopen_named_superclass
 builtin_reopen_poly_slot
 builtin_reopen_runtime_name_clash
 builtin_reopen_sclass_const_own_method
+builtin_reopen_sclass_const_self
 builtin_reopen_self_class
+builtin_reopen_self_cmethod
 builtin_reopen_self_const
 builtin_reopen_strbuf_poly
 builtin_send_kwsplat_hash
 builtin_singleton_alias_user
 builtin_singleton_valued_break
 builtin_splice_heredoc_opening_line
+builtins_comparable
 builtins_grep
 builtins_integer_bit_length
 builtins_integer_digits
 builtins_integer_digits_reopen
+builtins_integer_fdiv
 builtins_integer_gcd_lcm
+builtins_integer_remainder
 bundle_array_a
 bundle_array_b
 bundle_array_c
@@ -691,6 +704,7 @@ bundle_hash_b1
 bundle_hash_b2
 bundle_int_a
 bundle_int_array
+bundle_integer
 bundle_misc_b
 bundle_misc_c_10
 bundle_misc_c_26
@@ -755,6 +769,7 @@ call_plan_native_block_value
 call_plan_operator_target
 call_plan_pinned_target
 call_plan_poly_arms
+call_plan_poly_operator_override
 call_plan_reader_block_override
 call_plan_reader_target
 call_plan_rebound_output
@@ -869,6 +884,9 @@ chr_boxed_nil_recv
 chunk_family_nil_elem
 chunk_first_class
 chunk_while
+clamp_bignum_bounds
+clamp_bounds
+clamp_nil_open_bounds
 class_allocate
 class_ancestors_superclass
 class_basicobject_superclass
@@ -1094,6 +1112,7 @@ compact_path_builtin_parent_const_reads
 compact_path_builtin_parent_reopen
 compact_path_class_new_parent
 compact_path_object_parent
+comparable_between_user_type
 comparable_descendant_only_impl
 comparable_eq_boxed
 comparable_nil_spaceship
@@ -1714,6 +1733,8 @@ float_array_array
 float_array_first_last_nil
 float_bignum_compare
 float_bignum_or_write_nil_slot
+float_clamp
+float_clamp_range_nan
 float_coerce_typeerror
 float_div_int_literal
 float_div_integer_quotient
@@ -1749,6 +1770,8 @@ float_round_value_based_type
 float_round_zero
 float_spaceship
 float_step_block
+float_step_clamps_to_limit
+float_step_to_a
 float_to_i_inline
 float_to_r
 float_to_s_fixed_1e15
@@ -2377,6 +2400,7 @@ int_int_hash_missing_key_nil
 int_keyed_hash_lookup_as_array
 int_keyed_hash_variant
 int_loop_to_int64_ends
+int_loop_to_max
 int_min32_twin
 int_min_arith
 int_min_array_lazy_fill
@@ -2399,6 +2423,7 @@ int_round_large_precision
 int_sentinel_class_nilclass
 integer_0d_prefix
 integer_argument_error
+integer_bignum_batch2
 integer_bit_index_clamped
 integer_bit_read_never_nil
 integer_clamp_float_bound
@@ -2414,6 +2439,7 @@ integer_poly_arg_methods
 integer_pow_negative_exponent
 integer_pow_negative_unit
 integer_pow_negative_unit_huge_exponent
+integer_pow_zero_negative_literal
 integer_powmod_large_residues
 integer_rational_complex_ops
 integer_round_large_precision
@@ -2698,6 +2724,7 @@ issue_3151
 issue_3152
 issue_3153
 issue_3154
+issue_3156
 issue_3157
 issue_3158
 issue_3159
@@ -2761,6 +2788,7 @@ issue_3227_matrix
 issue_3227_poly_mutators
 issue_3227_reflection_reads
 issue_3231
+issue_3232
 issue_3233
 issue_3235
 issue_3238
@@ -3108,6 +3136,7 @@ matchdata_values_at_open_range
 matchdata_values_at_range
 matchdata_whole_match
 math_boxed_bignum_arg
+math_domain_error
 math_fn_nil_typeerror
 math_poly_arg_unbox
 max_by_count_tie_order
@@ -3439,11 +3468,14 @@ nullable_string_identity
 numbered_param_arity
 numeric_coerce
 numeric_compare_object_without_coerce
+numeric_conformance_batch2
 numeric_convert_nil_exception
+numeric_edges_wave10
 numeric_i_boxed
 numeric_iter_boxed_recv_value
 numeric_method_displaced_by_user
 numeric_reopen_self_any_number
+numeric_step_zero
 numeric_tower_remainder
 obj_array_enum_through_if
 obj_array_literal_arg
@@ -3650,6 +3682,7 @@ poly_attr_reader_box_dispatch
 poly_attr_reader_shadows_builtin
 poly_attr_writer
 poly_attr_writer_distinct_family_override
+poly_between_clamp_user_method
 poly_bignum_bits_predicates
 poly_bignum_integer_surface
 poly_binop_arm_fills_default
@@ -3813,6 +3846,7 @@ poly_inherited_attr_writer_siblings
 poly_inherited_yield_param
 poly_inject_sym_bitwise
 poly_instance_variable_set_any_class
+poly_int_bit_field
 poly_int_bit_range_index
 poly_int_bitops_auto_unify
 poly_io_descriptor_surface
@@ -3868,7 +3902,9 @@ poly_new_struct_arm
 poly_nil_op_assign
 poly_nil_p_user_answer
 poly_numeric_collision
+poly_numeric_collision_table
 poly_numeric_op_assign_div_mod
+poly_numeric_predicates_shadowed
 poly_numeric_query_methods
 poly_object_default_render
 poly_op_assign_user_op_return
@@ -4167,6 +4203,7 @@ program_name_assign
 program_name_guard
 promote_arith_typed_operand
 promote_array_sum_overflow
+promote_bigint_operands_rooted
 promote_bigint_toom3_negative_eval
 promote_bigrational_to_i
 promote_block_loop_bigint
@@ -4294,6 +4331,7 @@ range_step
 range_step_bad_stride
 range_step_block_value
 range_step_empty_literal_stride
+range_step_endless
 range_step_endless_block
 range_step_float
 range_step_negative
@@ -4594,6 +4632,7 @@ rightward_assign_object_deconstruct
 rightward_pattern_checks
 rindex_regexp_polypoly_merge
 root_constant_shadowed_by_module
+root_scoped_constant_in_method
 round_half_mode
 round_precision_keyword_order
 route_bang_to_s_arg
@@ -4618,6 +4657,7 @@ safe_nav_block_family
 safe_nav_block_param_shapes
 safe_nav_boxed_recv_own_method
 safe_nav_builtin_pointer
+safe_nav_builtin_scalar
 safe_nav_chain_receiver_once
 safe_nav_chunk_family
 safe_nav_hash_face_boxed
@@ -4630,6 +4670,7 @@ safe_nav_poly_dispatch
 safe_nav_predicate
 safe_nav_push_nil_array
 safe_nav_reopened_builtin
+safe_nav_step_skips_args_on_nil
 safe_nav_string_bang_arg_runs
 safe_nav_string_mutator_statement
 safe_nav_string_mutator_user_override
@@ -4755,6 +4796,7 @@ send_override_only_super
 send_param_handed_computed_name
 send_param_name_past_literal_cap
 send_reaches_toplevel_def
+send_recv_class_before_toplevel
 send_runtime_name_switch
 send_runtime_name_toplevel
 send_setter_returns_method_value
@@ -4936,6 +4978,9 @@ stdin_io
 stdlib_class_in_ivar
 stdout_reassigned_own_puts
 step_boxed_operands
+step_nil_limit_boxed_recv
+step_prelude_order
+step_remaining_forms
 step_stmt_receiver_before_begin_arg
 store_into_nested_container_literal
 stored_block_call_returns_value
@@ -5809,6 +5854,7 @@ user_respond_to_dispatched
 user_round_arity_poly_numeric
 user_self_new_forwarding
 user_tap_then_literal_block
+user_then_blockless
 user_to_hash_splat
 user_value_object_freeze
 value_class_self_call_in_initialize
@@ -5909,6 +5955,9 @@ yield_param_block_rebind
 yield_param_ivar_block_rebind
 yield_paren_value_diverges
 yield_proc_arg_in_blocked_method
+yield_receiver_builtin_clamp
+yield_receiver_builtin_clamp_bignum_bound
+yield_receiver_builtin_clamp_range
 yield_receiver_builtin_dig
 yield_receiver_builtin_fetch
 yield_receiver_builtin_fetch_default
@@ -5928,12 +5977,14 @@ yield_receiver_builtin_succ_symbol
 yield_receiver_builtin_sum
 yield_receiver_builtin_sum_succ_dig_reopened
 yield_receiver_builtin_take_drop
+yield_receiver_numeric_site_kinds
 yield_receiver_sort_reverse_site_kinds
 yield_receiver_spaceship_site_kinds
 yield_reopen_builtin_any_site
 yield_reopen_builtin_poly_arg
 yield_rescue_poly_site
 yield_result_through_forwarding_block
+yield_self_enum_then
 yield_self_method_return
 yield_splat
 yield_splat_elem_append
@@ -5969,6 +6020,7 @@ zip_block_unrelated_method
 zip_boxed_receiver_argument_order
 zip_poly_operands
 zip_product_splat
+zip_range_stops_at_receiver
 zip_range_word_ends
 zip_typed_recv_poly_arg
 zsuper_default_reads_parent_param

@@ -290,8 +290,83 @@ static int fx_brat_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
    nearly all methods of a Bignum, which has no rows. The helpers of a
    boxed number answer them, as codegen calls them for a receiver of no
    single type (SP_NUM_ARM of spinel's codegen_poly_plan.c). */
+/* Integer.sqrt: the integer square root, of a Bignum too (sp_bigint_isqrt).
+   The argument converts as to_int does. Answers 1 and sets *out when it
+   handles the call. */
+static int fx_integer_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (k->cls_id >= 0 || strcmp(k->name, "Integer") || argc != 1 || !FX_IS("sqrt")) return 0;
+  sp_RbVal v = argv[0];
+  if (v.tag != SP_TAG_BIGINT) {
+    *out = sp_box_int(sp_int_sqrt(sp_poly_arg_int_chk(v)));
+    return 1;
+  }
+  if (sp_bigint_sign((sp_Bigint *)v.v.p) < 0)
+    sp_raise_cls("Math::DomainError", "Numerical argument is out of domain - \"isqrt\"");
+  *out = sp_box_bigint(sp_bigint_isqrt((sp_Bigint *)v.v.p));
+  return 1;
+}
+
+/* Comparable of an Integer or a Float: between?, clamp(min, max) and
+   clamp(range). A Range side may be open; an exclusive Range with an end
+   cannot clamp. */
+static int fx_num_cmp(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (!fx_is_integer(r) && r.tag != SP_TAG_FLT) return 0;
+  if (argc == 2 && FX_IS("between?")) {
+    *out = sp_box_bool(sp_poly_cmp_ck(r, argv[0]) >= 0 && sp_poly_cmp_ck(r, argv[1]) <= 0);
+    return 1;
+  }
+  if (argc == 2 && FX_IS("clamp")) {
+    *out = sp_poly_clamp(r, argv[0], argv[1]);
+    return 1;
+  }
+  if (argc != 1 || !FX_IS("clamp")) return 0;
+  sp_RbVal g = argv[0];
+  if (g.tag != SP_TAG_OBJ || (g.cls_id != SP_BUILTIN_RANGE && g.cls_id != SP_BUILTIN_FLOAT_RANGE &&
+                              g.cls_id != SP_BUILTIN_STR_RANGE))
+    sp_raise_cls("TypeError", sp_sprintf("wrong argument type %s (expected Range)", sp_poly_class_name(g)));
+  SP_GC_ROOT_RBVAL(r);
+  SP_GC_ROOT_RBVAL(g);
+  sp_RbVal lo = fx_send(g, "begin", 0, NULL);
+  SP_GC_ROOT_RBVAL(lo);
+  sp_RbVal hi = fx_send(g, "end", 0, NULL);
+  SP_GC_ROOT_RBVAL(hi);
+  if (hi.tag != SP_TAG_NIL && sp_poly_truthy(fx_send(g, "exclude_end?", 0, NULL)))
+    sp_raise_cls("ArgumentError", "cannot clamp with an exclusive range");
+  /* a side that is not a number names itself in the error of <=> */
+  if (lo.tag != SP_TAG_NIL && !sp_poly_tower_p(lo)) sp_poly_cmp_ck(r, lo);
+  if (hi.tag != SP_TAG_NIL && !sp_poly_tower_p(hi)) sp_poly_cmp_ck(r, hi);
+  *out = sp_num_clamp_open(r, lo, hi);
+  return 1;
+}
+
+/* The bits of an Integer from bit start: len of them, or all of them for a
+   negative len, as CRuby's Integer#[] reads them, in Bignums. */
+static sp_RbVal fx_int_bits(sp_RbVal r, sp_int start, sp_int len) {
+  sp_Bigint *x = sp_poly_as_bigint(r);
+  SP_GC_ROOT(x);
+  sp_Bigint *s = start >= 0 ? sp_bigint_shr(x, start) : sp_bigint_shl(x, -start);
+  SP_GC_ROOT(s);
+  if (len < 0) return sp_box_bigint(s);
+  sp_Bigint *m = sp_bigint_sub(sp_bigint_shl(sp_bigint_new_int(1), len), sp_bigint_new_int(1));
+  SP_GC_ROOT(m);
+  return sp_box_bigint(sp_bigint_and(s, m));
+}
+
+/* Integer#[](start, len) where the word arms of the wrappers do not reach:
+   a Bignum receiver, or a start or a length that is not an Integer.
+   Answers 1 and sets *out when it handles the call. */
+static int fx_int_aref(sp_RbVal r, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (argc != 2 || (r.tag != SP_TAG_BIGINT && argv[0].tag == SP_TAG_INT && argv[1].tag == SP_TAG_INT)) return 0;
+  sp_int start = sp_poly_arg_int_chk(argv[0]);
+  if (argv[1].tag == SP_TAG_BIGINT) sp_raise_cls("RangeError", "shift width too big");
+  *out = fx_int_bits(r, start, sp_poly_arg_int_chk(argv[1]));
+  return 1;
+}
+
 static int fx_int_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (fx_num_cmp(r, name, argc, argv, out)) return 1;
   if (!fx_is_integer(r)) return 0;
+  if (FX_IS("[]") && fx_int_aref(r, argc, argv, out)) return 1;
   sp_Bigint *b = r.tag == SP_TAG_BIGINT ? (sp_Bigint *)r.v.p : NULL;
   if (b && argc <= 1 && FX_IS("chr")) sp_raise_cls("RangeError", "bignum out of char range");
   if (argc == 0) {
@@ -307,8 +382,24 @@ static int fx_int_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
     else if (FX_IS("succ") || FX_IS("next")) *out = sp_poly_add(r, sp_box_int(1));
     else if (FX_IS("pred")) *out = sp_poly_sub(r, sp_box_int(1));
     else if (FX_IS("to_f")) *out = sp_box_float(sp_bigint_to_double(b));
-    else if (FX_IS("to_i") || FX_IS("to_int") || FX_IS("ord")) *out = r;
-    else if (FX_IS("integer?") || FX_IS("finite?")) *out = sp_box_bool(1);
+    else if (FX_IS("to_i") || FX_IS("to_int") || FX_IS("ord") || FX_IS("round") || FX_IS("floor") ||
+             FX_IS("ceil") || FX_IS("truncate"))
+      *out = r;
+    else if (FX_IS("integer?") || FX_IS("finite?") || FX_IS("real?")) *out = sp_box_bool(1);
+    /* a Bignum as a Complex: a real part, an angle of 0 or pi */
+    else if (FX_IS("real") || FX_IS("conj") || FX_IS("conjugate")) *out = r;
+    else if (FX_IS("imaginary") || FX_IS("imag")) *out = sp_box_int(0);
+    else if (FX_IS("arg") || FX_IS("angle") || FX_IS("phase"))
+      *out = sp_bigint_sign(b) < 0 ? sp_box_float(M_PI) : sp_box_int(0);
+    else if (FX_IS("rectangular") || FX_IS("rect") || FX_IS("polar")) {
+      SP_GC_ROOT_RBVAL(r);
+      sp_PolyArray *pair = sp_PolyArray_new();
+      SP_GC_ROOT(pair);
+      int polar = name[0] == 'p';
+      sp_PolyArray_push(pair, polar ? sp_poly_abs(r) : r);
+      sp_PolyArray_push(pair, polar && sp_bigint_sign(b) < 0 ? sp_box_float(M_PI) : sp_box_int(0));
+      *out = sp_box_poly_array(pair);
+    }
     else if (FX_IS("zero?")) *out = sp_box_bool(sp_bigint_sign(b) == 0);
     else if (FX_IS("positive?")) *out = sp_box_bool(sp_bigint_sign(b) > 0);
     else if (FX_IS("negative?")) *out = sp_box_bool(sp_bigint_sign(b) < 0);
@@ -388,19 +479,29 @@ static int fx_int_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
       *out = sp_box_bigint(sp_bigint_powmod_arg(x, argv[0], (sp_Bigint *)argv[1].v.p));
       return 1;
     }
-    if (FX_IS("pow")) *out = sp_poly_int_powmod_recv(r, argv[0], argv[1]);
-    else if (FX_IS("between?"))
-      *out = sp_box_bool(sp_poly_cmp_ck(r, argv[0]) >= 0 && sp_poly_cmp_ck(r, argv[1]) <= 0);
-    else if (FX_IS("clamp")) *out = sp_poly_clamp(r, argv[0], argv[1]);
-    else return 0;
+    if (!FX_IS("pow")) return 0;
+    *out = sp_poly_int_powmod_recv(r, argv[0], argv[1]);
     return 1;
   }
   return 0;
 }
 
+/* Float#fdiv and #remainder, which have no generated wrapper: the helpers
+   of a boxed number, and the error of a coerce for a value that is not a
+   real number. */
+static int fx_float_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (r.tag != SP_TAG_FLT || argc != 1 || !(FX_IS("fdiv") || FX_IS("remainder"))) return 0;
+  sp_RbVal a = argv[0];
+  if (!fx_is_integer(a) && a.tag != SP_TAG_FLT && !sp_poly_is_rat_kind(a)) *out = sp_poly_binop_bad(name, r, a);
+  else if (FX_IS("fdiv")) *out = sp_box_float(sp_poly_fdiv(r, a));
+  else *out = sp_poly_remainder(r, a);
+  return 1;
+}
+
 static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (fx_brat_core(r, name, argc, argv, out)) return 1;
   if (fx_int_core(r, name, argc, argv, out)) return 1;
+  if (fx_float_core(r, name, argc, argv, out)) return 1;
   if (((argc >= 1 && fx_is_integer(r)) || r.tag == SP_TAG_FLT || sp_poly_is_rational(r) || sp_poly_is_brat(r)) &&
       fx_num_prec(r, name, argc, argv, out))
     return 1;

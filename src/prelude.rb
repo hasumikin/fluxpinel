@@ -379,6 +379,8 @@ class Numeric
   # margin for the rounding, and the last value is the limit.
   def step(*args, by: nil, to: nil)
     raise ArgumentError, "wrong number of arguments (given #{args.size}, expected 0..2)" if args.size > 2
+    raise ArgumentError, "to is given twice" if args.size > 0 && !to.nil?
+    raise ArgumentError, "step is given twice" if args.size > 1 && !by.nil?
     lim = args.size > 0 ? args[0] : to
     raise TypeError, "step must be numeric" if args.size > 1 && args[1].nil?
     st = args.size > 1 ? args[1] : (by.nil? ? 1 : by)
@@ -398,6 +400,10 @@ class Numeric
         end
       end
       e = lim.to_f
+      if u.infinite?
+        yield b if u > 0 ? b <= e : b >= e
+        return self
+      end
       n = (e - b) / u
       return self if n < 0
       err = (b.abs + e.abs + (e - b).abs) / u.abs * 2.220446049250313e-16
