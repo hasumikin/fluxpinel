@@ -207,28 +207,20 @@ static sp_RbVal fx_run_source(const FxSource *s) {
   return v;
 }
 
-/* The main program from the source buf. A syntax error ends Fluxpinel, as
-   it ends ruby. */
-static void fx_load_main_src(const char *path, const char *real, char *buf, size_t len) {
+/* Parses the main program from the source buf. A syntax error ends
+   Fluxpinel, as it ends ruby. */
+static FxSource *fx_parse_main(const char *path, const char *real, char *buf, size_t len) {
   FxSource *s;
   const char *err = fx_parse(path, real, buf, len, &s);
   if (err) {
     fprintf(stderr, "fluxpinel: syntax error: %s\n", err);
     exit(1);
   }
-  fx_run_source(s);
+  return s;
 }
 
-/* The main program from the file path. */
-static void fx_load_main(const char *path) {
-  size_t len;
-  char *buf = fx_read_file(path, &len);
-  if (!buf) {
-    fprintf(stderr, "fluxpinel: cannot read %s\n", path);
-    exit(1);
-  }
-  char *real = realpath(path, NULL);
-  fx_load_main_src(path, real ? real : path, buf, len);
+static void fx_load_main_src(const char *path, const char *real, char *buf, size_t len) {
+  fx_run_source(fx_parse_main(path, real, buf, len));
 }
 
 /* The directory of a path, as a new C string. */
@@ -435,6 +427,12 @@ static int fx_load_call(const pm_node_t *n, sp_RbVal self, const char *name, int
   else
     *out = fx_require(n, arg, rel);
   return 1;
+}
+
+/* -r lib of the command line: require "lib" before the main program. */
+static void fx_require_option(const char *lib) {
+  if (lib[0] == '/' || !strncmp(lib, "./", 2) || !strncmp(lib, "../", 3)) fx_require(NULL, lib, 0);
+  else fx_require_lib(lib);
 }
 
 #undef FX_IS

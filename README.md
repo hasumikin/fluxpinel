@@ -166,6 +166,9 @@ arguments after the script go to `ARGV`:
 
 ```sh
 build/promote/fluxpinel script.rb arg1 arg2
+build/promote/fluxpinel -r ./mylib.rb -e 'p MyLib.answer'
+echo 'p 1 + 2' | build/promote/fluxpinel
+build/promote/fluxpinel -v
 ```
 
 - The runtime of spinel runs inside. A builtin method calls the runtime
@@ -178,9 +181,14 @@ build/promote/fluxpinel script.rb arg1 arg2
   Fluxpinel, and compares the checksums. On 180 frames, Fluxpinel runs at
   about 9 fps, and CRuby 4.0.9 at about 55 fps.
 
-The command line takes a script and its arguments, or `--console`. It
-does not take the other options of `ruby`, such as `-e`, `-I`, `-r` and
-`-v`. It does not read a script from stdin.
+The command line takes a part of the options of `ruby`:
+
+- `-e`, `-c`, `-I`, `-r`, `-v`, `-w`, `-W`, `-h` and `--version`
+- `--console`, for a console on stdin
+
+With no script and no `-e`, Fluxpinel reads the program from stdin. `-v`
+prints the version of Fluxpinel (one integer in `VERSION`), the commit of
+spinel and the version of Ruby that spinel gives.
 
 The walker keeps a side table next to the nodes of prism, for the caches
 of each call and each instance variable. See
@@ -219,7 +227,8 @@ on it.
 
 `make test` runs each program in `test/m2` and `test/m3` under CRuby and
 Fluxpinel, and compares stdout and the exit status. It also runs each
-input in `test/console` through the console of both.
+input in `test/console` through the console of both, and the cases of the
+command line in `test/cli/cases.rb`.
 
 `build/fluxpinel --console` reads Ruby from stdin, one line at a time, as
 irb does. A host program gives the same console to a socket with

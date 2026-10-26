@@ -4,7 +4,8 @@
 #               and build it
 #   make        build build/fluxpinel
 #   make test   run test/*.rb under CRuby and Fluxpinel and compare, once as is
-#               and once under the GC stress and verify modes of spinel
+#               and once under the GC stress and verify modes of spinel, and
+#               run the cases of the command line (test/cli.rb)
 #   make oracle run the spinel test corpus under CRuby, Fluxpinel and AOT
 #   make regress
 #               run the tests that the last oracle found right, under
@@ -72,9 +73,16 @@ else
 FFI_LIBS =
 NATIVE_FLAGS =
 endif
+# The version of Fluxpinel (VERSION: one integer, from 1 up), the commit of
+# the spinel checkout, and the version of Ruby that spinel gives
+# (SP_RUBY_VERSION), for `fluxpinel -v`.
+FX_VERSION := $(shell cat VERSION)
+FX_SPINEL_REV := $(shell git -C $(SPINEL) rev-parse --short=9 HEAD 2>/dev/null)
+FX_RUBY_VERSION := $(shell sed -n 's/^\#define SP_RUBY_VERSION "\(.*\)"/\1/p' $(SPINEL)/src/analyze.h)
 # The runtime of spinel holds a String as its handle (SP_ONE_STRING).
 CFLAGS = -O2 -g -std=gnu11 -ffp-contract=off -DSP_ONE_STRING -DSP_INT_OVERFLOW_MODE_$(INT_OVERFLOW) $(RT_CFLAGS) \
          -DFX_PACKAGES_DIR='"$(SPINEL)/packages"' -DFX_FFI=$(FFI) \
+         -DFX_VERSION='"$(FX_VERSION)"' -DFX_SPINEL_REV='"$(FX_SPINEL_REV)"' -DFX_RUBY_VERSION='"$(FX_RUBY_VERSION)"' \
          -Isrc -I$(BUILD) -I$(SPINEL)/lib -I$(SPINEL)/lib/regexp -I$(SPINEL)/vendor/prism/include
 LIBS = $(RT_ARCHIVE) $(SPINEL)/build/libprism.a -lm -lcrypt $(RT_LIBS) $(FFI_LIBS)
 
@@ -110,7 +118,7 @@ $(BUILD)/prelude.inc: src/prelude.rb tools/prelude_gen.rb
 	mkdir -p $(BUILD)
 	ruby tools/prelude_gen.rb src/prelude.rb > $@
 
-$(BUILD)/fluxpinel: src/*.c src/*.h $(BUILD)/bop_gen_out.c $(BUILD)/off.flags $(BUILD)/prelude.inc $(NATIVE_FLAGS)
+$(BUILD)/fluxpinel: src/*.c src/*.h $(BUILD)/bop_gen_out.c $(BUILD)/off.flags $(BUILD)/prelude.inc $(NATIVE_FLAGS) VERSION
 	$(CC) $(CFLAGS) $$(cat $(BUILD)/off.flags) -o $@ src/main.c $(if $(NATIVE_FLAGS),$$(cat $(NATIVE_FLAGS))) \
 	  $(LIBS)
 	git -C $(SPINEL) rev-parse HEAD > $(BUILD)/spinel.rev
@@ -126,6 +134,7 @@ test: $(BUILD)/fluxpinel
 	SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1 ruby test/run.rb $(BUILD)/fluxpinel $(TEST_DIRS)
 	ruby test/console.rb $(BUILD)/fluxpinel test/console
 	SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1 ruby test/console.rb $(BUILD)/fluxpinel test/console
+	ruby test/cli.rb $(BUILD)/fluxpinel
 
 # The host build (docs/design.md, section 3.6): a kernel, a program that
 # spinel emits as a library, and Fluxpinel in one TU. The runtime keeps its
