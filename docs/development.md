@@ -32,7 +32,7 @@ update of spinel an explicit step.
 | `make test-host` | builds the host with `test/kernel/app.rb`, then runs the same tests and `test/host` on it | about 90 seconds from a clean build |
 | `make regress` | runs the spinel tests in `tools/oracle_agree.txt` under Fluxpinel | about 10 seconds |
 | `make oracle` | runs all the spinel tests under CRuby, Fluxpinel and AOT | more than 10 minutes |
-| `make optcarrot` | runs optcarrot under CRuby and Fluxpinel and compares the checksums | about 10 minutes for 180 frames |
+| `make optcarrot` | runs optcarrot under CRuby and Fluxpinel and compares the checksums | about 25 seconds for 180 frames |
 
 Run `make test` and `make regress` after each change. Run `make oracle`
 before a change of the pin and after a large change of the walker.

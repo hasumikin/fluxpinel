@@ -7,6 +7,9 @@ Spinel compiles Ruby to C and gives a fast native binary. A compiled
 program is closed: it cannot load new code while it runs. Fluxpinel is a
 Ruby interpreter that lives in the same binary. It opens the program again.
 
+Fluxpinel also runs a Ruby script on its own, as the `ruby` command does.
+The runtime of spinel runs inside it.
+
 ## What you get
 
 - **Plugins and scripts.** The binary loads a Ruby file at run time. You
@@ -19,6 +22,9 @@ Ruby interpreter that lives in the same binary. It opens the program again.
   the runtime function of a builtin method, the method gives the same
   result on both sides. Fluxpinel writes some builtin methods itself, and
   the oracle compares them (see below).
+- **A standalone interpreter.** `fluxpinel script.rb` runs a script with
+  no compiled program. A large program such as optcarrot runs (see
+  below).
 
 ## An example
 
@@ -130,11 +136,10 @@ Fluxpinel cannot yet:
 - see the locals of a compiled method (`eval` with a binding)
 - take a call that the compiled code cannot resolve (dynamic dispatch)
 - replace a method that compiled code calls directly
-- run fast: the interpreter is for the glue of a program, not for its hot
-  paths
+- run as fast as CRuby: the interpreter is for the glue of a program, not
+  for its hot paths
 
-A console that connects to a running binary is a planned step. The two
-gaps in the list need a change to spinel. See
+The two gaps in the list need a change to spinel. See
 [docs/design.md](docs/design.md), section 5.
 
 ## An oracle for spinel
@@ -154,6 +159,33 @@ output:
 The oracle also keeps the promise of "the same semantics" above. See
 [docs/design.md](docs/design.md), section 4.
 
+## A standalone interpreter
+
+Fluxpinel runs a Ruby script on its own, as the `ruby` command does. The
+arguments after the script go to `ARGV`:
+
+```sh
+build/promote/fluxpinel script.rb arg1 arg2
+```
+
+- The runtime of spinel runs inside. A builtin method calls the runtime
+  function of spinel where one exists.
+- Use the promote build (`build/promote/fluxpinel`) for the semantics of
+  CRuby. An Integer that overflows becomes a Bignum there. The default
+  build (`build/fluxpinel`) raises a RangeError on an overflow.
+- [optcarrot](https://github.com/mame/optcarrot), an NES emulator and a
+  common benchmark of Ruby, runs. `make optcarrot` runs it under CRuby and
+  Fluxpinel, and compares the checksums. On 180 frames, Fluxpinel runs at
+  about 9 fps, and CRuby 4.0.9 at about 55 fps.
+
+The command line takes a script and its arguments, or `--console`. It
+does not take the other options of `ruby`, such as `-e`, `-I`, `-r` and
+`-v`. It does not read a script from stdin.
+
+The walker keeps a side table next to the nodes of prism, for the caches
+of each call and each instance variable. See
+[docs/side-table.md](docs/side-table.md).
+
 ## The name
 
 The name joins "flux" and "spinel". "Flux" means a flow and a change.
@@ -171,6 +203,7 @@ make deps
 make
 build/fluxpinel program.rb
 make test
+make optcarrot
 ```
 
 To use a spinel checkout of your own, set `SPINEL` on the command line or
