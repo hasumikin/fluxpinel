@@ -507,39 +507,40 @@ work that each call does again on each run:
 A bytecode VM would remove the walk itself, but it keeps each cost above.
 The walker removes them. The measures, in order:
 
-1. **A tree of the walker.** Translate the prism AST once, at load, into
-   nodes of Fluxpinel. A node keeps what the translation resolves: the
-   Symbol of a name, the slot of a local, and the cache fields of the
-   measures below. The walker cannot add a field to a prism node, so each
-   other measure needs this tree. A node can also carry a function
-   pointer for its evaluation, so that a measure can replace the
-   evaluation of one node (measure 5).
-2. **Symbols, no strings.** The translation interns each name once. A
+1. **A side table of the nodes.** Each prism node has one record
+   (`FxSide`) in a side table, and `fx_side` finds it by the node id. The
+   parses number their nodes with one count, so a node id is unique in
+   the process. A record keeps what the walker resolves once: the Symbol
+   of a name, the slot of a local, and the cache fields of the measures
+   below. The prism tree stays as it is. [side-table.md](side-table.md)
+   gives the design and the stages.
+2. **Symbols, no strings.** The walker interns each name once. A
    lookup compares Symbols and does no `strcmp` and no `sp_sym_intern`.
    Builtin dispatch finds a core method in one table by (receiver kind,
    Symbol), not by a chain of comparisons.
-3. **A method cache for each call node.** A call node keeps the class of
-   the last receiver, the method that it found and a serial number. The
-   cache hits when the class and the serial are the same. A definition, an
-   `include`, an `extend` or a change of visibility increments one global
-   serial, and thus clears every cache. A program defines its methods
+3. **A method cache for each call node.** The record of a call node keeps
+   the class of the last receiver, the method that it found and a serial
+   number. The cache hits when the class and the serial are the same. A
+   definition, an `include`, an `extend` or a change of visibility
+   increments one global serial, and thus clears every cache. A program defines its methods
    mostly at the start, so the caches stay valid at run time. The code of
    a miss stays out of line (`noinline`), but not in a cold section: a
    call site with more than one class takes the miss path often. The
-   global cache of `fx_find_method` does this job until the tree is there.
+   global cache of `fx_find_method` stays for a miss.
 4. **Jumps in the result.** Each evaluation returns the value and a state
    (`return`, `break`, `next`) in two words, which stay in registers. A
    method boundary clears its state with one operation. An exception
    stays a raise of the runtime (`sp_raise`), so that a raise crosses to
-   AOT code (section 3.6).
-5. **Specialized operators.** The translation gives `a + b` and its kin a
-   node for two Integers. When the node meets a Float, it changes its
-   evaluation to the Float form, and then to the general form. A node
-   that changes too often stays general. A program that redefines a
-   builtin operator turns off each such node.
-6. **An instance variable cache.** A node of `@x` keeps the class and the
-   slot that it found last. The global slot cache does this job until the
-   tree is there.
+   AOT code (section 3.6). This measure is on hold (side-table.md, S5).
+5. **Specialized operators.** The record of `a + b` and its kin keeps a
+   function pointer for an evaluation of two Integers. When the node meets
+   a Float, it changes its evaluation to the Float form, and then to the
+   general form. A node that changes too often stays general. A program
+   that redefines a builtin operator turns off each such node. This
+   measure is on hold for the cost of maintenance (side-table.md, S4).
+6. **An instance variable cache.** The record of a node of `@x` keeps the
+   class and the slot that it found last. The global slot cache stays for
+   a miss.
 7. **Accessors.** A method that `attr_reader` or `attr_writer` defines
    runs with no frame (`fx_invoke_b`).
 8. **Frames.** The slots of a frame are one root frame of the runtime

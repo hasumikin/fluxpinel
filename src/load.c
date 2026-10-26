@@ -95,6 +95,22 @@ static void fx_scopes_rebind(pm_parser_t *p, const pm_constant_id_list_t *const 
   }
 }
 
+static void fx_side_broken(uint32_t id) {
+  fprintf(stderr, "fluxpinel: internal error: node id %u is out of the side table\n", id);
+  fflush(stdout);
+  _exit(2);
+}
+
+/* Grows the side table to hold the node ids up to last. A new chunk is
+   all zero: no record keeps a field yet. */
+static void fx_side_grow(uint32_t last) {
+  uint32_t need = (last >> FX_SIDE_BITS) + 1;
+  if (need <= L.side_chunks) return;
+  L.side = realloc(L.side, sizeof *L.side * need);
+  for (uint32_t i = L.side_chunks; i < need; i++) L.side[i] = calloc(FX_SIDE_CHUNK, sizeof(FxSide));
+  L.side_chunks = need;
+}
+
 /* Parses the bytes of a file into a new source, which starts at the line
    line, inside the scopes scopes (a piece of the console). Answers the
    message of the first syntax error, or NULL. */
@@ -115,7 +131,16 @@ static const char *fx_parse_in(const char *path, const char *real, char *buf, si
     s->parser.constant_pool = L.pool;
     fx_scopes_rebind(&s->parser, scopes, nscopes);
   }
+  /* the nodes continue the count of the parses before, so that a node id
+     selects one record of the side table. pm_parser_init sets the count
+     to 0, so the start goes in after it */
+  s->parser.node_id = L.node_ids;
   s->root = pm_parse(&s->parser);
+  /* the start depends on a field of the parser of prism: stop if a new
+     prism counts in another way */
+  if (s->root->node_id <= L.node_ids || s->root->node_id > s->parser.node_id) fx_side_broken(s->root->node_id);
+  L.node_ids = s->parser.node_id;
+  fx_side_grow(L.node_ids);
   L.pool = s->parser.constant_pool;
   if (L.nsources == L.sources_cap) {
     L.sources_cap = L.sources_cap ? L.sources_cap * 2 : 8;

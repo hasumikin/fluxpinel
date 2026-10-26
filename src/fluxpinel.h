@@ -207,6 +207,19 @@ typedef struct {
   pm_node_t *root;
 } FxSource;
 
+/* The record of a prism node in the side table (docs/side-table.md). A
+   node kind that keeps fields adds its struct to the union. */
+typedef struct {
+  union {
+    uint64_t none;   /* no node kind keeps a field yet */
+  };
+} FxSide;
+
+/* The side table is a list of chunks of FX_SIDE_CHUNK records, so that a
+   record never moves when the table grows. */
+#define FX_SIDE_BITS 16
+#define FX_SIDE_CHUNK ((uint32_t)1 << FX_SIDE_BITS)
+
 typedef struct {
   const char *path;
   char **args;           /* the arguments after the path, for ARGV */
@@ -215,6 +228,11 @@ typedef struct {
                                 constant id indexes this one pool */
   FxSource **sources;      /* the parsed files; sources[0] is the main one */
   int nsources, sources_cap;
+  uint32_t node_ids;     /* the last node id of all parses: each parse
+                            continues the count of the one before */
+  FxSide **side;         /* the side table: chunk i holds the records of the
+                            node ids from i << FX_SIDE_BITS */
+  uint32_t side_chunks;
   FxClass **classes;   /* Fluxpinel classes; classes[i] has cls_id FX_CLS_BASE + i */
   int nclasses, classes_cap;
   FxClass **builtins;  /* builtin classes made so far */
@@ -247,6 +265,15 @@ typedef struct {
 } Fluxpinel;
 
 static Fluxpinel L;
+
+static __attribute__((noreturn)) void fx_side_broken(uint32_t id);
+
+/* The record of the node n in the side table. */
+static inline FxSide *fx_side(const pm_node_t *n) {
+  uint32_t id = n->node_id;
+  if (__builtin_expect(id == 0 || id > L.node_ids, 0)) fx_side_broken(id);
+  return &L.side[id >> FX_SIDE_BITS][id & (FX_SIDE_CHUNK - 1)];
+}
 
 static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n);
 static sp_RbVal fx_send(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv);

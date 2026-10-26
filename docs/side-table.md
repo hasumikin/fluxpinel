@@ -131,7 +131,7 @@ Each node gets a record, so a node that needs no record (a literal or
 the memory becomes a problem, change the shape then.
 
 A record is a union of small structs, one for each node kind. A caller
-that reads a field of a kind asserts the kind of the node.
+that reads a field of a kind makes sure of the kind of the node.
 
 ## 3. Stages
 
@@ -149,12 +149,14 @@ Each stage is one commit. Each stage gets these checks:
     the next global number after `pm_parser_init` and before `pm_parse`.
   - After the parse, `fx_parse_in` reads `s->parser.node_id` back. That
     value becomes the next global number. The table grows to that number.
-  - After the parse, `fx_parse_in` asserts that `root->node_id` is in the
-    expected range. The write to `parser.node_id` depends on an internal
-    struct of prism. The assert finds a break of that dependency after an
-    update of prism.
+  - After the parse, `fx_parse_in` makes sure that `root->node_id` is in
+    the expected range. The write to `parser.node_id` depends on an
+    internal struct of prism. This check finds a break of that dependency
+    after an update of prism.
 - Add the `FxSide` table and `fx_side(n)` (section 2.2). A `node_id` out of
-  the range of the table is a bug, so `fx_side(n)` stops on an assert.
+  the range of the table is a bug, so `fx_side(n)` stops on it.
+- A failed check calls `fx_side_broken`. It writes a message and ends the
+  process (`_exit(2)`), as the other fatal checks of the walker do.
 - Do not change the behavior. Make sure that the speed does not drop.
 
 ### S2 Call nodes
