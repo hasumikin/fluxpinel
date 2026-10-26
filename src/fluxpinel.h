@@ -275,6 +275,8 @@ static int fx_prelude_call(sp_RbVal r, const char *name, int argc, sp_RbVal *arg
 static int fx_prelude_has(sp_RbVal r, const char *name);
 static void fx_prelude_gap(const char *name, int argc, sp_RbVal *argv);
 static int fx_is_string(sp_RbVal v);
+static int fx_fast_call(sp_RbVal r, sp_sym s, int argc, sp_RbVal *argv, sp_RbVal *out);   /* builtin.c */
+static int fx_fast_eqq(sp_RbVal v, sp_RbVal s, sp_RbVal *out);
 /* iter.c: Method values */
 static int fx_method_value_new(sp_RbVal r, sp_RbVal name, int public_only, sp_RbVal *out);
 static int fx_is_method_value(sp_RbVal v);

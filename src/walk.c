@@ -877,7 +877,8 @@ static sp_RbVal fx_catch_break(const FxBlock *lit, sp_RbVal v) {
 
 static sp_RbVal fx_call(FxFrame *f, const pm_call_node_t *c) {
   SP_GC_SAVE();
-  const char *name = sp_sym_to_s(fx_sym(c->name));
+  const sp_sym sym = fx_sym(c->name);
+  const char *name = sp_sym_to_s(sym);
   sp_RbVal recv = sp_box_nil();
   SP_GC_ROOT_RBVAL(recv);
   if (c->receiver) {
@@ -900,7 +901,8 @@ static sp_RbVal fx_call(FxFrame *f, const pm_call_node_t *c) {
   sp_RbVal v;
   /* require_relative and __dir__ answer from the file of the call, unless
      the program defines its own */
-  if (!c->receiver && !blk && fx_load_call((const pm_node_t *)c, f->self, name, argc, argv, &v)) {
+  if (c->receiver && !blk && !kw && fx_fast_call(recv, sym, argc, argv, &v)) {
+  } else if (!c->receiver && !blk && fx_load_call((const pm_node_t *)c, f->self, name, argc, argv, &v)) {
   } else {
     L.vcall = PM_NODE_FLAG_P((const pm_node_t *)c, PM_CALL_NODE_FLAGS_VARIABLE_CALL);
     /* a receiver other than `self.` sees the public methods, and the
@@ -1207,7 +1209,8 @@ static sp_RbVal fx_for(FxFrame *f, const pm_for_node_t *n) {
    or v itself for a case with no subject. */
 static int fx_when_hit(sp_RbVal v, const sp_RbVal *subject) {
   if (!subject) return sp_poly_truthy(v);
-  sp_RbVal s = *subject;
+  sp_RbVal s = *subject, out;
+  if (fx_fast_eqq(v, s, &out)) return sp_poly_truthy(out);
   return sp_poly_truthy(fx_send(v, "===", 1, &s));
 }
 
@@ -1916,6 +1919,8 @@ static sp_RbVal fx_const_logic_write(FxFrame *f, const pm_node_t *n) {
 
 /* x op= v on a local, an ivar or an attribute: read, send op, write. */
 static sp_RbVal fx_op(sp_RbVal cur, pm_constant_id_t op, sp_RbVal v) {
+  sp_RbVal out;
+  if (fx_fast_call(cur, fx_sym(op), 1, &v, &out)) return out;
   SP_GC_ROOT_RBVAL(cur);
   SP_GC_ROOT_RBVAL(v);
   return fx_send(cur, sp_sym_to_s(fx_sym(op)), 1, &v);
@@ -1949,13 +1954,15 @@ static sp_RbVal fx_index_op_write(FxFrame *f, const pm_index_operator_write_node
   int argc = fx_argc(n->arguments);
   sp_RbVal argv[argc + 1];
   if (!fx_args(f, n->arguments, argc, argv)) return sp_box_nil();
-  sp_RbVal cur = fx_send(recv, "[]", argc, argv);
+  sp_RbVal cur;
+  if (!fx_fast_call(recv, sp_sym_intern("[]"), argc, argv, &cur)) cur = fx_send(recv, "[]", argc, argv);
   SP_GC_ROOT_RBVAL(cur);
   sp_RbVal v = fx_eval(f, n->value);
   if (L.ctl != FX_CTL_NONE) return sp_box_nil();
   argv[argc] = fx_op(cur, n->binary_operator, v);
   _sp_gc_root_push((void **)((uintptr_t)&argv[argc] | (uintptr_t)1));
-  fx_send(recv, "[]=", argc + 1, argv);
+  sp_RbVal set;
+  if (!fx_fast_call(recv, sp_sym_intern("[]="), argc + 1, argv, &set)) fx_send(recv, "[]=", argc + 1, argv);
   return argv[argc];
 }
 
@@ -2726,8 +2733,7 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
     SP_GC_ROOT_RBVAL(cur);
     sp_RbVal v = fx_eval(f, w->value);
     if (L.ctl != FX_CTL_NONE) return sp_box_nil();
-    SP_GC_ROOT_RBVAL(v);
-    sp_RbVal r = fx_send(cur, sp_sym_to_s(fx_sym(w->binary_operator)), 1, &v);
+    sp_RbVal r = fx_op(cur, w->binary_operator, v);
     return *fx_local(f, n, w->name, w->depth) = r;
   }
   case PM_AND_NODE: {

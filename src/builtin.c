@@ -363,6 +363,126 @@ static sp_RbVal fx_send(sp_RbVal recv, const char *name, int argc, sp_RbVal *arg
   return fx_send_b(recv, name, argc, argv, NULL);
 }
 
+/* The names that fx_fast_call answers, as Symbols. */
+static struct {
+  int ready;
+  sp_sym add, sub, mul, div, mod, lt, le, gt, ge, eq, ne, eqq, band, bor, bxor, shl, shr, aref, aset, push, size,
+    length;
+} fx_ops;
+
+static SP_NOINLINE SP_COLD void fx_ops_init(void) {
+  fx_ops.add = sp_sym_intern("+");
+  fx_ops.sub = sp_sym_intern("-");
+  fx_ops.mul = sp_sym_intern("*");
+  fx_ops.div = sp_sym_intern("/");
+  fx_ops.mod = sp_sym_intern("%");
+  fx_ops.lt = sp_sym_intern("<");
+  fx_ops.le = sp_sym_intern("<=");
+  fx_ops.gt = sp_sym_intern(">");
+  fx_ops.ge = sp_sym_intern(">=");
+  fx_ops.eq = sp_sym_intern("==");
+  fx_ops.ne = sp_sym_intern("!=");
+  fx_ops.band = sp_sym_intern("&");
+  fx_ops.bor = sp_sym_intern("|");
+  fx_ops.bxor = sp_sym_intern("^");
+  fx_ops.shl = sp_sym_intern("<<");
+  fx_ops.shr = sp_sym_intern(">>");
+  fx_ops.aref = sp_sym_intern("[]");
+  fx_ops.aset = sp_sym_intern("[]=");
+  fx_ops.eqq = sp_sym_intern("===");
+  fx_ops.push = sp_sym_intern("<<");
+  fx_ops.size = sp_sym_intern("size");
+  fx_ops.length = sp_sym_intern("length");
+  fx_ops.ready = 1;
+}
+
+/* The commonest calls, answered before the name walks the chain of
+   fx_builtin_call:
+   - the operators of two Integers or two Floats, and Integer#[]
+   - == and === of two Symbols
+   - Array#[] and #[]= with an Integer index, Array#<<, size and length
+   - Hash#[]
+   A call passes the name as a Symbol. The answers are the ones of that
+   chain. Answers 0 for any other call, and for any call once the program
+   reopens a builtin class. */
+static int fx_fast_call(sp_RbVal r, sp_sym s, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (fx_reopened_builtins || argc > 2) return 0;
+  if (SP_UNLIKELY(!fx_ops.ready)) fx_ops_init();
+  if (argc == 0) {
+    if ((s == fx_ops.size || s == fx_ops.length) && r.tag == SP_TAG_OBJ && sp_poly_is_array_kind(r.cls_id) &&
+        r.v.p) {
+      *out = sp_box_int(sp_poly_length(r));
+      return 1;
+    }
+    return 0;
+  }
+  sp_RbVal a = argv[0];
+  if (argc == 1 && r.tag == SP_TAG_INT && a.tag == SP_TAG_INT) {
+    sp_int x = r.v.i, y = a.v.i;
+    if (s == fx_ops.aref) { *out = sp_box_int(sp_int_bit(x, y)); return 1; }
+    if (s == fx_ops.eq || s == fx_ops.eqq) { *out = sp_box_bool(x == y); return 1; }
+    if (s == fx_ops.add) { *out = sp_poly_add(r, a); return 1; }
+    if (s == fx_ops.sub) { *out = sp_poly_sub(r, a); return 1; }
+    if (s == fx_ops.band) { *out = sp_box_int(x & y); return 1; }
+    if (s == fx_ops.bor) { *out = sp_box_int(x | y); return 1; }
+    if (s == fx_ops.bxor) { *out = sp_box_int(x ^ y); return 1; }
+    if (s == fx_ops.shl) { *out = sp_poly_shl(r, a); return 1; }
+    if (s == fx_ops.shr) { *out = sp_poly_shr(r, a); return 1; }
+    if (s == fx_ops.lt) { *out = sp_box_bool(x < y); return 1; }
+    if (s == fx_ops.le) { *out = sp_box_bool(x <= y); return 1; }
+    if (s == fx_ops.gt) { *out = sp_box_bool(x > y); return 1; }
+    if (s == fx_ops.ge) { *out = sp_box_bool(x >= y); return 1; }
+    if (s == fx_ops.ne) { *out = sp_box_bool(x != y); return 1; }
+    if (s == fx_ops.mul) { *out = sp_poly_mul(r, a); return 1; }
+    if (s == fx_ops.div) { *out = sp_poly_div(r, a); return 1; }
+    if (s == fx_ops.mod) { *out = sp_poly_mod(r, a); return 1; }
+    return 0;
+  }
+  if (argc == 1 && r.tag == SP_TAG_FLT && a.tag == SP_TAG_FLT) {
+    sp_float x = r.v.f, y = a.v.f;
+    if (s == fx_ops.add) { *out = sp_box_float(x + y); return 1; }
+    if (s == fx_ops.sub) { *out = sp_box_float(x - y); return 1; }
+    if (s == fx_ops.mul) { *out = sp_box_float(x * y); return 1; }
+    if (s == fx_ops.div) { *out = sp_box_float(x / y); return 1; }
+    if (s == fx_ops.lt) { *out = sp_box_bool(x < y); return 1; }
+    if (s == fx_ops.le) { *out = sp_box_bool(x <= y); return 1; }
+    if (s == fx_ops.gt) { *out = sp_box_bool(x > y); return 1; }
+    if (s == fx_ops.ge) { *out = sp_box_bool(x >= y); return 1; }
+    return 0;
+  }
+  if (argc == 1 && r.tag == SP_TAG_SYM && a.tag == SP_TAG_SYM && (s == fx_ops.eq || s == fx_ops.eqq)) {
+    *out = sp_box_bool(r.v.i == a.v.i);
+    return 1;
+  }
+  if (r.tag != SP_TAG_OBJ || !r.v.p) return 0;
+  if (sp_poly_is_array_kind(r.cls_id)) {
+    if (a.tag == SP_TAG_INT && argc == 1 && s == fx_ops.aref) { *out = sp_poly_arr_get_hash(r, a.v.i); return 1; }
+    if (a.tag == SP_TAG_INT && argc == 2 && s == fx_ops.aset) {
+      sp_poly_arr_set(r, a.v.i, argv[1]);
+      *out = argv[1];
+      return 1;
+    }
+    /* a frozen Array takes the chain, which raises */
+    if (argc == 1 && s == fx_ops.push && r.cls_id == SP_BUILTIN_POLY_ARRAY && !sp_gc_is_frozen(r.v.p)) {
+      sp_PolyArray_push((sp_PolyArray *)r.v.p, a);
+      *out = r;
+      return 1;
+    }
+    return 0;
+  }
+  if (argc == 1 && s == fx_ops.aref && r.cls_id == SP_BUILTIN_POLY_POLY_HASH) {
+    *out = sp_PolyPolyHash_get((sp_PolyPolyHash *)r.v.p, a);
+    return 1;
+  }
+  return 0;
+}
+
+/* v === s through fx_fast_call, for a when clause. */
+static int fx_fast_eqq(sp_RbVal v, sp_RbVal s, sp_RbVal *out) {
+  if (SP_UNLIKELY(!fx_ops.ready)) fx_ops_init();
+  return fx_fast_call(v, fx_ops.eqq, 1, &s, out);
+}
+
 /* The builtin methods of a value, without the methods of the program:
    for a call, and for super from a method of the program. A builtin
    method that takes a block is one of fx_iter; Fluxpinel stops at any other
