@@ -19,6 +19,7 @@
 #include "object.c"
 #include "walk.c"
 #include "builtin.c"
+#include "responds.c"
 #include "iter.c"
 #include "hash.c"
 #include "array.c"

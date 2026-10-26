@@ -403,6 +403,9 @@ static int fx_autoload(sp_sym name);
 #define FX_DESCRIPTION \
   "fluxpinel " FX_VERSION " (spinel " FX_SPINEL_REV ", ruby " FX_RUBY_VERSION ") [" SP_RUBY_ARCH "-" SP_RUBY_OS "]"
 
+/* responds.c */
+static int fx_rs_responds(sp_RbVal r, const char *mn);
+
 /* global.c */
 static sp_RbVal fx_gvar_eval(FxFrame *f, const pm_node_t *n);
 static int fx_gvar_stdout(sp_RbVal *out);

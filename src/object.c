@@ -1019,7 +1019,7 @@ static sp_RbVal fx_respond_to(sp_RbVal r, sp_RbVal a, sp_RbVal all) {
   int yes = pm && pm->vis == FX_VIS_PUBLIC;
   if (!yes && !pm)
     yes = fx_builtin_responds(r, mn) || fx_record_responds(r, mn) || fx_process_responds(r, mn) ||
-          fx_file_responds(r, mn) || fx_prelude_has(r, mn);
+          fx_file_responds(r, mn) || fx_prelude_has(r, mn) || fx_rs_responds(r, mn);
   if (yes) return sp_box_bool(1);
   if (pm || fx_kernel_private(mn)) return sp_box_bool(sp_poly_truthy(all));
   FxMethod *m = fx_find_hook(r, "respond_to_missing?");
