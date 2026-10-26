@@ -580,14 +580,14 @@ static sp_RbVal fx_send_v(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
   sp_RbVal out;
   FxMethod *m = NULL;
   if (fx_is_fx_object(recv)) {
-    m = fx_find_method(fx_class_of(recv), sp_sym_intern(name));
+    m = fx_find_method(fx_class_of(recv), fx_name_sym(name));
   } else if (recv.tag == SP_TAG_CLASS) {
     FxClass *k = fx_class_value(recv);
-    m = k ? fx_find_smethod(k, sp_sym_intern(name)) : NULL;
+    m = k ? fx_find_smethod(k, fx_name_sym(name)) : NULL;
     if (!m && fx_class_core(NULL, recv, name, argc, argv, blk, &out)) return out;
   } else if (fx_reopened_builtins || fx_is_exc(recv)) {
     /* a reopened builtin class, or an exception of a class of the program */
-    m = fx_find_method(fx_class_of(recv), sp_sym_intern(name));
+    m = fx_find_method(fx_class_of(recv), fx_name_sym(name));
     if (m && m->owner == L.object) m = NULL;
   }
   if (m) {
@@ -603,7 +603,7 @@ static sp_RbVal fx_send_v(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
      have a class method of the name that Fluxpinel lacks (Time.at) */
   FxClass *rc = recv.tag == SP_TAG_CLASS ? fx_class_value(recv) : NULL;
   if (!fx_is_fx_object(recv) && !(rc && rc->cls_id < FX_CLS_BASE) && !fx_builtin_module_name(recv, name) &&
-      (m = fx_table_get(&L.object->methods, sp_sym_intern(name)))) {
+      (m = fx_table_get(&L.object->methods, fx_name_sym(name)))) {
     int why = fx_vis_denied(m, check, caller);
     if (why) return fx_denied(recv, name, argc, argv, blk, why);
     return fx_invoke_b(m, recv, argc, argv, blk);

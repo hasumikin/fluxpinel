@@ -65,6 +65,26 @@ static inline sp_sym fx_sym(pm_constant_id_t id) {
   return fx_sym_slow(id);
 }
 
+/* The Symbol of a name. Most names are the text of a Symbol itself
+   (sp_sym_to_s), which never moves or goes: a cache keyed by that pointer
+   answers them with no intern. Another text, such as a formatted one,
+   takes the intern each time and stays out of the cache. */
+static struct {
+  const char *p;
+  sp_sym s;
+} fx_name_cache[1024];
+
+static inline sp_sym fx_name_sym(const char *name) {
+  size_t h = ((uintptr_t)name >> 3) & 1023;
+  if (fx_name_cache[h].p == name) return fx_name_cache[h].s;
+  sp_sym s = sp_sym_intern(name);
+  if (sp_sym_to_s(s) == name) {
+    fx_name_cache[h].p = name;
+    fx_name_cache[h].s = s;
+  }
+  return s;
+}
+
 /* The write barrier of a frame whose slots are on the heap (FxEnv): the
    collector is generational, and an env that is old already must join the
    remembered set before a slot of it takes a young value. */
@@ -85,18 +105,23 @@ static sp_RbVal *fx_local(FxFrame *f, const pm_node_t *n, pm_constant_id_t name,
   fx_unsupported(n, "local variable with no slot");
 }
 
-/* Declares the slots of a frame on the C stack and roots each one, and
-   sets the self and the lexical class of the scope. Three slots follow
-   the locals: `it`, the anonymous *rest and the anonymous **kwrest. The
-   heap copy of the frame (env) is a root too. The roots stay until the
-   enclosing SP_GC_SAVE scope ends. */
+/* Declares the slots of a frame on the C stack, and sets the self and the
+   lexical class of the scope. Three slots follow the locals: `it`, the
+   anonymous *rest and the anonymous **kwrest. The slots are one root
+   frame of the runtime (SP_GC_ROOT_FRAME): its header sits at the end of
+   element 0, and the slots follow from element 1, so that one push roots
+   them all. The heap copy of the frame (env) is a root too. The roots stay
+   until the enclosing SP_GC_SAVE scope ends. */
+_Static_assert(sizeof(sp_gc_frame_hdr) <= sizeof(sp_RbVal), "a frame header fits in one slot");
 #define FX_FRAME(f, namelist, self_, cref_)                                     \
   size_t f##_n = (namelist)->size;                                                \
-  sp_RbVal f##_slots[f##_n + 3];                                                  \
-  for (size_t f##_i = 0; f##_i < f##_n + 3; f##_i++) {                            \
-    f##_slots[f##_i] = sp_box_nil();                                               \
-    _sp_gc_root_push((void **)((uintptr_t)&f##_slots[f##_i] | (uintptr_t)1));      \
-  }                                                                               \
+  sp_RbVal f##_buf[f##_n + 4];                                                    \
+  sp_RbVal *f##_slots = &f##_buf[1];                                              \
+  sp_gc_frame_hdr *f##_hdr = (sp_gc_frame_hdr *)((char *)f##_slots - sizeof(sp_gc_frame_hdr)); \
+  f##_hdr->nv = (int)(f##_n + 3);                                                 \
+  f##_hdr->np = 0;                                                                \
+  for (size_t f##_i = 0; f##_i < f##_n + 3; f##_i++) f##_slots[f##_i] = sp_box_nil(); \
+  SP_GC_ROOT_FRAME(*f##_hdr);                                                     \
   FxFrame f __attribute__((cleanup(fx_frame_exit))) = {                       \
     .locals = f##_slots, .names = (namelist), .self = (self_), .cref = (cref_),   \
     .it = &f##_slots[f##_n], .anon = &f##_slots[f##_n + 1], .serial = ++L.serial, \
@@ -960,7 +985,7 @@ static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *a
   /* fx_call marks a call with no arguments and no parentheses */
   int why = L.vcall ? FX_MISS_VCALL : FX_MISS_METHOD;
   L.vcall = 0;
-  sp_sym s = sp_sym_intern(name);
+  sp_sym s = fx_name_sym(name);
   sp_RbVal self = f->self, out;
   if (self.tag == SP_TAG_CLASS) {
     FxClass *k = fx_class_value(self);

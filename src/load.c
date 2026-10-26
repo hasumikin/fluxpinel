@@ -369,6 +369,8 @@ static int fx_autoload(sp_sym name) {
    the name for self. Answers 1 and sets *out when it handles the call. */
 static int fx_load_call(const pm_node_t *n, sp_RbVal self, const char *name, int argc, sp_RbVal *argv,
                           sp_RbVal *out) {
+  /* the first letter turns away most calls, before a strcmp */
+  if (name[0] != '_' && name[0] != 'r' && name[0] != 'l') return 0;
   if (!FX_IS("__dir__") && !FX_IS("require_relative") && !FX_IS("require") && !FX_IS("load")) return 0;
   if (fx_find_method(fx_class_of(self), sp_sym_intern(name))) return 0;
   /* load(path): the file runs at each call, from the path as given, which

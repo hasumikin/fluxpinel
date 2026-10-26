@@ -497,13 +497,12 @@ work that each call does again on each run:
   clears every entry.
 - **The name.** `fx_sym` keeps the Symbol of each constant id of prism,
   so the walker interns a name once. A call still passes the name to the
-  builtin dispatch as a C string.
+  builtin dispatch as a C string. `fx_name_sym` turns the text of a Symbol
+  back into the Symbol by its pointer, with no intern.
 - **Instance variables.** One global cache keeps the slot for each (class,
   Symbol). A slot never moves, so an entry stays right.
 - **Jumps.** After each evaluation, the caller reads `L.ctl` in memory to
   see a pending `return`, `break` or `next`.
-- **Frames.** A frame roots each slot with its own push to the GC root
-  stack.
 
 A bytecode VM would remove the walk itself, but it keeps each cost above.
 The walker removes them. The measures, in order:
@@ -542,8 +541,9 @@ The walker removes them. The measures, in order:
    slot that it found last. The global slot cache does this job until the
    tree is there.
 7. **Accessors.** A method that `attr_reader` or `attr_writer` defines
-   runs with no frame.
-8. **Frames.** Root the slots of a frame as one range, with one push.
+   runs with no frame (`fx_invoke_b`).
+8. **Frames.** The slots of a frame are one root frame of the runtime
+   (`SP_GC_ROOT_FRAME`), with one push (`FX_FRAME`).
 
 Two parts of the work stay as they are:
 
