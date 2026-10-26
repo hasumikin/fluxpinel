@@ -222,6 +222,11 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   reads `lambda?` and `frozen?` from it. Its `fn` is NULL: Fluxpinel answers
   every call of a Proc. `proc`, `lambda`, `->`, `Proc.new` and a `&b`
   parameter make one. `&proc`, `&:sym` and an anonymous `&` pass a block.
+- **Method.** A `FxMethodValue` (`obj.method(:name)`) starts with a spinel
+  `sp_BoundMethod`. Thus the runtime hashes it by the receiver and the
+  name, as a Hash key needs. It keeps the method of the program that the
+  name found, or no method for a builtin method, which a call sends by
+  name. Its Proc (`to_proc`, `&m`) has a C block that calls the method.
 - **Lifetime.** The home frame is on the C stack. Each frame has a serial
   number and an entry in a stack of serials on the heap
   (`FxFrameStack`). Each fiber that runs walker code has its own stack

@@ -69,6 +69,13 @@ class Array
     out
   end
 
+  # nil when no element goes
+  def uniq!
+    out = self.uniq { |e| yield(e) }
+    return nil if out.size == self.size
+    self.replace(out)
+  end
+
   # one walk, which compares each element once, as CRuby does
   def delete(obj)
     removed = nil

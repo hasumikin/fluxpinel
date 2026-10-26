@@ -131,6 +131,19 @@ typedef struct {
   FxBlock b;
 } FxProc;
 
+/* A Method value (obj.method(:name)). It starts with a spinel
+   sp_BoundMethod, so that the runtime hashes and compares it by the
+   receiver and the name, as a Hash key needs. Its fn is 0: Fluxpinel
+   answers every call. m is the method of the program that the name
+   found, or NULL for a builtin method, which a call sends by name. */
+typedef struct {
+  sp_BoundMethod bm;
+  sp_RbVal recv;
+  const FxMethod *m;
+  sp_sym name;
+  FxProc *proc;   /* the Proc of to_proc and of `&m`, made at the first */
+} FxMethodValue;
+
 /* The local variables and the context of one scope: the program, a class
    body, a method call or a block call. locals[i] holds the variable
    names->ids[i]; each slot is a GC root. */
@@ -262,6 +275,14 @@ static int fx_prelude_call(sp_RbVal r, const char *name, int argc, sp_RbVal *arg
 static int fx_prelude_has(sp_RbVal r, const char *name);
 static void fx_prelude_gap(const char *name, int argc, sp_RbVal *argv);
 static int fx_is_string(sp_RbVal v);
+/* iter.c: Method values */
+static int fx_method_value_new(sp_RbVal r, sp_RbVal name, int public_only, sp_RbVal *out);
+static int fx_is_method_value(sp_RbVal v);
+static const FxBlock *fx_method_value_block(sp_RbVal v);
+static sp_RbVal fx_method_value_step(void *ctx, int argc, sp_RbVal *argv);
+static int fx_method_value_arity(const FxMethodValue *mv);
+static int fx_method_value_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                                  sp_RbVal *out);
 
 /* exc.c */
 static int fx_is_exc(sp_RbVal v);

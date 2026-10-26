@@ -968,7 +968,10 @@ static int fx_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const
 
 /* ---- Proc ---- */
 
+static int fx_params_arity(const pm_parameters_node_t *ps, int lambda);
+
 static int fx_proc_arity(const FxBlock *b) {
+  if (b->cfn == fx_method_value_step) return fx_method_value_arity((const FxMethodValue *)b->ctx);
   if (!b->node) return -2;   /* &:sym, as CRuby answers for a lambda from a Symbol */
   const pm_constant_id_list_t *locals;
   const pm_node_t *params, *body;
@@ -976,11 +979,15 @@ static int fx_proc_arity(const FxBlock *b) {
   if (!params) return 0;
   if (PM_NODE_TYPE_P(params, PM_IT_PARAMETERS_NODE)) return 1;
   if (PM_NODE_TYPE_P(params, PM_NUMBERED_PARAMETERS_NODE)) return ((const pm_numbered_parameters_node_t *)params)->maximum;
-  const pm_parameters_node_t *ps = ((const pm_block_parameters_node_t *)params)->parameters;
+  return fx_params_arity(((const pm_block_parameters_node_t *)params)->parameters, b->lambda);
+}
+
+/* The arity of a parameter list, of a lambda or a method when lambda is 1.
+   CRuby: min counts the required parameters, plus 1 for any required
+   keyword. A lambda with an optional part, or a proc with *rest, answers
+   -(min + 1). */
+static int fx_params_arity(const pm_parameters_node_t *ps, int lambda) {
   if (!ps) return 0;
-  /* CRuby: min counts the required parameters, plus 1 for any required
-     keyword. A lambda with an optional part, or a proc with *rest,
-     answers -(min + 1). */
   int req = (int)(ps->requireds.size + ps->posts.size);
   int rest = ps->rest && PM_NODE_TYPE_P(ps->rest, PM_REST_PARAMETER_NODE);
   int reqkw = 0, optkw = ps->keyword_rest != NULL;
@@ -989,7 +996,7 @@ static int fx_proc_arity(const FxBlock *b) {
     else optkw = 1;
   }
   int min = req + reqkw;
-  int opt = b->lambda ? rest || ps->optionals.size || (!reqkw && optkw) : rest;
+  int opt = lambda ? rest || ps->optionals.size || (!reqkw && optkw) : rest;
   return opt ? -(min + 1) : min;
 }
 
@@ -1003,6 +1010,209 @@ static int fx_proc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
   if (argc == 0 && FX_IS("to_proc")) { *out = r; return 1; }
   if (argc == 0 && FX_IS("lambda?")) { *out = sp_box_bool(p->b.lambda); return 1; }
   if (argc == 0 && FX_IS("arity")) { *out = sp_box_int(fx_proc_arity(&p->b)); return 1; }
+  return 0;
+}
+
+/* ---- Method ---- */
+
+static int fx_is_method_value(sp_RbVal v) {
+  return v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_METHOD && v.v.p;
+}
+
+static void fx_method_value_scan(void *p) {
+  FxMethodValue *mv = (FxMethodValue *)p;
+  sp_mark_rbval(mv->recv);
+  if (mv->proc) sp_gc_mark(mv->proc);
+}
+
+/* obj.method(:name), and public_method when public_only is 1: answers 0
+   when r has no such method. A method of the program comes first, as a
+   call finds it; a builtin method of the name is the other case. */
+static int fx_method_value_new(sp_RbVal r, sp_RbVal name, int public_only, sp_RbVal *out) {
+  const char *mn = fx_name_arg(name);
+  sp_sym s = sp_sym_intern(mn);
+  const FxMethod *m = r.tag == SP_TAG_CLASS ? fx_find_smethod(fx_class_value(r), s) : NULL;
+  if (!m && (fx_is_fx_object(r) || r.tag == SP_TAG_CLASS || fx_reopened_builtins || fx_is_exc(r))) {
+    m = fx_find_method(fx_class_of(r), s);
+    /* a top-level def does not hide a builtin method of the value */
+    if (m && m->owner == L.object && !fx_is_fx_object(r) && fx_builtin_responds(r, mn)) m = NULL;
+  }
+  if (m && public_only && m->vis != FX_VIS_PUBLIC) return 0;
+  if (!m && !sp_poly_truthy(fx_respond_to(r, name, sp_box_bool(!public_only)))) return 0;
+  SP_GC_ROOT_RBVAL(r);
+  FxMethodValue *mv = (FxMethodValue *)sp_gc_alloc(sizeof *mv, NULL, fx_method_value_scan);
+  mv->bm.self = r.v.p;
+  mv->bm.name = sp_sym_to_s(s);
+  mv->recv = r;
+  mv->m = m;
+  mv->name = s;
+  *out = sp_box_obj(mv, SP_BUILTIN_METHOD);
+  return 1;
+}
+
+static sp_RbVal fx_method_value_call(const FxMethodValue *mv, int argc, sp_RbVal *argv, const FxBlock *blk) {
+  if (mv->m) return fx_invoke_b(mv->m, mv->recv, argc, argv, blk);
+  return fx_send_b(mv->recv, sp_sym_to_s(mv->name), argc, argv, blk);
+}
+
+/* The C block of the Proc of a Method: a yield calls the method. */
+static sp_RbVal fx_method_value_step(void *ctx, int argc, sp_RbVal *argv) {
+  return fx_method_value_call((const FxMethodValue *)ctx, argc, argv, NULL);
+}
+
+/* The block for `&m`, from the Proc of the Method: a lambda. */
+static const FxBlock *fx_method_value_block(sp_RbVal v) {
+  FxMethodValue *mv = (FxMethodValue *)v.v.p;
+  if (!mv->proc) {
+    SP_GC_ROOT_RBVAL(v);
+    FxBlock b = { .cfn = fx_method_value_step, .ctx = mv, .lambda = 1 };
+    FxProc *p = (FxProc *)fx_block_proc(&b).v.p;
+    sp_gc_wb(mv);
+    mv->proc = p;
+  }
+  return &mv->proc->b;
+}
+
+static int fx_method_value_arity(const FxMethodValue *mv) {
+  const FxMethod *m = mv->m;
+  if (!m) return -1;
+  switch (m->kind) {
+  case FX_M_DEF: return fx_params_arity(m->def->parameters, 1);
+  case FX_M_READER: return 0;
+  case FX_M_WRITER: return 1;
+  case FX_M_PROC: return fx_proc_arity(&((FxProc *)m->proc)->b);
+  default: return -1;
+  }
+}
+
+/* The parameters of a def, as Method#inspect writes them. */
+static void fx_params_text(sp_String *o, const pm_parameters_node_t *ps) {
+  if (!ps) return;
+  int n = 0;
+#define FX_SEP() (n++ ? sp_String_append(o, ", ") : (void)0)
+  for (size_t i = 0; i < ps->requireds.size; i++) {
+    const pm_node_t *p = ps->requireds.nodes[i];
+    FX_SEP();
+    sp_String_append(o, PM_NODE_TYPE_P(p, PM_REQUIRED_PARAMETER_NODE)
+                          ? sp_sym_to_s(fx_sym(((const pm_required_parameter_node_t *)p)->name)) : "_");
+  }
+  for (size_t i = 0; i < ps->optionals.size; i++) {
+    FX_SEP();
+    sp_String_append(o, sp_sym_to_s(fx_sym(((const pm_optional_parameter_node_t *)ps->optionals.nodes[i])->name)));
+    sp_String_append(o, "=...");
+  }
+  if (ps->rest && PM_NODE_TYPE_P(ps->rest, PM_REST_PARAMETER_NODE)) {
+    pm_constant_id_t rn = ((const pm_rest_parameter_node_t *)ps->rest)->name;
+    FX_SEP();
+    sp_String_append(o, "*");
+    if (rn) sp_String_append(o, sp_sym_to_s(fx_sym(rn)));
+  }
+  for (size_t i = 0; i < ps->posts.size; i++) {
+    const pm_node_t *p = ps->posts.nodes[i];
+    FX_SEP();
+    sp_String_append(o, PM_NODE_TYPE_P(p, PM_REQUIRED_PARAMETER_NODE)
+                          ? sp_sym_to_s(fx_sym(((const pm_required_parameter_node_t *)p)->name)) : "_");
+  }
+  for (size_t i = 0; i < ps->keywords.size; i++) {
+    const pm_node_t *p = ps->keywords.nodes[i];
+    int req = PM_NODE_TYPE_P(p, PM_REQUIRED_KEYWORD_PARAMETER_NODE);
+    pm_constant_id_t kn = req ? ((const pm_required_keyword_parameter_node_t *)p)->name
+                              : ((const pm_optional_keyword_parameter_node_t *)p)->name;
+    FX_SEP();
+    sp_String_append(o, sp_sym_to_s(fx_sym(kn)));
+    sp_String_append(o, req ? ":" : ": ...");
+  }
+  const pm_node_t *kr = ps->keyword_rest;
+  if (kr && PM_NODE_TYPE_P(kr, PM_FORWARDING_PARAMETER_NODE)) {
+    FX_SEP();
+    sp_String_append(o, "...");
+  } else if (kr && PM_NODE_TYPE_P(kr, PM_KEYWORD_REST_PARAMETER_NODE)) {
+    pm_constant_id_t rn = ((const pm_keyword_rest_parameter_node_t *)kr)->name;
+    FX_SEP();
+    sp_String_append(o, "**");
+    if (rn) sp_String_append(o, sp_sym_to_s(fx_sym(rn)));
+  } else if (kr && PM_NODE_TYPE_P(kr, PM_NO_KEYWORDS_PARAMETER_NODE)) {
+    FX_SEP();
+    sp_String_append(o, "**nil");
+  }
+  if (ps->block) {
+    pm_constant_id_t bn = ps->block->name;
+    FX_SEP();
+    sp_String_append(o, "&");
+    if (bn) sp_String_append(o, sp_sym_to_s(fx_sym(bn)));
+  }
+#undef FX_SEP
+}
+
+/* #<Method: C#name(params) file:line>; C.name for a method of a class,
+   and C(Owner)#name when another class defines it. A builtin method
+   shows (*) for its parameters. */
+static const char *fx_method_value_inspect(const FxMethodValue *mv) {
+  const FxMethod *m = mv->m;
+  sp_String *o = sp_String_new("#<Method: ");
+  SP_GC_ROOT(o);
+  int single = mv->recv.tag == SP_TAG_CLASS && m && m->owner != fx_class_of(mv->recv);
+  FxClass *k = fx_class_of(mv->recv);
+  if (single) {
+    sp_String_append(o, sp_poly_inspect(mv->recv));
+    sp_String_append(o, ".");
+  } else {
+    sp_String_append(o, k->name);
+    if (m && m->owner != k) {
+      sp_String_append(o, "(");
+      sp_String_append(o, m->owner->name);
+      sp_String_append(o, ")");
+    }
+    sp_String_append(o, "#");
+  }
+  sp_String_append(o, sp_sym_to_s(mv->name));
+  sp_String_append(o, "(");
+  if (!m) sp_String_append(o, "*");
+  else if (m->kind == FX_M_DEF) fx_params_text(o, m->def->parameters);
+  sp_String_append(o, ")");
+  if (m && m->kind == FX_M_DEF) {
+    const pm_node_t *d = (const pm_node_t *)m->def;
+    sp_String_append(o, sp_sprintf(" %s:%d", fx_source_of(d)->path, fx_line(d)));
+  }
+  sp_String_append(o, ">");
+  return sp_String_cstr(o);
+}
+
+static int fx_method_value_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                                  sp_RbVal *out) {
+  const FxMethodValue *mv = (const FxMethodValue *)r.v.p;
+  if (FX_IS("call") || FX_IS("()") || FX_IS("[]") || FX_IS("===")) {
+    SP_GC_ROOT_RBVAL(r);
+    *out = fx_method_value_call(mv, argc, argv, blk);
+    return 1;
+  }
+  /* the same method of the same receiver */
+  if (argc == 1 && !blk && (FX_IS("==") || FX_IS("eql?"))) {
+    const FxMethodValue *o = fx_is_method_value(argv[0]) ? (const FxMethodValue *)argv[0].v.p : NULL;
+    *out = sp_box_bool(o && o->m == mv->m && o->name == mv->name && o->recv.tag == mv->recv.tag &&
+                       o->recv.cls_id == mv->recv.cls_id && o->recv.v.i == mv->recv.v.i);
+    return 1;
+  }
+  if (blk || argc) return 0;
+  if (FX_IS("to_proc")) { *out = sp_box_obj(fx_method_value_block(r)->proc, SP_BUILTIN_PROC); return 1; }
+  if (FX_IS("arity")) { *out = sp_box_int(fx_method_value_arity(mv)); return 1; }
+  if (FX_IS("name")) { *out = sp_box_sym(mv->name); return 1; }
+  if (FX_IS("receiver")) { *out = mv->recv; return 1; }
+  if (FX_IS("owner")) {
+    *out = mv->m ? fx_class_box(mv->m->owner) : fx_class_box(fx_class_of(mv->recv));
+    return 1;
+  }
+  if (FX_IS("source_location")) {
+    if (!mv->m || mv->m->kind != FX_M_DEF) { *out = sp_box_nil(); return 1; }
+    const pm_node_t *d = (const pm_node_t *)mv->m->def;
+    sp_PolyArray *a = sp_PolyArray_new();
+    SP_GC_ROOT(a);
+    sp_PolyArray_push(a, sp_box_str_new(sp_str_dup(fx_source_of(d)->path)));
+    sp_PolyArray_push(a, sp_box_int(fx_line(d)));
+    *out = sp_box_poly_array(a);
+    return 1;
+  }
+  if (FX_IS("inspect") || FX_IS("to_s")) { *out = sp_box_str_new(sp_str_dup(fx_method_value_inspect(mv))); return 1; }
   return 0;
 }
 

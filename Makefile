@@ -9,6 +9,9 @@
 #   make regress
 #               run the tests that the last oracle found right, under
 #               Fluxpinel only
+#   make optcarrot
+#               run optcarrot under CRuby and Fluxpinel and compare the
+#               checksums (OPTCARROT_FRAMES=n for a short run)
 #   make upgrade_spinel
 #               move the pin to the master of spinel, then build and run
 #               test, test-host and regress
@@ -218,6 +221,24 @@ regress:
 	ruby tools/oracle.rb --spinel $(SPINEL) --fluxpinel $(BUILD)/promote/fluxpinel \
 	  --int-overflow promote --out $(BUILD)/regress --regress tools/oracle_agree.txt
 
+# optcarrot at the commit in OPTCARROT_COMMIT (the branch that spinel tests),
+# under CRuby and Fluxpinel in promote mode. Both sides must give the same
+# checksum. OPTCARROT_FRAMES sets the frames.
+DEPS_OPTCARROT = $(CURDIR)/deps/optcarrot
+OPTCARROT_URL ?= https://github.com/mame/optcarrot.git
+OPTCARROT_COMMIT := $(shell cat OPTCARROT_COMMIT)
+OPTCARROT_FRAMES ?= 180
+
+optcarrot:
+	if [ ! -d $(DEPS_OPTCARROT)/.git ]; then \
+	  git init -q $(DEPS_OPTCARROT) && git -C $(DEPS_OPTCARROT) remote add origin $(OPTCARROT_URL); fi
+	if [ "$$(git -C $(DEPS_OPTCARROT) rev-parse -q --verify HEAD)" != "$(OPTCARROT_COMMIT)" ]; then \
+	  git -C $(DEPS_OPTCARROT) fetch -q --depth 1 origin $(OPTCARROT_COMMIT) && \
+	  git -C $(DEPS_OPTCARROT) checkout -q --detach FETCH_HEAD; fi
+	$(MAKE) BUILD=$(BUILD)/promote INT_OVERFLOW=PROMOTE $(BUILD)/promote/fluxpinel
+	ruby tools/optcarrot.rb --dir $(DEPS_OPTCARROT) --fluxpinel $(BUILD)/promote/fluxpinel \
+	  --frames $(OPTCARROT_FRAMES)
+
 # Fetches only the pinned commit, and builds spinel in place. A checkout
 # that SPINEL names elsewhere is yours: make deps does not touch it.
 deps:
@@ -263,4 +284,4 @@ endif
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test host test-host oracle regress deps upgrade_spinel clean FORCE
+.PHONY: all test host test-host oracle regress optcarrot deps upgrade_spinel clean FORCE

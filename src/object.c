@@ -952,6 +952,15 @@ static int fx_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       return 1;
     }
     if (!strcmp(name, "itself")) { *out = r; return 1; }
+    /* the ids of CRuby for an Integer, nil, true and false; the identity
+       of any other value */
+    if (!strcmp(name, "object_id") || !strcmp(name, "__id__")) {
+      if (r.tag == SP_TAG_INT) *out = sp_box_int(2 * r.v.i + 1);
+      else if (r.tag == SP_TAG_NIL) *out = sp_box_int(4);
+      else if (r.tag == SP_TAG_BOOL) *out = sp_box_int(r.v.b ? 20 : 0);
+      else *out = sp_box_int((sp_int)(uintptr_t)sp_poly_identity_ptr(r));
+      return 1;
+    }
     if (!strcmp(name, "nil?")) { *out = sp_box_bool(r.tag == SP_TAG_NIL); return 1; }
     /* the defaults, also for super from a user to_s or inspect */
     if (fx_is_fx_object(r) && !strcmp(name, "to_s")) {
@@ -1018,6 +1027,13 @@ static int fx_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       return 1;
     }
     if (fx_is_fx_object(r) && !strcmp(name, "extend")) fx_gap("extend on an object");
+    /* method and public_method: a Method value (iter.c) */
+    if (!strcmp(name, "method") || !strcmp(name, "public_method")) {
+      if (fx_method_value_new(r, a, name[0] == 'p', out)) return 1;
+      const char *on = r.tag == SP_TAG_CLASS ? sp_sprintf("#<Class:%s>", fx_class_value(r)->name)
+                                            : fx_class_of(r)->name;
+      sp_raise_cls("NameError", sp_sprintf("undefined method '%s' for class '%s'", fx_name_arg(a), on));
+    }
     if (!strcmp(name, "instance_variable_get")) { *out = fx_ivar_get(r, sp_sym_intern(fx_name_arg(a))); return 1; }
   }
   /* Comparable#between? and #clamp from the operators, which answer from

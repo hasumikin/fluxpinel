@@ -663,6 +663,8 @@ static int fx_is_proc(sp_RbVal v) {
 static void fx_proc_scan(void *p) {
   const FxBlock *b = &((FxProc *)p)->b;
   if (b->home && b->home->heap) sp_gc_mark(b->home);
+  /* the Proc of a Method keeps the Method */
+  if (b->cfn == fx_method_value_step) sp_gc_mark(b->ctx);
 }
 
 /* A Proc value for a block. A block that a Proc carries answers that Proc.
@@ -700,6 +702,7 @@ static const FxBlock *fx_make_block(FxFrame *f, const pm_node_t *bn, FxBlock *li
     return lit;
   }
   if (fx_is_proc(v)) return &((FxProc *)v.v.p)->b;
+  if (fx_is_method_value(v)) return fx_method_value_block(v);
   fx_unsupported(bn, "block argument that is not a Proc or a Symbol");
 }
 

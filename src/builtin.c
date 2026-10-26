@@ -171,6 +171,10 @@ static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_Rb
     /* the value that a Hash key hashes by; it differs from CRuby's numbers */
     if (!strcmp(name, "hash")) { *out = sp_box_int(sp_rbval_hash_key(r)); return 1; }
     if (!strcmp(name, "-@") && !fx_is_string(r)) { *out = sp_poly_neg(r); return 1; }
+    if (!strcmp(name, "~") && fx_is_integer(r)) {
+      *out = r.tag == SP_TAG_INT ? sp_box_int(~r.v.i) : sp_box_bigint(sp_bigint_not((sp_Bigint *)r.v.p));
+      return 1;
+    }
     /* +str: the String itself when it can change, else a mutable copy */
     if (!strcmp(name, "+@") && fx_is_string(r)) {
       if (r.tag == SP_TAG_OBJ && !sp_gc_is_frozen(r.v.p)) { *out = r; return 1; }
@@ -207,6 +211,11 @@ static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_Rb
       if (!strcmp(name, "^")) { *out = sp_poly_bxor(r, a); return 1; }
       if (!strcmp(name, "<<")) { *out = sp_poly_shl(r, a); return 1; }
       if (!strcmp(name, ">>")) { *out = sp_poly_shr(r, a); return 1; }
+      /* n[i] and n[range]: a bit, or a bit field */
+      if (!strcmp(name, "[]") && (fx_is_integer(a) || a.tag == SP_TAG_FLT || fx_is_range(a))) {
+        *out = sp_poly_index_poly(r, a);
+        return 1;
+      }
     }
     /* str << other on a mutable String: the handle grows in place */
     if (r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_STRBUF && fx_is_string(a) &&
@@ -258,6 +267,12 @@ static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_Rb
     }
     return 0;
   }
+  /* n[i, len]: the bit field of len bits from bit i */
+  if (argc == 2 && r.tag == SP_TAG_INT && !strcmp(name, "[]") && argv[0].tag == SP_TAG_INT &&
+      argv[1].tag == SP_TAG_INT) {
+    *out = sp_box_int(sp_int_bit_range(r.v.i, argv[0].v.i, argv[1].v.i));
+    return 1;
+  }
   if (argc == 2 && fx_is_array(r) && !strcmp(name, "[]=") && argv[0].tag == SP_TAG_INT) {
     sp_poly_arr_set(r, argv[0].v.i, argv[1]);
     *out = argv[1];
@@ -275,7 +290,7 @@ static int fx_builtin_responds(sp_RbVal r, const char *name) {
                                      "instance_of?", "respond_to?", "send", "__send__", "public_send", "frozen?",
                                      "freeze", "itself", NULL };
   static const char *const num[] = { "+", "-", "*", "/", "%", "**", "<", "<=", ">", ">=", "-@", NULL };
-  static const char *const bits[] = { "&", "|", "^", "<<", ">>", NULL };
+  static const char *const bits[] = { "&", "|", "^", "<<", ">>", "[]", NULL };
   /* and the methods of string.c */
   static const char *const str[] = { "+", "*", "%", "length", "size", "start_with?", "end_with?", "split", "dup",
                                      "clone", "-@", "dedup", "freeze", "frozen?", "to_i", "lines", "clear",
@@ -359,6 +374,7 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
   if (fx_env_core(recv, name, argc, argv, blk, out)) return 1;
   if (fx_record_core(recv, name, argc, argv, blk, out)) return 1;
   if (fx_is_proc(recv) && fx_proc_core(recv, name, argc, argv, out)) return 1;
+  if (fx_is_method_value(recv) && fx_method_value_core(recv, name, argc, argv, blk, out)) return 1;
   if (!blk && fx_range_core(recv, name, argc, argv, out)) return 1;
   if (fx_hash_core(recv, name, argc, argv, blk, out)) return 1;
   if (!blk && fx_array_hash(recv, name, argc, out)) return 1;

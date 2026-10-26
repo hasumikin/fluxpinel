@@ -3,3 +3,4 @@
 # A listed test that agrees again is reported as known_fixed: remove its line
 # only when the fix is on spinel's master and the oracle on that master
 # reports known_fixed. A fix on a branch of the tested tree is not enough.
+class_value_method_call	the .expected pins a limitation of AOT (NoMethodError); CRuby and Fluxpinel answer "no raise"	-

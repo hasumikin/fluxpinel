@@ -32,6 +32,7 @@ update of spinel an explicit step.
 | `make test-host` | builds the host with `test/kernel/app.rb`, then runs the same tests and `test/host` on it | about 90 seconds from a clean build |
 | `make regress` | runs the spinel tests in `tools/oracle_agree.txt` under Fluxpinel | about 10 seconds |
 | `make oracle` | runs all the spinel tests under CRuby, Fluxpinel and AOT | more than 10 minutes |
+| `make optcarrot` | runs optcarrot under CRuby and Fluxpinel and compares the checksums | about 10 minutes for 180 frames |
 
 Run `make test` and `make regress` after each change. Run `make oracle`
 before a change of the pin and after a large change of the walker.
@@ -80,6 +81,19 @@ finds. The file itself tells when a line can go.
 
 The spinel tests can leave scratch files in the spinel tree when Fluxpinel
 stops them early. The oracle removes the files that a run adds.
+
+### make optcarrot
+
+`make optcarrot` fetches [optcarrot](https://github.com/mame/optcarrot) at
+the commit in `OPTCARROT_COMMIT` into `deps/optcarrot`. The commit is on
+the branch that spinel tests. `tools/optcarrot.rb` then runs
+`bin/optcarrot -b` under CRuby and under the promote build of Fluxpinel.
+
+- The checksum of Fluxpinel must be the checksum of CRuby, or the run
+  fails.
+- The run prints the fps of each side.
+- Pass `OPTCARROT_FRAMES=10` for a short run. A run of 10 frames prints
+  no fps.
 
 ## Follow the master of spinel
 

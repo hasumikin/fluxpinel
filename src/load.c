@@ -284,7 +284,8 @@ static sp_RbVal fx_require(const pm_node_t *n, const char *arg, int rel) {
   SP_GC_ROOT_STR(path);
   SP_GC_ROOT_STR(file);
   SP_GC_ROOT_STR(shown);
-  if (rel) {
+  /* an absolute path names the file itself */
+  if (rel && arg[0] != '/') {
     char *dir = fx_dirname(fx_source_of(n)->real);
     path = sp_sprintf("%s/%s", dir, arg);
     free(dir);
