@@ -514,8 +514,9 @@ The walker removes them. The measures, in order:
    (`FxSide`) in a side table, and `fx_side` finds it by the node id. The
    parses number their nodes with one count, so a node id is unique in
    the process. A record keeps what the walker resolves once, such as
-   the cache fields of the measures below. The prism tree stays as it is. [side-table.md](side-table.md)
-   gives the design and the stages.
+   the cache fields of the measures below. The prism tree stays as it
+   is. [side-table.md](side-table.md) describes the table and its
+   records.
 2. **Symbols, no strings.** The walker interns each name once. A
    lookup compares Symbols and does no `strcmp` and no `sp_sym_intern`.
    Builtin dispatch finds a core method in one table by (receiver kind,
@@ -534,13 +535,14 @@ The walker removes them. The measures, in order:
    (`return`, `break`, `next`) in two words, which stay in registers. A
    method boundary clears its state with one operation. An exception
    stays a raise of the runtime (`sp_raise`), so that a raise crosses to
-   AOT code (section 3.6). This measure is on hold (side-table.md, S5).
+   AOT code (section 3.6). This measure is on hold (side-table.md, section 4).
 5. **Specialized operators.** The record of `a + b` and its kin keeps a
    function pointer for an evaluation of two Integers. When the node meets
    a Float, it changes its evaluation to the Float form, and then to the
    general form. A node that changes too often stays general. A program
    that redefines a builtin operator turns off each such node. This
-   measure is on hold for the cost of maintenance (side-table.md, S4).
+   measure is on hold for the cost of maintenance (side-table.md,
+   section 4).
 6. **An instance variable cache.** The record of a node of `@x` keeps the
    class id and the slot that it found last (`FxIvarCache`). An accessor
    keeps the same cache in its `FxMethod`. The global slot cache stays
