@@ -367,9 +367,9 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     *out = r;
     return 1;
   }
-  /* read(length[, buffer]), gets(sep[, limit], chomp:) and readlines(...):
-     the arguments read as CRuby reads them (sp_io_read_splat,
-     sp_io_line_args) */
+  /* read(length[, buffer]), gets(sep[, limit], chomp:), readline(...) and
+     readlines(...): the arguments read as CRuby reads them
+     (sp_io_read_splat, sp_io_line_args) */
   int kw = argc > 0 && fx_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash;
   if (FX_IS("read") && argc >= 1 && !kw) {
     sp_PolyArray *a = sp_PolyArray_new();
@@ -379,7 +379,35 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     *out = s ? sp_box_str_new(s) : sp_box_nil();
     return 1;
   }
-  if ((FX_IS("gets") && argc >= 1) || FX_IS("readlines")) {
+  /* pread(len, offset), pwrite(str, offset), readpartial(n), sysread(n)
+     and syswrite(str), with the checks of the runtime; the forms with an
+     output buffer are not here */
+  if (!kw && argc == 2 && FX_IS("pread")) {
+    const char *s = sp_File_pread_checked(io, sp_poly_arg_int_chk(argv[0]), sp_poly_arg_int_chk(argv[1]));
+    *out = sp_box_str_new(s);
+    return 1;
+  }
+  if (!kw && argc == 2 && FX_IS("pwrite")) {
+    /* a String writes all of its bytes, NUL too, as IO#write does */
+    int str = fx_is_string(argv[0]);
+    const char *s = str ? sp_poly_arg_str_chk(argv[0]) : sp_poly_to_s(argv[0]);
+    SP_GC_ROOT_STR(s);
+    sp_int off = sp_poly_arg_int_chk(argv[1]);
+    *out = sp_box_int(str ? sp_File_pwrite_bin(io, s, off) : sp_File_pwrite(io, s, off));
+    return 1;
+  }
+  if (!kw && argc == 1 && (FX_IS("readpartial") || FX_IS("sysread"))) {
+    sp_int n = sp_poly_arg_int_chk(argv[0]);
+    *out = sp_box_str_new(name[0] == 'r' ? sp_File_readpartial_checked(io, n) : sp_File_sysread_checked(io, n));
+    return 1;
+  }
+  if (!kw && argc == 1 && FX_IS("syswrite")) {
+    const char *s = sp_poly_to_s(argv[0]);
+    SP_GC_ROOT_STR(s);
+    *out = sp_box_int(sp_File_syswrite(io, s, sp_str_byte_len(s)));
+    return 1;
+  }
+  if ((FX_IS("gets") && argc >= 1) || FX_IS("readlines") || FX_IS("readline")) {
     int chomp = 0;
     if (kw) {
       sp_PolyPolyHash *h = sp_poly_as_poly_poly_hash(argv[argc - 1]);
@@ -396,6 +424,12 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
       sp_oint lim = sp_io_gets_args(a, &sep);
       const char *s = sp_File_gets_limit(io, sep, lim, chomp);
       *out = s ? sp_box_str_new(s) : sp_box_nil();
+      return 1;
+    }
+    /* readline: gets, with EOFError at the end */
+    if (FX_IS("readline")) {
+      sp_oint lim = sp_io_gets_args(a, &sep);
+      *out = sp_box_str_new(sp_File_readline_limit(io, sep, lim, chomp));
       return 1;
     }
     sp_int lim;

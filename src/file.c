@@ -96,15 +96,30 @@ static sp_RbVal fx_file_delete(int argc, sp_RbVal *argv) {
 
 static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (FX_IS("join")) { *out = sp_box_str_new(sp_file_join_vals(argv, argc)); return 1; }
-  /* File.readlines(path) and File.readlines(path, chomp: true) */
-  if (FX_IS("readlines") && (argc == 1 || (argc == 2 && fx_is_kwargs(argv[1])))) {
+  /* File.readlines(path[, sep[, limit]], chomp:): the lines as IO#readlines
+     reads them (sp_io_line_args) */
+  if (FX_IS("readlines") && argc >= 1) {
     static const char *const keys[] = { "chomp", NULL };
-    if (argc == 2 && !fx_kwargs_only(argv[1], keys)) return 0;
-    int chomp = argc == 2 && sp_poly_truthy(sp_PolyPolyHash_get(sp_poly_as_poly_poly_hash(argv[1]),
-                                                               sp_box_sym(sp_sym_intern("chomp"))));
-    const char *path = sp_poly_arg_path(argv[0]);
-    SP_GC_ROOT_STR(path);
-    sp_StrArray *a = chomp ? sp_file_readlines_chomp(path) : sp_file_readlines(path);
+    int chomp = 0;
+    if (argc >= 2 && fx_is_kwargs(argv[argc - 1])) {
+      if (!fx_kwargs_only(argv[argc - 1], keys)) return 0;
+      chomp = sp_poly_truthy(sp_PolyPolyHash_get(sp_poly_as_poly_poly_hash(argv[argc - 1]),
+                                                 sp_box_sym(sp_sym_intern("chomp"))));
+      argc--;
+    }
+    sp_PolyArray *rest = sp_PolyArray_new();
+    SP_GC_ROOT(rest);
+    for (int i = 1; i < argc; i++) sp_PolyArray_push(rest, argv[i]);
+    const char *sep;
+    sp_int limit;
+    sp_io_line_args(rest, &sep, &limit, "readlines");
+    SP_GC_ROOT_STR(sep);
+    sp_File *f = sp_File_open(sp_poly_arg_path(argv[0]), "r");
+    SP_GC_ROOT(f);
+    sp_StrArray *a = sp_StrArray_new();
+    SP_GC_ROOT(a);
+    for (const char *s; (s = sp_File_gets_sep(f, sep, limit, chomp)) != NULL;) sp_StrArray_push(a, s);
+    sp_File_close(f);
     *out = sp_box_nullable_obj((void *)a, SP_BUILTIN_STR_ARRAY);
     return 1;
   }
@@ -248,13 +263,100 @@ static int fx_file_foreach(int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVa
   return 1;
 }
 
+/* IO.pipe with a block: the block takes the reader and the writer, and
+   both close when the block ends, also by a raise or a jump. */
+static sp_RbVal fx_io_pipe_with(const FxBlock *blk) {
+  SP_GC_SAVE();
+  sp_PolyArray *ends = sp_io_pipe();
+  SP_GC_ROOT(ends);
+  sp_RbVal v = sp_box_nil();
+  SP_GC_ROOT_RBVAL(v);
+  const int depth = fx_fs()->depth;
+  FX_TRY_PUSH();
+  if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
+    v = fx_yield(blk, 2, ends->data);
+    sp_exc_top--;
+  } else {
+    FX_TRY_LANDED(depth);
+    for (int i = 0; i < 2; i++)
+      if (!sp_File_closed_p((sp_File *)ends->data[i].v.p)) sp_File_close((sp_File *)ends->data[i].v.p);
+    if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
+    fx_reraise(fx_caught());
+  }
+  for (int i = 0; i < 2; i++)
+    if (!sp_File_closed_p((sp_File *)ends->data[i].v.p)) sp_File_close((sp_File *)ends->data[i].v.p);
+  return v;
+}
+
+/* Whether v names a path for IO.copy_stream: a String, or an object with
+   to_path, as CRuby asks. */
+static int fx_copy_path(sp_RbVal v) {
+  return fx_is_string(v) || (!fx_is_io(v) && fx_builtin_responds(v, "to_path")) ||
+         (fx_is_fx_object(v) && fx_find_method(fx_class_of(v), sp_sym_intern("to_path")));
+}
+
+/* IO.copy_stream(src, dst): each side is a path, an IO, or an object that
+   reads or writes (a StringIO). Two paths take sp_io_copy_stream of the
+   runtime. Else the copy reads the rest of the source and writes it to
+   the destination. Answers the count of the bytes. */
+static sp_int fx_io_copy_stream(sp_RbVal src, sp_RbVal dst) {
+  SP_GC_ROOT_RBVAL(src);
+  SP_GC_ROOT_RBVAL(dst);
+  int spath = fx_copy_path(src), dpath = fx_copy_path(dst);
+  if (spath && dpath) {
+    const char *s = sp_poly_arg_path(src);
+    SP_GC_ROOT_STR(s);
+    const char *d = sp_poly_arg_path(dst);
+    SP_GC_ROOT_STR(d);
+    return sp_io_copy_stream(s, d);
+  }
+  sp_RbVal data = sp_box_nil();
+  SP_GC_ROOT_RBVAL(data);
+  if (spath) {
+    sp_File *in = sp_File_open(sp_poly_arg_path(src), "rb");
+    SP_GC_ROOT(in);
+    const char *s = sp_File_read(in);
+    sp_File_close(in);
+    data = s ? sp_box_str_new(s) : sp_box_nil();
+  } else if (fx_is_io(src)) {
+    const char *s = sp_File_read((sp_File *)src.v.p);
+    data = s ? sp_box_str_new(s) : sp_box_nil();
+  } else {
+    data = fx_send(src, "read", 0, NULL);
+  }
+  if (data.tag == SP_TAG_NIL) return 0;
+  sp_int n = (sp_int)sp_str_byte_len(sp_poly_arg_str_chk(data));
+  if (dpath) {
+    sp_File *out = sp_File_open(sp_poly_arg_path(dst), "wb");
+    SP_GC_ROOT(out);
+    sp_File_write_poly(out, data);
+    sp_File_close(out);
+  } else if (fx_is_io(dst)) {
+    sp_File_write_poly((sp_File *)dst.v.p, data);
+  } else {
+    fx_send(dst, "write", 1, &data);
+  }
+  return n;
+}
+
 /* A class method of File on paths, or one that opens a File. Answers 1
    and sets *out when it handles the call. */
 static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                          sp_RbVal *out) {
   if (k->cls_id >= 0) return 0;
-  /* IO.foreach reads a path, as File.foreach does */
-  if (!strcmp(k->name, "IO")) return FX_IS("foreach") && blk && fx_file_foreach(argc, argv, blk, out);
+  if (!strcmp(k->name, "IO")) {
+    /* IO.foreach reads a path, as File.foreach does */
+    if (FX_IS("foreach")) return blk && fx_file_foreach(argc, argv, blk, out);
+    if (FX_IS("pipe") && argc == 0) {
+      *out = blk ? fx_io_pipe_with(blk) : sp_box_poly_array(sp_io_pipe());
+      return 1;
+    }
+    if (FX_IS("copy_stream") && argc == 2 && !blk) {
+      *out = sp_box_int(fx_io_copy_stream(argv[0], argv[1]));
+      return 1;
+    }
+    return 0;
+  }
   if (strcmp(k->name, "File")) return 0;
   if ((FX_IS("open") || FX_IS("new")) && argc >= 1 && argc <= 4) {
     sp_File *f = fx_file_open(argc, argv);
