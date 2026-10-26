@@ -411,19 +411,25 @@ static int fx_re_subst(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, c
   return fx_re_subst_done(r, bang, sp_re_sub_matched, res, out);
 }
 
-/* scan with a block: each match, or the groups of each match, with $~ set. */
+/* scan with a block: each match, or the groups of each match, with $~ set.
+   As rb_str_scan does, each turn searches the subject as it is then, from
+   the end of the last match: the block can change its bytes, or its
+   encoding. A block that changes its length raises. */
 static int fx_re_scan_each(sp_RbVal r, sp_RbVal pv, const FxBlock *blk, sp_RbVal *out) {
   SP_GC_ROOT_RBVAL(r);
   SP_GC_ROOT_RBVAL(pv);
   mrb_regexp_pattern *pat = (mrb_regexp_pattern *)pv.v.p;
-  const char *s = fx_re_subject(r, "scan");
+  const char *s = sp_poly_recv_s(r, "scan");
   SP_GC_ROOT_STR(s);
   sp_RbVal v = sp_box_nil();
   SP_GC_ROOT_RBVAL(v);
-  int64_t slen = (int64_t)sp_str_byte_len(s), pos = 0;
+  const int64_t len = (int64_t)sp_str_byte_len(s);
+  /* last: the start of the search of the last match */
+  int64_t pos = 0, last = -1;
   int caps[64];
-  while (pos <= slen) {
-    int n = spinel_re_exec(pat, s, slen, pos, caps, 64, sp_str_is_binary(s));
+  while (pos <= len) {
+    s = sp_poly_recv_s(r, "scan");
+    int n = spinel_re_exec(pat, s, len, pos, caps, 64, sp_str_is_binary(s));
     if (n <= 0 || caps[0] < 0) break;
     sp_re_set_last_match(pat, s, caps, n);
     int pairs = (n > 64 ? 64 : n) / 2;
@@ -437,10 +443,22 @@ static int fx_re_scan_each(sp_RbVal r, sp_RbVal pv, const FxBlock *blk, sp_RbVal
                                                : fx_new_string((const uint8_t *)s + caps[g * 2],
                                                                  (size_t)(caps[g * 2 + 1] - caps[g * 2])));
     }
-    fx_y1(blk, v);
-    FX_STOP();
+    last = pos;
     pos = caps[1];
     if (caps[0] == caps[1]) pos++;
+    fx_y1(blk, v);
+    FX_STOP();
+    if ((int64_t)sp_str_byte_len(sp_poly_recv_s(r, "scan")) != len) sp_raise_cls("RuntimeError", "string modified");
+  }
+  /* $~ is the last match, which the search runs again for, since the block
+     can match on its own; with no match, nil */
+  if (last < 0) {
+    sp_re_clear_last_match();
+  } else {
+    s = sp_poly_recv_s(r, "scan");
+    int n = spinel_re_exec(pat, s, len, last, caps, 64, sp_str_is_binary(s));
+    if (n > 0 && caps[0] >= 0) sp_re_set_last_match(pat, s, caps, n);
+    else sp_re_clear_last_match();
   }
   *out = r;
   return 1;
