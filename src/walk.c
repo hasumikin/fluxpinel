@@ -1954,15 +1954,20 @@ static sp_RbVal fx_index_op_write(FxFrame *f, const pm_index_operator_write_node
   int argc = fx_argc(n->arguments);
   sp_RbVal argv[argc + 1];
   if (!fx_args(f, n->arguments, argc, argv)) return sp_box_nil();
+  static sp_sym aref = -1, aset = -1;
+  if (aref < 0) {
+    aref = sp_sym_intern("[]");
+    aset = sp_sym_intern("[]=");
+  }
   sp_RbVal cur;
-  if (!fx_fast_call(recv, sp_sym_intern("[]"), argc, argv, &cur)) cur = fx_send(recv, "[]", argc, argv);
+  if (!fx_fast_call(recv, aref, argc, argv, &cur)) cur = fx_send(recv, "[]", argc, argv);
   SP_GC_ROOT_RBVAL(cur);
   sp_RbVal v = fx_eval(f, n->value);
   if (L.ctl != FX_CTL_NONE) return sp_box_nil();
   argv[argc] = fx_op(cur, n->binary_operator, v);
   _sp_gc_root_push((void **)((uintptr_t)&argv[argc] | (uintptr_t)1));
   sp_RbVal set;
-  if (!fx_fast_call(recv, sp_sym_intern("[]="), argc + 1, argv, &set)) fx_send(recv, "[]=", argc + 1, argv);
+  if (!fx_fast_call(recv, aset, argc + 1, argv, &set)) fx_send(recv, "[]=", argc + 1, argv);
   return argv[argc];
 }
 

@@ -486,12 +486,20 @@ work that each call does again on each run:
   chain of `strcmp` in each core file (about 500 comparisons in `src/`),
   then a search of the generated rows (`fx_bop_find`). A frequent method
   at the end of a chain pays for each comparison before it.
-- **Lookup with no cache.** `fx_find_method` builds the list of the
-  ancestors (`fx_ancestors`) and searches each method table, at each call.
-- **The name.** A call turns the constant id of prism into a C string, and
-  `sp_sym_intern` turns it back into a Symbol for each lookup.
-- **Instance variables.** `fx_ivar_slot` searches the names of the class
-  for the slot at each read and each write.
+  `fx_fast_call` answers the commonest calls first, by the Symbol: the
+  operators of two Integers or two Floats, `Integer#[]`, `==` and `===`
+  of two Symbols, `Array#[]`, `[]=`, `<<`, `size`, `length` and `Hash#[]`.
+  A program that reopens a builtin class turns it off.
+- **Lookup.** `fx_find_method` builds the list of the ancestors
+  (`fx_ancestors`) and searches each method table. One global cache keeps
+  the answer for each (class, Symbol), a miss included. A change of a
+  method table or of the ancestors increments one generation, and thus
+  clears every entry.
+- **The name.** `fx_sym` keeps the Symbol of each constant id of prism,
+  so the walker interns a name once. A call still passes the name to the
+  builtin dispatch as a C string.
+- **Instance variables.** One global cache keeps the slot for each (class,
+  Symbol). A slot never moves, so an entry stays right.
 - **Jumps.** After each evaluation, the caller reads `L.ctl` in memory to
   see a pending `return`, `break` or `next`.
 - **Frames.** A frame roots each slot with its own push to the GC root
@@ -518,7 +526,8 @@ The walker removes them. The measures, in order:
    serial, and thus clears every cache. A program defines its methods
    mostly at the start, so the caches stay valid at run time. The code of
    a miss stays out of line (`noinline`), but not in a cold section: a
-   call site with more than one class takes the miss path often.
+   call site with more than one class takes the miss path often. The
+   global cache of `fx_find_method` does this job until the tree is there.
 4. **Jumps in the result.** Each evaluation returns the value and a state
    (`return`, `break`, `next`) in two words, which stay in registers. A
    method boundary clears its state with one operation. An exception
@@ -530,7 +539,8 @@ The walker removes them. The measures, in order:
    that changes too often stays general. A program that redefines a
    builtin operator turns off each such node.
 6. **An instance variable cache.** A node of `@x` keeps the class and the
-   slot that it found last.
+   slot that it found last. The global slot cache does this job until the
+   tree is there.
 7. **Accessors.** A method that `attr_reader` or `attr_writer` defines
    runs with no frame.
 8. **Frames.** Root the slots of a frame as one range, with one push.

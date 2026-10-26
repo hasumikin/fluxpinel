@@ -47,6 +47,7 @@ static void fx_host_init(void) {
     FxClass *sk = s.cls_id == k->cls_id ? NULL : fx_class_by_id(s.cls_id);
     k->super = sk ? sk : L.object;
   }
+  fx_methods_gen++;   /* the ancestors changed */
   for (int i = 0; i < FX_NENTRIES; i++) {
     FxClass *k = fx_host_module(fx_kernel_entries[i].module);
     if (!k) continue;

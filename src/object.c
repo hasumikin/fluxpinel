@@ -9,6 +9,11 @@
 
 /* ---- method tables ---- */
 
+/* The generation of the method tables and of the ancestors: each change
+   of either makes it one more, and so every entry of the lookup cache
+   (fx_find_method) goes stale at once. */
+static unsigned fx_methods_gen = 1;
+
 static FxMethod *fx_table_get(const FxMethodTable *t, sp_sym name) {
   for (int i = 0; i < t->n; i++)
     if (t->items[i]->name == name) return t->items[i];
@@ -16,6 +21,7 @@ static FxMethod *fx_table_get(const FxMethodTable *t, sp_sym name) {
 }
 
 static void fx_table_put(FxMethodTable *t, FxMethod *m) {
+  fx_methods_gen++;
   for (int i = 0; i < t->n; i++)
     if (t->items[i]->name == m->name) { t->items[i] = m; return; }
   if (t->n == t->cap) {
@@ -77,6 +83,7 @@ static void fx_alias(FxClass *k, int singleton, sp_sym to, sp_sym from) {
 /* ---- classes ---- */
 
 static void fx_push_class(FxClass ***arr, int *n, int *cap, FxClass *c) {
+  fx_methods_gen++;   /* an include or an extend changes the ancestors */
   if (*n == *cap) {
     *cap = *cap ? *cap * 2 : 8;
     *arr = realloc(*arr, sizeof **arr * (size_t)*cap);
@@ -392,7 +399,7 @@ static int fx_ancestors(const FxClass *c, const FxClass **out, int cap) {
   return n;
 }
 
-static FxMethod *fx_find_method(const FxClass *c, sp_sym name) {
+static SP_NOINLINE FxMethod *fx_find_method_slow(const FxClass *c, sp_sym name) {
   const FxClass *anc[128];
   int n = fx_ancestors(c, anc, 128);
   for (int i = 0; i < n; i++) {
@@ -400,6 +407,29 @@ static FxMethod *fx_find_method(const FxClass *c, sp_sym name) {
     if (m) return m;
   }
   return NULL;
+}
+
+/* The lookup cache: one entry for each (class, name) slot, with the answer
+   of the walk of the ancestors, a miss included. An entry of an older
+   fx_methods_gen is stale. */
+#define FX_MCACHE_SIZE 4096
+static struct {
+  const FxClass *c;
+  sp_sym name;
+  unsigned gen;
+  FxMethod *m;
+} fx_mcache[FX_MCACHE_SIZE];
+
+static FxMethod *fx_find_method(const FxClass *c, sp_sym name) {
+  size_t i = (((uintptr_t)c >> 4) ^ ((size_t)name * 2654435761u)) & (FX_MCACHE_SIZE - 1);
+  if (fx_mcache[i].gen == fx_methods_gen && fx_mcache[i].c == c && fx_mcache[i].name == name)
+    return fx_mcache[i].m;
+  FxMethod *m = fx_find_method_slow(c, name);
+  fx_mcache[i].c = c;
+  fx_mcache[i].name = name;
+  fx_mcache[i].gen = fx_methods_gen;
+  fx_mcache[i].m = m;
+  return m;
 }
 
 /* A class method: the singleton methods of c and its superclasses, and the
@@ -575,16 +605,35 @@ static sp_RbVal fx_new_object(FxClass *c) {
   return sp_box_obj(o, (int)c->inst_id);
 }
 
+/* The slot cache: one entry for each (class, name) slot. A slot of a class
+   never moves, so an entry stays right; a miss of the list is not kept,
+   since a later set adds the slot. */
+#define FX_ICACHE_SIZE 4096
+static struct {
+  const FxClass *c;
+  sp_sym name;
+  int slot;
+} fx_icache[FX_ICACHE_SIZE];
+
 static int fx_ivar_slot(FxClass *c, sp_sym name, int create) {
+  size_t h = (((uintptr_t)c >> 4) ^ ((size_t)name * 2654435761u)) & (FX_ICACHE_SIZE - 1);
+  if (fx_icache[h].c == c && fx_icache[h].name == name) return fx_icache[h].slot;
+  int slot = -1;
   for (int i = 0; i < c->nivars; i++)
-    if (c->ivars[i] == name) return i;
-  if (!create) return -1;
-  if (c->nivars == c->ivars_cap) {
-    c->ivars_cap = c->ivars_cap ? c->ivars_cap * 2 : 8;
-    c->ivars = realloc(c->ivars, sizeof *c->ivars * (size_t)c->ivars_cap);
+    if (c->ivars[i] == name) { slot = i; break; }
+  if (slot < 0) {
+    if (!create) return -1;
+    if (c->nivars == c->ivars_cap) {
+      c->ivars_cap = c->ivars_cap ? c->ivars_cap * 2 : 8;
+      c->ivars = realloc(c->ivars, sizeof *c->ivars * (size_t)c->ivars_cap);
+    }
+    c->ivars[c->nivars] = name;
+    slot = c->nivars++;
   }
-  c->ivars[c->nivars] = name;
-  return c->nivars++;
+  fx_icache[h].c = c;
+  fx_icache[h].name = name;
+  fx_icache[h].slot = slot;
+  return slot;
 }
 
 /* The ivars of a class value (class-level @x) live in a hidden object. */
