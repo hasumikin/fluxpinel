@@ -1691,12 +1691,23 @@ static sp_RbVal fx_jump(FxFrame *f, FxCtl kind, const pm_arguments_node_t *args)
 
 /* ---- literals ---- */
 
-static sp_RbVal fx_integer(const pm_node_t *n, const pm_integer_t *iv) {
-  uint64_t u;
+/* An Integer literal: an Integer, or a Bignum when it does not fit 64 bits
+   (in every mode, as in CRuby). The Bignum comes from the decimal text, as
+   spinel's codegen makes it (sp_bigint_new_str). */
+static sp_RbVal fx_integer(const pm_integer_t *iv) {
+  uint64_t u = 0;
+  int big = iv->values && iv->length > 2;
   if (!iv->values) u = iv->value;
   else if (iv->length == 2) u = (uint64_t)iv->values[1] << 32 | iv->values[0];
-  else fx_unsupported(n, "integer literal beyond 64 bits");
-  if (u > (uint64_t)INT64_MAX + (iv->negative ? 1 : 0)) fx_unsupported(n, "integer literal beyond 64 bits");
+  if (big || u > (uint64_t)INT64_MAX + (iv->negative ? 1 : 0)) {
+    pm_buffer_t buf;
+    pm_buffer_init(&buf);
+    pm_integer_string(&buf, iv);
+    const char *s = sp_sprintf("%.*s", (int)pm_buffer_length(&buf), pm_buffer_value(&buf));
+    pm_buffer_free(&buf);
+    SP_GC_ROOT_STR(s);
+    return sp_box_bigint(sp_bigint_new_str(s, 10));
+  }
   return sp_box_int(iv->negative ? (sp_int)(0 - u) : (sp_int)u);
 }
 
@@ -2785,11 +2796,20 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
     return b ? fx_eval(f, b) : sp_box_nil();
   }
   case PM_INTEGER_NODE:
-    return fx_integer(n, &((const pm_integer_node_t *)n)->value);
+    return fx_integer(&((const pm_integer_node_t *)n)->value);
   case PM_RATIONAL_NODE: {
     /* prism gives the parts reduced: 1.5r is 3/2 */
     const pm_rational_node_t *r = (const pm_rational_node_t *)n;
-    sp_RbVal num = fx_integer(n, &r->numerator), den = fx_integer(n, &r->denominator);
+    sp_RbVal num = fx_integer(&r->numerator);
+    SP_GC_ROOT_RBVAL(num);
+    sp_RbVal den = fx_integer(&r->denominator);
+    SP_GC_ROOT_RBVAL(den);
+    /* a part beyond 64 bits makes a big Rational */
+    if (num.tag == SP_TAG_BIGINT || den.tag == SP_TAG_BIGINT) {
+      sp_Bigint *bn = sp_poly_as_bigint(num);
+      SP_GC_ROOT(bn);
+      return sp_box_brat(bn, sp_poly_as_bigint(den));
+    }
     return sp_box_rational(sp_rational_new(num.v.i, den.v.i));
   }
   case PM_IMAGINARY_NODE: {

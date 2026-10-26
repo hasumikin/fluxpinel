@@ -314,12 +314,21 @@ begin_unknown_const_tail
 begin_value_body_local
 begin_while_locals_not_volatile
 big_rational_to_s_root
+bigint_bitwise_negative
+bigint_branch_arm
+bigint_compare_object_operand
 bigint_div_by_zero
+bigint_float_compare_exact
 bigint_float_mixed_arith
+bigint_if_value_temp
 bigint_inner_chain_assign
+bigint_literal
 bigint_literal_pow
+bigint_literal_shared
+bigint_literal_table_startup
 bigint_local_in_int_slot
 bigint_loop_local_through_ivar_getter
+bigint_operand_rooted
 bigint_poly_arith
 bigint_poly_container
 bigint_pow_shift
@@ -327,17 +336,21 @@ bigint_propagation_chain
 bigint_return_int_literal
 bigint_shift_count_and_quo
 bigint_shift_limbs
+bigint_slot_nil
 bigint_to_s_is_a_heap_string
 bigint_volatile_combo
 bignum_bit_range_float_end
 bignum_rational_arith
 bignum_rational_basic
+bignum_receiver_bitwise
 bignum_shift_op_assign
+bignum_shift_poly_count
 bignum_variable_writes
 bigrational_integer_surface
 binary_string_index_byte_offsets
 binary_string_length_bytes
 binop_recv_root
+bitwise_mask_over_int64
 blk_param_kept_call_value
 blk_param_reassigned
 blk_param_stored_proc_per_iteration
@@ -828,6 +841,7 @@ chain_append_captured_strbuf
 chained_aset_on_poly_hash_recv
 chained_attr_write_empty_hash
 chained_ivar_write_call_rhs
+chained_write_literal_slot
 chr_boxed_nil_recv
 chunk_family_nil_elem
 chunk_first_class
@@ -1712,6 +1726,7 @@ float_to_i_inline
 float_to_r
 float_to_s_fixed_1e15
 flock_nonblock_held
+fold_literal_table_bignum_row
 fold_literal_table_empty_row
 fold_memo_to_proc
 fold_nonempty_array_seed
@@ -1725,6 +1740,7 @@ for_loop_target_kinds
 for_loop_value
 for_multi_index_over_range
 for_over_boxed_collection
+for_over_hash_and_bigint_when
 for_over_paren_collection
 for_over_range_value
 for_range_nil_bound
@@ -2431,6 +2447,7 @@ isa_guarded_return_narrow
 isa_namespaced_exception_collision
 isa_narrow
 isa_narrowed_array_mutation
+isa_scalar_arm_dead
 isa_self_in_base_method
 issue203_string_new
 issue224_bare_new_inherited
@@ -3070,6 +3087,7 @@ method_call_wide_arity
 method_capture_keeps_poly_return
 method_capture_loop_param_stays_unbound
 method_capture_param_evidence
+method_capture_pinned_param_rebind
 method_capture_untyped_param_poly
 method_case_eq_boxed
 method_chain_callee_first
@@ -3189,6 +3207,7 @@ more_truthies_nil_compare
 multi_arg_lambda
 multi_assign_array_underfill
 multi_assign_ivar_type
+multi_assign_operand_gc_root
 multi_assign_poly_rhs
 multi_assign_rest_from_splat
 multi_assign_runtime_array_targets
@@ -3524,6 +3543,7 @@ pattern_rest_from_typed_array
 pattern_rightward_oneline
 pattern_value_raising_arm
 percent_literal_command_arg_heredoc_text
+pin_compares_by_value
 pipe_ends_captured
 pointer_type_miscompiles
 poll_dynamic_call_reacher
@@ -3582,6 +3602,7 @@ poly_attr_writer_distinct_family_override
 poly_binop_arm_fills_default
 poly_bitop_bignum_width
 poly_bitop_recv_before_operand
+poly_bitop_recv_root
 poly_block_call_user_candidate_const
 poly_block_call_user_class_own
 poly_block_dispatch_builtin_default
@@ -3860,6 +3881,7 @@ poly_recv_map_join
 poly_recv_range_sym_hash_dispatch
 poly_recv_str_transform_class_method
 poly_recv_string_shortcut_beside_class_method
+poly_recv_to_i_user
 poly_recv_two_arg_slice
 poly_recv_user_operator_arg
 poly_reduce_operator_symbol
@@ -4093,6 +4115,7 @@ promote_bigrational_to_i
 promote_block_loop_bigint
 promote_block_param_nil
 promote_global_op_assign
+promote_literal_overflow
 promote_poly_int_overflow
 promote_poly_overflow
 promote_poly_slot_method_call
@@ -4230,6 +4253,7 @@ rational_div_family
 rational_eq_poly_operand
 rational_from_sum_rounding
 rational_i_to_complex
+rational_literal_bignum
 rational_mod_cmp_slice_default_wave10
 rational_named_division_boxed
 rational_non_numeric_arg
