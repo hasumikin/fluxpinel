@@ -38,9 +38,31 @@ static void fx_gap(const char *what) {
   _exit(2);
 }
 
-static sp_sym fx_sym(pm_constant_id_t id) {
+/* The Symbol of each constant id of L.pool, plus 1 (0: not interned yet).
+   Every file shares the pool, so one table serves them all. It grows when
+   a file adds constants. */
+static struct {
+  sp_sym *syms;
+  size_t cap;
+} fx_sym_cache;
+
+static SP_NOINLINE sp_sym fx_sym_slow(pm_constant_id_t id) {
+  if (id >= fx_sym_cache.cap) {
+    size_t cap = fx_sym_cache.cap ? fx_sym_cache.cap : 1024;
+    while (cap <= id) cap *= 2;
+    fx_sym_cache.syms = realloc(fx_sym_cache.syms, sizeof *fx_sym_cache.syms * cap);
+    memset(fx_sym_cache.syms + fx_sym_cache.cap, 0, sizeof *fx_sym_cache.syms * (cap - fx_sym_cache.cap));
+    fx_sym_cache.cap = cap;
+  }
   const pm_constant_t *c = pm_constant_pool_id_to_constant(&L.pool, id);
-  return fx_sym_intern_n((const char *)c->start, c->length);
+  sp_sym s = fx_sym_intern_n((const char *)c->start, c->length);
+  fx_sym_cache.syms[id] = s + 1;
+  return s;
+}
+
+static inline sp_sym fx_sym(pm_constant_id_t id) {
+  if (id < fx_sym_cache.cap && fx_sym_cache.syms[id]) return fx_sym_cache.syms[id] - 1;
+  return fx_sym_slow(id);
 }
 
 /* The write barrier of a frame whose slots are on the heap (FxEnv): the

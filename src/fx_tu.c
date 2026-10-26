@@ -67,16 +67,46 @@ static const char *sp_sym_to_s(sp_sym id) {
   return sp_str_empty;
 }
 
+/* The index of the names: an open-addressed table of symbol + 1 (0: an
+   empty slot). It holds at most half its slots, and doubles past that. */
+static int *sp_sym_index;
+static uint32_t sp_sym_index_mask;
+
+static uint32_t sp_sym_hash(const char *s, size_t n) {
+  uint32_t h = 2166136261u;   /* FNV-1a */
+  for (size_t i = 0; i < n; i++) h = (h ^ (uint8_t)s[i]) * 16777619u;
+  return h;
+}
+
+static void sp_sym_index_put(int id) {
+  const char *c = sp_dyn_syms[id];
+  uint32_t i = sp_sym_hash(c, sp_str_byte_len(c)) & sp_sym_index_mask;
+  while (sp_sym_index[i]) i = (i + 1) & sp_sym_index_mask;
+  sp_sym_index[i] = id + 1;
+}
+
+static SP_NOINLINE SP_COLD void sp_sym_index_grow(void) {
+  uint32_t cap = sp_sym_index ? (sp_sym_index_mask + 1) * 2 : 1024;
+  free(sp_sym_index);
+  sp_sym_index = (int *)calloc(cap, sizeof *sp_sym_index);
+  if (!sp_sym_index) sp_raise_cls("NoMemoryError", "failed to grow the symbol table");
+  sp_sym_index_mask = cap - 1;
+  for (int i = 0; i < sp_ndyn; i++) sp_sym_index_put(i);
+}
+
 /* s may be NULL when n is 0: prism gives no bytes for the empty symbol. */
 static sp_sym sp_sym_intern_n(const char *s, size_t n) {
-  for (int i = 0; i < sp_ndyn; i++) {
-    const char *c = sp_dyn_syms[i];
-    if (sp_str_byte_len(c) == n && (n == 0 || memcmp(c, s, n) == 0)) return (sp_sym)i;
+  if ((uint32_t)sp_ndyn * 2 >= sp_sym_index_mask) sp_sym_index_grow();
+  uint32_t i = sp_sym_hash(s, n) & sp_sym_index_mask;
+  for (int e; (e = sp_sym_index[i]); i = (i + 1) & sp_sym_index_mask) {
+    const char *c = sp_dyn_syms[e - 1];
+    if (sp_str_byte_len(c) == n && (n == 0 || memcmp(c, s, n) == 0)) return (sp_sym)(e - 1);
   }
   if (sp_ndyn >= sp_dyn_cap) sp_dyn_syms_grow();
   char *d = sp_str_alloc_nogc(n);
   if (n) memcpy(d, s, n);
   sp_dyn_syms[sp_ndyn] = d;
+  sp_sym_index[i] = sp_ndyn + 1;
   return (sp_sym)sp_ndyn++;
 }
 
