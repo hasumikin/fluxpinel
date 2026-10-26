@@ -330,6 +330,7 @@ bigint_compare_object_operand
 bigint_div_by_zero
 bigint_float_compare_exact
 bigint_float_mixed_arith
+bigint_format_negative_radix
 bigint_if_value_temp
 bigint_inner_chain_assign
 bigint_literal
@@ -526,6 +527,7 @@ boxed_endless_float_step
 boxed_enumerable_entries
 boxed_eq_user_answer
 boxed_file_gets_args
+boxed_file_printf
 boxed_float_array_empty_sum
 boxed_hash_local_walk_params
 boxed_index_elements_passed_strict
@@ -717,8 +719,10 @@ bundle_hash_b2
 bundle_int_a
 bundle_int_array
 bundle_integer
+bundle_misc_a
 bundle_misc_b
 bundle_misc_c_10
+bundle_misc_c_17
 bundle_misc_c_26
 bundle_misc_c_30
 bundle_misc_c_31
@@ -1308,6 +1312,7 @@ data_with_no_overrides_is_self
 data_with_poly_member_coerce
 data_with_shared_string_member
 data_with_unknown_kw
+date_class_of_its_own
 dead_call_binds_parameters
 dead_method_same_name_other_class
 def_tail_empty_literal
@@ -1833,6 +1838,14 @@ for_over_paren_collection
 for_over_range_value
 for_range_nil_bound
 for_var_two_element_types
+format_arg_rooting
+format_binary
+format_dynamic_named
+format_fixed_precision_rounding
+format_flags_mro_errinfo
+format_float_ruby_dtoa_rounding
+format_float_user_to_f
+format_float_user_to_f_printf
 format_held_begin
 format_held_case
 format_held_case_in
@@ -1840,11 +1853,22 @@ format_held_elsif_ladder
 format_held_long_chain
 format_held_rescue_mod
 format_held_unless
+format_hex_float
+format_interp_binary
 format_made_in_place_held
+format_malformed_specs
+format_missing_key_and_bad_int
 format_named
+format_named_after_flags
+format_named_ref_marker
 format_nullable_element_arg
+format_numeric_conversion
 format_object_argument
+format_s_and_nonfinite
+format_splat_array_variable
 format_strbuf_arg
+format_string_rooting
+format_string_width_chars
 forward_all_block_reaches_callee
 forward_args
 forward_args_after_leading_param
@@ -2507,6 +2531,7 @@ interpolation_operand_order
 interpolation_symbol_name
 introspection_constant_path
 invalid_utf8_split_one_and_setbyte
+io_access_mode_checks
 io_binary_write_paths
 io_closed_stream_raises
 io_copy_stream_boxed_path
@@ -2525,6 +2550,7 @@ io_poly_print_puts
 io_popen_comment_beside_eval
 io_popen_text_not_a_call
 io_pread_negative_length
+io_puts_compound_arg
 io_puts_nul_boxed
 io_puts_print_binary
 io_pwrite_binary_seek_errno
@@ -2545,6 +2571,7 @@ io_wait_timeout_parks_thread
 io_wait_writable_readonly_error
 io_waiters_leave_out_of_order
 io_write_print_splat
+io_write_receiver_once
 io_write_stdout_stderr
 iow_float_nil_rhs
 is_a_builtin_classes
@@ -2952,11 +2979,13 @@ kept_block_param_not_hash
 kernel_complex
 kernel_complex_bool_exception
 kernel_complex_boolean
+kernel_conversion_arguments
 kernel_dir
 kernel_fail_alias
 kernel_float_integer_strict
 kernel_float_strict
 kernel_integer_float_errors
+kernel_integer_negative_radix
 kernel_integer_true_message
 kernel_integer_with_base
 kernel_puts_nul
@@ -2964,6 +2993,7 @@ kernel_rational_strict
 kernel_rational_string_zerodenom
 kernel_reopen_bare_call_self
 kernel_reopen_in_engine_branch
+kernel_reopen_methods
 kernel_reopen_private_by_name
 kernel_reopen_public_receiver
 kernel_select
@@ -3040,6 +3070,7 @@ lambda_nested_numbered_params
 lambda_returned_from_lambda
 lambda_strict_arity
 last_match_named_group
+late_ret_through_local_chain
 late_widened_method_local
 leading_optional_params
 leading_splat_scalar_massign
@@ -3313,6 +3344,7 @@ module_function_include
 module_function_include_private_copy
 module_function_includer_self
 module_function_namespace
+module_function_shadows_kernel
 module_function_str_method_param
 module_function_through_nested_include
 module_include_p
@@ -3591,6 +3623,7 @@ object_truthy
 one_line_in_deconstruct
 one_string_branch_handle_arm
 one_string_nil_element_conversion
+one_string_or_handle_arm
 one_string_or_raise_kept_left
 one_string_write_unsupplied_io
 oneline_in_array
@@ -4169,6 +4202,7 @@ primitive_method_shadow_int_recv
 print_chr_range
 print_puts_expression_and_kinds
 print_range_argument
+printf_percent_b
 private_attr_writer
 private_class_method_enforced
 private_class_method_poly_class
@@ -4898,6 +4932,7 @@ send_recv_class_before_toplevel
 send_runtime_name_switch
 send_runtime_name_toplevel
 send_setter_returns_method_value
+send_shared_string_writer_value
 send_splat_into_writer
 send_splat_runtime_length_into_builtin_optional_args
 send_traceable_name
@@ -5052,6 +5087,7 @@ splat_nil_scalar_rest
 splat_param_with_block
 splat_params_instance
 splat_poly_in_array_literal
+splat_print_builtins
 splat_return
 splat_slice_keys
 splat_string_elem_handle_param
@@ -5079,6 +5115,7 @@ stderr_reassigned_to_stdout
 stdin_io
 stdlib_class_in_ivar
 stdout_reassigned_own_puts
+stdout_reassigned_stringio
 step_boxed_operands
 step_nil_limit_boxed_recv
 step_prelude_order

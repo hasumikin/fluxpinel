@@ -856,6 +856,18 @@ static int fx_fast_eqq(sp_RbVal v, sp_RbVal s, sp_RbVal *out) {
    one, since the generated wrappers would drop the block. */
 static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                              sp_RbVal *out) {
+  /* IO#printf and StringIO#printf: Kernel#printf to the receiver, which
+     needs a format */
+  if (!blk && !strcmp(name, "printf") &&
+      ((recv.tag == SP_TAG_OBJ && recv.cls_id == SP_BUILTIN_IO) ||
+       (fx_is_native_obj(recv) && !strcmp(fx_class_of(recv)->name, "StringIO")))) {
+    if (argc == 0) sp_raise_cls("ArgumentError", "too few arguments");
+    sp_PolyArray *a = sp_PolyArray_new();
+    SP_GC_ROOT(a);
+    sp_PolyArray_push(a, recv);
+    for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
+    return fx_kernel(name, (int)a->len, a->data, out);
+  }
   if (fx_eval_block(recv, name, argc, argv, blk, out)) return 1;
   if (fx_enum_core(recv, name, argc, argv, blk, out)) return 1;
   if (fx_env_core(recv, name, argc, argv, blk, out)) return 1;
@@ -1149,6 +1161,37 @@ static int fx_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) 
     }
     if (argc < 1 || argc > 2) return 0;
     *out = fx_kernel_complex(argc, argv, raise);
+    return 1;
+  }
+  /* format and sprintf: the format of String#% (sp_str_format_polyarr)
+     over the rest of the arguments. printf writes it to $stdout, or to an
+     IO that comes first. */
+  if (((!strcmp(name, "format") || !strcmp(name, "sprintf")) && argc >= 1) || !strcmp(name, "printf")) {
+    if (argc == 0) { *out = sp_box_nil(); return 1; }
+    sp_RbVal io = sp_box_nil();
+    if (name[0] == 'p' && argv[0].tag != SP_TAG_STR && !fx_is_string(argv[0])) {
+      io = argv[0];
+      argc--;
+      argv++;
+      if (argc == 0) { *out = sp_box_nil(); return 1; }
+    }
+    SP_GC_ROOT_RBVAL(io);
+    const char *fmt = sp_poly_arg_str_chk(argv[0]);
+    SP_GC_ROOT_STR(fmt);
+    sp_PolyArray *rest = sp_PolyArray_new();
+    SP_GC_ROOT(rest);
+    for (int i = 1; i < argc; i++) sp_PolyArray_push(rest, argv[i]);
+    sp_RbVal s = sp_box_str_new(sp_str_format_polyarr(fmt, rest));
+    if (name[0] != 'p') {
+      *out = s;
+      return 1;
+    }
+    SP_GC_ROOT_RBVAL(s);
+    sp_RbVal so;
+    if (io.tag != SP_TAG_NIL) fx_send(io, "write", 1, &s);
+    else if (fx_gvar_stdout(&so)) fx_send(so, "write", 1, &s);
+    else sp_poly_print(s);
+    *out = sp_box_nil();
     return 1;
   }
   /* after `$stdout = obj`, puts, print and p write to obj */

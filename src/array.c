@@ -393,7 +393,26 @@ static const char *fx_hook_to_path(int cls_id, void *p) {
   return sp_poly_recv_s(s, "to_path");
 }
 
+/* The conversions of a program object that the runtime asks for by number
+   (sp_obj_conv): 0 to_int, 1 to_i, 2 to_f, 3 to_str, 4 to_f of a Numeric
+   of the program (TypeError when it has none), 5 to_hash. Answers 0 when
+   the class has no such method; with out, the answer of the call. */
+static int fx_hook_conv(int cls_id, void *p, int which, sp_RbVal *out) {
+  static const char *const names[] = { "to_int", "to_i", "to_f", "to_str", "to_f", "to_hash" };
+  if (which < 0 || which > 5 || fx_kernel_cls(cls_id)) return 0;
+  sp_RbVal v = sp_box_obj(p, cls_id);
+  SP_GC_ROOT_RBVAL(v);
+  if (which == 4 && !fx_is_a(v, fx_builtin("Numeric"))) return 0;
+  FxMethod *m = fx_hook_method(v, names[which]);
+  if (!m && which == 4)
+    sp_raise_cls("TypeError", sp_sprintf("can't convert %s into Float", sp_poly_class_name(v)));
+  if (!m) return 0;
+  if (out) *out = fx_invoke(m, v, 0, NULL);
+  return 1;
+}
+
 static void fx_array_init(void) {
+  sp_obj_conv_fn = fx_hook_conv;
   sp_obj_cmp_hook = fx_hook_cmp;
   sp_obj_to_ary_fn = fx_hook_to_ary;
   sp_obj_to_a_fn = fx_hook_to_a;
