@@ -523,6 +523,7 @@ boxed_complex_finite
 boxed_container_read_at
 boxed_dispatch_shared_private_helper_sibling_widen
 boxed_each_line_block
+boxed_encoding_symbol_name
 boxed_endless_float_step
 boxed_enumerable_entries
 boxed_eq_user_answer
@@ -600,6 +601,7 @@ boxed_struct_size
 boxed_struct_to_h_block
 boxed_sym_proc_user_map
 boxed_symbol_id2name_user
+boxed_symbol_name_beside_user_name
 boxed_time_asctime_to_a
 boxed_time_deconstruct_keys
 boxed_time_round_ctime
@@ -624,6 +626,7 @@ bsearch_find_any_mixed
 bsearch_nilable_int_elements
 builtin_array_method_capture
 builtin_class_mixin_call
+builtin_const_path_beside_nested_namesake
 builtin_forwarded_yield_proc_form
 builtin_include_keeps_own_method
 builtin_iter_block_keyword_params
@@ -861,6 +864,7 @@ case_when_boxed_pattern
 case_when_class
 case_when_class_scalar_predicate
 case_when_dynamic_regexp
+case_when_encoding_const
 case_when_lambda_predicate
 case_when_nullable_string_class
 case_when_object_value_eq
@@ -1224,6 +1228,7 @@ const_lookup_prepend_on_collision
 const_nil_int_element_past_4096_scopes
 const_op_assign_kinds
 const_path_array_push_widens
+const_path_builtin_parent_shadowed
 const_path_compound_assign
 const_path_constant_receiver
 const_path_deep_nesting
@@ -1365,6 +1370,7 @@ defined_bare_builtin_method
 defined_class_level_ivar
 defined_classification
 defined_const_fallback
+defined_const_path_member
 defined_const_path_member_user_const_set
 defined_cvar_before_assignment
 defined_globals_methods
@@ -1514,6 +1520,12 @@ empty_literal_receiver
 empty_literal_unused_block_param
 empty_method_returns_nil
 empty_symbol_literal
+encoding_ascii_compatible
+encoding_constant_compare
+encoding_constant_names
+encoding_find_runtime_name
+encoding_inspect_binary
+encoding_list
 endless_method
 endless_method_rescue
 ensure_after_rescue_raise
@@ -1848,6 +1860,9 @@ for_over_paren_collection
 for_over_range_value
 for_range_nil_bound
 for_var_two_element_types
+force_encoding_arg_first
+force_encoding_ascii_binary
+force_encoding_computed
 format_arg_rooting
 format_binary
 format_dynamic_named
@@ -2573,6 +2588,7 @@ io_respond_to_winsize_no_console
 io_select_high_fd
 io_select_nonio_array_elements
 io_select_set_parks_thread
+io_set_encoding
 io_stdin_lines_chomp_paragraph
 io_stdout_tty_chain
 io_sync_assign_value
@@ -3446,6 +3462,7 @@ nested_hash_param_store_other_key
 nested_index_write_poly_index
 nested_massign
 nested_massign_poly
+nested_module_builtin_name
 nested_module_singleton_name
 nested_pattern_data_deconstruct
 nested_proc_arg_channel
@@ -3925,6 +3942,7 @@ poly_gc
 poly_getbyte_beside_native_getbyte
 poly_global_scalar_assign
 poly_gsub_block
+poly_gsub_boxed_replacement
 poly_gsub_runtime_regexp
 poly_gsub_str_arm
 poly_gsub_str_str_hash
@@ -4008,6 +4026,7 @@ poly_native_scan
 poly_native_scan_string
 poly_new_instance_method
 poly_new_struct_arm
+poly_nil_int_arg_recv
 poly_nil_op_assign
 poly_nil_p_user_answer
 poly_numeric_collision
@@ -4125,6 +4144,8 @@ poly_string_at_path_slot
 poly_string_bang_non_string_receiver
 poly_string_binary_methods
 poly_string_char_index
+poly_string_element_aset_non_string
+poly_string_encoding
 poly_string_length_chars
 poly_string_method_vs_class_method
 poly_string_narrowed_arg_appended
@@ -5300,6 +5321,9 @@ string_embedded_nul_compare
 string_embedded_nul_core
 string_embedded_nul_ops
 string_empty_leading_nul
+string_encoding
+string_encoding_eq_binary_tag
+string_encoding_nil_ivar_raises
 string_eq_ascii_literal
 string_fiber_arg
 string_fiber_method_param_arg
@@ -5330,8 +5354,10 @@ string_gsub_block_arg
 string_gsub_str_hash
 string_handed_on_down_a_chain
 string_handle_and_or_truthiness
+string_handle_box_reader_args
 string_handle_captured_param
 string_handle_eql
+string_handle_force_encoding
 string_handle_forward
 string_handle_freeze_stmt
 string_handle_group_arity
@@ -5986,6 +6012,8 @@ untyped_conditional_tail_return
 untyped_receiver_builtin_match_beside_user_match
 untyped_recv_multiset_ops
 upto_downto_block
+uri_decode_bad_escape
+uri_hostname_ipv6
 user_bang_value_object
 user_class_aset_dispatch
 user_class_named_like_runtime_type

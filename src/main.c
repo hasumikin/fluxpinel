@@ -36,6 +36,7 @@
 #include "file.c"
 #include "time.c"
 #include "complex.c"
+#include "encoding.c"
 #include "host.c"
 #include "console.c"
 

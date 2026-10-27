@@ -213,7 +213,20 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     }
     if (FX_IS("replace")) { fx_str_mut(r, name); *out = sp_poly_replace_any(r, a); return 1; }
     if (FX_IS("force_encoding")) {
-      if (sp_poly_is_strbuf(r)) sp_String_force_encoding((sp_String *)r.v.p, fx_str_enc_mode(a));
+      /* a frozen String raises before a bad argument does, as in
+         emit_strbuf_force_encoding_mode */
+      if (sp_poly_is_strbuf(r)) {
+        sp_String *h = (sp_String *)r.v.p;
+        sp_String_force_encoding(h, sp_String_is_frozen(h) ? -1 : sp_force_encoding_mode(a));
+      }
+      /* a String of no handle takes the tag on its bytes, as
+         emit_str_force_encoding does */
+      else if (r.tag == SP_TAG_STR && r.v.s) {
+        sp_str_check_mutable(r.v.s);
+        int mode = sp_force_encoding_mode(a);
+        if (mode == 1) sp_str_as_binary(r.v.s);
+        else if (mode == 0) sp_str_as_text(r.v.s);
+      }
       *out = r;
       return 1;
     }

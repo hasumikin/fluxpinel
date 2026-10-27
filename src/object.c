@@ -170,7 +170,7 @@ static const struct {
 /* Core classes of CRuby that spinel's class table does not name. A class
    body for one of them reopens the builtin in CRuby; Fluxpinel cannot. */
 static int fx_unknown_builtin(const char *name) {
-  static const char *const names[] = { "Random", "Encoding", "Method", "UnboundMethod", "Binding",
+  static const char *const names[] = { "Random", "Method", "UnboundMethod", "Binding",
                                        "Mutex", "Queue", "SizedQueue", "ConditionVariable", "ObjectSpace",
                                        "Marshal", "Warning", "RubyVM", NULL };
   for (int i = 0; names[i]; i++)
@@ -221,6 +221,13 @@ static FxClass *fx_builtin(const char *name) {
     FxClass *c = fx_class_alloc(FX_EXC_CLS_BASE - L.nbuiltins, strdup(name), 1, NULL, NULL);
     fx_push_class(&L.builtins, &L.nbuiltins, &L.builtins_cap, c);
     if (name[0] == 'P') fx_process_consts(c);
+    return c;
+  }
+  /* Encoding, the class of an SP_TAG_ENCODING value (encoding.c) */
+  if (!id && !strcmp(name, "Encoding")) {
+    FxClass *c = fx_class_alloc(FX_EXC_CLS_BASE - L.nbuiltins, strdup(name), 0, NULL, NULL);
+    fx_push_class(&L.builtins, &L.nbuiltins, &L.builtins_cap, c);
+    c->super = L.object;
     return c;
   }
   if (!id) return NULL;
@@ -645,6 +652,10 @@ static int fx_const_in(const FxClass *scope, sp_sym name, sp_RbVal *out, int top
     FxClass *b = fx_builtin(sp_sprintf("%s::%s", scope->name, sp_sym_to_s(name)));
     if (b) { *out = fx_class_box(b); return 1; }
   }
+  /* Encoding::UTF_8 and the other constants of Encoding, made at the
+     first read */
+  if (scope->cls_id < 0 && !strcmp(scope->name, "Encoding") && fx_encoding_const((FxClass *)scope, name, out))
+    return 1;
   return 0;
 }
 
@@ -1444,6 +1455,8 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   if (!blk && fx_time_class(k, name, argc, argv, out)) return 1;
   /* Complex.rect and Complex.polar */
   if (!blk && fx_complex_class(k, name, argc, argv, out)) return 1;
+  /* Encoding.find, Encoding.list, ... */
+  if (!blk && fx_encoding_class(k, name, argc, argv, out)) return 1;
   /* Integer.sqrt */
   if (!blk && fx_integer_class(k, name, argc, argv, out)) return 1;
   /* Kernel.format, Kernel.puts, ...: a module function of Kernel */

@@ -402,6 +402,11 @@ static int fx_complex_class(const FxClass *k, const char *name, int argc, sp_RbV
 static int fx_complex_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int fx_to_c(sp_RbVal r, const char *name, int argc, sp_RbVal *out);
 
+/* encoding.c */
+static int fx_encoding_const(FxClass *enc, sp_sym name, sp_RbVal *out);
+static int fx_encoding_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int fx_encoding_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+
 /* host.c */
 static void fx_host_init(void);
 static sp_RbVal fx_entry_invoke(int i, int argc, sp_RbVal *argv);

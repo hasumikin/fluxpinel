@@ -895,6 +895,7 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
   if (!blk && fx_time_core(recv, name, argc, argv, out)) return 1;
   if (!blk && fx_complex_core(recv, name, argc, argv, out)) return 1;
   if (!blk && fx_to_c(recv, name, argc, out)) return 1;
+  if (!blk && fx_encoding_core(recv, name, argc, argv, out)) return 1;
   if (fx_iter(recv, name, argc, argv, blk, out)) return 1;
   if (blk) {
     if (argc >= 1 && (!strcmp(name, "send") || !strcmp(name, "__send__") || !strcmp(name, "public_send"))) return 0;
