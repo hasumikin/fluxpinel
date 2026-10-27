@@ -80,7 +80,9 @@ typedef struct { int tag; int cls_id; union { sp_int i; const char *s; sp_float 
 ```
 
 The tags are INT, STR, FLT, BOOL, NIL, OBJ, SYM, CLASS, ENCODING and BIGINT
-(`lib/sp_gc.h`). The walker roots each live value with
+(`lib/sp_gc.h`). An ENCODING value holds the name of the encoding. The
+runtime tags a String as UTF-8 or ASCII-8BIT only, so an Encoding of
+another name does not change the bytes. The walker roots each live value with
 `SP_GC_ROOT_RBVAL`. The walker stack is then visible to the spinel GC.
 
 ### 3.2 Builtin dispatch
@@ -127,14 +129,19 @@ outside the table. Fluxpinel writes these methods by hand:
 - bang methods on String (`sub!`, `upcase!`). They change the receiver
   through the STRBUF handle.
 
-The walker tries four sources in order (`src/builtin.c`):
+`fx_builtin_call` (`src/builtin.c`) tries these sources in order:
 
-1. the core methods, written by hand. Most of them call one `sp_poly_*`
-   function, for example `sp_poly_add` for `+`.
-2. the `sp_poly_*` helpers that answer one method as a whole, for example
+1. the methods of one kind of receiver, written by hand: Hash, Array,
+   String, Exception, IO, Time, Complex, Encoding and others.
+2. the methods that take a block (`fx_iter`). For a call with a block,
+   the prelude follows. A miss is then a gap, or `NoMethodError` when
+   CRuby lacks the method too (`src/responds.c`).
+3. the core methods, written by hand (`fx_core`). Most of them call one
+   `sp_poly_*` function, for example `sp_poly_add` for `+`.
+4. the `sp_poly_*` helpers that answer one method as a whole, for example
    `sp_poly_floor` for `floor`. A table maps the method name to the helper.
-3. the generated wrappers.
-4. `NoMethodError`.
+5. the generated wrappers.
+6. the methods of Object (`fx_object_core`), then `NoMethodError`.
 
 A hand-written core method follows the C that codegen emits for the same
 call. For example, `String#split(sep)` calls `sp_str_split_drop_trailing`,
@@ -587,9 +594,13 @@ Fluxpinel gives walker classes their own object kind (`src/object.c`):
   sees a user object.
 - **Hooks.** The runtime reaches a user object through function pointers.
   Fluxpinel sets `sp_obj_to_s_fn`, `sp_obj_inspect_fn`, `sp_obj_cls_name_fn`,
-  `sp_class_is_module_fn`, `sp_user_binop_hook` and `sp_user_coerce_hook`.
-  Thus `puts obj`, `p obj`, `[a, b].include?(c)` and `5 * money` call the
-  methods of the program.
+  `sp_class_is_module_fn`, `sp_user_binop_hook`, `sp_user_coerce_hook`,
+  `sp_obj_conv_fn` and others. Thus `puts obj`, `p obj`,
+  `[a, b].include?(c)`, `5 * money` and `format("%f", obj)` call the
+  methods of the program. `sp_user_exc_to_s_fn` and
+  `sp_user_exc_message_fn` do the same for an exception.
+- **Reflection.** `respond_to?`, `method_defined?` and a miss of a method
+  read a table of the public methods of CRuby (`src/responds.c`).
 - **Constants.** A bare name looks in the lexical scopes but the top
   level, then in the ancestors of the innermost one, then in Object, then
   in the builtin classes. A top-level `def` defines a method of Object.
@@ -601,7 +612,7 @@ Fluxpinel gives walker classes their own object kind (`src/object.c`):
   builtin class other than Object, Exception, Struct and Data, an ivar on
   a builtin value other than an exception, `extend` on an object, and the
   reopening of a CRuby core class that spinel's class table does not name
-  (Random, Set, ...).
+  (Random, Method, ...).
 
 `sp_cext_dispatch_fn` sends a method by name to a foreign object. It is a
 candidate for the AOT to walker direction of section 3.6.
@@ -622,7 +633,8 @@ candidate for the AOT to walker direction of section 3.6.
 - **Anonymous class.** `Class.new(Super) { }` and `Module.new { }` run the
   block with the new class as self and as the definee. A class from
   `Class.new` or `Struct.new` takes the name of the first constant that
-  holds it.
+  holds it. The superclass is a class of the program, Object, BasicObject
+  or an exception class. Another builtin class is a gap.
 
 ### 3.5 Containers
 
@@ -1025,131 +1037,8 @@ These facts apply to spinel commit `ffac8340d`.
   of an Array literal removed, `test/m2/gc_stress.rb` gives the correct
   output in a plain run. It gives a wrong output with `SPINEL_GC_STRESS=1`,
   and it aborts with `SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1`.
-- The oracle on spinel `7ea20089b` (7824 tests, promote mode): Fluxpinel runs
-  96 tests. 95 agree with CRuby and AOT, and 1 differs (section 4.3). The
-  largest blockers, by tests:
-
-  | blocker | tests |
-  |---|---|
-  | `class` | 2457 |
-  | a call with a block | 1032 |
-  | a constant read | 618 |
-  | `module` | 546 |
-  | a constant write | 385 |
-  | a Hash literal | 361 |
-  | `Kernel#require` | 335 |
-  | `String#+@` | 219 |
-  | `begin` / `rescue` | 204 |
-
-- The oracle on spinel `1b789548d` (7840 tests, promote mode), with
-  classes and modules: Fluxpinel runs 491 tests and 474 agree. The largest
-  blockers now:
-
-  | blocker | tests |
-  |---|---|
-  | a call with a block | 1924 |
-  | a Hash literal | 702 |
-  | `begin` / `rescue` | 361 |
-  | `String#+@` | 362 |
-  | `Kernel#require` | 338 |
-  | `ARGV` | 220 |
-
-  One test times out: 2^24 calls of class methods
-  (`cmethod_chain_reachability`).
-- The oracle on spinel `6ab3b2e20` (7857 tests, promote mode), with
-  blocks: Fluxpinel runs 873 tests and 854 agree. 19 differ. The largest
-  blockers now:
-
-  | blocker | tests |
-  |---|---|
-  | a Hash literal | 854 |
-  | `begin` / `rescue` | 629 |
-  | a Regexp literal | 208 |
-  | `Class#new` with a block | 174 |
-  | a keyword argument | 152 |
-  | a global variable write | 144 |
-
-- The oracle on spinel `6ab3b2e20`, with Hash, keyword arguments and
-  forwarding: Fluxpinel runs 1548 tests and 1519 agree. 29 differ, most of them
-  in `respond_to?` and in class semantics. The largest blockers now:
-
-  | blocker | tests |
-  |---|---|
-  | `begin` / `rescue` | 775 |
-  | a Regexp literal | 247 |
-  | `Class#new` with a block | 174 |
-  | a global variable write | 171 |
-  | a `rescue` modifier | 149 |
-  | a multiple assignment | 145 |
-
-- The oracle on spinel `b5d3820ad` (7910 tests), with exceptions: Fluxpinel
-  runs 2023 tests and 1909 agree. 111 differ; about 30 of them check
-  `private` or `freeze`, which Fluxpinel does not model. The largest blockers
-  now:
-
-  | blocker | tests |
-  |---|---|
-  | a Regexp literal | 262 |
-  | a global variable write | 189 |
-  | `Class#new` with a block | 181 |
-  | a multiple assignment | 151 |
-  | `case` / `when` | 132 |
-  | a Range of values other than Integer | 101 |
-
-- The oracle on spinel `b5d3820ad`, with Regexp: Fluxpinel runs 2210 tests and
-  2095 agree. 112 differ. The largest blockers now:
-
-  | blocker | tests |
-  |---|---|
-  | a global variable write | 191 |
-  | `Class#new` with a block | 184 |
-  | a multiple assignment | 151 |
-  | `case` / `when` | 138 |
-  | a Range of values other than Integer | 102 |
-  | `case` / `in` | 73 |
-
-- The oracle on spinel `b5d3820ad`, with global variables: Fluxpinel runs 2311
-  tests and 2188 agree. 120 differ. The largest blockers now:
-
-  | blocker | tests |
-  |---|---|
-  | `Class#new` with a block | 189 |
-  | a multiple assignment | 155 |
-  | `case` / `when` | 140 |
-  | a Range of values other than Integer | 103 |
-  | `case` / `in` | 75 |
-  | a call of a block whose scope has returned | 65 |
-
-- The oracle on spinel `b5d3820ad`, with Struct, Data and anonymous
-  classes: Fluxpinel runs 2509 tests and 2386 agree. 120 differ. The largest
-  blockers now:
-
-  | blocker | tests |
-  |---|---|
-  | a multiple assignment | 160 |
-  | `case` / `when` | 146 |
-  | `Thread.new`, `Fiber.new` or `Enumerator.new` with a block | 145 |
-  | a Range of values other than Integer | 109 |
-  | `case` / `in` | 90 |
-  | a call of a block whose scope has returned | 67 |
-
-- The oracle on spinel `89f0f421b` (7933 tests), with Fiber, Thread and
-  Enumerator.new on the threaded runtime: Fluxpinel runs 2636 tests and 2503
-  agree. A run of the previous Fluxpinel on the same corpus agreed on 2379. 133
-  differ. The largest blockers now:
-
-  | blocker | tests |
-  |---|---|
-  | a multiple assignment | 172 |
-  | `case` / `when` | 149 |
-  | a call of a block whose scope has returned | 112 |
-  | a Range of values other than Integer | 110 |
-  | `case` / `in` | 90 |
-  | `alias` | 62 |
-
-  The block whose scope has returned went from 67 to 112 tests: a Thread
-  or a generator that a block makes (`3.times.map { Thread.new { } }`)
-  now runs far enough to meet it.
+- `make oracle` gives the coverage of Fluxpinel now. `build/oracle/report.md`
+  counts each class and names the largest blockers.
 - The single-threaded runtime archive lacks the parts of the scheduler
   that park a green thread: `sp_sched_sleep`, `sp_Thread_stop` and
   `sp_Mutex_sleep`. Only `libspinel_rt_mt.a` has them.
@@ -1182,16 +1071,9 @@ These facts apply to spinel commit `ffac8340d`.
   an order that depends on the sort algorithm. Fluxpinel uses a stable merge
   sort, and CRuby uses its own quicksort. `comparator_block_arity` differs
   for this reason.
-- The M2 walker runs `fib(32)` in 0.85 s. CRuby 4.0.6 runs it in 0.24 s,
-  and CRuby with YJIT in 0.06 s. The walker compares each method name with
-  `strcmp` and looks up methods by a linear search.
 
 ## 8. Open questions
 
-- The smoke test in `poc/m1` checks 6 wrappers. How does Fluxpinel check the
-  other wrappers? The oracle (M3) is one answer.
-- Which AOT build of a test program serves as the oracle reference: one
-  build per program, or one shared build?
 - Which entries does a host get? An export names each method. A program
   that loads scripts wants a wide surface. Candidates are a list in the
   build, or a mark on a method in the source.

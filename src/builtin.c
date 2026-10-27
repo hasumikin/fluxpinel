@@ -1,13 +1,14 @@
 /* builtin.c -- the builtin methods of Fluxpinel.
 
-   A call on a receiver tries, in order:
+   A call on a receiver tries, in order (fx_builtin_call):
 
-   1. the core methods below (operators, Array access, conversions),
-      written by hand because spinel emits them from codegen code, not
-      from bop_rows[];
-   2. the sp_poly_* helpers that answer a method as a whole;
-   3. the wrappers that tools/bop_gen.c generates from bop_rows[];
-   4. NoMethodError.
+   1. the methods of one kind of receiver (Hash, Array, String, ...);
+   2. the methods that take a block (fx_iter), then the prelude;
+   3. the core methods below (operators, conversions), written by hand
+      because spinel emits them from codegen code, not from bop_rows[];
+   4. the sp_poly_* helpers that answer a method as a whole;
+   5. the wrappers that tools/bop_gen.c generates from bop_rows[];
+   6. the methods of Object, then NoMethodError.
 
    A call with no receiver that names no `def` goes to fx_kernel. */
 
