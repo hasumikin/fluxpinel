@@ -190,6 +190,8 @@ static int fx_env_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, c
     if (out->tag != SP_TAG_NIL) return 1;
     if (blk) { *out = fx_yield(blk, 1, argv); return 1; }
     if (argc == 2) { *out = argv[1]; return 1; }
+    sp_exc_stage_recv(r);
+    sp_exc_stage_key(argv[0]);
     sp_raise_cls("KeyError", sp_sprintf("key not found: %s", sp_poly_inspect(argv[0])));
   }
   if (argc == 2 && (FX_IS("[]=") || FX_IS("store"))) {

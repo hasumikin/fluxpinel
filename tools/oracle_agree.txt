@@ -1519,6 +1519,7 @@ empty_hash_forwarded_param
 empty_hash_int_int_no_widen
 empty_hash_int_int_promote
 empty_hash_int_key_narrowing
+empty_hash_key_context
 empty_hash_key_through_tap
 empty_hash_literal_kwsplat
 empty_hash_method_return
@@ -1622,6 +1623,7 @@ exc_frame_depth_bounded
 exc_frame_early_return_pops
 exc_is_a_constant_path
 exc_stack_window_cleared
+exception_accessor_dispatch_alias
 exception_accessor_dispatch_class
 exception_accessor_dispatch_same_name
 exception_bare_new_in_class_method
@@ -2083,6 +2085,7 @@ hash_fetch_block_int_min
 hash_fetch_block_key
 hash_fetch_block_key_type
 hash_fetch_block_nil_int_key
+hash_fetch_dig_nil_int_key
 hash_fetch_forwarded_block
 hash_fetch_keyerror
 hash_filter_bang_return
@@ -2766,6 +2769,9 @@ issue_3019
 issue_3022
 issue_3023
 issue_3026
+issue_3027
+issue_3028
+issue_3030
 issue_3031
 issue_3032
 issue_3035
@@ -2824,6 +2830,7 @@ issue_3113
 issue_3114
 issue_3116
 issue_3119
+issue_3120
 issue_3121
 issue_3124
 issue_3125

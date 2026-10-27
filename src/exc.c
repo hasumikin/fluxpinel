@@ -50,9 +50,36 @@ static void fx_exc_set_msg(sp_Exception *e, sp_RbVal m) {
   e->msg_h = NULL;
 }
 
+/* Whether the class of the exception v is the builtin class name, or a
+   subclass of it. */
+static int fx_exc_is(sp_RbVal v, const char *name) {
+  for (FxClass *k = fx_class_of(v); k; k = k->super)
+    if (!strcmp(k->name, name)) return 1;
+  return 0;
+}
+
 /* Exception#initialize: an optional message. */
 static void fx_exc_init(sp_RbVal v, int argc, sp_RbVal *argv) {
-  if (argc > 0 && argv[argc - 1].tag == SP_TAG_OBJ && argv[argc - 1].v.p == L.kwhash) argc--;
+  sp_PolyPolyHash *kw = NULL;
+  if (argc > 0 && argv[argc - 1].tag == SP_TAG_OBJ && argv[argc - 1].v.p == L.kwhash)
+    kw = sp_poly_as_poly_poly_hash(argv[--argc]);
+  /* KeyError.new(msg, receiver: r, key: k) and FrozenError.new(msg,
+     receiver: r) record the values that #receiver and #key answer */
+  if (kw) {
+    sp_Exception *e = (sp_Exception *)v.v.p;
+    int key_error = fx_exc_is(v, "KeyError");
+    sp_RbVal recv_k = sp_box_sym(sp_sym_intern("receiver")), key_k = sp_box_sym(sp_sym_intern("key"));
+    if ((key_error || fx_exc_is(v, "FrozenError")) && sp_PolyPolyHash_has_key(kw, recv_k)) {
+      sp_gc_wb(e);
+      e->xrecv = sp_PolyPolyHash_get(kw, recv_k);
+      e->has_recv = 1;
+    }
+    if (key_error && sp_PolyPolyHash_has_key(kw, key_k)) {
+      sp_gc_wb(e);
+      e->xkey = sp_PolyPolyHash_get(kw, key_k);
+      e->has_key = 1;
+    }
+  }
   /* the builtin classes with more arguments (NameError, SignalException,
      SystemExit, ...) keep them in fields that Fluxpinel does not set yet */
   if (argc > 1) {
@@ -87,6 +114,11 @@ static void fx_exc_init(sp_RbVal v, int argc, sp_RbVal *argv) {
 static sp_RbVal fx_exc_new(FxClass *k, int argc, sp_RbVal *argv, const FxBlock *blk) {
   sp_RbVal v = fx_exc_box(sp_exc_new(k->name, NULL));
   SP_GC_ROOT_RBVAL(v);
+  /* sp_exc_new marks a receiver and a key as recorded, for a raise of the
+     runtime; an explicit new records neither until its keywords do */
+  sp_Exception *e = (sp_Exception *)v.v.p;
+  e->has_recv = 0;
+  e->has_key = 0;
   FxMethod *init = fx_find_method(k, sp_sym_intern("initialize"));
   if (init) fx_invoke_b(init, v, argc, argv, blk);
   else fx_exc_init(v, argc, argv);

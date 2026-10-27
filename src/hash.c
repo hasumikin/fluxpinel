@@ -101,6 +101,9 @@ static int fx_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
     if (sp_PolyPolyHash_has_key(h, argv[0])) { *out = sp_PolyPolyHash_get(h, argv[0]); return 1; }
     if (blk) { *out = fx_y1(blk, argv[0]); return 1; }
     if (argc == 2) { *out = argv[1]; return 1; }
+    /* KeyError#receiver and #key: the runtime keeps them for the raise */
+    sp_exc_stage_recv(r);
+    sp_exc_stage_key(argv[0]);
     sp_raise_cls("KeyError", sp_sprintf("key not found: %s", sp_poly_inspect(argv[0])));
   }
   if (argc == 1 && FX_IS("delete")) {
