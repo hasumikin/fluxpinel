@@ -348,11 +348,17 @@ static void fx_global_init(void) {
 /* The IO of an object of the program for the runtime (sp_user_to_io_hook):
    the answer of its to_io, as IO.select and the IO methods ask of a
    wrapper. NULL for an object with no to_io. */
-static sp_File *fx_hook_to_io(sp_RbVal v) {
-  if (!fx_is_fx_object(v) || fx_is_native_obj(v)) return NULL;
+static sp_File *fx_hook_to_io_u(sp_RbVal v) {
   if (!fx_find_method(fx_class_of(v), sp_sym_intern("to_io"))) return NULL;
   sp_RbVal io = fx_send(v, "to_io", 0, NULL);
   return fx_is_io(io) ? (sp_File *)io.v.p : NULL;
+}
+
+static sp_File *fx_hook_to_io(sp_RbVal v) {
+  if (!fx_is_fx_object(v) || fx_is_native_obj(v)) return NULL;
+  sp_File *r;
+  FX_HOOKED(r = fx_hook_to_io_u(v));
+  return r;
 }
 
 /* IO.select and Kernel#select(read, write = nil, error = nil, timeout =
@@ -373,31 +379,35 @@ static sp_RbVal fx_io_select(int argc, sp_RbVal *argv) {
   SP_GC_ROOT(sets[1]);
   SP_GC_ROOT(sets[2]);
   double timeout = argc < 4 || argv[3].tag == SP_TAG_NIL ? -1.0 : sp_io_wait_interval(argv[3]);
-  return sp_io_select(sets[0], sets[1], sets[2], timeout);
+  sp_RbVal r;
+  FX_UNLOCKED(r = sp_io_select(sets[0], sets[1], sets[2], timeout));
+  return r;
 }
 
 static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (!fx_is_io(r)) return 0;
   sp_File *io = (sp_File *)r.v.p;
+  /* a read or a write of a socket, a pipe or a terminal parks the thread:
+     the walker lock is given up for its time (FX_UNLOCKED) */
   if (FX_IS("puts")) {
-    if (argc == 0) sp_File_puts(io, "");
-    for (int i = 0; i < argc; i++) sp_File_puts_val(io, argv[i]);
+    if (argc == 0) FX_UNLOCKED(sp_File_puts(io, ""));
+    for (int i = 0; i < argc; i++) FX_UNLOCKED(sp_File_puts_val(io, argv[i]));
     *out = sp_box_nil();
     return 1;
   }
   if (FX_IS("print")) {
-    for (int i = 0; i < argc; i++) sp_File_write_poly(io, argv[i]);
+    for (int i = 0; i < argc; i++) FX_UNLOCKED(sp_File_write_poly(io, argv[i]));
     *out = sp_box_nil();
     return 1;
   }
   if (FX_IS("write")) {
     sp_int n = 0;
-    for (int i = 0; i < argc; i++) n += sp_File_write_poly(io, argv[i]);
+    for (int i = 0; i < argc; i++) FX_UNLOCKED(n += sp_File_write_poly(io, argv[i]));
     *out = sp_box_int(n);
     return 1;
   }
   if (FX_IS("<<") && argc == 1) {
-    sp_File_write_poly(io, argv[0]);
+    FX_UNLOCKED(sp_File_write_poly(io, argv[0]));
     *out = r;
     return 1;
   }
@@ -409,7 +419,8 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     sp_PolyArray *a = sp_PolyArray_new();
     SP_GC_ROOT(a);
     for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
-    const char *s = sp_io_read_splat(io, a);
+    const char *s;
+    FX_UNLOCKED(s = sp_io_read_splat(io, a));
     *out = s ? sp_box_str_new(s) : sp_box_nil();
     return 1;
   }
@@ -420,7 +431,9 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     if (argc == 2 && !FX_IS("wait")) return 0;
     sp_RbVal t = argc >= 1 ? argv[0] : sp_box_nil();
     if (FX_IS("wait_writable")) {
-      *out = sp_box_nullable_obj(sp_io_wait_writable_timeout(io, t), SP_BUILTIN_IO);
+      sp_File *w;
+      FX_UNLOCKED(w = sp_io_wait_writable_timeout(io, t));
+      *out = sp_box_nullable_obj(w, SP_BUILTIN_IO);
       return 1;
     }
     int ev = FX_IS("wait_priority") ? 2 : 0;
@@ -429,14 +442,17 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
       const char *k = sp_sym_to_s((sp_sym)argv[1].v.i);
       ev = !strcmp(k, "write") ? 1 : !strcmp(k, "priority") ? 2 : !strcmp(k, "read_write") ? 3 : 0;
     }
-    *out = sp_io_wait_timeout_value(io, t, ev, FX_IS("wait") && argc > 0);
+    int plain = FX_IS("wait") && argc > 0;
+    FX_UNLOCKED(*out = sp_io_wait_timeout_value(io, t, ev, plain));
     return 1;
   }
   /* pread(len, offset), pwrite(str, offset), readpartial(n), sysread(n)
      and syswrite(str), with the checks of the runtime; the forms with an
      output buffer are not here */
   if (!kw && argc == 2 && FX_IS("pread")) {
-    const char *s = sp_File_pread_checked(io, sp_poly_arg_int_chk(argv[0]), sp_poly_arg_int_chk(argv[1]));
+    sp_int len = sp_poly_arg_int_chk(argv[0]), off = sp_poly_arg_int_chk(argv[1]);
+    const char *s;
+    FX_UNLOCKED(s = sp_File_pread_checked(io, len, off));
     *out = sp_box_str_new(s);
     return 1;
   }
@@ -445,19 +461,24 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     int str = fx_is_string(argv[0]);
     const char *s = str ? sp_poly_arg_str_chk(argv[0]) : sp_poly_to_s(argv[0]);
     SP_GC_ROOT_STR(s);
-    sp_int off = sp_poly_arg_int_chk(argv[1]);
-    *out = sp_box_int(str ? sp_File_pwrite_bin(io, s, off) : sp_File_pwrite(io, s, off));
+    sp_int off = sp_poly_arg_int_chk(argv[1]), n;
+    FX_UNLOCKED(n = str ? sp_File_pwrite_bin(io, s, off) : sp_File_pwrite(io, s, off));
+    *out = sp_box_int(n);
     return 1;
   }
   if (!kw && argc == 1 && (FX_IS("readpartial") || FX_IS("sysread"))) {
     sp_int n = sp_poly_arg_int_chk(argv[0]);
-    *out = sp_box_str_new(name[0] == 'r' ? sp_File_readpartial_checked(io, n) : sp_File_sysread_checked(io, n));
+    const char *s;
+    FX_UNLOCKED(s = name[0] == 'r' ? sp_File_readpartial_checked(io, n) : sp_File_sysread_checked(io, n));
+    *out = sp_box_str_new(s);
     return 1;
   }
   if (!kw && argc == 1 && FX_IS("syswrite")) {
     const char *s = sp_poly_to_s(argv[0]);
     SP_GC_ROOT_STR(s);
-    *out = sp_box_int(sp_File_syswrite(io, s, sp_str_byte_len(s)));
+    sp_int n;
+    FX_UNLOCKED(n = sp_File_syswrite(io, s, sp_str_byte_len(s)));
+    *out = sp_box_int(n);
     return 1;
   }
   if ((FX_IS("gets") && argc >= 1) || FX_IS("readlines") || FX_IS("readline")) {
@@ -475,14 +496,17 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     const char *sep;
     if (FX_IS("gets")) {
       sp_oint lim = sp_io_gets_args(a, &sep);
-      const char *s = sp_File_gets_limit(io, sep, lim, chomp);
+      const char *s;
+      FX_UNLOCKED(s = sp_File_gets_limit(io, sep, lim, chomp));
       *out = s ? sp_box_str_new(s) : sp_box_nil();
       return 1;
     }
     /* readline: gets, with EOFError at the end */
     if (FX_IS("readline")) {
       sp_oint lim = sp_io_gets_args(a, &sep);
-      *out = sp_box_str_new(sp_File_readline_limit(io, sep, lim, chomp));
+      const char *s;
+      FX_UNLOCKED(s = sp_File_readline_limit(io, sep, lim, chomp));
+      *out = sp_box_str_new(s);
       return 1;
     }
     sp_int lim;
@@ -490,7 +514,11 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     SP_GC_ROOT_STR(sep);
     sp_StrArray *lines = sp_StrArray_new();
     SP_GC_ROOT(lines);
-    for (const char *s; (s = sp_File_gets_sep(io, sep, lim, chomp)) != NULL;) sp_StrArray_push(lines, s);
+    for (const char *s;;) {
+      FX_UNLOCKED(s = sp_File_gets_sep(io, sep, lim, chomp));
+      if (!s) break;
+      sp_StrArray_push(lines, s);
+    }
     *out = sp_box_nullable_obj((void *)lines, SP_BUILTIN_STR_ARRAY);
     return 1;
   }

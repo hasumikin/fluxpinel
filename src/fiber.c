@@ -63,6 +63,10 @@ static void fx_fiber_body(sp_Fiber *f) {
   SP_GC_SAVE();
   FxFiberData *d = (FxFiberData *)f->user_data;
   SP_GC_ROOT(d);
+  /* a Thread runs on a green thread of its own, which takes the walker
+     lock; a Fiber or a generator runs on the thread of its resume, which
+     holds it */
+  if (d->kind == FX_FIB_THREAD) fx_lock();
   FxFrameStack *fs = fx_fs_new(f);
   fx_fs_put(f, fs);
   L.fs = fs;
@@ -91,11 +95,14 @@ static void fx_fiber_body(sp_Fiber *f) {
   } else {
     FX_TRY_LANDED(0);
     L.ctl = FX_CTL_NONE;
-    fx_reraise(fx_caught());
+    FxCaught c = fx_caught();
+    if (d->kind == FX_FIB_THREAD) fx_lock_set_depth(0);
+    fx_reraise(c);
   }
   fs->depth = 0;
   FxCtl ctl = L.ctl;
   L.ctl = FX_CTL_NONE;
+  if (d->kind == FX_FIB_THREAD) fx_lock_set_depth(0);
   if (ctl == FX_CTL_BREAK || ctl == FX_CTL_BREAK_BLOCK)
     sp_raise_cls("LocalJumpError", "break from proc-closure");
   if (ctl == FX_CTL_RETURN) sp_raise_cls("LocalJumpError", "unexpected return");
@@ -186,16 +193,21 @@ static int fx_fiber_class(FxClass *k, const char *name, int argc, sp_RbVal *argv
       SP_GC_ROOT(f);
       sp_gc_wb(f);
       f->user_data = d;
-      /* The runtime reads SPINEL_WORKERS at the first spawn. The state of
-         the walker (L) has no lock, so Fluxpinel asks for one OS thread,
-         whatever the program wrote to ENV: main then runs every thread. */
+#ifndef FX_KERNEL
+      /* The runtime reads SPINEL_WORKERS at the first spawn. The walker
+         runs all the Ruby code of a standalone program, one thread at a
+         time under the walker lock, so more OS threads would not run in
+         parallel: Fluxpinel asks for one, whatever the program wrote to
+         ENV, and main then runs every thread. The host build keeps the
+         workers of the kernel. */
       setenv("SPINEL_WORKERS", "1", 1);
+#endif
       *out = sp_box_obj(sp_Thread_spawn_fiber(f, sp_box_nil()), SP_BUILTIN_THREAD);
       return 1;
     }
     if (FX_IS("current") && argc == 0) { *out = sp_box_obj(sp_Thread_current(), SP_BUILTIN_THREAD); return 1; }
     if (FX_IS("main") && argc == 0) { *out = sp_box_obj(sp_Thread_main(), SP_BUILTIN_THREAD); return 1; }
-    if (FX_IS("pass") && argc == 0) { sp_Thread_pass(); *out = sp_box_nil(); return 1; }
+    if (FX_IS("pass") && argc == 0) { FX_UNLOCKED(sp_Thread_pass()); *out = sp_box_nil(); return 1; }
     if (FX_IS("list") && argc == 0) {
       sp_PolyArray *a = sp_PolyArray_new();
       SP_GC_ROOT(a);
@@ -259,7 +271,7 @@ static sp_RbVal fx_synchronize(sp_mutex *m, const FxBlock *blk) {
   sp_RbVal v = sp_box_nil();
   SP_GC_ROOT_RBVAL(v);
   const int depth = fx_fs()->depth;
-  sp_Mutex_lock(m);
+  FX_UNLOCKED(sp_Mutex_lock(m));
   FX_TRY_PUSH();
   if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
     v = fx_yield(blk, 0, NULL);
@@ -324,19 +336,25 @@ static int fx_fiber_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
   case SP_BUILTIN_QUEUE: {
     sp_queue *q = (sp_queue *)r.v.p;
     if ((FX_IS("push") || FX_IS("<<") || FX_IS("enq")) && argc == 1) {
-      sp_Queue_push(q, argv[0]);
+      /* a full SizedQueue parks the thread */
+      FX_UNLOCKED(sp_Queue_push(q, argv[0]));
       *out = r;
       return 1;
     }
     if (FX_IS("pop") || FX_IS("shift") || FX_IS("deq")) {
-      if (argc == 0) { *out = sp_Queue_pop(q); return 1; }
+      if (argc == 0) { FX_UNLOCKED(*out = sp_Queue_pop(q)); return 1; }
       if (argc == 1 && fx_is_kwhash(argv[0])) {
         sp_RbVal key = sp_box_sym(sp_sym_intern("timeout"));
         sp_RbVal t = fx_send(argv[0], "[]", 1, &key);
-        *out = t.tag == SP_TAG_NIL ? sp_Queue_pop(q) : sp_Queue_pop_timeout(q, sp_poly_to_f(t));
+        if (t.tag == SP_TAG_NIL) FX_UNLOCKED(*out = sp_Queue_pop(q));
+        else FX_UNLOCKED(*out = sp_Queue_pop_timeout(q, sp_poly_to_f(t)));
         return 1;
       }
-      if (argc == 1) { *out = sp_poly_truthy(argv[0]) ? sp_Queue_pop_nb(q) : sp_Queue_pop(q); return 1; }
+      if (argc == 1) {
+        if (sp_poly_truthy(argv[0])) *out = sp_Queue_pop_nb(q);
+        else FX_UNLOCKED(*out = sp_Queue_pop(q));
+        return 1;
+      }
     }
     return 0;
   }
@@ -349,8 +367,12 @@ static int fx_fiber_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     sp_condvar *cv = (sp_condvar *)r.v.p;
     if (FX_IS("wait") && (argc == 1 || argc == 2) && fx_fiber_is(argv[0], SP_BUILTIN_MUTEX)) {
       sp_mutex *m = (sp_mutex *)argv[0].v.p;
-      *out = argc == 2 && argv[1].tag != SP_TAG_NIL ? sp_CondVar_wait_timeout(cv, m, sp_poly_to_f(argv[1]))
-                                                    : sp_CondVar_wait(cv, m);
+      if (argc == 2 && argv[1].tag != SP_TAG_NIL) {
+        double t = sp_poly_to_f(argv[1]);
+        FX_UNLOCKED(*out = sp_CondVar_wait_timeout(cv, m, t));
+      } else {
+        FX_UNLOCKED(*out = sp_CondVar_wait(cv, m));
+      }
       return 1;
     }
     if (FX_IS("signal") && argc == 0) { sp_CondVar_signal(cv); *out = r; return 1; }
@@ -388,13 +410,13 @@ static int fx_fiber_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal 
   if (!FX_IS("sleep") || argc > 1) return 0;
   /* the threaded runtime parks the sleeper, and the others run */
   if (argc == 0) {
-    sp_sleep_forever();
+    FX_UNLOCKED(sp_sleep_forever());
     *out = sp_box_int(0);
     return 1;
   }
   sp_float s = sp_poly_to_f(argv[0]);
   if (s < 0) sp_raise_cls("ArgumentError", "time interval must not be negative");
-  sp_sleep(s);
+  FX_UNLOCKED(sp_sleep(s));
   *out = sp_box_int((sp_int)(s + 0.5));
   return 1;
 }

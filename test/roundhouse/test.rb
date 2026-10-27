@@ -89,6 +89,24 @@ Dir.mktmpdir("fx-blog") do |dir|
 
     res = get(http, "/articles/1")
     check "the page of the article has the new comment", res.body.to_s.include?("from the fx test")
+
+    # a session that computes for a while holds one worker: the pages and a
+    # second session go on meanwhile
+    busy = TCPSocket.new("127.0.0.1", console)
+    reply(busy)
+    other = TCPSocket.new("127.0.0.1", console)
+    reply(other)
+    busy.write("s = 0; 3_000_000.times { |i| s += i }; s\n")
+    t0 = Time.now
+    res = get(http, "/articles")
+    check "a page answers while a session computes", res.code == "200" && Time.now - t0 < 2
+    t0 = Time.now
+    check "a second session answers while a session computes",
+      eval_line(other, "6 * 7") == "=> 42\n" && Time.now - t0 < 2
+    check "the busy session answers its sum", reply(busy) == "=> 4499998500000\n"
+    busy.close
+    other.close
+
     check "the server runs after the session", Process.waitpid(pid, Process::WNOHANG).nil?
   ensure
     begin

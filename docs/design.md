@@ -373,11 +373,20 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   (`THREADS=1`); `THREADS=0` links the single-threaded runtime.
 - **Scheduling.** Fluxpinel starts the scheduler at startup, since the threaded
   runtime needs its root fiber before any fiber runs, and drains it at the
-  end of the program. Fluxpinel sets `SPINEL_WORKERS=1`: the state of the
-  walker is not shared between OS threads, so green threads take turns on
-  one OS thread, which is main. A `while` back-edge and a block call poll
+  end of the program. A `while` back-edge and a block call poll
   the safepoint flag, as AOT code does at a back-edge. A thread switch
   thus comes only where no jump is pending.
+- **The walker lock.** The state of the walker (`L`) is not shared between
+  OS threads. A green thread holds one lock while it runs walker code
+  (`src/fx_tu.c`): the body of a Thread of the program, a call of the
+  kernel into Fluxpinel, and a hook of the runtime on a value of the
+  program. The lock is a Monitor of the runtime: a waiter parks and frees
+  its worker. A wait in the runtime (I/O, `sleep`, a Queue, a safepoint
+  poll, an `ffi_func` call) and a call of an entry of the kernel give the
+  lock up for their time (`FX_UNLOCKED`), and a rescue landing takes it
+  back (`FX_TRY_LANDED`). The host build thus keeps the workers of the
+  kernel. The standalone command sets `SPINEL_WORKERS=1`, since the walker
+  runs all its Ruby code, one thread at a time.
 - **Blocking calls.** I/O, `sleep`, and a wait on a Queue or a Mutex park
   a green thread in the scheduler. A call that blocks in the OS stops
   every thread until it returns. An example is an `ffi_func` call that
@@ -873,7 +882,7 @@ Requirements for all forms:
 
 - **One walker lock.** The walker is not shared between OS threads
   (section 3.3.5). AOT code on more than one thread calls Fluxpinel under one
-  lock.
+  lock, which Fluxpinel takes itself.
 - **Speed.** The walker is slower than CRuby (sections 3.3.8 and 7).
   Fluxpinel is for the glue of a program, not for its hot paths.
 - **The same semantics.** A value has the same builtin methods in Fluxpinel and

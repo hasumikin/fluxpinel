@@ -300,7 +300,11 @@ static int fx_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
   return 0;
 }
 
-/* ---- the methods of a user object that the helpers above call ---- */
+/* ---- the methods of a user object that the helpers above call ----
+
+   The runtime calls each hook from any thread of the kernel, so the hook
+   runs under the walker lock (FX_HOOKED). The part before the lock asks
+   the hook of the kernel for a class of the kernel. */
 
 /* The method name of the class of a user object, else NULL. v.v.p can be
    NULL: the runtime asks whether the class has the method. */
@@ -312,9 +316,7 @@ static FxMethod *fx_hook_method(sp_RbVal v, const char *name) {
 
 /* a <=> b, for sort, min, max and their kin with no block. With no <=> in
    the program, the default of Object: 0 for the same object, else nil. */
-static sp_int fx_hook_cmp(sp_RbVal a, sp_RbVal b, sp_bool *comparable) {
-  if (a.tag == SP_TAG_OBJ && fx_kernel_cls(a.cls_id) && fx_kernel_hooks.cmp)
-    return fx_kernel_hooks.cmp(a, b, comparable);
+static sp_int fx_hook_cmp_u(sp_RbVal a, sp_RbVal b, sp_bool *comparable) {
   FxMethod *m = fx_hook_method(a, "<=>");
   *comparable = !m && a.tag == b.tag && a.v.p == b.v.p;
   /* Object#<=> is 0 also for an == of the program that answers true */
@@ -332,11 +334,17 @@ static sp_int fx_hook_cmp(sp_RbVal a, sp_RbVal b, sp_bool *comparable) {
   return *comparable ? (c.v.i > 0) - (c.v.i < 0) : 0;
 }
 
+static sp_int fx_hook_cmp(sp_RbVal a, sp_RbVal b, sp_bool *comparable) {
+  if (a.tag == SP_TAG_OBJ && fx_kernel_cls(a.cls_id) && fx_kernel_hooks.cmp)
+    return fx_kernel_hooks.cmp(a, b, comparable);
+  sp_int r;
+  FX_HOOKED(r = fx_hook_cmp_u(a, b, comparable));
+  return r;
+}
+
 /* to_ary and to_a: the Array, or nil for a class with no such method. To
    the question with no object, to_ary answers true for a class with it. */
-static sp_RbVal fx_hook_to_ary(sp_RbVal v) {
-  if (v.tag == SP_TAG_OBJ && fx_kernel_cls(v.cls_id) && fx_kernel_hooks.to_ary)
-    return fx_kernel_hooks.to_ary(v);
+static sp_RbVal fx_hook_to_ary_u(sp_RbVal v) {
   FxMethod *m = fx_hook_method(v, "to_ary");
   if (!m) return sp_box_nil();
   if (!v.v.p) return sp_box_bool(1);
@@ -344,18 +352,31 @@ static sp_RbVal fx_hook_to_ary(sp_RbVal v) {
   return fx_invoke(m, v, 0, NULL);
 }
 
-static sp_RbVal fx_hook_to_a(sp_RbVal v) {
-  if (v.tag == SP_TAG_OBJ && fx_kernel_cls(v.cls_id) && fx_kernel_hooks.to_a)
-    return fx_kernel_hooks.to_a(v);
+static sp_RbVal fx_hook_to_ary(sp_RbVal v) {
+  if (v.tag == SP_TAG_OBJ && fx_kernel_cls(v.cls_id) && fx_kernel_hooks.to_ary)
+    return fx_kernel_hooks.to_ary(v);
+  sp_RbVal r;
+  FX_HOOKED(r = fx_hook_to_ary_u(v));
+  return r;
+}
+
+static sp_RbVal fx_hook_to_a_u(sp_RbVal v) {
   FxMethod *m = fx_hook_method(v, "to_a");
   if (!m || !v.v.p) return sp_box_nil();
   SP_GC_ROOT_RBVAL(v);
   return fx_invoke(m, v, 0, NULL);
 }
 
+static sp_RbVal fx_hook_to_a(sp_RbVal v) {
+  if (v.tag == SP_TAG_OBJ && fx_kernel_cls(v.cls_id) && fx_kernel_hooks.to_a)
+    return fx_kernel_hooks.to_a(v);
+  sp_RbVal r;
+  FX_HOOKED(r = fx_hook_to_a_u(v));
+  return r;
+}
+
 /* to_int and to_str, for an implicit conversion of an argument */
-static sp_int fx_hook_to_int(int cls_id, void *p, int *ok) {
-  if (fx_kernel_cls(cls_id) && fx_kernel_hooks.to_int) return fx_kernel_hooks.to_int(cls_id, p, ok);
+static sp_int fx_hook_to_int_u(int cls_id, void *p, int *ok) {
   sp_RbVal v = sp_box_obj(p, cls_id);
   FxMethod *m = fx_hook_method(v, "to_int");
   *ok = 0;
@@ -366,8 +387,14 @@ static sp_int fx_hook_to_int(int cls_id, void *p, int *ok) {
   return *ok ? i.v.i : 0;
 }
 
-static const char *fx_hook_to_str(int cls_id, void *p) {
-  if (fx_kernel_cls(cls_id) && fx_kernel_hooks.to_str) return fx_kernel_hooks.to_str(cls_id, p);
+static sp_int fx_hook_to_int(int cls_id, void *p, int *ok) {
+  if (fx_kernel_cls(cls_id) && fx_kernel_hooks.to_int) return fx_kernel_hooks.to_int(cls_id, p, ok);
+  sp_int r;
+  FX_HOOKED(r = fx_hook_to_int_u(cls_id, p, ok));
+  return r;
+}
+
+static const char *fx_hook_to_str_u(int cls_id, void *p) {
   sp_RbVal v = sp_box_obj(p, cls_id);
   FxMethod *m = fx_hook_method(v, "to_str");
   if (!m) return NULL;
@@ -376,10 +403,16 @@ static const char *fx_hook_to_str(int cls_id, void *p) {
   return fx_is_string(s) ? sp_poly_recv_s(s, "to_str") : NULL;
 }
 
+static const char *fx_hook_to_str(int cls_id, void *p) {
+  if (fx_kernel_cls(cls_id) && fx_kernel_hooks.to_str) return fx_kernel_hooks.to_str(cls_id, p);
+  const char *r;
+  FX_HOOKED(r = fx_hook_to_str_u(cls_id, p));
+  return r;
+}
+
 /* to_path, for a path argument (sp_poly_arg_path): NULL for a class with
    no to_path, which then takes to_str. */
-static const char *fx_hook_to_path(int cls_id, void *p) {
-  if (fx_kernel_cls(cls_id) && fx_kernel_hooks.to_path) return fx_kernel_hooks.to_path(cls_id, p);
+static const char *fx_hook_to_path_u(int cls_id, void *p) {
   sp_RbVal v = sp_box_obj(p, cls_id);
   FxMethod *m = fx_hook_method(v, "to_path");
   if (!m) return NULL;
@@ -393,13 +426,19 @@ static const char *fx_hook_to_path(int cls_id, void *p) {
   return sp_poly_recv_s(s, "to_path");
 }
 
+static const char *fx_hook_to_path(int cls_id, void *p) {
+  if (fx_kernel_cls(cls_id) && fx_kernel_hooks.to_path) return fx_kernel_hooks.to_path(cls_id, p);
+  const char *r;
+  FX_HOOKED(r = fx_hook_to_path_u(cls_id, p));
+  return r;
+}
+
 /* The conversions of a program object that the runtime asks for by number
    (sp_obj_conv): 0 to_int, 1 to_i, 2 to_f, 3 to_str, 4 to_f of a Numeric
    of the program (TypeError when it has none), 5 to_hash. Answers 0 when
    the class has no such method; with out, the answer of the call. */
-static int fx_hook_conv(int cls_id, void *p, int which, sp_RbVal *out) {
+static int fx_hook_conv_u(int cls_id, void *p, int which, sp_RbVal *out) {
   static const char *const names[] = { "to_int", "to_i", "to_f", "to_str", "to_f", "to_hash" };
-  if (which < 0 || which > 5 || fx_kernel_cls(cls_id)) return 0;
   sp_RbVal v = sp_box_obj(p, cls_id);
   SP_GC_ROOT_RBVAL(v);
   if (which == 4 && !fx_is_a(v, fx_builtin("Numeric"))) return 0;
@@ -409,6 +448,13 @@ static int fx_hook_conv(int cls_id, void *p, int which, sp_RbVal *out) {
   if (!m) return 0;
   if (out) *out = fx_invoke(m, v, 0, NULL);
   return 1;
+}
+
+static int fx_hook_conv(int cls_id, void *p, int which, sp_RbVal *out) {
+  if (which < 0 || which > 5 || fx_kernel_cls(cls_id)) return 0;
+  int r;
+  FX_HOOKED(r = fx_hook_conv_u(cls_id, p, which, out));
+  return r;
 }
 
 static void fx_array_init(void) {

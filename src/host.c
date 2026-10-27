@@ -61,12 +61,17 @@ static void fx_host_init(void) {
    converts each one. */
 static sp_RbVal fx_entry_invoke(int i, int argc, sp_RbVal *argv) {
   if (argc != fx_kernel_entries[i].argc) fx_arity_error(argc, fx_kernel_entries[i].argc, 0, 0);
-  return fx_kernel_entries[i].fn(argv);
+  /* the kernel runs without the walker lock: an entry can run long (a
+     server), and it calls Fluxpinel again from any of its threads */
+  sp_RbVal r;
+  FX_UNLOCKED(r = fx_kernel_entries[i].fn(argv));
+  return r;
 }
 
 /* ---- the calls of the kernel into Fluxpinel (kernel/fluxpinel.rb) ----
 
-   AOT code calls these by name (native_func). The kernel runs its top
+   AOT code calls these by name (native_func), from any of its threads:
+   each runs under the walker lock (FX_LOCKED). The kernel runs its top
    level before Fluxpinel starts, so a call from there is an error. */
 
 static void fx_api_check(void) {
@@ -89,7 +94,9 @@ sp_RbVal fx_api_load(const char *path) {
   size_t len;
   char *buf = fx_read_file(path, &len);
   if (!buf) sp_raise_cls("LoadError", sp_sprintf("cannot load such file -- %s", path));
-  return fx_api_run(path, buf, len);
+  sp_RbVal r;
+  FX_LOCKED(r = fx_api_run(path, buf, len));
+  return r;
 }
 
 /* Fluxpinel.eval(src): with no binding, so the locals of the caller are not
@@ -100,7 +107,9 @@ sp_RbVal fx_api_eval(const char *src) {
   char *buf = malloc(len + 1);
   memcpy(buf, src, len);
   buf[len] = 0;
-  return fx_api_run("(eval)", buf, len);
+  sp_RbVal r;
+  FX_LOCKED(r = fx_api_run("(eval)", buf, len));
+  return r;
 }
 
 /* Fluxpinel.call(obj, name, args): args is an Array, or nil for none. */
@@ -114,7 +123,9 @@ sp_RbVal fx_api_call(sp_RbVal obj, const char *name, sp_RbVal args) {
     sp_raise_cls("TypeError", sp_sprintf("no implicit conversion of %s into Array", sp_poly_class_name(args)));
   sp_RbVal argv[argc > 0 ? argc : 1];
   for (int i = 0; i < argc; i++) argv[i] = sp_poly_arr_get(args, i);
-  return fx_send(obj, name, argc, argv);
+  sp_RbVal r;
+  FX_LOCKED(r = fx_send(obj, name, argc, argv));
+  return r;
 }
 
 #else

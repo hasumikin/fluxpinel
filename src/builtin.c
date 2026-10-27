@@ -1192,7 +1192,7 @@ static int fx_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) 
     sp_RbVal so;
     if (io.tag != SP_TAG_NIL) fx_send(io, "write", 1, &s);
     else if (fx_gvar_stdout(&so)) fx_send(so, "write", 1, &s);
-    else sp_poly_print(s);
+    else FX_UNLOCKED(sp_poly_print(s));
     *out = sp_box_nil();
     return 1;
   }
@@ -1203,14 +1203,16 @@ static int fx_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) 
     *out = sp_box_nil();
     return 1;
   }
+  /* a write of stdout parks the thread when stdout is a pipe or a
+     terminal: the walker lock is given up for its time */
   if (!strcmp(name, "puts")) {
-    if (argc == 0) sp_puts_str_line(sp_str_empty);
-    for (int i = 0; i < argc; i++) sp_poly_puts(argv[i]);
+    if (argc == 0) FX_UNLOCKED(sp_puts_str_line(sp_str_empty));
+    for (int i = 0; i < argc; i++) FX_UNLOCKED(sp_poly_puts(argv[i]));
     *out = sp_box_nil();
     return 1;
   }
   if (!strcmp(name, "print")) {
-    for (int i = 0; i < argc; i++) sp_poly_print(argv[i]);
+    for (int i = 0; i < argc; i++) FX_UNLOCKED(sp_poly_print(argv[i]));
     *out = sp_box_nil();
     return 1;
   }

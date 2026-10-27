@@ -152,7 +152,7 @@ test: $(BUILD)/fluxpinel
 KERNEL ?= test/kernel/app.rb
 KERNEL_ENTRIES ?= FxKernel.ping,FxKernel.add,FxKernel.make,FxKernel.bump,FxKernel.boom,FxKernel.pair,$\
                   FxKernel.greet_all,FxKernel.script,FxKernel.rescue_script,FxKernel.console,$\
-                  FxKernel.shape,FxKernel.grow,FxKernel.describe
+                  FxKernel.shape,FxKernel.grow,FxKernel.describe,FxKernel.sessions
 HOST = $(BUILD)/host
 # The binary is $(HOST)/$(HOST_NAME). With KERNEL_MAIN (an entry such as
 # App.main), it takes no script and calls that entry with ARGV.

@@ -527,7 +527,9 @@ static sp_RbVal fx_ffi_call(FxFfi *x, int argc, sp_RbVal *argv) {
   }
   union { ffi_arg w; float f; double d; void *p; sp_RbVal v; } r;
   sp_ffi_bin_len = 0;
-  ffi_call(&x->cif, FFI_FN(x->fn), &r, values);
+  /* a C function can wait (a connect, a read of a socket): the walker lock
+     is given up for the call */
+  FX_UNLOCKED(ffi_call(&x->cif, FFI_FN(x->fn), &r, values));
   for (int i = 0; i < x->nargs; i++) free(heap[i]);
   sp_RbVal v = fx_ffi_ret(x->ret, &r);
   return symbolize ? sp_json_symbolize(v) : v;
@@ -633,7 +635,9 @@ static sp_RbVal fx_native_call(const FxFfi *set, sp_RbVal self, int argc, sp_RbV
   }
   union { ffi_arg w; float f; double d; void *p; sp_RbVal v; } r;
   sp_ffi_bin_len = 0;
-  ffi_call(&x->cif, FFI_FN(x->fn), &r, values);
+  /* a C function can wait (a connect, a read of a socket): the walker lock
+     is given up for the call */
+  FX_UNLOCKED(ffi_call(&x->cif, FFI_FN(x->fn), &r, values));
   for (int i = 0; i < nc; i++) free(heap[i]);
   if (set->ctor) return sp_box_obj(r.p, (int)set->cls->inst_id);
   if (x->ret == FX_FT_SELF) return self;

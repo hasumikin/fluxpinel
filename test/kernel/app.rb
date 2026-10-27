@@ -88,6 +88,20 @@ module FxKernel
   rescue ArgumentError => e
     "rescued in AOT: #{e.message}"
   end
+
+  # n threads of the kernel, each with a console session of its own, run
+  # the same lines at the same time, as the sessions of a server do. The
+  # answers come back in the order of the threads.
+  #: (Integer, Array[String]) -> Array[String]
+  def self.sessions(n, lines)
+    threads = []
+    i = 0
+    while i < n
+      threads << Thread.new(i) { |k| console(lines.map { |l| l.sub("K", k.to_s) }) }
+      i += 1
+    end
+    threads.map(&:value)
+  end
 end
 
 # A thread at the top level: the init of the kernel starts the scheduler,

@@ -171,14 +171,18 @@ static FxFrameStack *fx_fs(void) {
   if (L.fstacks_cap && L.fstacks[i].fiber) {
     L.fs = L.fstacks[i].fs;
   } else {
-    fx_fs_put(cur, L.main_fs);
-    L.fs = L.main_fs;
+    /* a fiber that Fluxpinel did not start: a thread of the kernel that
+       calls into the walker. Its frames are its own, since two such
+       threads interleave in the walker as the threads of the walker do. */
+    L.fs = fx_fs_new(cur);
+    fx_fs_put(cur, L.fs);
   }
   return L.fs;
 }
 
 static void fx_fs_init(void) {
   L.main_fs = L.fs = fx_fs_new(sp_fiber_current);
+  fx_fs_put(sp_fiber_current, L.main_fs);
 }
 
 static int fx_frame_enter(uint64_t serial) {
@@ -626,7 +630,7 @@ static sp_RbVal fx_yield_in(const FxBlock *b, int argc, sp_RbVal *argv, int stri
   const pm_constant_id_list_t *locals;
   const pm_node_t *params, *body;
   fx_block_parts(b->node, &locals, &params, &body);
-  if (SP_UNLIKELY(SP_SAFEPOINT_POLL())) sp_safepoint();
+  if (SP_UNLIKELY(SP_SAFEPOINT_POLL())) fx_safepoint();
   FX_FRAME(bf, locals, self ? *self : h->self, h->cref);
   bf.definee = definee ? definee : h->definee;
   bf.singleton_defs = definee ? sdefs : h->singleton_defs;
@@ -1223,7 +1227,7 @@ static sp_RbVal fx_while(FxFrame *f, const pm_node_t *pred, const pm_statements_
                          int post) {
   for (int first = 1;; first = 0) {
     /* a back-edge lets another green thread run, as in AOT code */
-    if (SP_UNLIKELY(SP_SAFEPOINT_POLL())) sp_safepoint();
+    if (SP_UNLIKELY(SP_SAFEPOINT_POLL())) fx_safepoint();
     if (!(post && first)) {
       sp_RbVal c = fx_eval(f, pred);
       if (L.ctl != FX_CTL_NONE) return sp_box_nil();
@@ -2307,31 +2311,8 @@ static sp_RbVal fx_index_logic_write(FxFrame *f, const pm_node_t *n) {
 
 /* ---- exceptions ---- */
 
-/* Pushes a rescue handler and pops it, as the code that spinel emits
-   does (src/codegen: begin/rescue). FX_TRY_LANDED restores the GC roots
-   and the rescue stack at a landing, and cuts the frame stack of Fluxpinel,
-   since a raise skips the cleanup of the frames that it unwinds. */
-#define FX_TRY_PUSH()                                                                \
-  sp_exc_check_depth();                                                                \
-  sp_exc_rootmark[sp_exc_top] = sp_gc_nroots;                                          \
-  sp_rescue_mark[sp_exc_top] = sp_rescue_sp;                                           \
-  sp_exc_msg[sp_exc_top] = 0;                                                          \
-  sp_exc_obj[sp_exc_top] = 0;                                                          \
-  sp_exc_top++
-#define FX_TRY_LANDED(d)                                                             \
-  sp_exc_top--;                                                                        \
-  sp_gc_nroots = sp_exc_rootmark[sp_exc_top];                                          \
-  sp_rescue_sp = sp_rescue_mark[sp_exc_top];                                           \
-  fx_fs()->depth = (d);                                                              \
-  L.kwhash = NULL
-
-/* The exception that a handler caught: its class name, message and object
-   (NULL when the runtime raised by name only). */
-typedef struct {
-  const char *cls, *msg;
-  void *obj;
-} FxCaught;
-
+/* The exception that a handler caught (FX_TRY_PUSH and FX_TRY_LANDED are
+   in fluxpinel.h). */
 static FxCaught fx_caught(void) {
   return (FxCaught){ (const char *)sp_last_exc_cls, sp_exc_msg[sp_exc_top], sp_exc_obj[sp_exc_top] };
 }

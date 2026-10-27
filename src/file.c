@@ -118,7 +118,11 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
     SP_GC_ROOT(f);
     sp_StrArray *a = sp_StrArray_new();
     SP_GC_ROOT(a);
-    for (const char *s; (s = sp_File_gets_sep(f, sep, limit, chomp)) != NULL;) sp_StrArray_push(a, s);
+    for (const char *s;;) {
+      FX_UNLOCKED(s = sp_File_gets_sep(f, sep, limit, chomp));
+      if (!s) break;
+      sp_StrArray_push(a, s);
+    }
     sp_File_close(f);
     *out = sp_box_nullable_obj((void *)a, SP_BUILTIN_STR_ARRAY);
     return 1;
@@ -246,7 +250,9 @@ static int fx_file_foreach(int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVa
   const int depth = fx_fs()->depth;
   FX_TRY_PUSH();
   if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
-    for (const char *s; (s = sp_File_gets_sep(f, sep, limit, chomp)) != NULL;) {
+    for (const char *s;;) {
+      FX_UNLOCKED(s = sp_File_gets_sep(f, sep, limit, chomp));
+      if (!s) break;
       line = sp_box_str_new(s);
       fx_y1(blk, line);
       if (L.ctl != FX_CTL_NONE) break;
@@ -308,18 +314,22 @@ static sp_int fx_io_copy_stream(sp_RbVal src, sp_RbVal dst) {
     SP_GC_ROOT_STR(s);
     const char *d = sp_poly_arg_path(dst);
     SP_GC_ROOT_STR(d);
-    return sp_io_copy_stream(s, d);
+    sp_int n;
+    FX_UNLOCKED(n = sp_io_copy_stream(s, d));
+    return n;
   }
   sp_RbVal data = sp_box_nil();
   SP_GC_ROOT_RBVAL(data);
   if (spath) {
     sp_File *in = sp_File_open(sp_poly_arg_path(src), "rb");
     SP_GC_ROOT(in);
-    const char *s = sp_File_read(in);
+    const char *s;
+    FX_UNLOCKED(s = sp_File_read(in));
     sp_File_close(in);
     data = s ? sp_box_str_new(s) : sp_box_nil();
   } else if (fx_is_io(src)) {
-    const char *s = sp_File_read((sp_File *)src.v.p);
+    const char *s;
+    FX_UNLOCKED(s = sp_File_read((sp_File *)src.v.p));
     data = s ? sp_box_str_new(s) : sp_box_nil();
   } else {
     data = fx_send(src, "read", 0, NULL);
@@ -329,10 +339,10 @@ static sp_int fx_io_copy_stream(sp_RbVal src, sp_RbVal dst) {
   if (dpath) {
     sp_File *out = sp_File_open(sp_poly_arg_path(dst), "wb");
     SP_GC_ROOT(out);
-    sp_File_write_poly(out, data);
+    FX_UNLOCKED(sp_File_write_poly(out, data));
     sp_File_close(out);
   } else if (fx_is_io(dst)) {
-    sp_File_write_poly((sp_File *)dst.v.p, data);
+    FX_UNLOCKED(sp_File_write_poly((sp_File *)dst.v.p, data));
   } else {
     fx_send(dst, "write", 1, &data);
   }

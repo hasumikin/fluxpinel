@@ -221,7 +221,9 @@ static const char *fx_session_feed(FxSession *s, const char *line, size_t n) {
 /* Fluxpinel.session */
 sp_RbVal fx_api_session(void) {
   fx_api_check();
-  return fx_session_new();
+  sp_RbVal r;
+  FX_LOCKED(r = fx_session_new());
+  return r;
 }
 
 /* Fluxpinel.feed(session, line) */
@@ -229,7 +231,9 @@ const char *fx_api_feed(sp_RbVal session, const char *line) {
   fx_api_check();
   SP_GC_SAVE();
   SP_GC_ROOT_RBVAL(session);
-  return fx_session_feed(fx_session_of(session), line, sp_str_byte_len(line));
+  const char *r;
+  FX_LOCKED(r = fx_session_feed(fx_session_of(session), line, sp_str_byte_len(line)));
+  return r;
 }
 
 #endif

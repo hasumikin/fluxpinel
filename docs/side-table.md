@@ -163,8 +163,8 @@ section 6. Thus these measures stay on hold.
   change of visibility writes the method in place, and the call checks the
   visibility each time. An ivar cache never becomes old, because a slot
   never moves.
-- **Threads.** The walker runs on one OS thread (`SPINEL_WORKERS=1`). Thus
-  the caches need no lock.
+- **Threads.** Walker code runs under the walker lock (design.md, section
+  3.3.5). Thus the caches need no lock of their own.
 - **Repeated `eval`.** Each parse adds numbers and records. `L.sources`
   keeps each parsed source too, so the table grows at about the same
   rate as the sources.

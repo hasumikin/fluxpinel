@@ -110,13 +110,23 @@ entries.split(",").each_with_index do |e, i|
   abort "entry_gen: #{e}: spell an entry Module.method" if mod.empty?
   cname = "sp_#{mod}_s_#{mc(meth)}"
   ret, types = protos.fetch(cname) { abort "entry_gen: #{e}: #{cname} is not in #{header}" }
+  # Each argument goes into a local first, and a value of the heap (a copy
+  # that a conversion made) is a root for the call: the entry may collect
+  # before it stores the argument anywhere.
+  decls = []
   args = types.each_with_index.map do |t, j|
     a = "argv[#{j}]"
-    if ARG.key?(t) then format(ARG[t], a)
-    elsif hash_id(t) then "(#{t})fx_entry_hash(#{a}, #{hash_id(t)})"
-    elsif t.end_with?("*") then "(#{t})#{a}.v.p"
-    else abort "entry_gen: #{e}: no conversion to #{t}"
-    end
+    conv =
+      if ARG.key?(t) then format(ARG[t], a)
+      elsif hash_id(t) then "(#{t})fx_entry_hash(#{a}, #{hash_id(t)})"
+      elsif t.end_with?("*") then "(#{t})#{a}.v.p"
+      else abort "entry_gen: #{e}: no conversion to #{t}"
+      end
+    decls << "#{t}#{t.end_with?("*") ? "" : " "}a#{j} = #{conv};"
+    decls << "SP_GC_ROOT_STR(a#{j});" if t == "const char *"
+    decls << "SP_GC_ROOT(a#{j});" if t != "const char *" && t.end_with?("*")
+    decls << "SP_GC_ROOT_RBVAL(a#{j});" if t == "sp_RbVal"
+    "a#{j}"
   end
   call = "#{cname}(#{args.join(", ")})"
   body =
@@ -126,7 +136,8 @@ entries.split(",").each_with_index do |e, i|
     elsif ret.end_with?("*") then "return fx_entry_obj(#{call});"
     else abort "entry_gen: #{e}: no box for #{ret}"
     end
-  out << "static sp_RbVal fx_entry_#{i}(sp_RbVal *argv) {\n  (void)argv;\n  #{body}\n}\n\n"
+  lines = ["(void)argv;", *decls, *body.split("\n")]
+  out << "static sp_RbVal fx_entry_#{i}(sp_RbVal *argv) {\n#{lines.map { |l| "  #{l}" }.join("\n")}\n}\n\n"
   rows << %(  { "#{mod}", "#{meth}", #{types.size}, fx_entry_#{i} },)
 end
 out << <<~C

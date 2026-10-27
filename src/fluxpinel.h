@@ -331,6 +331,63 @@ static int fx_is_string(sp_RbVal v);
 static int fx_fast_call(sp_RbVal r, sp_sym s, int argc, sp_RbVal *argv, sp_RbVal *out);   /* builtin.c */
 static int fx_integer_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int fx_fast_eqq(sp_RbVal v, sp_RbVal s, sp_RbVal *out);
+static FxFrameStack *fx_fs(void);
+
+/* The exception that a handler caught: its class name, message and object
+   (NULL when the runtime raised by name only). */
+typedef struct {
+  const char *cls, *msg;
+  void *obj;
+} FxCaught;
+static FxCaught fx_caught(void);
+static __attribute__((noreturn)) void fx_reraise(FxCaught c);
+
+/* Pushes a rescue handler and pops it, as the code that spinel emits
+   does (src/codegen: begin/rescue). FX_TRY_LANDED restores the GC roots,
+   the rescue stack and the walker lock at a landing, and cuts the frame
+   stack of Fluxpinel, since a raise skips the cleanup of the frames that
+   it unwinds. The two go in one scope. */
+#define FX_TRY_PUSH()                                                                \
+  int _fx_lockmark = fx_lock_depth();                                                  \
+  sp_exc_check_depth();                                                                \
+  sp_exc_rootmark[sp_exc_top] = sp_gc_nroots;                                          \
+  sp_rescue_mark[sp_exc_top] = sp_rescue_sp;                                           \
+  sp_exc_msg[sp_exc_top] = 0;                                                          \
+  sp_exc_obj[sp_exc_top] = 0;                                                          \
+  sp_exc_top++
+#define FX_TRY_LANDED(d)                                                             \
+  sp_exc_top--;                                                                        \
+  sp_gc_nroots = sp_exc_rootmark[sp_exc_top];                                          \
+  sp_rescue_sp = sp_rescue_mark[sp_exc_top];                                           \
+  fx_lock_set_depth(_fx_lockmark);   /* after the roots: a lock can park and collect */ \
+  fx_fs()->depth = (d);                                                              \
+  L.kwhash = NULL
+
+/* An entry into the walker from the runtime or the kernel: stmt runs
+   under the walker lock, which a raise gives up on its way out. */
+#define FX_LOCKED(stmt)                                                                \
+  do {                                                                                 \
+    fx_lock();                                                                         \
+    const int _fx_depth = fx_fs()->depth;                                              \
+    FX_TRY_PUSH();                                                                     \
+    if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {                                   \
+      stmt;                                                                            \
+      sp_exc_top--;                                                                    \
+      fx_unlock();                                                                     \
+    } else {                                                                           \
+      FX_TRY_LANDED(_fx_depth);                                                        \
+      FxCaught _fx_c = fx_caught();                                                    \
+      fx_unlock();                                                                     \
+      fx_reraise(_fx_c);                                                               \
+    }                                                                                  \
+  } while (0)
+
+/* A hook of the runtime: as FX_LOCKED from another thread, and a plain
+   call from walker code, which holds the lock already. */
+#define FX_HOOKED(stmt)                                                                \
+  do {                                                                                 \
+    if (fx_lock_depth()) { stmt; } else FX_LOCKED(stmt);                               \
+  } while (0)
 /* iter.c: Method values */
 static int fx_method_value_new(sp_RbVal r, sp_RbVal name, int public_only, sp_RbVal *out);
 static int fx_is_method_value(sp_RbVal v);

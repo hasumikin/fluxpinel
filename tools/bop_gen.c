@@ -213,6 +213,24 @@ static int variants_of(TyKind recv, Variant *out) {
   return 1;
 }
 
+/* Whether the body of a wrapper calls a runtime function that parks the
+   green thread (a read of a socket, a wait on a Thread or a Mutex): the
+   wrapper then gives up the walker lock for the call. The names are
+   prefixes: sp_File_gets takes sp_File_gets_limit too. */
+static int parks(const char *body) {
+  static const char *const names[] = {
+    "sp_File_gets", "sp_File_getc", "sp_File_getbyte", "sp_File_readbyte", "sp_File_readchar",
+    "sp_File_eof_p", "sp_File_read", "sp_File_flock", "sp_File_write", "sp_File_puts", "sp_File_syswrite",
+    "sp_File_pread", "sp_File_pwrite", "sp_io_copy_stream", "sp_io_select", "sp_io_wait", "sp_net_", "sp_sock_",
+    "sp_Thread_join", "sp_Thread_value", "sp_Thread_run", "sp_Thread_pass", "sp_Mutex_lock", "sp_Mutex_sleep",
+    "sp_CondVar_wait", "sp_Queue_pop", "sp_Queue_push", "sp_sleep", "sp_process_waitpid", "sp_sched_wait_child",
+    NULL
+  };
+  for (int i = 0; names[i]; i++)
+    if (strstr(body, names[i])) return 1;
+  return 0;
+}
+
 int main(int argc, char **argv) {
   if (argc != 3) { fprintf(stderr, "usage: bop_gen OUT.c MANIFEST.tsv\n"); return 2; }
   FILE *out = fopen(argv[1], "w"), *man = fopen(argv[2], "w");
@@ -281,7 +299,11 @@ int main(int argc, char **argv) {
         fprintf(out, "\n/* row %zu: %s#%s (%s) */\n", i, rname, op->name, vname);
         fprintf(out, "#ifndef FX_BOP_OFF_%d\n", id);
         fprintf(out, "sp_RbVal fx_bop_%d(sp_RbVal recv, sp_RbVal *argv) {\n", id);
-        fprintf(out, "  (void)argv;\n  %s r = %s;\n  return %s;\n}\n#endif\n", rt->ctype, recv.p, boxed.p);
+        fprintf(out, "  (void)argv;\n  %s r = %s;\n", rt->ctype, recv.p);
+        /* a runtime function that parks the green thread runs without the
+           walker lock (fx_tu.c) */
+        if (parks(body.p)) fprintf(out, "  sp_RbVal res;\n  FX_UNLOCKED(res = %s);\n  return res;\n}\n#endif\n", boxed.p);
+        else fprintf(out, "  return %s;\n}\n#endif\n", boxed.p);
         fprintf(man, "%d\t%zu\t%s\t%s\t%s\tgen\t\n", id, i, rname, op->name, vname);
         if (id >= MAX_WRAPPERS) { fprintf(stderr, "bop_gen: more than %d wrappers\n", MAX_WRAPPERS); return 1; }
         wrappers[id] = (Wrapper){ rname, op->name, vname, op->argc_min, op->argc_max, op->arg0, op->arg1 };

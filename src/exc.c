@@ -31,7 +31,8 @@ static int fx_is_exc_class(const FxClass *k) {
 /* The runtime asks for the superclass of a class of the program by name:
    a class of Fluxpinel, else a class of the kernel. */
 static const char *fx_exc_parent(const char *name) {
-  FxClass *k = fx_class_named(name);
+  FxClass *k;
+  FX_HOOKED(k = fx_class_named(name));
   if (k && k->cls_id >= FX_CLS_BASE) return k->super ? k->super->name : NULL;
   return fx_kernel_hooks.exc_parent ? fx_kernel_hooks.exc_parent(name) : NULL;
 }
@@ -222,17 +223,23 @@ static const char *fx_exc_user_text(sp_Exception *e, const char *name) {
   return sp_poly_to_s(fx_invoke(m, v, 0, NULL));
 }
 
-/* #to_s as #inspect renders it: the program's to_s, else the message */
+/* #to_s as #inspect renders it: the program's to_s, else the message.
+   The runtime calls the hook from any thread (FX_HOOKED). */
 static const char *fx_exc_to_s_hook(sp_Exception *e) {
-  const char *s = fx_exc_user_text(e, "to_s");
+  const char *s;
+  FX_HOOKED(s = fx_exc_user_text(e, "to_s"));
   return s ? s : sp_exc_message(e);
 }
 
 /* #message for the report of an uncaught exception: the program's message
    or to_s, else NULL */
 static const char *fx_exc_message_hook(sp_Exception *e) {
-  const char *s = fx_exc_user_text(e, "message");
-  return s ? s : fx_exc_user_text(e, "to_s");
+  const char *s;
+  FX_HOOKED({
+    s = fx_exc_user_text(e, "message");
+    if (!s) s = fx_exc_user_text(e, "to_s");
+  });
+  return s;
 }
 
 static void fx_exc_hooks(void) {

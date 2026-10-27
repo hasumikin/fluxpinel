@@ -173,6 +173,65 @@ const sp_int sp_exc_subclass_count = 0;
 const sp_int sp_exc_subclass_ids[] = { 0 };
 #endif
 
+/* ---- the walker lock ----
+
+   The state of the walker (L) is not shared between OS threads. A green
+   thread holds this lock while it runs walker code: the body of a Thread
+   of the program (fx_fiber_body), a call of the kernel into Fluxpinel
+   (fx_api_*), and a hook that the runtime calls on a value of the program.
+   A wait in the runtime (I/O, sleep, a Queue) gives the lock up for its
+   time (FX_UNLOCKED), as a call of an entry of the kernel does, so that
+   the other sessions and threads run.
+
+   The lock is a Monitor of the runtime: a waiter parks in the scheduler
+   and frees its worker, and the owner takes the lock again at a nested
+   entry (a hook called from walker code). FX_TRY_PUSH records the depth,
+   and FX_TRY_LANDED puts it back: a raise from an unlocked wait lands in
+   a frame that holds the lock. */
+
+#ifdef SP_THREADS
+static sp_mutex *fx_walker_lock;
+
+static void fx_lock(void) { if (fx_walker_lock) sp_Mutex_lock(fx_walker_lock); }
+static void fx_unlock(void) { if (fx_walker_lock) sp_Mutex_unlock(fx_walker_lock); }
+
+/* How many times the running thread holds the lock; 0 when it does not. */
+static int fx_lock_depth(void) {
+  if (!fx_walker_lock) return 0;
+  if (SP_ATOMIC_LOAD(&fx_walker_lock->owner, __ATOMIC_RELAXED) != sp_Thread_current()) return 0;
+  return fx_walker_lock->depth + 1;
+}
+
+/* Takes or gives up the lock until the running thread holds it n times. */
+static void fx_lock_set_depth(int n) {
+  for (int d = fx_lock_depth(); d > n; d--) fx_unlock();
+  for (int d = fx_lock_depth(); d < n; d++) fx_lock();
+}
+
+static void fx_lock_init(void) { fx_walker_lock = sp_Monitor_new(); }
+#else
+static void fx_lock(void) {}
+static void fx_unlock(void) {}
+static int fx_lock_depth(void) { return 0; }
+static void fx_lock_set_depth(int n) { (void)n; }
+static void fx_lock_init(void) {}
+#endif
+
+/* A wait in the runtime, with the lock given up for its time. */
+#define FX_UNLOCKED(stmt)                                                              \
+  do {                                                                                 \
+    int _fx_n = fx_lock_depth();                                                       \
+    fx_lock_set_depth(0);                                                              \
+    stmt;                                                                              \
+    fx_lock_set_depth(_fx_n);                                                          \
+  } while (0)
+
+/* A safepoint poll of the walker: a collection or a preemption parks the
+   thread, and another thread of the walker may run meanwhile. */
+static void fx_safepoint(void) {
+  FX_UNLOCKED(sp_safepoint());
+}
+
 /* ---- init ---- */
 
 /* The walker marks its own globals (constants, class ivars) here. */
@@ -181,6 +240,9 @@ static void (*fx_mark_hook)(void);
 /* The kernel marks the symbols and the regexp globals in the host build. */
 static void fx_mark_globals(void) {
   if (fx_kernel_hooks.mark) fx_kernel_hooks.mark();
+#ifdef SP_THREADS
+  if (fx_walker_lock) sp_gc_mark(fx_walker_lock);
+#endif
 #ifndef FX_KERNEL
   sp_re_mark_globals();
   sp_mark_dyn_syms();

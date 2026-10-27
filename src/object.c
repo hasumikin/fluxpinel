@@ -901,15 +901,23 @@ static void fx_ivar_set_c(sp_RbVal self, sp_sym name, sp_RbVal v, FxIvarCache *i
   fx_ivar_learn(self, name, ic);
 }
 
-/* ---- the runtime hooks ---- */
+/* ---- the runtime hooks ----
 
+   The runtime calls each hook from any thread of the kernel, so the hook
+   runs under the walker lock (FX_HOOKED). Each hook calls the hook of the
+   kernel for a class of the kernel (fx_tu.c) before the lock. */
+
+/* The name of a class by its id: fx_class_by_id makes the FxClass of a
+   builtin class at its first use. */
 static const char *fx_hook_class_name(sp_int cls_id) {
-  FxClass *c = fx_class_by_id(cls_id);
-  return c ? c->name : sp_str_empty;
+  const char *r;
+  FX_HOOKED({
+    FxClass *c = fx_class_by_id(cls_id);
+    r = c ? c->name : sp_str_empty;
+  });
+  return r;
 }
 
-/* Each hook below calls the hook of the kernel for a class of the kernel
-   (fx_tu.c). */
 static const char *fx_hook_obj_cls_name(int cls_id) {
   if (fx_kernel_cls(cls_id) && fx_kernel_hooks.obj_cls_name)
     return fx_kernel_hooks.obj_cls_name(cls_id);
@@ -955,22 +963,29 @@ static const char *fx_default_inspect(int cls_id, void *p) {
   return out->data;
 }
 
+/* to_s or inspect of the program, else the default */
+static const char *fx_obj_text(int cls_id, void *p, const char *name) {
+  sp_RbVal obj = sp_box_obj(p, cls_id);
+  SP_GC_ROOT_RBVAL(obj);
+  const char *s = p == L.main.v.p ? NULL : fx_user_string(obj, name);
+  if (s) return s;
+  return name[0] == 't' ? fx_default_to_s(cls_id, p) : fx_default_inspect(cls_id, p);
+}
+
 static const char *fx_hook_obj_to_s(int cls_id, void *p) {
   if (fx_kernel_cls(cls_id) && fx_kernel_hooks.obj_to_s)
     return fx_kernel_hooks.obj_to_s(cls_id, p);
-  sp_RbVal obj = sp_box_obj(p, cls_id);
-  SP_GC_ROOT_RBVAL(obj);
-  const char *s = p == L.main.v.p ? NULL : fx_user_string(obj, "to_s");
-  return s ? s : fx_default_to_s(cls_id, p);
+  const char *r;
+  FX_HOOKED(r = fx_obj_text(cls_id, p, "to_s"));
+  return r;
 }
 
 static const char *fx_hook_obj_inspect(int cls_id, void *p) {
   if (fx_kernel_cls(cls_id) && fx_kernel_hooks.obj_inspect)
     return fx_kernel_hooks.obj_inspect(cls_id, p);
-  sp_RbVal obj = sp_box_obj(p, cls_id);
-  SP_GC_ROOT_RBVAL(obj);
-  const char *s = p == L.main.v.p ? NULL : fx_user_string(obj, "inspect");
-  return s ? s : fx_default_inspect(cls_id, p);
+  const char *r;
+  FX_HOOKED(r = fx_obj_text(cls_id, p, "inspect"));
+  return r;
 }
 
 /* The runtime asks a user object for an operator (==, <=>, + ...) through
@@ -1006,11 +1021,7 @@ static int fx_comparable(const char *op, sp_RbVal a, sp_RbVal b, sp_RbVal *out) 
   return 1;
 }
 
-static sp_RbVal fx_hook_binop(const char *op, sp_RbVal a, sp_RbVal b, sp_bool *handled) {
-  *handled = FALSE;
-  if (a.tag == SP_TAG_OBJ && fx_kernel_cls(a.cls_id) && fx_kernel_hooks.binop)
-    return fx_kernel_hooks.binop(op, a, b, handled);
-  if (!fx_is_fx_object(a)) return sp_box_nil();
+static sp_RbVal fx_hook_binop_u(const char *op, sp_RbVal a, sp_RbVal b, sp_bool *handled) {
   SP_GC_ROOT_RBVAL(a);
   SP_GC_ROOT_RBVAL(b);
   FxMethod *m = fx_find_method(fx_class_of(a), sp_sym_intern(op));
@@ -1029,12 +1040,18 @@ static sp_RbVal fx_hook_binop(const char *op, sp_RbVal a, sp_RbVal b, sp_bool *h
   return fx_invoke(m, a, 1, &b);
 }
 
-/* The coerce protocol: `5 * obj` is `x, y = obj.coerce(5); x * y`. */
-static sp_RbVal fx_hook_coerce(const char *op, sp_RbVal num, sp_RbVal obj, sp_bool *handled) {
+static sp_RbVal fx_hook_binop(const char *op, sp_RbVal a, sp_RbVal b, sp_bool *handled) {
   *handled = FALSE;
-  if (obj.tag == SP_TAG_OBJ && fx_kernel_cls(obj.cls_id) && fx_kernel_hooks.coerce)
-    return fx_kernel_hooks.coerce(op, num, obj, handled);
-  if (!fx_is_fx_object(obj)) return sp_box_nil();
+  if (a.tag == SP_TAG_OBJ && fx_kernel_cls(a.cls_id) && fx_kernel_hooks.binop)
+    return fx_kernel_hooks.binop(op, a, b, handled);
+  if (!fx_is_fx_object(a)) return sp_box_nil();
+  sp_RbVal r;
+  FX_HOOKED(r = fx_hook_binop_u(op, a, b, handled));
+  return r;
+}
+
+/* The coerce protocol: `5 * obj` is `x, y = obj.coerce(5); x * y`. */
+static sp_RbVal fx_hook_coerce_u(const char *op, sp_RbVal num, sp_RbVal obj, sp_bool *handled) {
   SP_GC_ROOT_RBVAL(num);
   SP_GC_ROOT_RBVAL(obj);
   FxMethod *m = fx_find_method(fx_class_of(obj), sp_sym_intern("coerce"));
@@ -1050,11 +1067,25 @@ static sp_RbVal fx_hook_coerce(const char *op, sp_RbVal num, sp_RbVal obj, sp_bo
   return fx_send(x, op, 1, &y);
 }
 
+static sp_RbVal fx_hook_coerce(const char *op, sp_RbVal num, sp_RbVal obj, sp_bool *handled) {
+  *handled = FALSE;
+  if (obj.tag == SP_TAG_OBJ && fx_kernel_cls(obj.cls_id) && fx_kernel_hooks.coerce)
+    return fx_kernel_hooks.coerce(op, num, obj, handled);
+  if (!fx_is_fx_object(obj)) return sp_box_nil();
+  sp_RbVal r;
+  FX_HOOKED(r = fx_hook_coerce_u(op, num, obj, handled));
+  return r;
+}
+
 static int fx_hook_class_is_module(sp_Class c) {
   if (fx_kernel_cls(c.cls_id) && fx_kernel_hooks.class_is_module)
     return fx_kernel_hooks.class_is_module(c);
-  FxClass *k = fx_class_by_id(c.cls_id);
-  return k && k->is_module;
+  int r;
+  FX_HOOKED({
+    FxClass *k = fx_class_by_id(c.cls_id);
+    r = k && k->is_module;
+  });
+  return r;
 }
 
 static void fx_hook_mark(void) {

@@ -220,12 +220,17 @@ static void fx_body(void) {
   /* a fiber runs the walker, whose frames are larger than those of AOT
      code: the size that codegen asks for an unoptimised build */
   sp_fiber_stack_hint((size_t)1 << 20);
+#ifndef FX_KERNEL
   /* The fewest workers, also for a thread of the runtime itself (see
-     Thread.new in fiber.c). The threaded runtime needs its root fiber
-     before any fiber runs. */
+     Thread.new in fiber.c). */
   setenv("SPINEL_WORKERS", "1", 1);
+#endif
+  /* the threaded runtime needs its root fiber before any fiber runs */
   fx_sched_start();
   fx_fs_init();
+  /* main holds the walker lock until the program ends (fx_tu.c) */
+  fx_lock_init();
+  fx_lock();
 
 #ifdef FX_KERNEL_MAIN
   const char *src = FX_KERNEL_MAIN "(ARGV)";
@@ -247,6 +252,8 @@ static void fx_body(void) {
      raise: Fluxpinel always runs the threaded runtime, and a collection in
      a hook after the drain waits for the workers that the drain stopped */
   fx_main_rc = sp_at_exit_run(0);
+  /* the threads that still run need the lock to finish */
+  fx_lock_set_depth(0);
   fx_sched_end();
 }
 
