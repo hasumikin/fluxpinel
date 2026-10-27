@@ -40,7 +40,10 @@ static const char *fx_exc_parent(const char *name) {
    any other value gives its to_s. */
 static void fx_exc_set_msg(sp_Exception *e, sp_RbVal m) {
   SP_GC_ROOT(e);
-  const char *s = m.tag == SP_TAG_NIL ? NULL : sp_msg_heapify(sp_poly_to_s(m));
+  const char *t = m.tag == SP_TAG_NIL ? NULL : sp_poly_to_s(m);
+  SP_GC_ROOT_STR(t);
+  /* a copy by the byte length, which keeps a NUL in the message */
+  const char *s = t ? sp_str_dup(t) : NULL;
   sp_gc_wb(e);
   e->msg = s;
   e->msg_h = NULL;
@@ -147,7 +150,8 @@ static int fx_exc_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *o
   sp_RbVal a = argv[0];
   if (fx_is_string(a)) {
     if (argc > 1) sp_raise_cls("TypeError", "exception class/object expected");
-    sp_raise_cls("RuntimeError", sp_poly_recv_s(a, name));
+    /* an empty message stays empty, and a NUL in it stays */
+    sp_raise_cls("RuntimeError", sp_exc_msg_given(sp_poly_recv_s(a, name)));
   }
   if (fx_is_exc(a)) {
     if (argc >= 2) fx_exc_set_msg((sp_Exception *)a.v.p, argv[1]);
@@ -181,6 +185,15 @@ static int fx_exc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
     *out = sp_box_str_new(sp_sprintf("%s (%s)", sp_exc_message(e), e->cls_name));
     return 1;
   }
+  /* "msg (Class)" from #message, which a class of the program can define,
+     with no class for an unnamed Class.new class */
+  if (argc == 0 && FX_IS("detailed_message")) {
+    SP_GC_ROOT(e);
+    const char *msg = sp_poly_to_s(fx_send(r, "message", 0, NULL));
+    SP_GC_ROOT_STR(msg);
+    *out = sp_box_str_new(sp_exc_detailed_text(e, msg));
+    return 1;
+  }
   /* the same class and message; two UncaughtThrowErrors are equal */
   if (argc == 1 && FX_IS("==")) {
     *out = sp_box_bool(fx_is_exc(argv[0]) && sp_exc_eq(e, (sp_Exception *)argv[0].v.p));
@@ -198,8 +211,34 @@ static int fx_exc_matches(const char *cls, sp_RbVal ev, sp_RbVal target) {
   return sp_exc_cls_matches(cls, k->name);
 }
 
+/* The text of the method name of the program on e, or NULL when its
+   class does not define one. */
+static const char *fx_exc_user_text(sp_Exception *e, const char *name) {
+  SP_GC_ROOT(e);
+  sp_RbVal v = fx_exc_box(e);
+  SP_GC_ROOT_RBVAL(v);
+  FxMethod *m = fx_find_method(fx_class_of(v), sp_sym_intern(name));
+  if (!m || m->owner == L.object) return NULL;
+  return sp_poly_to_s(fx_invoke(m, v, 0, NULL));
+}
+
+/* #to_s as #inspect renders it: the program's to_s, else the message */
+static const char *fx_exc_to_s_hook(sp_Exception *e) {
+  const char *s = fx_exc_user_text(e, "to_s");
+  return s ? s : sp_exc_message(e);
+}
+
+/* #message for the report of an uncaught exception: the program's message
+   or to_s, else NULL */
+static const char *fx_exc_message_hook(sp_Exception *e) {
+  const char *s = fx_exc_user_text(e, "message");
+  return s ? s : fx_exc_user_text(e, "to_s");
+}
+
 static void fx_exc_hooks(void) {
   sp_user_exc_parent_fn = fx_exc_parent;
+  sp_user_exc_to_s_fn = fx_exc_to_s_hook;
+  sp_user_exc_message_fn = fx_exc_message_hook;
 }
 
 #undef FX_IS

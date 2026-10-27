@@ -241,7 +241,9 @@ static int fx_struct_class(FxFrame *f, FxClass *k, const char *name, int argc, s
         if (!super || super->is_module)
           sp_raise_cls("TypeError", sp_sprintf("superclass must be an instance of Class (given an instance of %s)",
                                                super ? "Module" : fx_class_of(argv[0])->name));
-        if (super->cls_id < 0 && super != L.object && strcmp(super->name, "BasicObject"))
+        /* an instance of a subclass of an exception class is a runtime
+           sp_Exception (fx_exc_new); other builtin classes are a gap */
+        if (super->cls_id < 0 && super != L.object && strcmp(super->name, "BasicObject") && !fx_is_exc_class(super))
           fx_gap(sp_sprintf("Class.new with the builtin superclass %s", super->name));
       }
       FxClass *c = fx_class_anon(mod, super, f ? f->cref : L.object);

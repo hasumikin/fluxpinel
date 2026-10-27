@@ -422,6 +422,7 @@ static int fx_rs_responds(sp_RbVal r, const char *mn);
 static int fx_rs_known(sp_RbVal r, const char *mn);
 static int fx_rs_own(sp_RbVal r, const char *mn);
 static int fx_rs_instance(const char *cls, const char *mn);
+static int fx_rs_defined(const FxClass *k, const char *mn, int inherit);
 
 /* global.c */
 static sp_RbVal fx_gvar_eval(FxFrame *f, const pm_node_t *n);

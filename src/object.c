@@ -1369,11 +1369,19 @@ static int fx_method_defined(FxClass *k, int mask, sp_sym name, int inherit) {
     size_t len = strlen(mn);
     if (!strncmp(n, mn, len) && (!n[len] || !strcmp(n + len, "="))) return 0;
   }
-  if (k->cls_id < FX_CLS_BASE || k->native || (inherit && fx_builtin_ancestor(k)))
-    fx_gap(sp_sprintf("%s.method_defined? of a builtin method", k->name));
+  const char *n = sp_sym_to_s(name);
+  if (k->cls_id < FX_CLS_BASE || k->native || (inherit && fx_builtin_ancestor(k))) {
+    /* the public builtin methods of CRuby answer from the table; a miss
+       is no method for a query without private, as CRuby has few
+       protected builtin methods */
+    int d = k->native || fx_feature_loaded ? -1 : fx_rs_defined(k, n, inherit);
+    if (d == 1) return (mask >> FX_VIS_PUBLIC) & 1;
+    if (d < 0 || (mask >> FX_VIS_PRIVATE) & 1)
+      fx_gap(sp_sprintf("%s.method_defined? of a builtin method", k->name));
+    return 0;
+  }
   /* a method of Object or Kernel, which a class inherits and a module
      does not */
-  const char *n = sp_sym_to_s(name);
   if (!inherit || k->is_module || !(fx_object_method_name(n) || fx_kernel_private(n))) return 0;
   return (mask >> (fx_kernel_private(n) ? FX_VIS_PRIVATE : FX_VIS_PUBLIC)) & 1;
 }

@@ -83,6 +83,26 @@ static const FxClass *fx_rs_builtin_of(const FxClass *c) {
   return c;
 }
 
+/* Whether the instances of k have the public method mn as a builtin method
+   of CRuby, for method_defined?: of k itself when k is builtin and not
+   inherit, else of the builtin modules that k includes and of its nearest
+   builtin class. -1 when the table cannot tell (k has no row). */
+static int fx_rs_defined(const FxClass *k, const char *mn, int inherit) {
+  if (k->cls_id < FX_CLS_BASE) {
+    const FxRespondRow *row = fx_rs_row(k->name);
+    if (!row) return -1;
+    return inherit ? fx_rs_instance(k->name, mn) : fx_rs_in(row->inst, mn);
+  }
+  if (!inherit) return 0;
+  const FxClass *anc[128];
+  int n = fx_ancestors(k, anc, 128);
+  for (int i = 0; i < n; i++)
+    if (anc[i]->cls_id < FX_CLS_BASE && anc[i]->is_module && fx_rs_instance(anc[i]->name, mn)) return 1;
+  const FxClass *b = fx_rs_builtin_of(k);
+  if (!b) return 0;
+  return fx_rs_row(b->name) ? fx_rs_instance(b->name, mn) : -1;
+}
+
 /* Whether r has the public method mn as a builtin method of CRuby. A
    method of the program is not here: fx_respond_to looks it up first. */
 static int fx_rs_responds(sp_RbVal r, const char *mn) {
