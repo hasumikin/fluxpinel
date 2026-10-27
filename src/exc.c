@@ -182,6 +182,8 @@ static int fx_exc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
   if (argc == 0 && FX_IS("cause")) { *out = e->cause ? fx_exc_box(e->cause) : sp_box_nil(); return 1; }
   if (argc == 0 && FX_IS("exception")) { *out = r; return 1; }
   if (argc == 0 && FX_IS("result")) { *out = sp_exc_result(e); return 1; }
+  /* LoadError#path: the feature of a require that loaded nothing, else nil */
+  if (argc == 0 && FX_IS("path")) { *out = sp_exc_path_acc(e); return 1; }
   if (argc == 0 && FX_IS("full_message")) {
     *out = sp_box_str_new(sp_sprintf("%s (%s)", sp_exc_message(e), e->cls_name));
     return 1;

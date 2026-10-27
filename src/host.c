@@ -93,7 +93,7 @@ sp_RbVal fx_api_load(const char *path) {
   fx_api_check();
   size_t len;
   char *buf = fx_read_file(path, &len);
-  if (!buf) sp_raise_cls("LoadError", sp_sprintf("cannot load such file -- %s", path));
+  if (!buf) sp_raise_load_error(path);
   sp_RbVal r;
   FX_LOCKED(r = fx_api_run(path, buf, len));
   return r;

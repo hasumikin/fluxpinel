@@ -16,6 +16,10 @@
 
 #define FX_IS(s) (!strcmp(name, (s)))
 
+/* An Integer or nil argument, as the nullable Integer of the runtime */
+static int fx_is_int_or_nil(sp_RbVal v) { return v.tag == SP_TAG_INT || v.tag == SP_TAG_NIL; }
+static sp_oint fx_oint(sp_RbVal v) { return v.tag == SP_TAG_INT ? sp_oint_of(v.v.i) : sp_oint_nil(); }
+
 /* The arguments as a new poly array. */
 static sp_PolyArray *fx_ary_args(int argc, sp_RbVal *argv) {
   sp_PolyArray *a = sp_PolyArray_new();
@@ -237,10 +241,13 @@ static int fx_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     *out = argv[2];
     return 1;
   }
-  /* fill(v), fill(v, start) and fill(v, start, len) with Integer offsets */
-  if (argc >= 1 && argc <= 3 && FX_IS("fill") && (argc < 2 || argv[1].tag == SP_TAG_INT) &&
-      (argc < 3 || argv[2].tag == SP_TAG_INT)) {
-    *out = sp_poly_fill(r, argv[0], argc, argc >= 2 ? argv[1].v.i : 0, argc == 3 ? argv[2].v.i : 0);
+  /* fill(v), fill(v, start) and fill(v, start, len) with Integer or nil
+     offsets: a nil start is 0, a nil length runs to the end */
+  if (argc >= 1 && argc <= 3 && FX_IS("fill") && (argc < 2 || fx_is_int_or_nil(argv[1])) &&
+      (argc < 3 || fx_is_int_or_nil(argv[2]))) {
+    sp_oint start = argc >= 2 ? fx_oint(argv[1]) : sp_oint_nil();
+    sp_oint len = argc == 3 ? fx_oint(argv[2]) : sp_oint_nil();
+    *out = sp_poly_fill(r, argv[0], argc, start, len);
     return 1;
   }
   if (FX_IS("push") || FX_IS("append")) {

@@ -62,6 +62,9 @@ static void str_printf(Str *s, const char *fmt, ...) {
 }
 
 static int g_temp;
+/* the kinds the wrapper takes for arguments 0 and 1: the row's, or fewer
+   when the expansion of $e serves only one of them */
+static BopKinds g_arg_kinds[2];
 
 /* ty_traits_render: $e is the expression, $t the first temp of the form */
 static void render(Str *s, const char *cell, const char *expr) {
@@ -147,7 +150,11 @@ static const char *expand(Str *s, const BuiltinOp *op, const Variant *v, int *oi
     case 'q': str_printf(s, "sp_poly_as_rational(%s)", arg); break;
     case 'F': return "$F (Float coercion)";
     case 'e': {
-      TyKind k = n == 0 ? single_kind(op->arg0) : n == 1 ? single_kind(op->arg1) : TY_UNKNOWN;
+      if (n < 0 || n > 1) return "$e of no single kind";
+      /* an index span: a Range or a Float Range (sp_range_ix). The wrapper
+         takes the Range; a Float Range takes the general path. */
+      if (g_arg_kinds[n] == (BOP_K(TY_RANGE) | BOP_K(TY_FLOAT_RANGE))) g_arg_kinds[n] = BOP_K(TY_RANGE);
+      TyKind k = single_kind(g_arg_kinds[n]);
       if (k == TY_UNKNOWN) return "$e of no single kind";
       if (!unbox(s, k, arg)) return "$e of a kind with no unbox";
       break;
@@ -287,6 +294,8 @@ int main(int argc, char **argv) {
       const TyTraits *rt = ty_traits_of(v->recv);
       Str body = { 0 }, boxed = { 0 }, recv = { 0 };
       g_temp = 0;
+      g_arg_kinds[0] = op->arg0;
+      g_arg_kinds[1] = op->arg1;
       int oint = 0;
       const char *why = NULL;
       if (!rt || !rt->ctype) why = "receiver kind with no C type";
@@ -306,7 +315,7 @@ int main(int argc, char **argv) {
         else fprintf(out, "  return %s;\n}\n#endif\n", boxed.p);
         fprintf(man, "%d\t%zu\t%s\t%s\t%s\tgen\t\n", id, i, rname, op->name, vname);
         if (id >= MAX_WRAPPERS) { fprintf(stderr, "bop_gen: more than %d wrappers\n", MAX_WRAPPERS); return 1; }
-        wrappers[id] = (Wrapper){ rname, op->name, vname, op->argc_min, op->argc_max, op->arg0, op->arg1 };
+        wrappers[id] = (Wrapper){ rname, op->name, vname, op->argc_min, op->argc_max, g_arg_kinds[0], g_arg_kinds[1] };
         id++;
       }
       free(body.p); free(boxed.p); free(recv.p);

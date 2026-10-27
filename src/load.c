@@ -278,7 +278,7 @@ static int fx_load_once(char *real, const char *extra) {
     }
   size_t len, xlen = 0;
   char *buf = fx_read_file(real, &len);
-  if (!buf) sp_raise_cls("LoadError", sp_sprintf("cannot load such file -- %s", real));
+  if (!buf) sp_raise_load_error(real);
   char *xbuf = extra ? fx_read_file(extra, &xlen) : NULL;
   if (xbuf) {
     buf = realloc(buf, len + 1 + xlen + 1);
@@ -324,7 +324,7 @@ static sp_RbVal fx_require(const pm_node_t *n, const char *arg, int rel) {
     }
     size_t sl = strlen(shown);
     if (sl > 3 && !strcmp(shown + sl - 3, ".rb")) shown = sp_sprintf("%.*s", (int)(sl - 3), shown);
-    sp_raise_cls("LoadError", sp_sprintf("cannot load such file -- %s", shown));
+    sp_raise_load_error(shown);
   }
   if (!fx_load_once(real, NULL)) return sp_box_bool(0);
   return L.ctl == FX_CTL_NONE ? sp_box_bool(1) : sp_box_nil();
@@ -391,7 +391,7 @@ static sp_RbVal fx_require_lib(const char *name) {
     fx_feature_loaded = 1;
     return sp_box_bool(0);
   }
-  sp_raise_cls("LoadError", sp_sprintf("cannot load such file -- %s", name));
+  sp_raise_load_error(name);
 }
 
 /* A constant that spinel loads the package of when a program names it,
@@ -424,7 +424,7 @@ static int fx_load_call(const pm_node_t *n, sp_RbVal self, const char *name, int
     SP_GC_ROOT_STR(path);
     size_t len;
     char *buf = fx_read_file(path, &len);
-    if (!buf) sp_raise_cls("LoadError", sp_sprintf("cannot load such file -- %s", path));
+    if (!buf) sp_raise_load_error(path);
     char *real = realpath(path, NULL);
     FxSource *s;
     const char *err = fx_parse(strdup(path), real ? real : strdup(path), buf, len, &s);
