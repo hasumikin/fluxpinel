@@ -1,5 +1,5 @@
 # The spinel tests that Fluxpinel answers right, for make regress.
-# make oracle writes this file. spinel: 5e8ddbeb79f2
+# make oracle writes this file. spinel: 2fd94a2802de
 absolute_class_reopen_inside_module
 abstract_raise_override_return
 alias_attr_reader_source
@@ -380,6 +380,7 @@ bignum_variable_writes
 bigrational_integer_surface
 binary_string_index_byte_offsets
 binary_string_length_bytes
+binary_string_regexp_char_offsets
 binop_recv_root
 bitwise_mask_over_int64
 blk_param_kept_call_value
@@ -798,6 +799,7 @@ call_plan_poly_arms
 call_plan_poly_operator_override
 call_plan_reader_block_override
 call_plan_reader_target
+call_plan_rebound_output
 call_plan_reflection_override
 call_plan_reflection_target
 call_plan_renderer_result
@@ -1190,6 +1192,7 @@ computed_ivar_set_issue_example
 computed_ivar_set_skips_reopened_builtin
 computed_require_literal_path
 computed_require_load_error
+computed_require_load_error_long
 computed_send_builtin_receiver
 concat_boxed_source
 concat_chain_operand_gc_root
@@ -1243,8 +1246,10 @@ const_path_constant_receiver
 const_path_deep_nesting
 const_path_dynamic_receiver
 const_path_dynamic_receiver_many
+const_path_message_is_written_path
 const_path_no_toplevel
 const_path_struct_class_value
+const_path_unresolved_require
 const_path_write_beside_toplevel
 const_receiver_reaches_only_its_method
 const_recv_yield_inline
@@ -3124,6 +3129,7 @@ lambda_keyword_call
 lambda_named_param_type
 lambda_nested_emit
 lambda_nested_numbered_params
+lambda_param_written_int
 lambda_returned_from_lambda
 lambda_strict_arity
 last_match_named_group
@@ -3372,6 +3378,7 @@ mixin_after_dynamic_send_arm
 mixin_method_rescue_binding
 mixin_reached_by_super_or_pattern
 mixin_reopen_after_call
+mixin_reopen_method_body
 mixin_to_s_inspect
 modifier_rescue_frame
 modifier_rescue_return_pops
@@ -3646,6 +3653,7 @@ numeric_tower_remainder
 obj_array_enum_through_if
 obj_array_literal_arg
 obj_array_map_element_root
+obj_array_nested_block
 obj_array_param_accumulator
 obj_array_param_pushes_two_classes
 obj_array_range_index_read
@@ -3805,6 +3813,7 @@ poll_dynamic_call_reacher
 poly
 poly2
 poly_all_class_root
+poly_aref_class_method_not_held
 poly_aref_hash_default
 poly_aref_proc_and_class_method
 poly_arg_fresh_string_handle
@@ -3943,6 +3952,7 @@ poly_dispatch_splat_args
 poly_dispatch_splat_class_value
 poly_dispatch_string_receiver_split
 poly_dispatch_struct_arg_arm
+poly_dispatch_type_receiver_classes
 poly_dispatch_uninstantiated_arm
 poly_dispatch_user_return_widens
 poly_dispatch_value_type_to_s
@@ -3970,6 +3980,7 @@ poly_eq_number_hands_back
 poly_eq_user_cross_class
 poly_equality_mixed_sites
 poly_exact_numeric_ops
+poly_exception_reopen_methods
 poly_exception_reopen_nearest
 poly_face_nilable_param
 poly_fdiv
@@ -5720,6 +5731,7 @@ struct_member_hash_mixed_keys
 struct_member_in_block
 struct_member_name_no_global_merge
 struct_member_named_like_method
+struct_member_named_methods
 struct_member_shadows_enumerable
 struct_member_size_reader
 struct_minmax
