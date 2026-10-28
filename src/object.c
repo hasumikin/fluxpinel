@@ -299,6 +299,8 @@ static FxClass *fx_class_named(const char *name) {
    class of the program. */
 static FxClass *fx_class_of(sp_RbVal v) {
   if (fx_is_fx_object(v)) return fx_class_by_id(v.cls_id);
+  const FxArraySub *sub = fx_arysub_of(v);
+  if (sub) return fx_class_by_id(sub->inst_id);
   const char *name = sp_poly_class_name(v);
   FxClass *c = fx_builtin(name);
   if (!c && v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_EXCEPTION) c = fx_class_named(name);
@@ -843,6 +845,95 @@ static sp_RbVal fx_new_object(FxClass *c) {
   return sp_box_obj(o, (int)c->inst_id);
 }
 
+/* ---- instances of a subclass of Array ---- */
+
+/* An instance of a class of the program under Array is its Array, with
+   the class and its ivars after it (FxArraySub), as spinel lays one out
+   (#7449). The runtime sees an Array, and sp_bsub_cls_fn gives it the
+   class; the walker finds the class by the scan function of the heap
+   object. */
+static void fx_arysub_scan(void *p) {
+  FxArraySub *s = (FxArraySub *)p;
+  sp_PolyArray_scan(p);
+  sp_mark_rbval(s->ivars);
+}
+
+static FxArraySub *fx_arysub_of(sp_RbVal v) {
+  if (v.tag != SP_TAG_OBJ || v.cls_id != SP_BUILTIN_POLY_ARRAY || !v.v.p) return NULL;
+  const sp_gc_hdr *h = (const sp_gc_hdr *)v.v.p - 1;
+  return h->scan == fx_arysub_scan ? (FxArraySub *)v.v.p : NULL;
+}
+
+/* The class of an instance, for the runtime; -1 for a plain value. */
+static int fx_hook_bsub_cls(sp_RbVal v) {
+  FxArraySub *s = fx_arysub_of(v);
+  return s ? (int)s->inst_id : -1;
+}
+
+/* The builtin class under k other than Object and BasicObject, or NULL. */
+static const FxClass *fx_builtin_base(const FxClass *k) {
+  for (const FxClass *s = k->super; s; s = s->super)
+    if (s->cls_id < 0 && s != L.object && strcmp(s->name, "BasicObject")) return s;
+  return NULL;
+}
+
+static int fx_is_array_class(const FxClass *k) {
+  const FxClass *b = fx_builtin_base(k);
+  return b && !strcmp(b->name, "Array");
+}
+
+/* A new empty instance of k, a subclass of Array. */
+static sp_RbVal fx_arysub_new(FxClass *k) {
+  FxArraySub *s = (FxArraySub *)sp_gc_alloc(sizeof *s, NULL, fx_arysub_scan);
+  s->a.data = s->a.inl;
+  s->a.cap = SP_POLYARR_INLINE;
+  s->a.len = 0;
+  s->a.frozen = 0;
+  s->a.head = 0;
+  s->inst_id = k->inst_id;
+  s->ivars = sp_box_nil();
+  return sp_box_obj(s, SP_BUILTIN_POLY_ARRAY);
+}
+
+/* Array#initialize on an instance (super in its initialize, or a class
+   with none): the elements of Array.new with the same arguments. */
+static void fx_arysub_init(sp_RbVal v, int argc, sp_RbVal *argv, const FxBlock *blk) {
+  SP_GC_ROOT_RBVAL(v);
+  sp_RbVal plain = fx_send_b(fx_class_box(fx_builtin("Array")), "new", argc, argv, blk);
+  SP_GC_ROOT_RBVAL(plain);
+  FxArraySub *s = (FxArraySub *)v.v.p;
+  s->a.len = 0;
+  sp_int n = sp_poly_length(plain);
+  for (sp_int i = 0; i < n; i++) sp_PolyArray_push(&s->a, sp_poly_arr_get(plain, i));
+}
+
+/* dup and clone of an instance: the class, the elements and the ivars. */
+static sp_RbVal fx_arysub_copy(sp_RbVal v, int clone) {
+  SP_GC_ROOT_RBVAL(v);
+  FxArraySub *s = (FxArraySub *)v.v.p;
+  sp_RbVal c = fx_arysub_new(fx_class_by_id(s->inst_id));
+  SP_GC_ROOT_RBVAL(c);
+  for (sp_int i = 0; i < s->a.len; i++) sp_PolyArray_push(&((FxArraySub *)c.v.p)->a, s->a.data[i]);
+  if (s->ivars.tag != SP_TAG_NIL) {
+    /* the hidden object of the ivars, with the same slots */
+    sp_RbVal iv = fx_new_object(fx_class_by_id(s->inst_id));
+    SP_GC_ROOT_RBVAL(iv);
+    const FxObject *from = (const FxObject *)s->ivars.v.p;
+    if (from->iv) {
+      sp_PolyArray *a = sp_PolyArray_new();
+      SP_GC_ROOT(a);
+      for (sp_int i = 0; i < from->iv->len; i++) sp_PolyArray_push(a, from->iv->data[i]);
+      FxObject *to = (FxObject *)iv.v.p;
+      sp_gc_wb(to);
+      to->iv = a;
+    }
+    sp_gc_wb(c.v.p);
+    ((FxArraySub *)c.v.p)->ivars = iv;
+  }
+  if (clone && s->a.frozen) ((FxArraySub *)c.v.p)->a.frozen = 1;
+  return c;
+}
+
 /* The slot cache: one entry for each (class, name) slot. A slot of a class
    never moves, so an entry stays right; a miss of the list is not kept,
    since a later set adds the slot. */
@@ -881,6 +972,18 @@ static sp_PolyArray *fx_class_ivars;   /* [class value, object, ...]; marked by 
    the exception, so an exception with an ivar lives until the end. */
 static sp_RbVal fx_ivar_holder(sp_RbVal self) {
   if (fx_is_fx_object(self)) return self;
+  /* an instance of a subclass of Array keeps its ivars after the Array */
+  FxArraySub *sub = fx_arysub_of(self);
+  if (sub) {
+    if (sub->ivars.tag == SP_TAG_NIL) {
+      SP_GC_ROOT_RBVAL(self);
+      /* an object of the class itself, so that the slots are the class's */
+      sp_RbVal holder = fx_new_object(fx_class_by_id(sub->inst_id));
+      sp_gc_wb(sub);
+      sub->ivars = holder;
+    }
+    return sub->ivars;
+  }
   int exc = self.tag == SP_TAG_OBJ && self.cls_id == SP_BUILTIN_EXCEPTION && self.v.p;
   if (self.tag != SP_TAG_CLASS && !exc) return sp_box_nil();
   FxClass *c = exc ? NULL : fx_class_value(self);
@@ -1248,6 +1351,7 @@ static void fx_object_init(void) {
   fx_class_name_hook = fx_hook_class_name;
   fx_mark_hook = fx_hook_mark;
   sp_obj_cls_name_fn = fx_hook_obj_cls_name;
+  sp_bsub_cls_fn = fx_hook_bsub_cls;
   sp_obj_to_s_fn = fx_hook_obj_to_s;
   sp_obj_inspect_fn = fx_hook_obj_inspect;
   sp_class_is_module_fn = fx_hook_class_is_module;
@@ -1633,6 +1737,14 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   if (!blk && fx_integer_class(k, name, argc, argv, out)) return 1;
   /* Kernel.format, Kernel.puts, ...: a module function of Kernel */
   if (!blk && k->cls_id < 0 && !strcmp(k->name, "Kernel") && fx_kernel(name, argc, argv, out)) return 1;
+  /* X[a, b] of a subclass X of Array: an instance of the elements */
+  if (!strcmp(name, "[]") && !k->is_module && fx_is_array_class(k)) {
+    sp_RbVal obj = fx_arysub_new(k);
+    SP_GC_ROOT_RBVAL(obj);
+    for (int i = 0; i < argc; i++) sp_PolyArray_push(&((FxArraySub *)obj.v.p)->a, argv[i]);
+    *out = obj;
+    return 1;
+  }
   if (!strcmp(name, "new") || !strcmp(name, "allocate")) {
     if (k->is_module) return 0;
     /* an exception is a runtime sp_Exception, for a builtin class too */
@@ -1644,7 +1756,19 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     if (k->cls_id < 0 && k != L.object) return 0;
     /* the constructor of a class of the kernel is not an entry */
     if (fx_kernel_cls(k->cls_id)) fx_gap(sp_sprintf("%s.%s of a class of the kernel", k->name, name));
-    /* an instance of a subclass of Exception, Array, Struct ... needs the
+    /* an instance of a subclass of Array is its Array (fx_arysub_new) */
+    if (fx_is_array_class(k)) {
+      sp_RbVal obj = fx_arysub_new(k);
+      SP_GC_ROOT_RBVAL(obj);
+      if (name[0] == 'n') {
+        FxMethod *init = fx_find_method(k, sp_sym_intern("initialize"));
+        if (init) fx_invoke_b(init, obj, argc, argv, blk);
+        else fx_arysub_init(obj, argc, argv, blk);
+      }
+      *out = obj;
+      return 1;
+    }
+    /* an instance of a subclass of Exception, Struct ... needs the
        builtin part, which a FxObject does not have */
     for (const FxClass *s = k->super; s; s = s->super)
       if (s->cls_id < 0 && s != L.object && strcmp(s->name, "BasicObject"))

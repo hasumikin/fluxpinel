@@ -774,7 +774,8 @@ static SP_NOINLINE SP_COLD void fx_ops_init(void) {
    chain. Answers 0 for any other call, and for any call once the program
    reopens a builtin class. */
 static int fx_fast_call(sp_RbVal r, sp_sym s, int argc, sp_RbVal *argv, sp_RbVal *out) {
-  if (fx_reopened_builtins || argc > 2) return 0;
+  /* an instance of a subclass of Array can have its own [], << or size */
+  if (fx_reopened_builtins || argc > 2 || fx_arysub_of(r)) return 0;
   if (SP_UNLIKELY(!fx_ops.ready)) fx_ops_init();
   if (argc == 0) {
     if ((s == fx_ops.size || s == fx_ops.length) && r.tag == SP_TAG_OBJ && sp_poly_is_array_kind(r.cls_id) &&
@@ -868,6 +869,20 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
     sp_PolyArray_push(a, recv);
     for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
     return fx_kernel(name, (int)a->len, a->data, out);
+  }
+  /* dup and clone of an instance of a subclass of Array keep its class;
+     to_a is a plain Array of its elements */
+  if (!blk && argc == 0 && fx_arysub_of(recv)) {
+    if (!strcmp(name, "dup") || !strcmp(name, "clone")) { *out = fx_arysub_copy(recv, name[0] == 'c'); return 1; }
+    if (!strcmp(name, "to_a")) {
+      SP_GC_ROOT_RBVAL(recv);
+      sp_PolyArray *a = sp_PolyArray_new();
+      SP_GC_ROOT(a);
+      sp_int n = sp_poly_length(recv);
+      for (sp_int i = 0; i < n; i++) sp_PolyArray_push(a, sp_poly_arr_get(recv, i));
+      *out = sp_box_poly_array(a);
+      return 1;
+    }
   }
   if (fx_eval_block(recv, name, argc, argv, blk, out)) return 1;
   if (fx_enum_core(recv, name, argc, argv, blk, out)) return 1;
@@ -973,8 +988,9 @@ static sp_RbVal fx_send_v(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
     FxClass *k = fx_class_value(recv);
     m = k ? fx_find_smethod(k, fx_name_sym(name)) : NULL;
     if (!m && fx_class_core(NULL, recv, name, argc, argv, blk, &out)) return out;
-  } else if (fx_reopened_builtins || fx_is_exc(recv)) {
-    /* a reopened builtin class, or an exception of a class of the program */
+  } else if (fx_reopened_builtins || fx_is_exc(recv) || fx_arysub_of(recv)) {
+    /* a reopened builtin class, an exception of a class of the program, or
+       an instance of a subclass of Array */
     m = fx_find_method(fx_class_of(recv), fx_name_sym(name));
     if (m && (m->owner == L.object || fx_builtin_shadows(recv, m, name))) m = NULL;
   }

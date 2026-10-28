@@ -531,5 +531,15 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
 static int fx_is_fx_object(sp_RbVal v);
 static int fx_unknown_builtin(const char *name);
 static void fx_autoload_set(FxClass *c, sp_sym name, const char *path);
+/* An instance of a class of the program under Array: its Array, with the
+   class and its ivars after it (object.c). */
+typedef struct FxArraySub {
+  sp_PolyArray a;
+  sp_int inst_id;
+  sp_RbVal ivars;   /* the hidden object of the ivars, or nil */
+} FxArraySub;
+static FxArraySub *fx_arysub_of(sp_RbVal v);
+static sp_RbVal fx_arysub_copy(sp_RbVal v, int clone);
+static void fx_arysub_init(sp_RbVal v, int argc, sp_RbVal *argv, const FxBlock *blk);
 
 #endif
