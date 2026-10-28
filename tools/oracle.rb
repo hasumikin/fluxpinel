@@ -125,6 +125,10 @@ def check(test, opts)
   name = File.basename(test, ".rb")
   rel = File.join("test", File.basename(test))
   return Result.new(name, :skipped, "has .args") if File.exist?("#{test}.args")
+  # the .expected of a `# spinel: not-cruby` test is the answer of spinel, not of CRuby
+  if File.foreach(test).first(5).any? { |l| l.start_with?("# spinel: not-cruby") }
+    return Result.new(name, :skipped, "not-cruby")
+  end
   # a test that spinel has not snapshot yet (work in progress in its tree)
   return Result.new(name, :skipped, "no .expected") unless File.exist?("#{test}.expected")
   stdin =File.exist?("#{test}.stdin") ? File.binread("#{test}.stdin") : nil

@@ -1734,10 +1734,8 @@ ffi_libc_libm_basic
 ffi_ptr_array
 ffi_ptr_nil
 ffi_read_write_widths
-ffi_scalar_arg_poly_value
 ffi_str_arg_boxed_strbuf
 ffi_str_arg_poly_value
-ffi_str_borrow
 ffi_type_list_forms
 ffi_void_return
 ffi_write_roundtrip
@@ -4696,7 +4694,6 @@ regexp_group_name_validation
 regexp_gsub_zero_width
 regexp_hash_flags
 regexp_inline_comment
-regexp_inline_options
 regexp_large_program
 regexp_last_match_capture
 regexp_line_anchors
@@ -4752,7 +4749,6 @@ regexp_union_splat
 regexp_union_splat_scalar
 regexp_union_strings
 regexp_unknown_group_name
-regexp_unsupported_escapes
 regexp_vm_state_first_search
 reinit_bound_subclass_not_reached
 reinit_follows_class_initialize
@@ -4779,7 +4775,6 @@ report_on_exception_surface
 require_after_margin_heredoc
 require_computed_as_condition
 require_computed_name_loaderror
-require_dead_branch_shebang_entry
 require_engine_branch
 require_in_conditional
 require_in_method_order
@@ -5188,12 +5183,8 @@ source_file_required
 sp_crypto_sha1
 sp_crypto_threads
 sp_net_basic
-sp_net_connect_timeout
-sp_net_connect_timeout_threads
 sp_net_poll_grow
 sp_net_poll_persistent
-sp_net_recv_timeout
-sp_net_recv_timeout_threads
 sp_net_write_partial
 spaceship_incomparable_nil
 spaceship_nil_guard_poly_compare

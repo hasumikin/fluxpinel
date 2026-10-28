@@ -835,7 +835,8 @@ The oracle sits outside that: it gives a result with no decisions at all.
 `make oracle` runs `tools/oracle.rb` on `$(SPINEL)/test/*.rb`.
 
 - The CRuby answer is the `.expected` file of each test. Spinel snapshots it
-  from CRuby.
+  from CRuby. A test marked `# spinel: not-cruby` records the answer of
+  spinel instead, and the oracle skips it.
 - Fluxpinel runs first. Spinel compiles a test only when Fluxpinel runs it, so a run
   of the whole corpus costs little while the coverage of Fluxpinel is low.
 - The harness compares stdout. It does not compare stderr or the exit
