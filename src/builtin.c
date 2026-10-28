@@ -774,8 +774,8 @@ static SP_NOINLINE SP_COLD void fx_ops_init(void) {
    chain. Answers 0 for any other call, and for any call once the program
    reopens a builtin class. */
 static int fx_fast_call(sp_RbVal r, sp_sym s, int argc, sp_RbVal *argv, sp_RbVal *out) {
-  /* an instance of a subclass of Array can have its own [], << or size */
-  if (fx_reopened_builtins || argc > 2 || fx_arysub_of(r)) return 0;
+  /* an instance of a subclass of Array or Hash can have its own [], << or size */
+  if (fx_reopened_builtins || argc > 2 || fx_bsub_tail(r)) return 0;
   if (SP_UNLIKELY(!fx_ops.ready)) fx_ops_init();
   if (argc == 0) {
     if ((s == fx_ops.size || s == fx_ops.length) && r.tag == SP_TAG_OBJ && sp_poly_is_array_kind(r.cls_id) &&
@@ -870,11 +870,29 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
     for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
     return fx_kernel(name, (int)a->len, a->data, out);
   }
-  /* dup and clone of an instance of a subclass of Array keep its class;
-     to_a is a plain Array of its elements */
-  if (!blk && argc == 0 && fx_arysub_of(recv)) {
-    if (!strcmp(name, "dup") || !strcmp(name, "clone")) { *out = fx_arysub_copy(recv, name[0] == 'c'); return 1; }
-    if (!strcmp(name, "to_a")) {
+  /* dup and clone of an instance of a subclass of Array or Hash keep its
+     class; to_a and to_h are a plain Array or Hash of its elements; merge
+     and compact of a Hash answer an instance of the class, as in CRuby */
+  if (!blk && fx_hashsub_of(recv) && ((!strcmp(name, "merge") && argc >= 1) || (!strcmp(name, "compact") && argc == 0))) {
+    SP_GC_ROOT_RBVAL(recv);
+    sp_RbVal plain = fx_hash_box(fx_hash_dup((sp_PolyPolyHash *)recv.v.p));
+    SP_GC_ROOT_RBVAL(plain);
+    sp_RbVal r = fx_send(plain, name, argc, argv);
+    SP_GC_ROOT_RBVAL(r);
+    /* the entries of the result, the ivars of the receiver */
+    sp_RbVal obj = fx_bsub_like(recv);
+    SP_GC_ROOT_RBVAL(obj);
+    fx_hashsub_fill(obj, r);
+    *out = obj;
+    return 1;
+  }
+  if (!blk && argc == 0 && fx_bsub_tail(recv)) {
+    if (!strcmp(name, "dup") || !strcmp(name, "clone")) { *out = fx_bsub_copy(recv, name[0] == 'c'); return 1; }
+    if (!strcmp(name, "to_h") && fx_hashsub_of(recv)) {
+      *out = fx_hash_box(fx_hash_dup((sp_PolyPolyHash *)recv.v.p));
+      return 1;
+    }
+    if (!strcmp(name, "to_a") && fx_arysub_of(recv)) {
       SP_GC_ROOT_RBVAL(recv);
       sp_PolyArray *a = sp_PolyArray_new();
       SP_GC_ROOT(a);
@@ -988,9 +1006,9 @@ static sp_RbVal fx_send_v(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
     FxClass *k = fx_class_value(recv);
     m = k ? fx_find_smethod(k, fx_name_sym(name)) : NULL;
     if (!m && fx_class_core(NULL, recv, name, argc, argv, blk, &out)) return out;
-  } else if (fx_reopened_builtins || fx_is_exc(recv) || fx_arysub_of(recv)) {
+  } else if (fx_reopened_builtins || fx_is_exc(recv) || fx_bsub_tail(recv)) {
     /* a reopened builtin class, an exception of a class of the program, or
-       an instance of a subclass of Array */
+       an instance of a subclass of Array or Hash */
     m = fx_find_method(fx_class_of(recv), fx_name_sym(name));
     if (m && (m->owner == L.object || fx_builtin_shadows(recv, m, name))) m = NULL;
   }

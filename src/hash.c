@@ -50,7 +50,33 @@ static sp_PolyPolyHash *fx_hash_dup(sp_PolyPolyHash *h) {
 static int fx_hash_class(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                            sp_RbVal *out) {
   FxClass *k = fx_class_value(r);
-  if (!k || strcmp(k->name, "Hash") || !FX_IS("new")) return 0;
+  if (!k || strcmp(k->name, "Hash")) return 0;
+  /* Hash[h], Hash[[[k, v], ...]] and Hash[k, v, ...]: the entries, with no
+     default */
+  if (FX_IS("[]") && !blk) {
+    sp_PolyPolyHash *h = sp_PolyPolyHash_new();
+    SP_GC_ROOT(h);
+    if (argc == 1 && fx_is_hash(argv[0])) {
+      const sp_PolyPolyHash *o = (const sp_PolyPolyHash *)argv[0].v.p;
+      if (argv[0].cls_id != SP_BUILTIN_POLY_POLY_HASH) fx_gap("Hash[] of a typed Hash");
+      for (sp_int i = 0; i < o->len; i++) sp_PolyPolyHash_set(h, o->keys[o->order[i]], o->vals[o->order[i]]);
+    } else if (argc == 1 && fx_is_array(argv[0])) {
+      sp_int n = sp_poly_length(argv[0]);
+      for (sp_int i = 0; i < n; i++) {
+        sp_RbVal pair = sp_poly_arr_get(argv[0], i);
+        sp_int pn = fx_is_array(pair) ? sp_poly_length(pair) : -1;
+        if (pn < 1 || pn > 2)
+          sp_raise_cls("ArgumentError", sp_sprintf("invalid number of elements (%lld for 1..2)", (long long)(pn < 0 ? 0 : pn)));
+        sp_PolyPolyHash_set(h, sp_poly_arr_get(pair, 0), pn == 2 ? sp_poly_arr_get(pair, 1) : sp_box_nil());
+      }
+    } else {
+      if (argc % 2) sp_raise_cls("ArgumentError", "odd number of arguments for Hash");
+      for (int i = 0; i < argc; i += 2) sp_PolyPolyHash_set(h, argv[i], argv[i + 1]);
+    }
+    *out = fx_hash_box(h);
+    return 1;
+  }
+  if (!FX_IS("new")) return 0;
   /* Hash.new(capacity: n) sizes the table; the size is not visible */
   if (argc >= 1 && fx_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash) argc--;
   if (argc > 1) return 0;

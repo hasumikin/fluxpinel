@@ -299,7 +299,7 @@ static FxClass *fx_class_named(const char *name) {
    class of the program. */
 static FxClass *fx_class_of(sp_RbVal v) {
   if (fx_is_fx_object(v)) return fx_class_by_id(v.cls_id);
-  const FxArraySub *sub = fx_arysub_of(v);
+  const FxSubTail *sub = fx_bsub_tail(v);
   if (sub) return fx_class_by_id(sub->inst_id);
   const char *name = sp_poly_class_name(v);
   FxClass *c = fx_builtin(name);
@@ -847,15 +847,21 @@ static sp_RbVal fx_new_object(FxClass *c) {
 
 /* ---- instances of a subclass of Array ---- */
 
-/* An instance of a class of the program under Array is its Array, with
-   the class and its ivars after it (FxArraySub), as spinel lays one out
-   (#7449). The runtime sees an Array, and sp_bsub_cls_fn gives it the
-   class; the walker finds the class by the scan function of the heap
-   object. */
+/* An instance of a class of the program under Array or Hash is its Array
+   or Hash, with the class and its ivars after it (FxArraySub, FxHashSub),
+   as spinel lays one out (#7449). The runtime sees an Array or a Hash,
+   and sp_bsub_cls_fn gives it the class; the walker finds the class by
+   the scan function of the heap object. */
 static void fx_arysub_scan(void *p) {
   FxArraySub *s = (FxArraySub *)p;
   sp_PolyArray_scan(p);
-  sp_mark_rbval(s->ivars);
+  sp_mark_rbval(s->t.ivars);
+}
+
+static void fx_hashsub_scan(void *p) {
+  FxHashSub *s = (FxHashSub *)p;
+  sp_PolyPolyHash_scan(p);
+  sp_mark_rbval(s->t.ivars);
 }
 
 static FxArraySub *fx_arysub_of(sp_RbVal v) {
@@ -864,10 +870,25 @@ static FxArraySub *fx_arysub_of(sp_RbVal v) {
   return h->scan == fx_arysub_scan ? (FxArraySub *)v.v.p : NULL;
 }
 
+static FxHashSub *fx_hashsub_of(sp_RbVal v) {
+  if (v.tag != SP_TAG_OBJ || v.cls_id != SP_BUILTIN_POLY_POLY_HASH || !v.v.p) return NULL;
+  const sp_gc_hdr *h = (const sp_gc_hdr *)v.v.p - 1;
+  return h->scan == fx_hashsub_scan ? (FxHashSub *)v.v.p : NULL;
+}
+
+/* The class and the ivars of an instance of a subclass of Array or Hash,
+   or NULL for any other value. */
+static FxSubTail *fx_bsub_tail(sp_RbVal v) {
+  FxArraySub *a = fx_arysub_of(v);
+  if (a) return &a->t;
+  FxHashSub *h = fx_hashsub_of(v);
+  return h ? &h->t : NULL;
+}
+
 /* The class of an instance, for the runtime; -1 for a plain value. */
 static int fx_hook_bsub_cls(sp_RbVal v) {
-  FxArraySub *s = fx_arysub_of(v);
-  return s ? (int)s->inst_id : -1;
+  const FxSubTail *t = fx_bsub_tail(v);
+  return t ? (int)t->inst_id : -1;
 }
 
 /* The builtin class under k other than Object and BasicObject, or NULL. */
@@ -882,6 +903,11 @@ static int fx_is_array_class(const FxClass *k) {
   return b && !strcmp(b->name, "Array");
 }
 
+static int fx_is_hash_class(const FxClass *k) {
+  const FxClass *b = fx_builtin_base(k);
+  return b && !strcmp(b->name, "Hash");
+}
+
 /* A new empty instance of k, a subclass of Array. */
 static sp_RbVal fx_arysub_new(FxClass *k) {
   FxArraySub *s = (FxArraySub *)sp_gc_alloc(sizeof *s, NULL, fx_arysub_scan);
@@ -890,9 +916,24 @@ static sp_RbVal fx_arysub_new(FxClass *k) {
   s->a.len = 0;
   s->a.frozen = 0;
   s->a.head = 0;
-  s->inst_id = k->inst_id;
-  s->ivars = sp_box_nil();
+  s->t.inst_id = k->inst_id;
+  s->t.ivars = sp_box_nil();
   return sp_box_obj(s, SP_BUILTIN_POLY_ARRAY);
+}
+
+/* A new empty instance of k, a subclass of Hash, with the finalizer of a
+   Hash for its tables. */
+static sp_RbVal fx_hashsub_new(FxClass *k) {
+  FxHashSub *s = (FxHashSub *)sp_gc_alloc(sizeof *s, sp_PolyPolyHash_fin, fx_hashsub_scan);
+  s->t.inst_id = k->inst_id;
+  s->t.ivars = sp_box_nil();
+  sp_PolyPolyHash_init_embedded(&s->h);
+  return sp_box_obj(s, SP_BUILTIN_POLY_POLY_HASH);
+}
+
+/* A new empty instance of k, a subclass of Array or Hash. */
+static sp_RbVal fx_bsub_new(FxClass *k) {
+  return fx_is_array_class(k) ? fx_arysub_new(k) : fx_hashsub_new(k);
 }
 
 /* Array#initialize on an instance (super in its initialize, or a class
@@ -907,30 +948,66 @@ static void fx_arysub_init(sp_RbVal v, int argc, sp_RbVal *argv, const FxBlock *
   for (sp_int i = 0; i < n; i++) sp_PolyArray_push(&s->a, sp_poly_arr_get(plain, i));
 }
 
-/* dup and clone of an instance: the class, the elements and the ivars. */
-static sp_RbVal fx_arysub_copy(sp_RbVal v, int clone) {
+/* The entries and the default of the Hash from into the instance to. */
+static void fx_hashsub_fill(sp_RbVal to, sp_RbVal from) {
+  SP_GC_ROOT_RBVAL(to);
+  SP_GC_ROOT_RBVAL(from);
+  sp_PolyPolyHash *h = &((FxHashSub *)to.v.p)->h;
+  const sp_PolyPolyHash *o = (const sp_PolyPolyHash *)from.v.p;
+  sp_gc_wb(h);
+  h->default_v = o->default_v;
+  h->dproc = o->dproc;
+  h->dproc_self = o->dproc_self;
+  h->ident = o->ident;
+  for (sp_int i = 0; i < o->len; i++) sp_PolyPolyHash_set(h, o->keys[o->order[i]], o->vals[o->order[i]]);
+}
+
+/* Hash#initialize on an instance: the default of Hash.new with the same
+   arguments and block. */
+static void fx_hashsub_init(sp_RbVal v, int argc, sp_RbVal *argv, const FxBlock *blk) {
   SP_GC_ROOT_RBVAL(v);
-  FxArraySub *s = (FxArraySub *)v.v.p;
-  sp_RbVal c = fx_arysub_new(fx_class_by_id(s->inst_id));
+  sp_RbVal plain = fx_send_b(fx_class_box(fx_builtin("Hash")), "new", argc, argv, blk);
+  SP_GC_ROOT_RBVAL(plain);
+  fx_hashsub_fill(v, plain);
+}
+
+/* A new instance of the class of v with the ivars of v (dup, merge). */
+static sp_RbVal fx_bsub_like(sp_RbVal v) {
+  SP_GC_ROOT_RBVAL(v);
+  const FxSubTail *t = fx_bsub_tail(v);
+  FxClass *k = fx_class_by_id(t->inst_id);
+  sp_RbVal c = fx_bsub_new(k);
   SP_GC_ROOT_RBVAL(c);
-  for (sp_int i = 0; i < s->a.len; i++) sp_PolyArray_push(&((FxArraySub *)c.v.p)->a, s->a.data[i]);
-  if (s->ivars.tag != SP_TAG_NIL) {
-    /* the hidden object of the ivars, with the same slots */
-    sp_RbVal iv = fx_new_object(fx_class_by_id(s->inst_id));
-    SP_GC_ROOT_RBVAL(iv);
-    const FxObject *from = (const FxObject *)s->ivars.v.p;
-    if (from->iv) {
-      sp_PolyArray *a = sp_PolyArray_new();
-      SP_GC_ROOT(a);
-      for (sp_int i = 0; i < from->iv->len; i++) sp_PolyArray_push(a, from->iv->data[i]);
-      FxObject *to = (FxObject *)iv.v.p;
-      sp_gc_wb(to);
-      to->iv = a;
-    }
-    sp_gc_wb(c.v.p);
-    ((FxArraySub *)c.v.p)->ivars = iv;
+  if (t->ivars.tag == SP_TAG_NIL) return c;
+  /* the hidden object of the ivars, with the same slots */
+  sp_RbVal iv = fx_new_object(k);
+  SP_GC_ROOT_RBVAL(iv);
+  const FxObject *from = (const FxObject *)t->ivars.v.p;
+  if (from->iv) {
+    sp_PolyArray *a = sp_PolyArray_new();
+    SP_GC_ROOT(a);
+    for (sp_int i = 0; i < from->iv->len; i++) sp_PolyArray_push(a, from->iv->data[i]);
+    FxObject *to = (FxObject *)iv.v.p;
+    sp_gc_wb(to);
+    to->iv = a;
   }
-  if (clone && s->a.frozen) ((FxArraySub *)c.v.p)->a.frozen = 1;
+  sp_gc_wb(c.v.p);
+  fx_bsub_tail(c)->ivars = iv;
+  return c;
+}
+
+/* dup and clone of an instance: the class, the elements and the ivars. */
+static sp_RbVal fx_bsub_copy(sp_RbVal v, int clone) {
+  SP_GC_ROOT_RBVAL(v);
+  sp_RbVal c = fx_bsub_like(v);
+  SP_GC_ROOT_RBVAL(c);
+  const FxArraySub *s = fx_arysub_of(v);
+  if (s) {
+    for (sp_int i = 0; i < s->a.len; i++) sp_PolyArray_push(&((FxArraySub *)c.v.p)->a, s->a.data[i]);
+    if (clone && s->a.frozen) ((FxArraySub *)c.v.p)->a.frozen = 1;
+  } else {
+    fx_hashsub_fill(c, v);
+  }
   return c;
 }
 
@@ -972,14 +1049,14 @@ static sp_PolyArray *fx_class_ivars;   /* [class value, object, ...]; marked by 
    the exception, so an exception with an ivar lives until the end. */
 static sp_RbVal fx_ivar_holder(sp_RbVal self) {
   if (fx_is_fx_object(self)) return self;
-  /* an instance of a subclass of Array keeps its ivars after the Array */
-  FxArraySub *sub = fx_arysub_of(self);
+  /* an instance of a subclass of Array or Hash keeps its ivars after it */
+  FxSubTail *sub = fx_bsub_tail(self);
   if (sub) {
     if (sub->ivars.tag == SP_TAG_NIL) {
       SP_GC_ROOT_RBVAL(self);
       /* an object of the class itself, so that the slots are the class's */
       sp_RbVal holder = fx_new_object(fx_class_by_id(sub->inst_id));
-      sp_gc_wb(sub);
+      sp_gc_wb(self.v.p);
       sub->ivars = holder;
     }
     return sub->ivars;
@@ -1737,11 +1814,18 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   if (!blk && fx_integer_class(k, name, argc, argv, out)) return 1;
   /* Kernel.format, Kernel.puts, ...: a module function of Kernel */
   if (!blk && k->cls_id < 0 && !strcmp(k->name, "Kernel") && fx_kernel(name, argc, argv, out)) return 1;
-  /* X[a, b] of a subclass X of Array: an instance of the elements */
-  if (!strcmp(name, "[]") && !k->is_module && fx_is_array_class(k)) {
-    sp_RbVal obj = fx_arysub_new(k);
+  /* X[a, b] of a subclass X of Array: an instance of the elements; of a
+     subclass of Hash, an instance of the entries of Hash[a, b] */
+  if (!strcmp(name, "[]") && !k->is_module && (fx_is_array_class(k) || fx_is_hash_class(k))) {
+    sp_RbVal obj = fx_bsub_new(k);
     SP_GC_ROOT_RBVAL(obj);
-    for (int i = 0; i < argc; i++) sp_PolyArray_push(&((FxArraySub *)obj.v.p)->a, argv[i]);
+    if (fx_is_array_class(k)) {
+      for (int i = 0; i < argc; i++) sp_PolyArray_push(&((FxArraySub *)obj.v.p)->a, argv[i]);
+    } else {
+      sp_RbVal plain = fx_send(fx_class_box(fx_builtin("Hash")), "[]", argc, argv);
+      SP_GC_ROOT_RBVAL(plain);
+      fx_hashsub_fill(obj, plain);
+    }
     *out = obj;
     return 1;
   }
@@ -1756,14 +1840,15 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     if (k->cls_id < 0 && k != L.object) return 0;
     /* the constructor of a class of the kernel is not an entry */
     if (fx_kernel_cls(k->cls_id)) fx_gap(sp_sprintf("%s.%s of a class of the kernel", k->name, name));
-    /* an instance of a subclass of Array is its Array (fx_arysub_new) */
-    if (fx_is_array_class(k)) {
-      sp_RbVal obj = fx_arysub_new(k);
+    /* an instance of a subclass of Array or Hash is its Array or Hash */
+    if (fx_is_array_class(k) || fx_is_hash_class(k)) {
+      sp_RbVal obj = fx_bsub_new(k);
       SP_GC_ROOT_RBVAL(obj);
       if (name[0] == 'n') {
         FxMethod *init = fx_find_method(k, sp_sym_intern("initialize"));
         if (init) fx_invoke_b(init, obj, argc, argv, blk);
-        else fx_arysub_init(obj, argc, argv, blk);
+        else if (fx_is_array_class(k)) fx_arysub_init(obj, argc, argv, blk);
+        else fx_hashsub_init(obj, argc, argv, blk);
       }
       *out = obj;
       return 1;

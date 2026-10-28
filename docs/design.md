@@ -646,18 +646,20 @@ Fluxpinel gives walker classes their own object kind (`src/object.c`):
 - **Freeze.** `freeze` on an object sets the frozen bit of its heap
   header, and an ivar write to a frozen object raises FrozenError. A class
   keeps its own frozen flag.
-- **A subclass of Array.** Its instance is an Array with the class and
-  its ivars after it (`FxArraySub`), as spinel lays one out. The runtime
-  sees an Array, and `sp_bsub_cls_fn` gives it the class; the walker
-  finds the class by the scan function of the heap object. A call finds
-  the methods of the class first, then Array's; `super` reaches Array's.
-  `dup` and `clone` keep the class, `to_a` is a plain Array.
+- **A subclass of Array or Hash.** Its instance is an Array or a Hash
+  with the class and its ivars after it (`FxArraySub`, `FxHashSub`), as
+  spinel lays one out. The runtime sees an Array or a Hash, and
+  `sp_bsub_cls_fn` gives it the class; the walker finds the class by the
+  scan function of the heap object. A call finds the methods of the class
+  first, then the builtin ones; `super` reaches those. `dup` and `clone`
+  keep the class, and so do `merge` and `compact` of a Hash; `to_a` and
+  `to_h` are plain.
 - **Gaps.** A semantics that Fluxpinel does not model stops the program as an
   unsupported node does (`fx_gap`): an instance of a subclass of a
-  builtin class other than Object, Exception, Struct, Data and Array, an
-  ivar on a builtin value other than an exception, `extend` on an object,
-  and the reopening of a CRuby core class that spinel's class table does
-  not name (Random, Method, ...).
+  builtin class other than Object, Exception, Struct, Data, Array and
+  Hash, an ivar on a builtin value other than an exception, `extend` on
+  an object, and the reopening of a CRuby core class that spinel's class
+  table does not name (Random, Method, ...).
 
 `sp_cext_dispatch_fn` sends a method by name to a foreign object. It is a
 candidate for the AOT to walker direction of section 3.6.

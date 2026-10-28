@@ -1188,6 +1188,7 @@ static sp_RbVal fx_super_call(FxFrame *f, const pm_node_t *n, const pm_arguments
   if (!strcmp(name, "initialize")) {
     if (fx_is_exc(f->self)) fx_exc_init(f->self, argc, argv);
     else if (fx_arysub_of(f->self)) fx_arysub_init(f->self, argc, argv, blk);
+    else if (fx_hashsub_of(f->self)) fx_hashsub_init(f->self, argc, argv, blk);
     else if (fx_is_fx_object(f->self) && fx_record_of(fx_class_of(f->self))) fx_record_init(f->self, argc, argv);
     return sp_box_nil();
   }

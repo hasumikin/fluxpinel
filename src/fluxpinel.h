@@ -531,15 +531,32 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
 static int fx_is_fx_object(sp_RbVal v);
 static int fx_unknown_builtin(const char *name);
 static void fx_autoload_set(FxClass *c, sp_sym name, const char *path);
-/* An instance of a class of the program under Array: its Array, with the
-   class and its ivars after it (object.c). */
-typedef struct FxArraySub {
-  sp_PolyArray a;
+/* An instance of a class of the program under Array or Hash: its Array or
+   Hash, with the class and its ivars after it (object.c). */
+typedef struct {
   sp_int inst_id;
   sp_RbVal ivars;   /* the hidden object of the ivars, or nil */
+} FxSubTail;
+typedef struct FxArraySub {
+  sp_PolyArray a;
+  FxSubTail t;
 } FxArraySub;
+typedef struct FxHashSub {
+  sp_PolyPolyHash h;
+  FxSubTail t;
+} FxHashSub;
+static FxSubTail *fx_bsub_tail(sp_RbVal v);
 static FxArraySub *fx_arysub_of(sp_RbVal v);
-static sp_RbVal fx_arysub_copy(sp_RbVal v, int clone);
+static FxHashSub *fx_hashsub_of(sp_RbVal v);
+static sp_RbVal fx_bsub_copy(sp_RbVal v, int clone);
 static void fx_arysub_init(sp_RbVal v, int argc, sp_RbVal *argv, const FxBlock *blk);
+static void fx_hashsub_init(sp_RbVal v, int argc, sp_RbVal *argv, const FxBlock *blk);
+static void fx_hashsub_fill(sp_RbVal to, sp_RbVal from);
+static sp_RbVal fx_bsub_new(FxClass *k);
+static sp_RbVal fx_bsub_like(sp_RbVal v);
+
+/* hash.c */
+static sp_RbVal fx_hash_box(sp_PolyPolyHash *h);
+static sp_PolyPolyHash *fx_hash_dup(sp_PolyPolyHash *h);
 
 #endif
