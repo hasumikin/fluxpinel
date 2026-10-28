@@ -20,6 +20,9 @@
 #ifndef FX_BUILTINS_DIR
 #define FX_BUILTINS_DIR "builtins"
 #endif
+#ifndef FX_LIB_DIR
+#define FX_LIB_DIR "lib"
+#endif
 
 #define FX_IS(s) (!strcmp(name, (s)))
 
@@ -371,6 +374,13 @@ static sp_RbVal fx_require_lib(const char *name) {
   char *found = fx_load_path_find(name);
   if (found) {
     if (!fx_load_once(found, NULL)) return sp_box_bool(0);
+    return L.ctl == FX_CTL_NONE ? sp_box_bool(1) : sp_box_nil();
+  }
+  /* lib/<name>.rb of Fluxpinel: a feature that spinel writes at compile
+     time, whose package is a stub (forwardable) */
+  char *own = realpath(sp_sprintf("%s/%s.rb", FX_LIB_DIR, name), NULL);
+  if (own) {
+    if (!fx_load_once(own, NULL)) return sp_box_bool(0);
     return L.ctl == FX_CTL_NONE ? sp_box_bool(1) : sp_box_nil();
   }
   const char *path = NULL, *extra = NULL;

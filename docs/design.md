@@ -437,6 +437,8 @@ The walker evaluates the prism AST directly (`src/walk.c`).
 - **Library names.** spinel resolves `require "json"` at compile time
   (`src/spinel_parse.c`). Fluxpinel resolves the name at run time in the same
   order:
+  - `lib/<name>.rb` of Fluxpinel comes first: a feature that spinel writes
+    at compile time, whose package is a stub (`forwardable`).
   - `packages/<first>/<name>.rb` of spinel is the package. The first
     segment of the name selects the package. The file runs once, and its
     `<name>.share.rb` follows it when that file exists.

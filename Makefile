@@ -85,7 +85,8 @@ FX_SPINEL_REV := $(shell git -C $(SPINEL) rev-parse --short=9 HEAD 2>/dev/null)
 FX_ENGINE_FLAGS := $(if $(wildcard $(SPINEL)/src/analyze.h),$(shell ruby tools/engine_flags.rb $(SPINEL)))
 # The runtime of spinel holds a String as its handle (SP_ONE_STRING).
 CFLAGS = -O2 -g -std=gnu11 -ffp-contract=off -DSP_ONE_STRING -DSP_INT_OVERFLOW_MODE_$(INT_OVERFLOW) $(RT_CFLAGS) \
-         -DFX_PACKAGES_DIR='"$(SPINEL)/packages"' -DFX_BUILTINS_DIR='"$(SPINEL)/builtins"' -DFX_FFI=$(FFI) \
+         -DFX_PACKAGES_DIR='"$(SPINEL)/packages"' -DFX_BUILTINS_DIR='"$(SPINEL)/builtins"' \
+         -DFX_LIB_DIR='"$(CURDIR)/lib"' -DFX_FFI=$(FFI) \
          -DFX_VERSION='"$(FX_VERSION)"' -DFX_SPINEL_REV='"$(FX_SPINEL_REV)"' $(FX_ENGINE_FLAGS) \
          -Isrc -I$(BUILD) -I$(SPINEL)/lib -I$(SPINEL)/lib/regexp -I$(SPINEL)/vendor/prism/include
 LIBS = $(RT_ARCHIVE) $(SPINEL)/build/libprism.a -lm -lcrypt $(RT_LIBS) $(FFI_LIBS)
