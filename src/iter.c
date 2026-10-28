@@ -648,10 +648,22 @@ static int fx_int_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, c
   return 1;
 }
 
-/* String#each_char: one String per UTF-8 character. */
+/* String#each_char: one String per UTF-8 character. String#each_grapheme_cluster:
+   one per match of \X (re.c). */
 static int fx_str_iter(sp_RbVal r, const char *name, int argc, const FxBlock *blk, sp_RbVal *out) {
-  if (!fx_is_string(r) || argc != 0 || !FX_IS("each_char")) return 0;
+  if (!fx_is_string(r) || argc != 0 || !blk || (!FX_IS("each_char") && !FX_IS("each_grapheme_cluster"))) return 0;
   SP_GC_ROOT_RBVAL(r);
+  if (FX_IS("each_grapheme_cluster")) {
+    sp_RbVal a = fx_re_graphemes(sp_poly_recv_s(r, name));
+    SP_GC_ROOT_RBVAL(a);
+    const sp_PolyArray *pa = (const sp_PolyArray *)a.v.p;
+    for (sp_int i = 0; i < pa->len; i++) {
+      fx_y1(blk, pa->data[i]);
+      FX_STOP();
+    }
+    *out = r;
+    return 1;
+  }
   /* read the bytes again after each block call, which can collect */
   for (size_t i = 0; i < strlen(sp_poly_recv_s(r, name));) {
     const char *s = sp_poly_recv_s(r, name);

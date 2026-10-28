@@ -93,6 +93,73 @@ static void fx_re_cache(const pm_node_t *n, mrb_regexp_pattern *p) {
   fx_re_n++;
 }
 
+/* `\X`, a grapheme cluster. The engine of spinel refuses it: spinel carries
+   no grapheme-break tables (docs/limitations.md of spinel). Fluxpinel reads
+   it as this spelling, from the tables that the engine has (the general
+   categories, Extended_Pictographic) and the ranges of the flags, the
+   Hangul jamo, the variation selectors, the skin tones and the tags. It
+   gives the answer of CRuby for the clusters in use: combining marks,
+   emoji ZWJ sequences, flags, CR LF. The rules of UAX #29 for Prepend and
+   for the Indic conjuncts are not in it. An atomic group, as the `\R` of
+   the engine, so that a quantifier after it binds the whole. */
+static const char fx_re_grapheme[] =
+  "(?>\\r\\n"
+  "|[\\u{1F1E6}-\\u{1F1FF}]{2}"
+  "|[\\u1100-\\u115F\\uA960-\\uA97F]+(?:[\\uAC00-\\uD7A3]|[\\u1160-\\u11A7\\uD7B0-\\uD7C6]+)?[\\u11A8-\\u11FF\\uD7CB-\\uD7FB]*"
+  "|(?m:.)(?:\\u200D\\p{Extended_Pictographic}|\\p{M}|\\p{Cf}|[\\uFE00-\\uFE0F]|[\\u{1F3FB}-\\u{1F3FF}]"
+  "|[\\u{E0020}-\\u{E007F}]|[\\u{E0100}-\\u{E01EF}])*)";
+
+/* The source with each `\X` outside a character class spelled out, or
+   NULL when it has none. Inside a class `\X` is the letter, as in CRuby. */
+static char *fx_re_expand_x(const char *src, int64_t len) {
+  int depth = 0, found = 0;
+  for (int64_t i = 0; i < len; i++) {
+    if (src[i] == '\\' && i + 1 < len) {
+      if (!depth && src[i + 1] == 'X') found++;
+      i++;
+    } else if (src[i] == '[') {
+      depth++;
+    } else if (src[i] == ']' && depth) {
+      depth--;
+    }
+  }
+  if (!found) return NULL;
+  char *out = malloc((size_t)len + (size_t)found * sizeof fx_re_grapheme + 1), *o = out;
+  depth = 0;
+  for (int64_t i = 0; i < len; i++) {
+    if (src[i] == '\\' && i + 1 < len) {
+      if (!depth && src[i + 1] == 'X') {
+        memcpy(o, fx_re_grapheme, sizeof fx_re_grapheme - 1);
+        o += sizeof fx_re_grapheme - 1;
+      } else {
+        *o++ = src[i];
+        *o++ = src[i + 1];
+      }
+      i++;
+      continue;
+    }
+    if (src[i] == '[') depth++;
+    else if (src[i] == ']' && depth) depth--;
+    *o++ = src[i];
+  }
+  *o = 0;
+  return out;
+}
+
+/* re_compile of the engine, with `\X` spelled out. A pattern is never
+   freed, and neither is the spelled source. */
+static mrb_regexp_pattern *fx_re_compile(const char *src, int64_t len, uint32_t flags) {
+  char *x = fx_re_expand_x(src, len);
+  return re_compile(x ? x : src, x ? (int64_t)strlen(x) : len, flags);
+}
+
+/* String#grapheme_clusters: the matches of `\X`. */
+static sp_RbVal fx_re_graphemes(const char *s) {
+  static mrb_regexp_pattern *pat;
+  if (!pat) pat = re_compile(fx_re_grapheme, (int64_t)strlen(fx_re_grapheme), 0);
+  return sp_box_poly_array(sp_re_scan_poly(pat, s));
+}
+
 /* The engine flags of a literal, as re_engine_flags of codegen maps them. */
 static uint32_t fx_re_flags(const pm_node_t *n) {
   uint32_t f = 0;
@@ -112,7 +179,7 @@ static sp_RbVal fx_re_literal(FxFrame *f, const pm_node_t *n) {
   mrb_regexp_pattern *p;
   if (PM_NODE_TYPE_P(n, PM_REGULAR_EXPRESSION_NODE)) {
     const pm_string_t *s = &((const pm_regular_expression_node_t *)n)->unescaped;
-    p = re_compile((const char *)pm_string_source(s), (int64_t)pm_string_length(s), fx_re_flags(n));
+    p = fx_re_compile((const char *)pm_string_source(s), (int64_t)pm_string_length(s), fx_re_flags(n));
     fx_re_cache(n, p);
     return fx_re_box(p);
   }
@@ -120,7 +187,7 @@ static sp_RbVal fx_re_literal(FxFrame *f, const pm_node_t *n) {
   if (L.ctl != FX_CTL_NONE) return sp_box_nil();
   SP_GC_ROOT_RBVAL(src);
   const char *s = sp_poly_recv_s(src, "Regexp");
-  p = re_compile(s, (int64_t)sp_str_byte_len(s), fx_re_flags(n));
+  p = fx_re_compile(s, (int64_t)sp_str_byte_len(s), fx_re_flags(n));
   if (PM_NODE_FLAG_P(n, PM_REGULAR_EXPRESSION_FLAGS_ONCE)) fx_re_cache(n, p);
   return fx_re_box(p);
 }
@@ -220,13 +287,13 @@ static int fx_re_class(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
     sp_RbVal p = argv[0];
     /* a Regexp keeps its source and options, and the second argument does not count */
     if (fx_is_regexp(p)) {
-      *out = fx_re_box(re_compile(sp_re_source(p.v.p), (int64_t)sp_re_source_len(p.v.p), sp_re_raw_flags(p.v.p)));
+      *out = fx_re_box(fx_re_compile(sp_re_source(p.v.p), (int64_t)sp_re_source_len(p.v.p), sp_re_raw_flags(p.v.p)));
       return 1;
     }
     const char *s = sp_poly_arg_str_chk(p);
     SP_GC_ROOT_STR(s);
     uint32_t fl = argc == 2 ? sp_re_opts_from_poly(argv[1]) : 0;
-    *out = fx_re_box(re_compile(s, (int64_t)(s ? sp_str_byte_len(s) : 0), fl));
+    *out = fx_re_box(fx_re_compile(s, (int64_t)(s ? sp_str_byte_len(s) : 0), fl));
     return 1;
   }
   if ((FX_IS("escape") || FX_IS("quote")) && argc == 1) {

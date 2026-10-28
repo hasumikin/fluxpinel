@@ -320,6 +320,13 @@ The walker evaluates the prism AST directly (`src/walk.c`).
     `partition`, `rpartition` and `start_with?`.
 
   A MatchData answers most methods through the generated wrappers.
+- **`\X`.** The engine refuses a grapheme cluster: spinel carries no
+  grapheme-break tables. Fluxpinel spells `\X` out before the compile,
+  from the tables that the engine has and a few ranges (`src/re.c`), and
+  `String#grapheme_clusters` scans with the same pattern. The answer is
+  that of CRuby for combining marks, emoji ZWJ sequences, flags, skin
+  tones, Hangul jamo and CR LF. The Prepend and Indic conjunct rules of
+  UAX #29 are not in it: an accepted difference.
 - **Registers.** `$~`, `$1` and the other match globals read the registers
   of the runtime. A method whose body has a Regexp literal or a call of the
   match family saves the registers of its caller and puts them back on

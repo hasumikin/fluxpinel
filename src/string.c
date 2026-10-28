@@ -142,6 +142,14 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
                      : FX_IS("each_line") ? SPL("each_line") : FX_IS("each_codepoint") ? SPL("each_codepoint")
                      : NULL;
     if (each) { *out = sp_box_obj(sp_poly_str_each_enum(r, each), SP_BUILTIN_ENUMERATOR); return 1; }
+    /* the clusters of \X (re.c); each_grapheme_cluster with a block is in
+       fx_str_iter */
+    if (FX_IS("grapheme_clusters") || FX_IS("each_grapheme_cluster")) {
+      sp_RbVal a = fx_re_graphemes(sp_poly_recv_s(r, name));
+      SP_GC_ROOT_RBVAL(a);
+      *out = name[0] == 'g' ? a : fx_send(a, "each", 0, NULL);
+      return 1;
+    }
     if (FX_IS("scrub!")) {
       const char *s = fx_str_mut(r, name);
       const char *t = sp_str_scrub_bang(s, NULL);

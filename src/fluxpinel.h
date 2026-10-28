@@ -415,6 +415,7 @@ static int fx_exc_matches(const char *cls, sp_RbVal ev, sp_RbVal target);
 
 /* re.c */
 static sp_RbVal fx_re_literal(FxFrame *f, const pm_node_t *n);
+static sp_RbVal fx_re_graphemes(const char *s);
 static sp_RbVal fx_re_last(void);
 static const char *fx_gvar_canon(const char *name);
 static FxConst *fx_gvar_slot(sp_sym s);
