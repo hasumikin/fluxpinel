@@ -62,7 +62,10 @@ static int fx_file_write(int argc, sp_RbVal *argv, sp_RbVal *out) {
   sp_RbVal pk = sp_box_sym(sp_sym_intern("perm"));
   if (sp_PolyPolyHash_has_key(kw, pk)) {
     pv = sp_PolyPolyHash_get(kw, pk);
-    *out = sp_box_int(sp_file_write_perm(path, data, mode ? mode : "w", sp_poly_arg_perm(pv)));
+    sp_oint perm = sp_poly_arg_perm(pv);
+    sp_int n;
+    FX_UNLOCKED(n = sp_file_write_perm(path, data, mode ? mode : "w", perm));   /* an open of a FIFO waits */
+    *out = sp_box_int(n);
   } else {
     *out = sp_box_int(mode ? sp_file_write_mode(path, data, mode) : sp_file_write(path, data));
   }
@@ -114,7 +117,10 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
     sp_int limit;
     sp_io_line_args(rest, &sep, &limit, "readlines");
     SP_GC_ROOT_STR(sep);
-    sp_File *f = sp_File_open(sp_poly_arg_path(argv[0]), "r");
+    const char *path = sp_poly_arg_path(argv[0]);
+    SP_GC_ROOT_STR(path);
+    sp_File *f;
+    FX_UNLOCKED(f = sp_File_open(path, "r"));   /* an open of a FIFO waits for its peer */
     SP_GC_ROOT(f);
     sp_StrArray *a = sp_StrArray_new();
     SP_GC_ROOT(a);
@@ -185,7 +191,10 @@ static sp_File *fx_file_open(int argc, sp_RbVal *argv) {
     if (sp_PolyPolyHash_has_key(h, km)) mode = sp_PolyPolyHash_get(h, km);
     if (sp_PolyPolyHash_has_key(h, kp)) perm = sp_PolyPolyHash_get(h, kp);
   }
-  return sp_File_open_val(path, mode, sp_poly_arg_perm(perm));
+  sp_oint p = sp_poly_arg_perm(perm);
+  sp_File *f;
+  FX_UNLOCKED(f = sp_File_open_val(path, mode, p));   /* an open of a FIFO waits for its peer */
+  return f;
 }
 
 /* File.open with a block: the block takes the File, and the File closes
@@ -242,7 +251,8 @@ static int fx_file_foreach(int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVa
   SP_GC_ROOT_STR(sep);
   const char *path = sp_poly_arg_path(argv[0]);
   SP_GC_ROOT_STR(path);
-  sp_File *f = sp_File_open_val(path, mode, sp_oint_nil());
+  sp_File *f;
+  FX_UNLOCKED(f = sp_File_open_val(path, mode, sp_oint_nil()));   /* an open of a FIFO waits for its peer */
   SP_GC_SAVE();
   SP_GC_ROOT(f);
   sp_RbVal line = sp_box_nil();
@@ -321,7 +331,10 @@ static sp_int fx_io_copy_stream(sp_RbVal src, sp_RbVal dst) {
   sp_RbVal data = sp_box_nil();
   SP_GC_ROOT_RBVAL(data);
   if (spath) {
-    sp_File *in = sp_File_open(sp_poly_arg_path(src), "rb");
+    const char *path = sp_poly_arg_path(src);
+    SP_GC_ROOT_STR(path);
+    sp_File *in;
+    FX_UNLOCKED(in = sp_File_open(path, "rb"));   /* an open of a FIFO waits for its peer */
     SP_GC_ROOT(in);
     const char *s;
     FX_UNLOCKED(s = sp_File_read(in));
@@ -337,7 +350,10 @@ static sp_int fx_io_copy_stream(sp_RbVal src, sp_RbVal dst) {
   if (data.tag == SP_TAG_NIL) return 0;
   sp_int n = (sp_int)sp_str_byte_len(sp_poly_arg_str_chk(data));
   if (dpath) {
-    sp_File *out = sp_File_open(sp_poly_arg_path(dst), "wb");
+    const char *path = sp_poly_arg_path(dst);
+    SP_GC_ROOT_STR(path);
+    sp_File *out;
+    FX_UNLOCKED(out = sp_File_open(path, "wb"));
     SP_GC_ROOT(out);
     FX_UNLOCKED(sp_File_write_poly(out, data));
     sp_File_close(out);

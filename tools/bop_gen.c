@@ -223,12 +223,14 @@ static int variants_of(TyKind recv, Variant *out) {
 /* Whether the body of a wrapper calls a runtime function that parks the
    green thread (a read of a socket, a wait on a Thread or a Mutex): the
    wrapper then gives up the walker lock for the call. The names are
-   prefixes: sp_File_gets takes sp_File_gets_limit too. */
+   prefixes: sp_File_gets takes sp_File_gets_limit too. tools/park_audit.rb
+   checks the wrappers against the runtime (make park-audit). */
 static int parks(const char *body) {
   static const char *const names[] = {
     "sp_File_gets", "sp_File_getc", "sp_File_getbyte", "sp_File_readbyte", "sp_File_readchar",
     "sp_File_eof_p", "sp_File_read", "sp_File_flock", "sp_File_write", "sp_File_puts", "sp_File_syswrite",
-    "sp_File_pread", "sp_File_pwrite", "sp_io_copy_stream", "sp_io_select", "sp_io_wait", "sp_net_", "sp_sock_",
+    "sp_File_pread", "sp_File_pwrite", "sp_File_open", "sp_io_copy_stream", "sp_io_select", "sp_io_wait",
+    "sp_net_", "sp_sock_", "sp_addrinfo_",
     "sp_Thread_join", "sp_Thread_value", "sp_Thread_run", "sp_Thread_pass", "sp_Mutex_lock", "sp_Mutex_sleep",
     "sp_CondVar_wait", "sp_Queue_pop", "sp_Queue_push", "sp_sleep", "sp_process_waitpid", "sp_sched_wait_child",
     NULL

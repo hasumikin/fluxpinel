@@ -384,8 +384,9 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   its worker. A wait in the runtime (I/O, `sleep`, a Queue, a safepoint
   poll, an `ffi_func` call) and a call of an entry of the kernel give the
   lock up for their time (`FX_UNLOCKED`), and a rescue landing takes it
-  back (`FX_TRY_LANDED`). The host build thus keeps the workers of the
-  kernel. The standalone command sets `SPINEL_WORKERS=1`, since the walker
+  back (`FX_TRY_LANDED`). `tools/park_audit.rb` reads the runtime for the
+  functions that park and checks each call of them (`make park-audit`).
+  The host build thus keeps the workers of the kernel. The standalone command sets `SPINEL_WORKERS=1`, since the walker
   runs all its Ruby code, one thread at a time.
 - **Blocking calls.** I/O, `sleep`, and a wait on a Queue or a Mutex park
   a green thread in the scheduler. A call that blocks in the OS stops

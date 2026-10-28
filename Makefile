@@ -137,12 +137,18 @@ $(BUILD)/fluxpinel: src/*.c src/*.h $(BUILD)/bop_gen_out.c $(BUILD)/off.flags $(
 # object that is still referenced.
 TEST_DIRS = test/m2 test/m3
 
-test: $(BUILD)/fluxpinel
+test: $(BUILD)/fluxpinel park-audit
 	ruby test/run.rb $(BUILD)/fluxpinel $(TEST_DIRS)
 	SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1 ruby test/run.rb $(BUILD)/fluxpinel $(TEST_DIRS)
 	ruby test/console.rb $(BUILD)/fluxpinel test/console
 	SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1 ruby test/console.rb $(BUILD)/fluxpinel test/console
 	ruby test/cli.rb $(BUILD)/fluxpinel
+
+# Every call of a runtime function that parks the green thread gives up the
+# walker lock (FX_UNLOCKED). The audit reads the runtime for the functions
+# that park, so a pin move that adds one fails here.
+park-audit: $(BUILD)/bop_gen_out.c
+	ruby tools/park_audit.rb $(SPINEL) src/*.c $(BUILD)/bop_gen_out.c
 
 # The host build (docs/design.md, section 3.6): a kernel, a program that
 # spinel emits as a library, and Fluxpinel in one TU. The runtime keeps its
@@ -301,4 +307,4 @@ endif
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test host test-host oracle regress optcarrot deps upgrade_spinel clean FORCE
+.PHONY: all test park-audit host test-host oracle regress optcarrot deps upgrade_spinel clean FORCE
