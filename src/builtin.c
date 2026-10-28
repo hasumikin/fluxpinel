@@ -870,6 +870,7 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
     for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
     return fx_kernel(name, (int)a->len, a->data, out);
   }
+  if (fx_singleton_core(recv, name, argc, argv, blk, out)) return 1;
   /* dup and clone of an instance of a subclass of Array or Hash keep its
      class; to_a and to_h are a plain Array or Hash of its elements; merge
      and compact of a Hash answer an instance of the class, as in CRuby */
@@ -1001,15 +1002,16 @@ static sp_RbVal fx_send_v(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
   sp_RbVal out;
   FxMethod *m = NULL;
   if (fx_is_fx_object(recv)) {
-    m = fx_find_method(fx_class_of(recv), fx_name_sym(name));
+    m = fx_find_method(fx_lookup_class(recv), fx_name_sym(name));
   } else if (recv.tag == SP_TAG_CLASS) {
     FxClass *k = fx_class_value(recv);
     m = k ? fx_find_smethod(k, fx_name_sym(name)) : NULL;
     if (!m && fx_class_core(NULL, recv, name, argc, argv, blk, &out)) return out;
-  } else if (fx_reopened_builtins || fx_is_exc(recv) || fx_bsub_tail(recv)) {
-    /* a reopened builtin class, an exception of a class of the program, or
-       an instance of a subclass of Array or Hash */
-    m = fx_find_method(fx_class_of(recv), fx_name_sym(name));
+  } else if (fx_reopened_builtins || fx_is_exc(recv) || fx_bsub_tail(recv) || fx_singleton_of(recv, 0)) {
+    /* a reopened builtin class, an exception of a class of the program, an
+       instance of a subclass of Array or Hash, or a value with a singleton
+       class */
+    m = fx_find_method(fx_lookup_class(recv), fx_name_sym(name));
     if (m && (m->owner == L.object || fx_builtin_shadows(recv, m, name))) m = NULL;
   }
   if (m) {

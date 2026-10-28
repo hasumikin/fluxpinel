@@ -308,7 +308,7 @@ static sp_RbVal fx_io_pipe_with(const FxBlock *blk) {
    to_path, as CRuby asks. */
 static int fx_copy_path(sp_RbVal v) {
   return fx_is_string(v) || (!fx_is_io(v) && fx_builtin_responds(v, "to_path")) ||
-         (fx_is_fx_object(v) && fx_find_method(fx_class_of(v), sp_sym_intern("to_path")));
+         (fx_is_fx_object(v) && fx_find_method(fx_lookup_class(v), sp_sym_intern("to_path")));
 }
 
 /* IO.copy_stream(src, dst): each side is a path, an IO, or an object that

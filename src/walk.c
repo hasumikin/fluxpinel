@@ -266,19 +266,20 @@ static void fx_define(FxFrame *f, const pm_def_node_t *def) {
   if (def->receiver) {
     /* def self.m in a class body, and def Const.m (def IRB.conf) or
        def expr.m where the receiver is a class or a module: a method of
-       its singleton */
-    FxClass *k;
-    if (PM_NODE_TYPE_P(def->receiver, PM_SELF_NODE)) {
-      k = fx_class_value(f->self);
-    } else {
-      sp_RbVal rv = fx_eval(f, def->receiver);
+       its singleton. def obj.m: a method of the singleton class of the
+       object (fx_singleton_of). */
+    sp_RbVal rv = f->self;
+    if (!PM_NODE_TYPE_P(def->receiver, PM_SELF_NODE)) {
+      rv = fx_eval(f, def->receiver);
       if (L.ctl != FX_CTL_NONE) return;
-      k = fx_class_value(rv);
     }
-    if (!k) fx_unsupported((const pm_node_t *)def, "singleton method on an object");
+    FxClass *k = fx_class_value(rv);
+    int single = k != NULL;
+    if (!k) k = fx_singleton_of(rv, 1);
+    if (!k) sp_raise_cls("TypeError", "can't define singleton");
     FxMethod *sm = fx_method_new(FX_M_DEF, name, def, 0, k);
     sm->lexical = f->cref;
-    fx_define_method(k, sm, 1);
+    fx_define_method(k, sm, single);
     return;
   }
   if (f->singleton_defs == 3) fx_unsupported((const pm_node_t *)def, "def in instance_eval of an object");
@@ -929,6 +930,9 @@ static int fx_call_cached(FxFrame *f, const pm_call_node_t *c, FxCallCache *cc, 
                           int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out) {
   sp_RbVal r = c->receiver ? recv : f->self;
   if (!fx_is_fx_object(r)) return 0;
+  /* the cache is keyed by the class: an object with a singleton class
+     takes the general path, which asks that class first */
+  if (fx_singletons && fx_singleton_of(r, 0)) return 0;
   if (cc->cls_id != r.cls_id || cc->gen != fx_methods_gen) {
     cc->m = fx_find_method(fx_class_by_id(r.cls_id), sym);
     cc->cls_id = r.cls_id;
@@ -1066,7 +1070,7 @@ static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *a
     if (m) return fx_invoke_b(m, self, argc, argv, blk);
     if (fx_class_core(f, self, name, argc, argv, blk, &out)) return out;
   }
-  FxMethod *m = fx_find_method(fx_class_of(self), s);
+  FxMethod *m = fx_find_method(fx_lookup_class(self), s);
   if (m) return fx_invoke_b(m, self, argc, argv, blk);
   /* define_method, private, public and autoload of main act on Object, as
      a top-level def does; define_method there is public */
@@ -1183,7 +1187,7 @@ static sp_RbVal fx_super_call(FxFrame *f, const pm_node_t *n, const pm_arguments
      singleton path of the class */
   if (f->self.tag == SP_TAG_CLASS && fx_class_value(f->self))
     s = fx_find_ssuper(fx_class_value(f->self), m, &found);
-  if (!found) s = fx_find_super(fx_class_of(f->self), m);
+  if (!found) s = fx_find_super(fx_lookup_class(f->self), m);
   if (s) return fx_invoke_b(s, f->self, argc, argv, blk);
   const char *name = sp_sym_to_s(m->name);
   sp_RbVal out;
@@ -1943,12 +1947,22 @@ static sp_RbVal fx_class_def(FxFrame *f, const pm_node_t *path, const pm_node_t 
 static sp_RbVal fx_singleton_class(FxFrame *f, const pm_singleton_class_node_t *n) {
   SP_GC_SAVE();
   sp_RbVal target = fx_eval(f, n->expression);
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
   FxClass *k = fx_class_value(target);
-  if (!k) fx_unsupported((const pm_node_t *)n, "singleton class of an object");
+  if (k) {
+    /* class << self in a class body: the defs are its class methods */
+    if (!n->body) return sp_box_nil();
+    FX_FRAME(sf, &n->locals, target, k);
+    sf.singleton_defs = 1;
+    return fx_eval(&sf, n->body);
+  }
+  /* class << obj: the body runs in the singleton class of the object, and
+     its defs are the methods of that class */
+  k = fx_singleton_of(target, 1);
+  if (!k) sp_raise_cls("TypeError", "can't define singleton");
   if (!n->body) return sp_box_nil();
-  FX_FRAME(sf, &n->locals, target, k);
-  sf.singleton_defs = 1;
-  return fx_eval(&sf, n->body);
+  FX_FRAME(of, &n->locals, fx_class_box(k), k);
+  return fx_eval(&of, n->body);
 }
 
 static sp_RbVal fx_const_read(FxFrame *f, const pm_node_t *n) {
@@ -2160,7 +2174,7 @@ static int fx_mw_prepare(FxFrame *f, const pm_node_t *t, sp_PolyArray *pre) {
 static sp_RbVal fx_mw_array(sp_RbVal v) {
   if (fx_is_array_value(v)) return v;
   SP_GC_ROOT_RBVAL(v);
-  if (fx_is_fx_object(v) && fx_find_method(fx_class_of(v), sp_sym_intern("to_ary"))) {
+  if (fx_is_fx_object(v) && fx_find_method(fx_lookup_class(v), sp_sym_intern("to_ary"))) {
     sp_RbVal a = fx_send(v, "to_ary", 0, NULL);
     if (fx_is_array_value(a)) return a;
     if (a.tag != SP_TAG_NIL) {
@@ -2609,7 +2623,7 @@ static int fx_defined_basic(sp_RbVal self, sp_RbVal name, int priv, int *hit) {
   if (fx_is_a(self, L.object)) return 0;
   static const char *const basic[] = { "!", "!=", "==", "equal?", "instance_eval", "instance_exec", "__send__",
                                        "__id__", NULL };
-  const FxMethod *m = fx_find_method(fx_class_of(self), (sp_sym)name.v.i);
+  const FxMethod *m = fx_find_method(fx_lookup_class(self), (sp_sym)name.v.i);
   *hit = m && (priv || m->vis == FX_VIS_PUBLIC);
   for (int i = 0; !*hit && basic[i]; i++) *hit = !strcmp(sp_sym_to_s((sp_sym)name.v.i), basic[i]);
   return 1;

@@ -654,12 +654,22 @@ Fluxpinel gives walker classes their own object kind (`src/object.c`):
   first, then the builtin ones; `super` reaches those. `dup` and `clone`
   keep the class, and so do `merge` and `compact` of a Hash; `to_a` and
   `to_h` are plain.
+- **Singleton class.** `def obj.m`, `class << obj`, `extend` and
+  `define_singleton_method` on a heap value give it a singleton class: an
+  anonymous class under its class, in a table keyed by the heap pointer
+  (`fx_singleton_of`). The object keeps its class id, so `class`,
+  `inspect` and the ivar slots do not change; the lookup of a method of
+  a value asks the singleton class first (`fx_lookup_class`), and a call
+  node whose receiver has one takes the general path instead of its
+  cache. A value with no heap pointer (an Integer, a Symbol, nil) raises
+  TypeError, as in CRuby. The runtime does not see the singleton class:
+  `p obj` prints as the class does.
 - **Gaps.** A semantics that Fluxpinel does not model stops the program as an
   unsupported node does (`fx_gap`): an instance of a subclass of a
   builtin class other than Object, Exception, Struct, Data, Array and
-  Hash, an ivar on a builtin value other than an exception, `extend` on
-  an object, and the reopening of a CRuby core class that spinel's class
-  table does not name (Random, Method, ...).
+  Hash, an ivar on a builtin value other than an exception, and the
+  reopening of a CRuby core class that spinel's class table does not name
+  (Random, Method, ...).
 
 `sp_cext_dispatch_fn` sends a method by name to a foreign object. It is a
 candidate for the AOT to walker direction of section 3.6.

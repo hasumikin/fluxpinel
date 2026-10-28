@@ -59,7 +59,7 @@ static sp_RbVal fx_gvar_get(const char *name) {
 /* Whether v has a write method, as CRuby asks of $stdout and $stderr. */
 static int fx_gvar_writable(sp_RbVal v) {
   if (fx_is_io(v)) return 1;
-  if (fx_is_fx_object(v)) return fx_find_method(fx_class_of(v), sp_sym_intern("write")) != NULL;
+  if (fx_is_fx_object(v)) return fx_find_method(fx_lookup_class(v), sp_sym_intern("write")) != NULL;
   return fx_builtin_responds(v, "write");
 }
 
@@ -358,7 +358,7 @@ static void fx_global_init(void) {
    the answer of its to_io, as IO.select and the IO methods ask of a
    wrapper. NULL for an object with no to_io. */
 static sp_File *fx_hook_to_io_u(sp_RbVal v) {
-  if (!fx_find_method(fx_class_of(v), sp_sym_intern("to_io"))) return NULL;
+  if (!fx_find_method(fx_lookup_class(v), sp_sym_intern("to_io"))) return NULL;
   sp_RbVal io = fx_send(v, "to_io", 0, NULL);
   return fx_is_io(io) ? (sp_File *)io.v.p : NULL;
 }

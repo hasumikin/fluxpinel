@@ -346,7 +346,7 @@ static sp_int fx_hook_hash(int cls_id, void *p) {
   sp_RbVal obj = sp_box_obj(p, cls_id);
   if (!fx_is_fx_object(obj)) return (sp_int)(uintptr_t)p;
   SP_GC_ROOT_RBVAL(obj);
-  FxMethod *m = fx_find_method(fx_class_of(obj), sp_sym_intern("hash"));
+  FxMethod *m = fx_find_method(fx_lookup_class(obj), sp_sym_intern("hash"));
   int rec = !m && fx_record_of(fx_class_of(obj));   /* a Struct hashes by its members */
   if (!m && !rec) return (sp_int)(uintptr_t)p;
   sp_RbVal h = rec ? fx_send(obj, "hash", 0, NULL) : fx_invoke(m, obj, 0, NULL);
@@ -361,7 +361,7 @@ static sp_bool fx_hook_eql(int cls_id, void *a, void *b) {
   if (!fx_is_fx_object(x)) return FALSE;
   SP_GC_ROOT_RBVAL(x);
   SP_GC_ROOT_RBVAL(y);
-  FxMethod *m = fx_find_method(fx_class_of(x), sp_sym_intern("eql?"));
+  FxMethod *m = fx_find_method(fx_lookup_class(x), sp_sym_intern("eql?"));
   if (!m && fx_record_of(fx_class_of(x))) return sp_poly_truthy(fx_send(x, "eql?", 1, &y)) ? TRUE : FALSE;
   if (!m) return FALSE;
   return sp_poly_truthy(fx_invoke(m, x, 1, &y)) ? TRUE : FALSE;

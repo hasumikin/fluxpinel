@@ -973,7 +973,7 @@ static int fx_enum_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
   /* a method of Kernel (class, inspect, ...) is not one of Enumerable;
      select is both, and Enumerable comes first in the ancestors */
   if (fx_object_method_name(name) && !FX_IS("select")) return 0;
-  if (!fx_is_a(r, fx_builtin("Enumerable")) || !fx_find_method(fx_class_of(r), sp_sym_intern("each"))) return 0;
+  if (!fx_is_a(r, fx_builtin("Enumerable")) || !fx_find_method(fx_lookup_class(r), sp_sym_intern("each"))) return 0;
   SP_GC_ROOT_RBVAL(r);
   FxEnumWalk w = { .mode = FX_EN_COLLECT, .limit = -1, .arg = sp_box_nil(), .found = sp_box_nil() };
   w.acc = sp_PolyArray_new();
@@ -1163,7 +1163,7 @@ static int fx_method_value_new(sp_RbVal r, sp_RbVal name, int public_only, sp_Rb
   sp_sym s = sp_sym_intern(mn);
   const FxMethod *m = r.tag == SP_TAG_CLASS ? fx_find_smethod(fx_class_value(r), s) : NULL;
   if (!m && (fx_is_fx_object(r) || r.tag == SP_TAG_CLASS || fx_reopened_builtins || fx_is_exc(r))) {
-    m = fx_find_method(fx_class_of(r), s);
+    m = fx_find_method(fx_lookup_class(r), s);
     /* a top-level def does not hide a builtin method of the value */
     if (m && m->owner == L.object && !fx_is_fx_object(r) && fx_builtin_responds(r, mn)) m = NULL;
     if (m && fx_builtin_shadows(r, m, mn)) m = NULL;

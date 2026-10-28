@@ -415,7 +415,7 @@ static int fx_load_call(const pm_node_t *n, sp_RbVal self, const char *name, int
   /* the first letter turns away most calls, before a strcmp */
   if (name[0] != '_' && name[0] != 'r' && name[0] != 'l') return 0;
   if (!FX_IS("__dir__") && !FX_IS("require_relative") && !FX_IS("require") && !FX_IS("load")) return 0;
-  if (fx_find_method(fx_class_of(self), sp_sym_intern(name))) return 0;
+  if (fx_find_method(fx_lookup_class(self), sp_sym_intern(name))) return 0;
   /* load(path): the file runs at each call, from the path as given, which
      is relative to the current directory. A true wrap is not modeled. */
   if (FX_IS("load") && (argc == 1 || (argc == 2 && !sp_poly_truthy(argv[1])))) {

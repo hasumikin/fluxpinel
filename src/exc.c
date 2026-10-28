@@ -205,7 +205,7 @@ static int fx_exc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
   sp_Exception *e = (sp_Exception *)r.v.p;
   if (argc == 0 && FX_IS("message")) {
     /* Exception#message calls to_s, which a class of the program can define */
-    FxMethod *m = fx_find_method(fx_class_of(r), sp_sym_intern("to_s"));
+    FxMethod *m = fx_find_method(fx_lookup_class(r), sp_sym_intern("to_s"));
     if (m && m->owner != L.object) { *out = fx_invoke(m, r, 0, NULL); return 1; }
     *out = sp_box_str_new(sp_str_dup(sp_exc_message(e)));
     return 1;
@@ -252,7 +252,7 @@ static const char *fx_exc_user_text(sp_Exception *e, const char *name) {
   SP_GC_ROOT(e);
   sp_RbVal v = fx_exc_box(e);
   SP_GC_ROOT_RBVAL(v);
-  FxMethod *m = fx_find_method(fx_class_of(v), sp_sym_intern(name));
+  FxMethod *m = fx_find_method(fx_lookup_class(v), sp_sym_intern(name));
   if (!m || m->owner == L.object) return NULL;
   return sp_poly_to_s(fx_invoke(m, v, 0, NULL));
 }

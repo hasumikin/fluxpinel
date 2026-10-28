@@ -149,7 +149,7 @@ static int fx_record_kw_index(const FxClass *rk, sp_RbVal key, sp_RbVal *shown) 
   else if (key.tag == SP_TAG_NIL) sp_raise_cls("TypeError", "no implicit conversion from nil to integer");
   else if (key.tag == SP_TAG_BOOL)
     sp_raise_cls("TypeError", sp_sprintf("no implicit conversion of %s into Integer", key.v.b ? "true" : "false"));
-  else if (fx_is_fx_object(key) && fx_find_method(fx_class_of(key), sp_sym_intern("to_int")))
+  else if (fx_is_fx_object(key) && fx_find_method(fx_lookup_class(key), sp_sym_intern("to_int")))
     key = fx_send(key, "to_int", 0, NULL);
   if (key.tag != SP_TAG_INT)
     sp_raise_cls("TypeError", sp_sprintf("no implicit conversion of %s into Integer", sp_poly_class_name(key)));

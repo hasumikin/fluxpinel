@@ -295,6 +295,43 @@ static FxClass *fx_class_named(const char *name) {
   return NULL;
 }
 
+/* ---- singleton classes of objects ---- */
+
+/* The singleton class of an object (def obj.m, class << obj, extend,
+   define_singleton_method): an anonymous class under the class of the
+   object, which only the object has. The object keeps its class id; a
+   table keyed by the heap pointer gives the singleton class, and the
+   lookup of a method of a value asks it first (fx_lookup_class). The
+   table keeps the object alive, as a class is never freed. A value with
+   no heap pointer (an Integer, a Symbol, nil) has none, as in CRuby. */
+static sp_PolyArray *fx_singletons;   /* [object, class value, ...]; marked by the hook */
+
+static FxClass *fx_singleton_of(sp_RbVal v, int create) {
+  if (v.tag != SP_TAG_OBJ || !v.v.p) return NULL;
+  if (fx_singletons)
+    for (sp_int i = 0; i + 1 < fx_singletons->len; i += 2)
+      if (fx_singletons->data[i].v.p == v.v.p) return fx_class_value(fx_singletons->data[i + 1]);
+  if (!create) return NULL;
+  SP_GC_ROOT_RBVAL(v);
+  FxClass *base = fx_class_of(v);
+  FxClass *k = fx_class_new(NULL, 0, base, base);
+  k->name = strdup(sp_sprintf("#<Class:#<%s:0x%016llx>>", base->name, (unsigned long long)(uintptr_t)v.v.p));
+  if (!fx_singletons) fx_singletons = sp_PolyArray_new();
+  sp_PolyArray_push(fx_singletons, v);
+  sp_PolyArray_push(fx_singletons, fx_class_box(k));
+  return k;
+}
+
+/* The class where the methods of a value are found: its singleton class
+   when it has one, else its class. */
+static FxClass *fx_lookup_class(sp_RbVal v) {
+  if (fx_singletons) {
+    FxClass *k = fx_singleton_of(v, 0);
+    if (k) return k;
+  }
+  return fx_class_of(v);
+}
+
 /* The class of any value. An exception names its class, which can be a
    class of the program. */
 static FxClass *fx_class_of(sp_RbVal v) {
@@ -362,7 +399,7 @@ static FxMethod *fx_find_hook(sp_RbVal r, const char *hook) {
   sp_sym s = sp_sym_intern(hook);
   FxClass *k = fx_class_value(r);
   FxMethod *m = k ? fx_find_smethod(k, s) : NULL;
-  return m ? m : fx_find_method(fx_class_of(r), s);
+  return m ? m : fx_find_method(fx_lookup_class(r), s);
 }
 
 /* The function or the variable of the ffi gem that a module attached under
@@ -592,7 +629,8 @@ static FxMethod *fx_find_super(const FxClass *c, const FxMethod *m) {
 
 static int fx_is_a(sp_RbVal v, const FxClass *k) {
   const FxClass *anc[128];
-  int n = fx_ancestors(fx_class_of(v), anc, 128);
+  /* the singleton class of v, when it has one, for the modules it extends */
+  int n = fx_ancestors(fx_lookup_class(v), anc, 128);
   for (int i = 0; i < n; i++) if (anc[i] == k) return 1;
   return 0;
 }
@@ -1243,7 +1281,7 @@ static const char *fx_hook_obj_cls_name(int cls_id) {
 
 /* A user method on obj answers a String, or NULL when there is none. */
 static const char *fx_user_string(sp_RbVal obj, const char *name) {
-  FxMethod *m = fx_find_method(fx_class_of(obj), sp_sym_intern(name));
+  FxMethod *m = fx_find_method(fx_lookup_class(obj), sp_sym_intern(name));
   if (!m) return NULL;
   sp_RbVal v = fx_invoke(m, obj, 0, NULL);
   return sp_poly_to_s(v);
@@ -1320,13 +1358,13 @@ static int fx_comparable(const char *op, sp_RbVal a, sp_RbVal b, sp_RbVal *out) 
   if (!(lt || le || gt || ge || eq)) return 0;
   FxClass *comparable = fx_builtin("Comparable");
   if (eq && !fx_is_a(a, comparable)) return 0;
-  FxMethod *cmp = fx_find_method(fx_class_of(a), sp_sym_intern("<=>"));
+  FxMethod *cmp = fx_find_method(fx_lookup_class(a), sp_sym_intern("<=>"));
   if (!cmp && !fx_is_a(a, comparable)) return 0;
   /* no <=> in the program: Object#<=>, 0 for the same object or for an
      == of the program that answers true (Comparable#== would come back
      here), else nil */
   int same = a.tag == b.tag && a.v.p == b.v.p;
-  FxMethod *eqm = cmp || same ? NULL : fx_find_method(fx_class_of(a), sp_sym_intern("=="));
+  FxMethod *eqm = cmp || same ? NULL : fx_find_method(fx_lookup_class(a), sp_sym_intern("=="));
   if (eqm && sp_poly_truthy(fx_invoke(eqm, a, 1, &b))) same = 1;
   sp_RbVal c = cmp ? fx_invoke(cmp, a, 1, &b) : same ? sp_box_int(0) : sp_box_nil();
   if (c.tag != SP_TAG_INT) {
@@ -1341,7 +1379,7 @@ static int fx_comparable(const char *op, sp_RbVal a, sp_RbVal b, sp_RbVal *out) 
 static sp_RbVal fx_hook_binop_u(const char *op, sp_RbVal a, sp_RbVal b, sp_bool *handled) {
   SP_GC_ROOT_RBVAL(a);
   SP_GC_ROOT_RBVAL(b);
-  FxMethod *m = fx_find_method(fx_class_of(a), sp_sym_intern(op));
+  FxMethod *m = fx_find_method(fx_lookup_class(a), sp_sym_intern(op));
   sp_RbVal out;
   /* a Struct or a Data compares by its members */
   if (!m && !strcmp(op, "==") && fx_record_of(fx_class_of(a))) {
@@ -1371,7 +1409,7 @@ static sp_RbVal fx_hook_binop(const char *op, sp_RbVal a, sp_RbVal b, sp_bool *h
 static sp_RbVal fx_hook_coerce_u(const char *op, sp_RbVal num, sp_RbVal obj, sp_bool *handled) {
   SP_GC_ROOT_RBVAL(num);
   SP_GC_ROOT_RBVAL(obj);
-  FxMethod *m = fx_find_method(fx_class_of(obj), sp_sym_intern("coerce"));
+  FxMethod *m = fx_find_method(fx_lookup_class(obj), sp_sym_intern("coerce"));
   if (!m) return sp_box_nil();
   sp_RbVal pair = fx_invoke(m, obj, 1, &num);
   SP_GC_ROOT_RBVAL(pair);
@@ -1415,6 +1453,7 @@ static void fx_hook_mark(void) {
   for (int i = 0; i < L.nbuiltins; i++)
     for (int j = 0; j < L.builtins[i]->ncvars; j++) sp_mark_rbval(L.builtins[i]->cvars[j].value);
   if (fx_class_ivars) sp_gc_mark(fx_class_ivars);
+  if (fx_singletons) sp_gc_mark(fx_singletons);
   for (int i = 0; i < L.nglobals; i++) sp_mark_rbval(L.globals[i].value);
   for (int i = 0; i < L.nprocs; i++) sp_gc_mark(L.procs[i]);
 }
@@ -1453,7 +1492,7 @@ static sp_RbVal fx_respond_to(sp_RbVal r, sp_RbVal a, sp_RbVal all) {
   const char *mn = fx_name_arg(a);
   sp_sym s = sp_sym_intern(mn);
   FxMethod *pm = r.tag == SP_TAG_CLASS ? fx_find_smethod(fx_class_value(r), s) : NULL;
-  if (!pm) pm = fx_find_method(fx_class_of(r), s);
+  if (!pm) pm = fx_find_method(fx_lookup_class(r), s);
   int yes = pm && pm->vis == FX_VIS_PUBLIC;
   if (!yes && !pm)
     yes = fx_builtin_responds(r, mn) || fx_record_responds(r, mn) || fx_process_responds(r, mn) ||
@@ -1574,7 +1613,6 @@ static int fx_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       *out = sp_box_bool(same || sp_poly_truthy(fx_send(r, "==", 1, argv)));
       return 1;
     }
-    if (fx_is_fx_object(r) && !strcmp(name, "extend")) fx_gap("extend on an object");
     /* method and public_method: a Method value (iter.c) */
     if (!strcmp(name, "method") || !strcmp(name, "public_method")) {
       if (fx_method_value_new(r, a, name[0] == 'p', out)) return 1;
@@ -1790,6 +1828,64 @@ static sp_RbVal fx_define_proc_method(FxClass *k, int singleton, int vis, int ar
   m->proc = body.v.p;
   fx_define_vis(k, m, singleton, vis);
   return sp_box_sym(name);
+}
+
+/* The methods of a heap value about its singleton class: singleton_class,
+   singleton_methods, define_singleton_method and extend. Answers 1 and
+   sets *out when it handles the call. */
+static int fx_singleton_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                               sp_RbVal *out) {
+  if (name[0] != 's' && name[0] != 'd' && name[0] != 'e') return 0;
+  if (argc == 0 && !blk && !strcmp(name, "singleton_class")) {
+    /* an Integer, a Symbol, nil, true and false have none */
+    if (r.tag != SP_TAG_OBJ || !r.v.p) sp_raise_cls("TypeError", "can't define singleton");
+    *out = fx_class_box(fx_singleton_of(r, 1));
+    return 1;
+  }
+  if (r.tag != SP_TAG_OBJ || !r.v.p) return 0;
+  if (argc <= 1 && !blk && !strcmp(name, "singleton_methods")) {
+    int all = argc == 0 || sp_poly_truthy(argv[0]);
+    const FxClass *k = fx_singleton_of(r, 0);
+    sp_PolyArray *a = sp_PolyArray_new();
+    SP_GC_ROOT(a);
+    for (int e = -1; k && e < (all ? k->nincludes : 0); e++) {
+      const FxMethodTable *t = e < 0 ? &k->methods : &k->includes[e]->methods;
+      for (int i = 0; i < t->n; i++) {
+        if (t->items[i]->vis != FX_VIS_PUBLIC) continue;
+        sp_RbVal s = sp_box_sym(t->items[i]->name);
+        int seen = 0;
+        for (sp_int j = 0; j < a->len; j++) seen |= a->data[j].v.i == s.v.i;
+        if (!seen) sp_PolyArray_push(a, s);
+      }
+    }
+    *out = sp_box_poly_array(a);
+    return 1;
+  }
+  if (!strcmp(name, "define_singleton_method") && (argc == 1 || argc == 2)) {
+    SP_GC_ROOT_RBVAL(r);
+    *out = fx_define_proc_method(fx_singleton_of(r, 1), 0, FX_VIS_PUBLIC, argc, argv, blk);
+    return 1;
+  }
+  /* extend(M, ...): M among the ancestors of the singleton class, as an
+     include there, and the hook extended(obj) of M */
+  if (!strcmp(name, "extend") && argc >= 1 && !blk) {
+    SP_GC_ROOT_RBVAL(r);
+    FxClass *k = fx_singleton_of(r, 1);
+    for (int i = argc - 1; i >= 0; i--) {
+      FxClass *m = fx_class_value(argv[i]);
+      if (!m || !m->is_module) sp_raise_cls("TypeError", "wrong argument type (expected Module)");
+      const FxClass *anc[128];
+      int na = fx_ancestors(k, anc, 128), have = 0;
+      for (int j = 0; j < na; j++) have |= anc[j] == m;
+      if (!have) fx_push_class(&k->includes, &k->nincludes, &k->includes_cap, m);
+      fx_methods_gen++;
+      FxMethod *hook = fx_table_get(&m->smethods, sp_sym_intern("extended"));
+      if (hook) fx_invoke(hook, argv[i], 1, &r);
+    }
+    *out = r;
+    return 1;
+  }
+  return 0;
 }
 
 static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
