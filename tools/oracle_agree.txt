@@ -1,5 +1,5 @@
 # The spinel tests that Fluxpinel answers right, for make regress.
-# make oracle writes this file. spinel: 2fd94a2802de
+# make oracle writes this file. spinel: 085f1ecde5b4
 absolute_class_reopen_inside_module
 abstract_raise_override_return
 alias_attr_reader_source
@@ -301,6 +301,7 @@ bare_call_subclass_reader_over_inherited_def
 bare_const_alias_reopen
 bare_module_body_cmethod_call
 bare_new_default_reads_self
+bare_new_default_value_type
 bare_new_in_class_method_nil_int_arg
 bare_new_struct_unknown_keyword
 bare_raise_in_ensure
@@ -432,6 +433,7 @@ block_forward_self_call
 block_forward_to_overridden_yielder
 block_forward_two_level
 block_forward_value_callable
+block_forward_value_class
 block_forwarded_into_poly_capture
 block_forwarded_into_recursive_yielder
 block_given_else_arm_overflow_modes
@@ -480,6 +482,7 @@ block_param_shadow
 block_param_sibling_collision
 block_param_table_rows
 block_param_types_binding_plan
+block_param_walk_name_collision
 block_presence_decided_at_runtime
 block_rest_only_builtin_iter
 block_return_in_spliced_iterator_slot
@@ -496,6 +499,7 @@ block_value_cond_boxed
 block_yield_keyword_param
 block_yield_optional_param
 bm_instance_eval
+body_local_invented_name_spelling
 bool_case_equality
 bool_is_a_true_false
 bool_nil_reopen_one_side
@@ -1035,6 +1039,7 @@ class_value_hash_key
 class_value_inherited_cmethod_new
 class_value_new_arity_error
 class_value_new_block_param_class
+class_value_new_block_param_literal
 class_value_new_block_params
 class_value_new_block_params_optional
 class_value_new_builtin_part
@@ -1422,6 +1427,7 @@ dispatch_default_reads_captured_param
 dispatch_inline_only_override
 dispatch_inline_only_override_variants
 dispatch_override_param_list
+dispatch_override_untyped_return
 dispatch_positional_layout
 dispatch_result_boxed_after_backstop
 dispatch_shared_arm
@@ -2024,9 +2030,11 @@ global_multi_assign
 global_nil_guard
 global_nil_slot
 global_or_write_value
+global_read_by_class_body_call
 global_unset_reads_nil
 global_var
 global_var_punct
+global_written_in_block_or_begin
 grep_chain_and_inline_tail
 grep_proc_pattern
 grep_v_runtime_recv
@@ -2039,6 +2047,7 @@ gsub_with_hash_replacement
 gvar
 gvar_opassign_value
 gvar_pid
+gvar_read_through_alias_before_write
 gvar_write_value
 handle_shape_k12_masgn_poly_into_index
 handle_shape_m09_cvar_target
@@ -2055,6 +2064,7 @@ hash_all_pattern
 hash_arg_through_sequence
 hash_block_methods_variants
 hash_boxed_with_nullable_user_hash
+hash_brackets_own_cmethod
 hash_clear
 hash_compound_assign_more
 hash_const_into_defaulted_param
@@ -2122,6 +2132,9 @@ hash_merge_bang
 hash_merge_bang_boxed_argument
 hash_merge_bang_symbol_keyed_argument
 hash_merge_block_rest
+hash_merge_block_rest_general
+hash_merge_block_rooted
+hash_merge_block_rooted_stress
 hash_merge_block_value_widens_user_merge
 hash_merge_cross_layout
 hash_merge_default_proc_own_hash
@@ -2498,6 +2511,7 @@ int_array_array
 int_array_bracket_assign_expr
 int_array_concat_one
 int_array_foreign_values
+int_array_full_queue
 int_array_search_poly_needle
 int_array_tally
 int_array_uniq_bang
@@ -3147,6 +3161,8 @@ literal_int_rows_block_param
 literal_string_markers
 load_error_is_script_error
 load_error_path
+load_word_called
+load_word_in_text
 local_empty_array_push_promotion_propagates
 local_op_assign_reads_slot_first
 local_or_write_first_assign
@@ -3155,6 +3171,7 @@ local_rebind_after_self_returning_mutator
 local_type_sees_arm_local
 logical_pointer_guard
 logical_value_return
+long_class_name_methods
 long_class_name_poly_attr_write
 long_local_receiver_name
 long_setter_name_writes
@@ -3589,6 +3606,7 @@ nil_spaceship_variable
 nil_store_through_chooser
 nil_string_join
 nil_tested_once_guards
+nil_tested_recv_root
 nil_time_return_guard_narrow
 nil_time_return_narrow_arms
 nil_time_return_narrow_begin
@@ -3613,6 +3631,7 @@ nilclass_numeric_reopen_over_object
 nilfree_operand_nil_recv
 nmatch_sets_last_match
 no_poly_values_dropped
+no_poly_values_program_tail
 no_poly_values_unrun_code
 no_value_call_typed_slot
 nomethod_message_shapes
@@ -3727,6 +3746,7 @@ operand_order_builder_chain_blocks
 opt_before_required_kwrest
 or_abort_noreturn
 or_and_write_captured_local
+or_and_write_may
 or_assign_composite_rhs_once
 or_default_never_nil
 or_empty_container_literal_type
@@ -3816,6 +3836,7 @@ poly_all_class_root
 poly_aref_class_method_not_held
 poly_aref_hash_default
 poly_aref_proc_and_class_method
+poly_aref_struct_class_beside_instance_new
 poly_arg_fresh_string_handle
 poly_arg_int_keyed_hash
 poly_arg_to_typed_method_param
@@ -4536,6 +4557,7 @@ range_held_elsif_ladder
 range_held_rescue_mod
 range_index_anything_receiver
 range_index_unbounded_receiver
+range_local_passed_to_call
 range_min_max_empty_open
 range_mixed_endpoint_kinds
 range_negative_count_arg
@@ -4770,6 +4792,8 @@ require_rewrites_tail
 require_same_line
 require_unsupported_lib
 require_value_line_numbers
+require_word_in_text
+require_word_missing
 required_file_return_in_branch
 required_file_return_sugar_lines
 required_file_runtime_return
@@ -5589,6 +5613,7 @@ string_receiver_snapshot_copy
 string_regexp_group_index
 string_reopen_block_handle_receiver
 string_reopen_block_returns
+string_reopen_call_in_its_body
 string_reopen_match_p_poly_pattern
 string_reopen_proc_self_mutation
 string_reopen_yield_self_mutation
