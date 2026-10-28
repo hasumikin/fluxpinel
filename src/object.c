@@ -2173,6 +2173,66 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     *out = v;
     return 1;
   }
+  /* const_set(name, value): a constant name starts with a capital */
+  if (argc == 2 && !strcmp(name, "const_set")) {
+    const char *cn = fx_name_arg(argv[0]);
+    if (!isupper((unsigned char)cn[0])) sp_raise_cls("NameError", sp_sprintf("wrong constant name %s", cn));
+    fx_const_set(k, sp_sym_intern(cn), argv[1]);
+    *out = argv[1];
+    return 1;
+  }
+  /* const_defined?(name, inherit = true): without inherit, the own
+     constants of k; an autoload constant counts, and its file stays unread */
+  if ((argc == 1 || argc == 2) && !strcmp(name, "const_defined?")) {
+    const char *cn = fx_name_arg(argv[0]);
+    if (!isupper((unsigned char)cn[0])) sp_raise_cls("NameError", sp_sprintf("wrong constant name %s", cn));
+    sp_sym s = sp_sym_intern(cn);
+    sp_RbVal v;
+    int inherit = argc == 1 || sp_poly_truthy(argv[1]);
+    *out = sp_box_bool(inherit ? fx_const_scoped_peek(k, s, &v) : fx_const_find(k, s, 0) != NULL);
+    return 1;
+  }
+  /* constants(inherit = true): the names of the own constants, then those
+     of the ancestors but Object and its own */
+  if (argc <= 1 && !strcmp(name, "constants")) {
+    int inherit = argc == 0 || sp_poly_truthy(argv[0]);
+    sp_PolyArray *a = sp_PolyArray_new();
+    SP_GC_ROOT(a);
+    const FxClass *anc[128];
+    int n = inherit ? fx_ancestors(k, anc, 128) : 1;
+    if (!inherit) anc[0] = k;
+    for (int i = 0; i < n && (i == 0 || anc[i] != L.object); i++)
+      for (int j = 0; j < anc[i]->nconsts; j++) {
+        if (anc[i]->consts[j].loading) continue;
+        sp_RbVal s = sp_box_sym(anc[i]->consts[j].name);
+        int seen = 0;
+        for (sp_int m = 0; m < a->len; m++) seen |= a->data[m].v.i == s.v.i;
+        if (!seen) sp_PolyArray_push(a, s);
+      }
+    *out = sp_box_poly_array(a);
+    return 1;
+  }
+  /* remove_const(name): the value, and the constant goes */
+  if (argc == 1 && !strcmp(name, "remove_const")) {
+    const char *cn = fx_name_arg(argv[0]);
+    FxConst *c = fx_const_own(k, sp_sym_intern(cn));
+    if (!c) sp_raise_cls("NameError", sp_sprintf("constant %s not defined", fx_const_full(k, sp_sym_intern(cn))));
+    *out = c->autoload ? sp_box_nil() : c->value;
+    free((char *)c->autoload);
+    memmove(c, c + 1, sizeof *c * (size_t)(&k->consts[k->nconsts] - (c + 1)));
+    k->nconsts--;
+    return 1;
+  }
+  /* deprecate_constant(*names): CRuby warns at a read of the constant
+     under -W:deprecated, which is off by default; here it checks the names */
+  if (argc >= 1 && !strcmp(name, "deprecate_constant")) {
+    for (int i = 0; i < argc; i++) {
+      sp_sym s = sp_sym_intern(fx_name_arg(argv[i]));
+      if (!fx_const_own(k, s)) sp_raise_cls("NameError", sp_sprintf("constant %s not defined", fx_const_full(k, s)));
+    }
+    *out = r;
+    return 1;
+  }
   /* instance_method(name): an UnboundMethod of a method of the program
      (fx_find_method, as a call finds it) or of a builtin method that the
      table of responds.c knows, with the private methods of Kernel */
