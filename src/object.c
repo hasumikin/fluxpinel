@@ -186,6 +186,7 @@ static sp_int fx_builtin_id(const char *name) {
 }
 
 static void fx_const_set(FxClass *c, sp_sym name, sp_RbVal v);   /* the constants section */
+static sp_RbVal fx_ivar_get(sp_RbVal self, sp_sym name);          /* the objects section */
 
 /* The FxClass of a builtin class name, made on first use, or NULL. */
 static FxClass *fx_builtin(const char *name) {
@@ -362,6 +363,55 @@ static FxMethod *fx_find_hook(sp_RbVal r, const char *hook) {
   return m ? m : fx_find_method(fx_class_of(r), s);
 }
 
+/* The function or the variable of the ffi gem that a module attached under
+   name: spinel defines `def self.name(*a, &b) = __ffi_call(:name, a, b)`
+   for each attach_function at compile time (analyze_desugar.c of spinel),
+   and the reader and the writer of an attach_variable. Fluxpinel looks in
+   the tables that the ffi package keeps on the module (@ffi_functions,
+   @ffi_variables) when the module extends FFI::Library (__ffi_call).
+   Answers 0 for no such name, 1 for a function, 2 for a variable. */
+static int fx_ffi_attached(sp_RbVal r, const char *name, sp_RbVal *key) {
+  if (r.tag != SP_TAG_CLASS) return 0;
+  FxClass *k = fx_class_value(r);
+  if (!k || !fx_find_smethod(k, sp_sym_intern("__ffi_call"))) return 0;
+  size_t n = strlen(name);
+  int setter = n > 1 && name[n - 1] == '=' && name[0] != '=';
+  *key = sp_box_sym(setter ? sp_sym_intern(sp_sprintf("%.*s", (int)(n - 1), name)) : sp_sym_intern(name));
+  static const char *const tables[] = { "@ffi_functions", "@ffi_variables" };
+  for (int t = setter ? 1 : 0; t < 2; t++) {
+    sp_RbVal h = fx_ivar_get(r, sp_sym_intern(tables[t]));
+    if (fx_is_hash(h) && sp_poly_truthy(fx_send(h, "key?", 1, key))) return t + 1;
+  }
+  return 0;
+}
+
+static int fx_ffi_attached_call(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                                  sp_RbVal *out) {
+  sp_RbVal key;
+  int what = fx_ffi_attached(r, name, &key);
+  if (!what) return 0;
+  SP_GC_SAVE();
+  SP_GC_ROOT_RBVAL(key);
+  if (what == 2) {
+    int setter = name[strlen(name) - 1] == '=';
+    sp_RbVal args[2] = { key, setter && argc ? argv[0] : sp_box_nil() };
+    *out = fx_send(r, setter ? "__ffi_var_set" : "__ffi_var_get", setter ? 2 : 1, args);
+    return 1;
+  }
+  sp_PolyArray *a = sp_PolyArray_new();
+  SP_GC_ROOT(a);
+  for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
+  sp_RbVal args[3] = { key, sp_box_poly_array(a), sp_box_nil() };
+  if (blk) {
+    FxBlock l = *blk;
+    l.site = NULL;
+    args[2] = fx_block_proc(&l);
+  }
+  SP_GC_ROOT_RBVAL(args[2]);
+  *out = fx_send(r, "__ffi_call", 3, args);
+  return 1;
+}
+
 /* The hook of a missing method: method_missing(:name, *args) of the
    receiver, with the block of the call. Answers 0 when the program
    defines no method_missing for the receiver. why (FX_MISS_*) is the
@@ -369,6 +419,7 @@ static FxMethod *fx_find_hook(sp_RbVal r, const char *hook) {
    (L.mm_why). */
 static int fx_method_missing(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                                int why, sp_RbVal *out) {
+  if (fx_ffi_attached_call(r, name, argc, argv, blk, out)) return 1;
   FxMethod *m = fx_object_method_name(name) ? NULL : fx_find_hook(r, "method_missing");
   if (!m) return 0;
   SP_GC_SAVE();
@@ -1226,6 +1277,10 @@ static sp_RbVal fx_respond_to(sp_RbVal r, sp_RbVal a, sp_RbVal all) {
   if (!yes && !pm)
     yes = fx_builtin_responds(r, mn) || fx_record_responds(r, mn) || fx_process_responds(r, mn) ||
           fx_file_responds(r, mn) || fx_prelude_has(r, mn) || fx_rs_responds(r, mn);
+  if (!yes && !pm) {
+    sp_RbVal key;
+    yes = fx_ffi_attached(r, mn, &key) != 0;
+  }
   if (yes) return sp_box_bool(1);
   if (pm || fx_kernel_private(mn)) return sp_box_bool(sp_poly_truthy(all));
   FxMethod *m = fx_find_hook(r, "respond_to_missing?");
