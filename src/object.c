@@ -2049,6 +2049,27 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     *out = fx_cvar_names(k, argc == 0 || sp_poly_truthy(argv[0]));
     return 1;
   }
+  /* singleton_methods(all = true): the public singleton methods of k and
+     of the modules it extends, and with all those of its superclasses */
+  if (!strcmp(name, "singleton_methods") && argc <= 1) {
+    int all = argc == 0 || sp_poly_truthy(argv[0]);
+    sp_PolyArray *a = sp_PolyArray_new();
+    SP_GC_ROOT(a);
+    for (const FxClass *c = k; c; c = all && c->cls_id >= FX_CLS_BASE ? c->super : NULL) {
+      for (int e = -1; e < c->nextends; e++) {
+        const FxMethodTable *t = e < 0 ? &c->smethods : &c->extends[e]->methods;
+        for (int i = 0; i < t->n; i++) {
+          if (t->items[i]->vis != FX_VIS_PUBLIC) continue;
+          sp_RbVal s = sp_box_sym(t->items[i]->name);
+          int seen = 0;
+          for (sp_int j = 0; j < a->len; j++) seen |= a->data[j].v.i == s.v.i;
+          if (!seen) sp_PolyArray_push(a, s);
+        }
+      }
+    }
+    *out = sp_box_poly_array(a);
+    return 1;
+  }
   if (argc == 1 && !strcmp(name, "const_get")) {
     sp_RbVal v;
     const char *cn = fx_name_arg(argv[0]);

@@ -264,9 +264,18 @@ static FxFrame *fx_frame_heap(FxFrame *f) {
 static void fx_define(FxFrame *f, const pm_def_node_t *def) {
   sp_sym name = fx_sym(def->name);
   if (def->receiver) {
-    if (!PM_NODE_TYPE_P(def->receiver, PM_SELF_NODE) || f->self.tag != SP_TAG_CLASS)
-      fx_unsupported((const pm_node_t *)def, "singleton method on an object");
-    FxClass *k = fx_class_value(f->self);
+    /* def self.m in a class body, and def Const.m (def IRB.conf) or
+       def expr.m where the receiver is a class or a module: a method of
+       its singleton */
+    FxClass *k;
+    if (PM_NODE_TYPE_P(def->receiver, PM_SELF_NODE)) {
+      k = fx_class_value(f->self);
+    } else {
+      sp_RbVal rv = fx_eval(f, def->receiver);
+      if (L.ctl != FX_CTL_NONE) return;
+      k = fx_class_value(rv);
+    }
+    if (!k) fx_unsupported((const pm_node_t *)def, "singleton method on an object");
     FxMethod *sm = fx_method_new(FX_M_DEF, name, def, 0, k);
     sm->lexical = f->cref;
     fx_define_method(k, sm, 1);
