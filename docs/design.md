@@ -490,10 +490,16 @@ The walker evaluates the prism AST directly (`src/walk.c`).
     first call. `native_share` has no effect: a StringIO does not write
     into the String that it was made on, as it does under
     `--share-strings`.
-- **Limits.** `ffi_callback`, `ffi_struct`, `ffi_source`, a variadic
-  function and an `IO::Buffer` argument are gaps. `FFI=0` builds Fluxpinel
-  with no libffi, and then every FFI declaration and every native binding
-  is a gap.
+- **Callbacks.** `ffi_callback` declares a type for the arguments of the
+  `ffi_func`s of its module. A call gives such an argument a Method or a
+  Proc, and a closure of libffi calls it with the C arguments as values.
+  The closure takes the walker lock, as the call gave it up. C keeps the
+  function pointer, so each closure and its value stay for the run.
+- **Limits.** `ffi_source` does nothing: Fluxpinel cannot compile the
+  fragment, so a function that only the fragment defines is not found at
+  its first call. `ffi_struct`, a variadic function and an `IO::Buffer`
+  argument are gaps. `FFI=0` builds Fluxpinel with no libffi, and then
+  every FFI declaration and every native binding is a gap.
 
 ### 3.3.8 Speed
 

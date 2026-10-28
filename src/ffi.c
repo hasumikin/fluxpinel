@@ -30,7 +30,7 @@
 typedef enum {
   FX_FT_INT, FX_FT_UINT32, FX_FT_INT32, FX_FT_UINT16, FX_FT_INT16, FX_FT_UINT8, FX_FT_INT8,
   FX_FT_SIZE_T, FX_FT_LONG, FX_FT_INT64, FX_FT_UINT64, FX_FT_FLOAT, FX_FT_DOUBLE, FX_FT_BOOL,
-  FX_FT_STR, FX_FT_BINSTR, FX_FT_PTR, FX_FT_FLOAT_ARRAY, FX_FT_INT_ARRAY, FX_FT_VOID,
+  FX_FT_STR, FX_FT_BINSTR, FX_FT_PTR, FX_FT_FLOAT_ARRAY, FX_FT_INT_ARRAY, FX_FT_VOID, FX_FT_CALLBACK,
   /* the types of native_func only */
   FX_FT_ANY, FX_FT_RTSTR, FX_FT_NRTSTR, FX_FT_CSTR, FX_FT_CBINSTR, FX_FT_SPINT, FX_FT_SPBOOL,
   /* and of native_method */
@@ -103,6 +103,27 @@ static ffi_type *fx_ffi_ctype(FxFfiType t) {
 
 enum { FX_FFI_FUNC, FX_FFI_BUFFER, FX_FFI_READ, FX_FFI_WRITE, FX_FFI_NATIVE };
 
+/* A type of ffi_callback: a C function pointer that an argument of an
+   ffi_func of the same module takes. The module gives it a Method or a
+   Proc, and a closure of libffi calls that (fx_ffi_closure). */
+typedef struct FxFfiCallback {
+  const FxClass *k;
+  const char *name;
+  int nargs;
+  FxFfiType ret, *args;
+  ffi_type **atypes;
+  ffi_cif cif;
+  struct FxFfiCallback *next;
+} FxFfiCallback;
+
+static FxFfiCallback *fx_ffi_callbacks;
+
+static FxFfiCallback *fx_ffi_callback_find(const FxClass *k, const char *name) {
+  for (FxFfiCallback *c = fx_ffi_callbacks; c; c = c->next)
+    if (c->k == k && !strcmp(c->name, name)) return c;
+  return NULL;
+}
+
 typedef struct FxFfi {
   int kind;
   int native;             /* declared by native_func, native_new or native_method */
@@ -117,6 +138,7 @@ typedef struct FxFfi {
   void *fn;               /* found at the first call */
   int nargs;
   FxFfiType ret, *args;
+  FxFfiCallback **cbs;    /* the type of each FX_FT_CALLBACK argument */
   ffi_cif cif;
   ffi_type **atypes;
   void *buf;              /* FX_FFI_BUFFER */
@@ -330,12 +352,16 @@ static int fx_ffi_class(FxClass *k, const char *name, int argc, sp_RbVal *argv, 
     x->name = native ? strdup(sp_poly_recv_s(argv[3], name)) : sp_sym_to_s((sp_sym)argv[0].v.i);
     x->nargs = (int)sp_poly_length(argv[1]);
     x->args = calloc((size_t)x->nargs + 1, sizeof *x->args);
+    x->cbs = calloc((size_t)x->nargs + 1, sizeof *x->cbs);
     x->atypes = calloc((size_t)x->nargs + 1, sizeof *x->atypes);
     for (int i = 0; i < x->nargs; i++) {
       sp_RbVal t = sp_poly_arr_get(argv[1], i);
       if (t.tag == SP_TAG_SYM && !strcmp(sp_sym_to_s((sp_sym)t.v.i), "..."))
         fx_gap("a variadic FFI function");
-      x->args[i] = type(t);
+      /* a type of ffi_callback of this module */
+      FxFfiCallback *cb = !native && t.tag == SP_TAG_SYM ? fx_ffi_callback_find(k, sp_sym_to_s((sp_sym)t.v.i)) : NULL;
+      x->cbs[i] = cb;
+      x->args[i] = cb ? FX_FT_CALLBACK : type(t);
       x->atypes[i] = fx_ffi_ctype(x->args[i]);
     }
     x->ret = type(argv[2]);
@@ -363,10 +389,33 @@ static int fx_ffi_class(FxClass *k, const char *name, int argc, sp_RbVal *argv, 
     *out = argv[0];
     return 1;
   }
+  /* ffi_callback :name, [types], ret: a type for the arguments of the
+     ffi_funcs of this module */
+  if (FX_IS("ffi_callback") && argc == 3 && argv[0].tag == SP_TAG_SYM && fx_is_array(argv[1])) {
+    FxFfiCallback *cb = calloc(1, sizeof *cb);
+    cb->k = k;
+    cb->name = sp_sym_to_s((sp_sym)argv[0].v.i);
+    cb->nargs = (int)sp_poly_length(argv[1]);
+    cb->args = calloc((size_t)cb->nargs + 1, sizeof *cb->args);
+    cb->atypes = calloc((size_t)cb->nargs + 1, sizeof *cb->atypes);
+    for (int i = 0; i < cb->nargs; i++) {
+      cb->args[i] = fx_ffi_type(sp_poly_arr_get(argv[1], i));
+      cb->atypes[i] = fx_ffi_ctype(cb->args[i]);
+    }
+    cb->ret = fx_ffi_type(argv[2]);
+    if (ffi_prep_cif(&cb->cif, FFI_DEFAULT_ABI, (unsigned)cb->nargs, fx_ffi_ctype(cb->ret), cb->atypes) != FFI_OK)
+      sp_raise_cls("ArgumentError", sp_sprintf("ffi_callback :%s: no call interface for its types", cb->name));
+    cb->next = fx_ffi_callbacks;
+    fx_ffi_callbacks = cb;
+    *out = argv[0];
+    return 1;
+  }
+  /* ffi_source "C": spinel compiles the fragment into the program;
+     Fluxpinel cannot, so the fragment is not there. A function that only
+     the fragment defines is not found at its first call. */
+  if (FX_IS("ffi_source")) return 1;
   if (fx_native_decl(name, argc, argv)) return 1;
-  if (FX_IS("ffi_struct") || FX_IS("ffi_callback") || FX_IS("ffi_source") || FX_IS("native_new") ||
-      FX_IS("native_method"))
-    fx_gap(sp_sprintf("%s", name));
+  if (FX_IS("ffi_struct") || FX_IS("native_new") || FX_IS("native_method")) fx_gap(sp_sprintf("%s", name));
   return 0;
 }
 
@@ -500,6 +549,94 @@ static sp_RbVal fx_ffi_ret(FxFfiType t, const void *r) {
   }
 }
 
+/* The value of a C argument of type t at p, for a callback. */
+static sp_RbVal fx_ffi_c_value(FxFfiType t, const void *p) {
+  switch (t) {
+  case FX_FT_INT: case FX_FT_INT32: return sp_box_int(*(const int32_t *)p);
+  case FX_FT_UINT32: return sp_box_int(*(const uint32_t *)p);
+  case FX_FT_INT16: return sp_box_int(*(const int16_t *)p);
+  case FX_FT_UINT16: return sp_box_int(*(const uint16_t *)p);
+  case FX_FT_INT8: return sp_box_int(*(const int8_t *)p);
+  case FX_FT_UINT8: return sp_box_int(*(const uint8_t *)p);
+  case FX_FT_BOOL: return sp_box_bool(*(const int32_t *)p != 0);
+  case FX_FT_LONG: return sp_box_int(*(const long *)p);
+  case FX_FT_SIZE_T: return sp_box_int((sp_int) * (const unsigned long *)p);
+  case FX_FT_INT64: return sp_box_int(*(const int64_t *)p);
+  case FX_FT_UINT64: return sp_box_int((sp_int) * (const uint64_t *)p);
+  case FX_FT_FLOAT: return sp_box_float(*(const float *)p);
+  case FX_FT_DOUBLE: return sp_box_float(*(const double *)p);
+  case FX_FT_STR: case FX_FT_BINSTR: {
+    const char *s = *(const char *const *)p;
+    return s ? fx_new_string((const uint8_t *)s, strlen(s)) : sp_box_nil();
+  }
+  default: return fx_ptr_box(*(void *const *)p);
+  }
+}
+
+/* A Method or a Proc given for an argument of a type of ffi_callback, and
+   the closure of libffi that calls it. C keeps the function pointer, so
+   the closure and its value stay for the run. */
+typedef struct {
+  const FxFfiCallback *cb;
+  sp_RbVal fn;
+} FxFfiClosure;
+
+/* The closure: the C arguments become values, the value answers call,
+   and the result goes back as the return. The call takes the walker lock,
+   as the ffi_call that led here gave it up. */
+static void fx_ffi_closure_fn(ffi_cif *cif, void *ret, void **args, void *ud) {
+  (void)cif;
+  const FxFfiClosure *c = (const FxFfiClosure *)ud;
+  const FxFfiCallback *cb = c->cb;
+  sp_RbVal r = sp_box_nil();
+  FX_HOOKED({
+    SP_GC_SAVE();
+    sp_RbVal argv[cb->nargs ? cb->nargs : 1];
+    for (int i = 0; i < cb->nargs; i++) {
+      argv[i] = sp_box_nil();
+      _sp_gc_root_push((void **)((uintptr_t)&argv[i] | (uintptr_t)1));
+    }
+    for (int i = 0; i < cb->nargs; i++) argv[i] = fx_ffi_c_value(cb->args[i], args[i]);
+    r = fx_send(c->fn, "call", cb->nargs, argv);
+    if (cb->ret != FX_FT_VOID) {
+      FxFfiSlot s;
+      void *heap = NULL;
+      fx_ffi_arg(cb->ret, r, &s, &heap);
+      free(heap);
+      switch (cb->ret) {
+      case FX_FT_FLOAT: *(float *)ret = s.f; break;
+      case FX_FT_DOUBLE: *(double *)ret = s.d; break;
+      case FX_FT_PTR: case FX_FT_STR: case FX_FT_BINSTR: *(void **)ret = (void *)s.p; break;
+      /* libffi takes an integer narrower than ffi_arg widened to it */
+      case FX_FT_INT: case FX_FT_INT32: case FX_FT_BOOL: *(ffi_arg *)ret = (ffi_arg)s.i32; break;
+      case FX_FT_UINT32: *(ffi_arg *)ret = s.u32; break;
+      case FX_FT_INT16: *(ffi_arg *)ret = (ffi_arg)s.i16; break;
+      case FX_FT_UINT16: *(ffi_arg *)ret = s.u16; break;
+      case FX_FT_INT8: *(ffi_arg *)ret = (ffi_arg)s.i8; break;
+      case FX_FT_UINT8: *(ffi_arg *)ret = s.u8; break;
+      default: *(ffi_arg *)ret = (ffi_arg)s.i64; break;
+      }
+    }
+  });
+}
+
+static void *fx_ffi_closure(const FxFfiCallback *cb, sp_RbVal v) {
+  if (v.tag == SP_TAG_NIL) return NULL;
+  if (!fx_is_method_value(v) && !(v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_PROC))
+    sp_raise_cls("TypeError", sp_sprintf("wrong argument type %s (expected Proc/Method for :%s)",
+                                         sp_poly_class_name(v), cb->name));
+  void *code;
+  ffi_closure *cl = ffi_closure_alloc(sizeof *cl, &code);
+  if (!cl) sp_raise_cls("NoMemoryError", "ffi_closure_alloc");
+  FxFfiClosure *c = calloc(1, sizeof *c);
+  c->cb = cb;
+  c->fn = v;
+  _sp_gc_root_push((void **)((uintptr_t)&c->fn | (uintptr_t)1));   /* for the run */
+  if (ffi_prep_closure_loc(cl, (ffi_cif *)&cb->cif, fx_ffi_closure_fn, c, code) != FFI_OK)
+    sp_raise_cls("ArgumentError", sp_sprintf("ffi_callback :%s: no closure for its types", cb->name));
+  return code;
+}
+
 static sp_RbVal fx_ffi_call(FxFfi *x, int argc, sp_RbVal *argv) {
   /* AOT code passes the declared arguments of a native_func and drops the
      rest, but for JSON.parse(s, symbolize_names: true) (codegen_call_class.c) */
@@ -522,7 +659,8 @@ static sp_RbVal fx_ffi_call(FxFfi *x, int argc, sp_RbVal *argv) {
   void *heap[x->nargs ? x->nargs : 1];
   for (int i = 0; i < x->nargs; i++) {
     heap[i] = NULL;
-    fx_ffi_arg(x->args[i], argv[i], &slots[i], &heap[i]);
+    if (x->args[i] == FX_FT_CALLBACK) slots[i].p = fx_ffi_closure(x->cbs[i], argv[i]);
+    else fx_ffi_arg(x->args[i], argv[i], &slots[i], &heap[i]);
     values[i] = &slots[i];
   }
   union { ffi_arg w; float f; double d; void *p; sp_RbVal v; } r;
