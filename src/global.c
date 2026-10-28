@@ -396,6 +396,19 @@ static sp_RbVal fx_io_select(int argc, sp_RbVal *argv) {
 static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (!fx_is_io(r)) return 0;
   sp_File *io = (sp_File *)r.v.p;
+  /* external_encoding: what set_encoding chose (ext_enc), else BINARY after
+     binmode, else the default external encoding for a handle that only
+     reads, and nil for one that can write, as CRuby answers. The runtime
+     converts nothing, so internal_encoding is nil. */
+  if (argc == 0 && FX_IS("external_encoding")) {
+    const char *m = io->mode ? io->mode : "r";
+    int writable = strchr(m, 'w') || strchr(m, 'a') || strchr(m, '+');
+    if (io->ext_enc == 2 || (!io->ext_enc && sp_File_binmode_p(io))) *out = sp_box_encoding(sp_encoding_binary());
+    else if (io->ext_enc == 1 || !writable) *out = sp_box_encoding(sp_encoding_utf8());
+    else *out = sp_box_nil();
+    return 1;
+  }
+  if (argc == 0 && FX_IS("internal_encoding")) { *out = sp_box_nil(); return 1; }
   /* a read or a write of a socket, a pipe or a terminal parks the thread:
      the walker lock is given up for its time (FX_UNLOCKED) */
   if (FX_IS("puts")) {
