@@ -10,6 +10,9 @@
 #   make regress
 #               run the tests that the last oracle found right, under
 #               Fluxpinel only
+#   make gem-oracle
+#               load the packages of spinel and the files of the gems of IRB
+#               under Fluxpinel, and report the first failure of each
 #   make optcarrot
 #               run optcarrot under CRuby and Fluxpinel and compare the
 #               checksums (OPTCARROT_FRAMES=n for a short run)
@@ -244,6 +247,13 @@ regress:
 	ruby tools/oracle.rb --spinel $(SPINEL) --fluxpinel $(BUILD)/promote/fluxpinel \
 	  --int-overflow promote --out $(BUILD)/regress --regress tools/oracle_agree.txt
 
+# The gem oracle: the entry files of the packages of spinel and the files of
+# the gems that IRB needs (reline, irb, prism, rdoc, from the CRuby that runs
+# make), loaded under Fluxpinel. The report lists the first failure of each
+# and groups them by reason: the next things to make work.
+gem-oracle: $(BUILD)/fluxpinel
+	ruby tools/gem_oracle.rb --spinel $(SPINEL) --fluxpinel $(BUILD)/fluxpinel --out $(BUILD)/gem_oracle
+
 # optcarrot at the commit in OPTCARROT_COMMIT (the branch that spinel tests),
 # under CRuby and Fluxpinel in promote mode. Both sides must give the same
 # checksum. OPTCARROT_FRAMES sets the frames.
@@ -307,4 +317,4 @@ endif
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test park-audit host test-host oracle regress optcarrot deps upgrade_spinel clean FORCE
+.PHONY: all test park-audit host test-host oracle regress gem-oracle optcarrot deps upgrade_spinel clean FORCE

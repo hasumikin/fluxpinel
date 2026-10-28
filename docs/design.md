@@ -829,6 +829,15 @@ Classes beyond the table above: `fx_only` (spinel refuses the program,
 Fluxpinel gives the CRuby answer), `fx_unsupported`, `fx_missing` and
 `fx_crash`.
 
+### 4.2 The gem oracle
+
+`make gem-oracle` runs `tools/gem_oracle.rb`. It loads each entry file of
+the packages of spinel, and each file of the gems that IRB needs (reline,
+irb, prism, rdoc), under Fluxpinel. The gems come from the CRuby that runs
+make. A file that CRuby cannot load alone is skipped. The report
+(`build/gem_oracle/report.md`) gives the first failure of each item, and
+groups the failures by reason. The goal of this list is IRB on Fluxpinel.
+
 Most of the time of the oracle goes to the compile of each test by spinel
 and the C compiler. `make regress` skips this part:
 
