@@ -442,7 +442,9 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   (`src/object.c`). The first read of the constant loads the file, as a
   require of the path does. `defined?` does not load it. `Set` is such a
   constant of Object: spinel loads its package when a program names `Set`,
-  and so does Fluxpinel. Thus `require "set"` answers false.
+  and so does Fluxpinel. Thus `require "set"` answers false. `RbConfig`
+  and `Gem` are such constants too, from `builtins/*.rb` of spinel, which
+  its parser splices when a program names them.
 
 ### 3.3.7 FFI
 

@@ -17,6 +17,9 @@
 #ifndef FX_PACKAGES_DIR
 #define FX_PACKAGES_DIR "packages"
 #endif
+#ifndef FX_BUILTINS_DIR
+#define FX_BUILTINS_DIR "builtins"
+#endif
 
 #define FX_IS(s) (!strcmp(name, (s)))
 
