@@ -144,17 +144,20 @@ typedef struct {
   FxBlock b;
 } FxProc;
 
-/* A Method value (obj.method(:name)). It starts with a spinel
-   sp_BoundMethod, so that the runtime hashes and compares it by the
-   receiver and the name, as a Hash key needs. Its fn is 0: Fluxpinel
-   answers every call. m is the method of the program that the name
-   found, or NULL for a builtin method, which a call sends by name. */
+/* A Method value (obj.method(:name)), or an UnboundMethod
+   (Mod.instance_method(:name), Method#unbind) when bm.unbound is set. It
+   starts with a spinel sp_BoundMethod, so that the runtime hashes and
+   compares it by the receiver and the name, as a Hash key needs, and
+   names its class. Its fn is 0: Fluxpinel answers every call. m is the
+   method of the program that the name found, or NULL for a builtin
+   method, which a call sends by name. */
 typedef struct {
   sp_BoundMethod bm;
-  sp_RbVal recv;
+  sp_RbVal recv;          /* nil when unbound */
   const FxMethod *m;
   sp_sym name;
-  FxProc *proc;   /* the Proc of to_proc and of `&m`, made at the first */
+  const FxClass *klass;   /* unbound: the class or module that gave it */
+  FxProc *proc;           /* the Proc of to_proc and of `&m`, made at the first */
 } FxMethodValue;
 
 /* The local variables and the context of one scope: the program, a class
@@ -392,6 +395,7 @@ static __attribute__((noreturn)) void fx_reraise(FxCaught c);
   } while (0)
 /* iter.c: Method values */
 static int fx_method_value_new(sp_RbVal r, sp_RbVal name, int public_only, sp_RbVal *out);
+static sp_RbVal fx_method_value_make(sp_RbVal recv, const FxMethod *m, sp_sym name, const FxClass *k, int unbound);
 static int fx_is_method_value(sp_RbVal v);
 static const FxBlock *fx_method_value_block(sp_RbVal v);
 static sp_RbVal fx_method_value_step(void *ctx, int argc, sp_RbVal *argv);

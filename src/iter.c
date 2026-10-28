@@ -1158,15 +1158,36 @@ static int fx_method_value_new(sp_RbVal r, sp_RbVal name, int public_only, sp_Rb
   }
   if (m && public_only && m->vis != FX_VIS_PUBLIC) return 0;
   if (!m && !sp_poly_truthy(fx_respond_to(r, name, sp_box_bool(!public_only)))) return 0;
-  SP_GC_ROOT_RBVAL(r);
-  FxMethodValue *mv = (FxMethodValue *)sp_gc_alloc(sizeof *mv, NULL, fx_method_value_scan);
-  mv->bm.self = r.v.p;
-  mv->bm.name = sp_sym_to_s(s);
-  mv->recv = r;
-  mv->m = m;
-  mv->name = s;
-  *out = sp_box_obj(mv, SP_BUILTIN_METHOD);
+  *out = fx_method_value_make(r, m, s, NULL, 0);
   return 1;
+}
+
+/* A Method of recv, or an UnboundMethod of the class or module k. */
+static sp_RbVal fx_method_value_make(sp_RbVal recv, const FxMethod *m, sp_sym name, const FxClass *k, int unbound) {
+  SP_GC_ROOT_RBVAL(recv);
+  FxMethodValue *mv = (FxMethodValue *)sp_gc_alloc(sizeof *mv, NULL, fx_method_value_scan);
+  mv->bm.self = recv.v.p;
+  mv->bm.name = sp_sym_to_s(name);
+  mv->bm.unbound = unbound;
+  mv->recv = recv;
+  mv->m = m;
+  mv->name = name;
+  mv->klass = k;
+  return sp_box_obj(mv, SP_BUILTIN_METHOD);
+}
+
+/* The class or module that owns the method: of the program, else the one
+   that gave an UnboundMethod, else the class of the receiver. */
+static const FxClass *fx_method_value_owner(const FxMethodValue *mv) {
+  if (mv->m) return mv->m->owner;
+  return mv->klass ? mv->klass : fx_class_of(mv->recv);
+}
+
+/* Whether v can be the receiver of a method of k (UnboundMethod#bind):
+   any value for Kernel, Object and BasicObject, else an instance of k. */
+static int fx_method_value_bindable(sp_RbVal v, const FxClass *k) {
+  if (k == L.object || !strcmp(k->name, "Kernel") || !strcmp(k->name, "BasicObject")) return 1;
+  return fx_is_a(v, k);
 }
 
 static sp_RbVal fx_method_value_call(const FxMethodValue *mv, int argc, sp_RbVal *argv, const FxBlock *blk) {
@@ -1263,15 +1284,98 @@ static void fx_params_text(sp_String *o, const pm_parameters_node_t *ps) {
 #undef FX_SEP
 }
 
+/* One entry of Method#parameters: [kind, name], or [kind] for a name of
+   0 with no stand-in (a destructuring parameter). */
+static void fx_param_push(sp_PolyArray *a, const char *kind, pm_constant_id_t name, const char *anon) {
+  sp_PolyArray *e = sp_PolyArray_new();
+  SP_GC_ROOT(e);
+  sp_PolyArray_push(e, sp_box_sym(sp_sym_intern(kind)));
+  if (name) sp_PolyArray_push(e, sp_box_sym(fx_sym(name)));
+  else if (anon) sp_PolyArray_push(e, sp_box_sym(sp_sym_intern(anon)));
+  sp_PolyArray_push(a, sp_box_poly_array(e));
+}
+
+/* Method#parameters of a parameter list, as CRuby lists them: an
+   anonymous *, ** or & has the name :*, :** or :&. */
+static sp_RbVal fx_params_list(const pm_parameters_node_t *ps) {
+  sp_PolyArray *a = sp_PolyArray_new();
+  SP_GC_ROOT(a);
+  if (!ps) return sp_box_poly_array(a);
+  for (size_t i = 0; i < ps->requireds.size; i++) {
+    const pm_node_t *p = ps->requireds.nodes[i];
+    fx_param_push(a, "req", PM_NODE_TYPE_P(p, PM_REQUIRED_PARAMETER_NODE)
+                              ? ((const pm_required_parameter_node_t *)p)->name : 0, NULL);
+  }
+  for (size_t i = 0; i < ps->optionals.size; i++)
+    fx_param_push(a, "opt", ((const pm_optional_parameter_node_t *)ps->optionals.nodes[i])->name, NULL);
+  if (ps->rest && PM_NODE_TYPE_P(ps->rest, PM_REST_PARAMETER_NODE))
+    fx_param_push(a, "rest", ((const pm_rest_parameter_node_t *)ps->rest)->name, "*");
+  for (size_t i = 0; i < ps->posts.size; i++) {
+    const pm_node_t *p = ps->posts.nodes[i];
+    fx_param_push(a, "req", PM_NODE_TYPE_P(p, PM_REQUIRED_PARAMETER_NODE)
+                              ? ((const pm_required_parameter_node_t *)p)->name : 0, NULL);
+  }
+  for (size_t i = 0; i < ps->keywords.size; i++) {
+    const pm_node_t *p = ps->keywords.nodes[i];
+    if (PM_NODE_TYPE_P(p, PM_REQUIRED_KEYWORD_PARAMETER_NODE))
+      fx_param_push(a, "keyreq", ((const pm_required_keyword_parameter_node_t *)p)->name, NULL);
+    else
+      fx_param_push(a, "key", ((const pm_optional_keyword_parameter_node_t *)p)->name, NULL);
+  }
+  const pm_node_t *kr = ps->keyword_rest;
+  if (kr && PM_NODE_TYPE_P(kr, PM_FORWARDING_PARAMETER_NODE)) {
+    fx_param_push(a, "rest", 0, "*");
+    fx_param_push(a, "keyrest", 0, "**");
+    fx_param_push(a, "block", 0, "&");
+  } else if (kr && PM_NODE_TYPE_P(kr, PM_KEYWORD_REST_PARAMETER_NODE)) {
+    fx_param_push(a, "keyrest", ((const pm_keyword_rest_parameter_node_t *)kr)->name, "**");
+  } else if (kr && PM_NODE_TYPE_P(kr, PM_NO_KEYWORDS_PARAMETER_NODE)) {
+    fx_param_push(a, "nokey", 0, NULL);
+  }
+  if (ps->block) fx_param_push(a, "block", ps->block->name, "&");
+  return sp_box_poly_array(a);
+}
+
+/* Method#parameters: of a def or of the block of define_method; a
+   reader has none and a writer one; a builtin method takes a rest, as
+   CRuby answers for a method of C with an arity of -1. */
+static sp_RbVal fx_method_value_params(const FxMethodValue *mv) {
+  const FxMethod *m = mv->m;
+  sp_PolyArray *a;
+  if (m && m->kind == FX_M_DEF) return fx_params_list(m->def->parameters);
+  if (m && m->kind == FX_M_PROC) {
+    const FxBlock *b = &((FxProc *)m->proc)->b;
+    const pm_constant_id_list_t *locals;
+    const pm_node_t *params, *body;
+    if (!b->node) return fx_params_list(NULL);
+    fx_block_parts(b->node, &locals, &params, &body);
+    if (params && PM_NODE_TYPE_P(params, PM_BLOCK_PARAMETERS_NODE))
+      return fx_params_list(((const pm_block_parameters_node_t *)params)->parameters);
+    a = sp_PolyArray_new();
+    SP_GC_ROOT(a);
+    if (params && PM_NODE_TYPE_P(params, PM_IT_PARAMETERS_NODE)) fx_param_push(a, "req", 0, NULL);
+    if (params && PM_NODE_TYPE_P(params, PM_NUMBERED_PARAMETERS_NODE))
+      for (int i = 1; i <= ((const pm_numbered_parameters_node_t *)params)->maximum; i++)
+        fx_param_push(a, "req", 0, sp_sprintf("_%d", i));
+    return sp_box_poly_array(a);
+  }
+  a = sp_PolyArray_new();
+  SP_GC_ROOT(a);
+  if (m && m->kind == FX_M_READER) return sp_box_poly_array(a);
+  fx_param_push(a, m && m->kind == FX_M_WRITER ? "req" : "rest", 0, NULL);
+  return sp_box_poly_array(a);
+}
+
 /* #<Method: C#name(params) file:line>; C.name for a method of a class,
    and C(Owner)#name when another class defines it. A builtin method
-   shows (*) for its parameters. */
+   shows (*) for its parameters. An UnboundMethod shows the class or
+   module that gave it. */
 static const char *fx_method_value_inspect(const FxMethodValue *mv) {
   const FxMethod *m = mv->m;
-  sp_String *o = sp_String_new("#<Method: ");
+  sp_String *o = sp_String_new(mv->bm.unbound ? "#<UnboundMethod: " : "#<Method: ");
   SP_GC_ROOT(o);
-  int single = mv->recv.tag == SP_TAG_CLASS && m && m->owner != fx_class_of(mv->recv);
-  FxClass *k = fx_class_of(mv->recv);
+  int single = !mv->bm.unbound && mv->recv.tag == SP_TAG_CLASS && m && m->owner != fx_class_of(mv->recv);
+  const FxClass *k = mv->bm.unbound ? mv->klass : fx_class_of(mv->recv);
   if (single) {
     sp_String_append(o, sp_poly_inspect(mv->recv));
     sp_String_append(o, ".");
@@ -1300,7 +1404,24 @@ static const char *fx_method_value_inspect(const FxMethodValue *mv) {
 static int fx_method_value_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                                   sp_RbVal *out) {
   const FxMethodValue *mv = (const FxMethodValue *)r.v.p;
-  if (FX_IS("call") || FX_IS("()") || FX_IS("[]") || FX_IS("===")) {
+  if (mv->bm.unbound) {
+    /* bind(obj) and bind_call(obj, *args): the Method of obj */
+    if (argc >= 1 && (FX_IS("bind") || FX_IS("bind_call"))) {
+      const FxClass *k = fx_method_value_owner(mv);
+      if (!fx_method_value_bindable(argv[0], k))
+        sp_raise_cls("TypeError", sp_sprintf("bind argument must be an instance of %s", k->name));
+      SP_GC_ROOT_RBVAL(r);
+      sp_RbVal bound = fx_method_value_make(argv[0], mv->m, mv->name, mv->klass, 0);
+      if (FX_IS("bind") && argc == 1) { *out = bound; return 1; }
+      if (FX_IS("bind")) return 0;
+      SP_GC_ROOT_RBVAL(bound);
+      *out = fx_method_value_call((const FxMethodValue *)bound.v.p, argc - 1, argv + 1, blk);
+      return 1;
+    }
+    if (FX_IS("call") || FX_IS("()") || FX_IS("[]") || FX_IS("===") || FX_IS("to_proc") || FX_IS("receiver") ||
+        FX_IS("unbind"))
+      return 0;
+  } else if (FX_IS("call") || FX_IS("()") || FX_IS("[]") || FX_IS("===")) {
     SP_GC_ROOT_RBVAL(r);
     *out = fx_method_value_call(mv, argc, argv, blk);
     return 1;
@@ -1309,18 +1430,21 @@ static int fx_method_value_core(sp_RbVal r, const char *name, int argc, sp_RbVal
   if (argc == 1 && !blk && (FX_IS("==") || FX_IS("eql?"))) {
     const FxMethodValue *o = fx_is_method_value(argv[0]) ? (const FxMethodValue *)argv[0].v.p : NULL;
     *out = sp_box_bool(o && o->m == mv->m && o->name == mv->name && o->recv.tag == mv->recv.tag &&
-                       o->recv.cls_id == mv->recv.cls_id && o->recv.v.i == mv->recv.v.i);
+                       o->recv.cls_id == mv->recv.cls_id && o->recv.v.i == mv->recv.v.i &&
+                       o->bm.unbound == mv->bm.unbound && fx_method_value_owner(o) == fx_method_value_owner(mv));
     return 1;
   }
   if (blk || argc) return 0;
   if (FX_IS("to_proc")) { *out = sp_box_obj(fx_method_value_block(r)->proc, SP_BUILTIN_PROC); return 1; }
-  if (FX_IS("arity")) { *out = sp_box_int(fx_method_value_arity(mv)); return 1; }
-  if (FX_IS("name")) { *out = sp_box_sym(mv->name); return 1; }
-  if (FX_IS("receiver")) { *out = mv->recv; return 1; }
-  if (FX_IS("owner")) {
-    *out = mv->m ? fx_class_box(mv->m->owner) : fx_class_box(fx_class_of(mv->recv));
+  if (FX_IS("unbind")) {
+    *out = fx_method_value_make(sp_box_nil(), mv->m, mv->name, fx_method_value_owner(mv), 1);
     return 1;
   }
+  if (FX_IS("arity")) { *out = sp_box_int(fx_method_value_arity(mv)); return 1; }
+  if (FX_IS("parameters")) { *out = fx_method_value_params(mv); return 1; }
+  if (FX_IS("name")) { *out = sp_box_sym(mv->name); return 1; }
+  if (FX_IS("receiver")) { *out = mv->recv; return 1; }
+  if (FX_IS("owner")) { *out = fx_class_box(fx_method_value_owner(mv)); return 1; }
   if (FX_IS("source_location")) {
     if (!mv->m || mv->m->kind != FX_M_DEF) { *out = sp_box_nil(); return 1; }
     const pm_node_t *d = (const pm_node_t *)mv->m->def;

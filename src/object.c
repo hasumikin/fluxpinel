@@ -170,7 +170,7 @@ static const struct {
 /* Core classes of CRuby that spinel's class table does not name. A class
    body for one of them reopens the builtin in CRuby; Fluxpinel cannot. */
 static int fx_unknown_builtin(const char *name) {
-  static const char *const names[] = { "Random", "Method", "UnboundMethod", "Binding",
+  static const char *const names[] = { "Random", "Binding",
                                        "Mutex", "Queue", "SizedQueue", "ConditionVariable", "ObjectSpace",
                                        "Marshal", "Warning", "RubyVM", NULL };
   for (int i = 0; names[i]; i++)
@@ -223,8 +223,10 @@ static FxClass *fx_builtin(const char *name) {
     if (name[0] == 'P') fx_process_consts(c);
     return c;
   }
-  /* Encoding, the class of an SP_TAG_ENCODING value (encoding.c) */
-  if (!id && !strcmp(name, "Encoding")) {
+  /* Encoding, the class of an SP_TAG_ENCODING value (encoding.c); Method
+     and UnboundMethod, the classes of a method value (iter.c), which the
+     runtime names by the unbound flag */
+  if (!id && (!strcmp(name, "Encoding") || !strcmp(name, "Method") || !strcmp(name, "UnboundMethod"))) {
     FxClass *c = fx_class_alloc(FX_EXC_CLS_BASE - L.nbuiltins, strdup(name), 0, NULL, NULL);
     fx_push_class(&L.builtins, &L.nbuiltins, &L.builtins_cap, c);
     c->super = L.object;
@@ -1788,6 +1790,23 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     const char *cn = fx_name_arg(argv[0]);
     if (!fx_const_scoped(k, sp_sym_intern(cn), &v)) fx_const_missing(cn);
     *out = v;
+    return 1;
+  }
+  /* instance_method(name): an UnboundMethod of a method of the program
+     (fx_find_method, as a call finds it) or of a builtin method that the
+     table of responds.c knows, with the private methods of Kernel */
+  if (argc == 1 && (!strcmp(name, "instance_method") || !strcmp(name, "public_instance_method"))) {
+    const char *mn = fx_name_arg(argv[0]);
+    sp_sym s = sp_sym_intern(mn);
+    const FxMethod *m = fx_find_method(k, s);
+    const char *what = k->is_module ? "module" : "class";
+    if (m && name[0] == 'p' && m->vis != FX_VIS_PUBLIC)
+      sp_raise_cls("NameError", sp_sprintf("method '%s' for %s '%s' is %s", mn, what, k->name,
+                                           m->vis == FX_VIS_PRIVATE ? "private" : "protected"));
+    int kernel = k == L.object || !strcmp(k->name, "Kernel");
+    if (!m && fx_rs_defined(k, mn, 1) != 1 && !(kernel && name[0] != 'p' && fx_kernel_private(mn)))
+      sp_raise_cls("NameError", sp_sprintf("undefined method '%s' for %s '%s'", mn, what, k->name));
+    *out = fx_method_value_make(sp_box_nil(), m, s, k, 1);
     return 1;
   }
   if (argc == 2 && !strcmp(name, "autoload")) {

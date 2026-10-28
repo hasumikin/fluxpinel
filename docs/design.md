@@ -234,6 +234,11 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   name, as a Hash key needs. It keeps the method of the program that the
   name found, or no method for a builtin method, which a call sends by
   name. Its Proc (`to_proc`, `&m`) has a C block that calls the method.
+  An UnboundMethod (`Mod.instance_method(:name)`, `unbind`) is the same
+  value with the unbound flag of the runtime and no receiver. `bind`
+  gives it one. A builtin method bound to a value of another class still
+  sends by name: `Object.instance_method(:inspect).bind_call(nil)` runs
+  `NilClass#inspect`.
 - **Lifetime.** The home frame is on the C stack. Each frame has a serial
   number and an entry in a stack of serials on the heap
   (`FxFrameStack`). Each fiber that runs walker code has its own stack
