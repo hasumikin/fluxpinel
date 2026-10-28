@@ -367,6 +367,10 @@ static int fx_ffi_class(FxClass *k, const char *name, int argc, sp_RbVal *argv, 
     x->ret = type(argv[2]);
     if (ffi_prep_cif(&x->cif, FFI_DEFAULT_ABI, (unsigned)x->nargs, fx_ffi_ctype(x->ret), x->atypes) != FFI_OK)
       sp_raise_cls("ArgumentError", sp_sprintf("%s :%s: no call interface for its types", name, x->name));
+    /* a native function is in the link: found now, so that no dlsym runs
+       at its first call. A dlsym then would free the text of dlerror()
+       that the ffi package keeps between its dlopen and its dlerror. */
+    if (native) x->fn = dlsym(RTLD_DEFAULT, x->name);
     fx_ffi_define(k, sp_sym_to_s((sp_sym)argv[0].v.i), x);
     *out = argv[0];
     return 1;
