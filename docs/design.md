@@ -433,9 +433,11 @@ The walker evaluates the prism AST directly (`src/walk.c`).
     ...) load nothing. The require answers false.
   - Any other name is a LoadError. spinel refuses it at compile time under
     `--require-gate`, and ignores it with a warning otherwise.
-- **Set.** CRuby loads Set before the program starts, and spinel loads
-  its package when a program names `Set`. Fluxpinel loads the package at the
-  first lookup of the constant `Set`. Thus `require "set"` answers false.
+- **Autoload.** `autoload(name, path)` records the path on the module
+  (`src/object.c`). The first read of the constant loads the file, as a
+  require of the path does. `defined?` does not load it. `Set` is such a
+  constant of Object: spinel loads its package when a program names `Set`,
+  and so does Fluxpinel. Thus `require "set"` answers false.
 
 ### 3.3.7 FFI
 

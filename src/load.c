@@ -394,17 +394,6 @@ static sp_RbVal fx_require_lib(const char *name) {
   sp_raise_load_error(name);
 }
 
-/* A constant that spinel loads the package of when a program names it,
-   with no require (sp_require_preloaded of spinel_parse.c): Set. Answers 1
-   when it loaded the package, so that the caller looks again. */
-static int fx_autoload(sp_sym name) {
-  static int set_done;
-  if (set_done || strcmp(sp_sym_to_s(name), "Set")) return 0;
-  set_done = 1;
-  fx_require_lib("set");
-  return 1;
-}
-
 /* require_relative, require of a path, and __dir__: the calls that answer
    from the file of the call node n, unless the program defines a method of
    the name for self. Answers 1 and sets *out when it handles the call. */

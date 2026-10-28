@@ -1059,11 +1059,12 @@ static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *a
   }
   FxMethod *m = fx_find_method(fx_class_of(self), s);
   if (m) return fx_invoke_b(m, self, argc, argv, blk);
-  /* define_method, private and public of main act on Object, as a
-     top-level def does; define_method there is public */
+  /* define_method, private, public and autoload of main act on Object, as
+     a top-level def does; define_method there is public */
   if (fx_is_fx_object(self) && self.v.p == L.main.v.p) {
     if (!strcmp(name, "define_method")) return fx_define_proc_method(L.object, 0, FX_VIS_PUBLIC, argc, argv, blk);
-    if ((!strcmp(name, "private") || !strcmp(name, "public")) &&
+    if ((!strcmp(name, "private") || !strcmp(name, "public") || !strcmp(name, "autoload") ||
+         !strcmp(name, "autoload?")) &&
         fx_class_core(f, fx_class_box(L.object), name, argc, argv, blk, &out))
       return out;
   }
@@ -1890,8 +1891,9 @@ static sp_RbVal fx_class_def(FxFrame *f, const pm_node_t *path, const pm_node_t 
   fx_const_target(f, path, &scope, &name);
   const char *cname = sp_sym_to_s(name);
   FxClass *k = NULL;
-  FxConst *own = fx_const_own(scope, name);
-  if (!own && scope == L.object && fx_autoload(name)) own = fx_const_own(scope, name);
+  /* an autoload constant loads its file first, so that the body reopens
+     the class of the file */
+  FxConst *own = fx_const_find(scope, name, 1);
   if (own) {
     k = fx_class_value(own->value);
     if (!k) sp_raise_cls("TypeError", sp_sprintf("%s is not a %s", cname, is_module ? "module" : "class"));
@@ -2684,7 +2686,7 @@ static const char *fx_defined(FxFrame *f, const pm_node_t *n) {
     /* a lookup with no read, so that a missing constant is not a gap of
        Fluxpinel (fx_const_missing) */
     sp_RbVal v;
-    return fx_const_lookup(f->cref, fx_sym(((const pm_constant_read_node_t *)n)->name), &v) ? "constant" : NULL;
+    return fx_const_lookup_peek(f->cref, fx_sym(((const pm_constant_read_node_t *)n)->name), &v) ? "constant" : NULL;
   }
   case PM_CONSTANT_PATH_NODE: {
     const pm_constant_path_node_t *p = (const pm_constant_path_node_t *)n;
@@ -2698,14 +2700,14 @@ static const char *fx_defined(FxFrame *f, const pm_node_t *n) {
     }
     sp_RbVal v;
     sp_sym name = fx_sym(p->name);
-    if (scope == L.object) return fx_const_scoped(L.object, name, &v) ? "constant" : NULL;
+    if (scope == L.object) return fx_const_scoped_peek(L.object, name, &v) ? "constant" : NULL;
     /* A::X looks in A and its ancestors, but not in Object, as CRuby's
        rb_const_defined_from; a builtin class also has its nested ones */
     const FxClass *anc[128];
     int na = fx_ancestors(scope, anc, 128);
     for (int i = 0; i < na; i++)
-      if (anc[i] != L.object && fx_const_own(anc[i], name)) return "constant";
-    if ((scope->cls_id < 0 || fx_kernel_cls(scope->cls_id)) && fx_const_scoped(scope, name, &v)) return "constant";
+      if (anc[i] != L.object && fx_const_find(anc[i], name, 0)) return "constant";
+    if ((scope->cls_id < 0 || fx_kernel_cls(scope->cls_id)) && fx_const_scoped_peek(scope, name, &v)) return "constant";
     return NULL;
   }
   case PM_CALL_NODE: {

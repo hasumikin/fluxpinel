@@ -309,6 +309,9 @@ static void fx_global_init(void) {
   fx_const_set(L.object, sp_sym_intern("STDERR"), fx_io_box(sp_io_stderr()));
   fx_env = fx_new_object(L.object);
   fx_const_set(L.object, sp_sym_intern("ENV"), fx_env);
+  /* spinel loads the package of Set when a program names it, with no
+     require (sp_require_preloaded of spinel_parse.c) */
+  fx_autoload_set(L.object, sp_sym_intern("Set"), "set");
   /* ARGV: the arguments after the path, as frozen Strings (CRuby 4.0) */
   sp_PolyArray *argv = sp_PolyArray_new();
   SP_GC_ROOT(argv);

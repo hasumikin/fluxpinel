@@ -53,7 +53,9 @@ typedef struct {
 
 typedef struct {
   sp_sym name;
-  sp_RbVal value;   /* marked by the globals hook */
+  sp_RbVal value;         /* marked by the globals hook */
+  const char *autoload;   /* the file that defines it, until a read loads it */
+  int loading;            /* the file runs now: the constant is not defined yet */
 } FxConst;
 
 /* A class or a module. A builtin class (Integer, Object, ...) gets one
@@ -471,7 +473,8 @@ static sp_RbVal fx_entry_invoke(int i, int argc, sp_RbVal *argv);
 /* load.c */
 static int fx_load_call(const pm_node_t *n, sp_RbVal self, const char *name, int argc, sp_RbVal *argv,
                           sp_RbVal *out);
-static int fx_autoload(sp_sym name);
+static sp_RbVal fx_require_lib(const char *name);
+static sp_RbVal fx_require(const pm_node_t *n, const char *arg, int rel);
 
 /* RUBY_DESCRIPTION of Fluxpinel, which `fluxpinel -v` prints: the version
    of Fluxpinel, the commit of spinel and the version of Ruby that spinel
@@ -506,6 +509,7 @@ static int fx_enum_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
 static __attribute__((noreturn)) void fx_unsupported(const pm_node_t *n, const char *what);
 static __attribute__((noreturn)) void fx_gap(const char *what);
 static sp_sym fx_sym(pm_constant_id_t id);
+static sp_RbVal fx_new_string(const uint8_t *p, size_t len);
 
 /* object.c */
 static FxClass *fx_class_of(sp_RbVal v);
@@ -521,5 +525,6 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
                            const FxBlock *blk, sp_RbVal *out);
 static int fx_is_fx_object(sp_RbVal v);
 static int fx_unknown_builtin(const char *name);
+static void fx_autoload_set(FxClass *c, sp_sym name, const char *path);
 
 #endif

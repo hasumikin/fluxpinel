@@ -550,6 +550,15 @@ static FxConst *fx_const_own(const FxClass *c, sp_sym name) {
   return NULL;
 }
 
+static FxConst *fx_const_add(FxClass *c, sp_sym name, sp_RbVal v) {
+  if (c->nconsts == c->consts_cap) {
+    c->consts_cap = c->consts_cap ? c->consts_cap * 2 : 8;
+    c->consts = realloc(c->consts, sizeof *c->consts * (size_t)c->consts_cap);
+  }
+  c->consts[c->nconsts] = (FxConst){ name, v, NULL, 0 };
+  return &c->consts[c->nconsts++];
+}
+
 static void fx_const_set(FxClass *c, sp_sym name, sp_RbVal v) {
   /* an anonymous class takes the name of the first constant that holds it */
   FxClass *anon = fx_class_value(v);
@@ -558,12 +567,78 @@ static void fx_const_set(FxClass *c, sp_sym name, sp_RbVal v) {
     anon->name = c == L.object ? sp_sym_to_s(name) : strdup(sp_sprintf("%s::%s", c->name, sp_sym_to_s(name)));
   }
   FxConst *k = fx_const_own(c, name);
-  if (k) { k->value = v; return; }
-  if (c->nconsts == c->consts_cap) {
-    c->consts_cap = c->consts_cap ? c->consts_cap * 2 : 8;
-    c->consts = realloc(c->consts, sizeof *c->consts * (size_t)c->consts_cap);
+  if (k) {
+    /* the definition that an autoload waited for */
+    free((char *)k->autoload);
+    k->autoload = NULL;
+    k->loading = 0;
+    k->value = v;
+    return;
   }
-  c->consts[c->nconsts++] = (FxConst){ name, v };
+  fx_const_add(c, name, v);
+}
+
+/* The name of a constant of a path in a message: "A::B", or "B" in Object. */
+static const char *fx_const_full(const FxClass *scope, sp_sym name) {
+  return scope == L.object ? sp_sym_to_s(name) : sp_sprintf("%s::%s", scope->name, sp_sym_to_s(name));
+}
+
+/* autoload(name, path): the first read of the constant loads the file, as
+   a require of path does, and the file defines the constant. A constant
+   that is defined already keeps its value. */
+static void fx_autoload_set(FxClass *c, sp_sym name, const char *path) {
+  FxConst *k = fx_const_own(c, name);
+  if (k && !k->autoload) return;
+  if (!k) k = fx_const_add(c, name, sp_box_nil());
+  free((char *)k->autoload);
+  k->autoload = strdup(path);
+}
+
+/* autoload?(name): the path of an autoload that has not run, else NULL. */
+static const char *fx_autoload_path(const FxClass *c, sp_sym name) {
+  FxConst *k = fx_const_own(c, name);
+  return k && k->autoload && !k->loading ? k->autoload : NULL;
+}
+
+/* Loads the file of an autoload constant k of c, and answers the constant
+   with its value. The file is not loaded again when it raises: the
+   constant keeps its autoload, as in CRuby. When the file does not define
+   the constant, or a require loaded it already (a `class Set` in the file
+   of Set, which a require runs now), the autoload goes and the constant is
+   not defined: NULL. */
+static FxConst *fx_const_load(FxClass *c, sp_sym name, FxConst *k) {
+  const char *path = k->autoload;
+  k->loading = 1;
+  const int depth = fx_fs()->depth;
+  FX_TRY_PUSH();
+  if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
+    if (path[0] == '/' || !strncmp(path, "./", 2) || !strncmp(path, "../", 3)) fx_require(NULL, path, 0);
+    else fx_require_lib(path);
+    sp_exc_top--;
+  } else {
+    FX_TRY_LANDED(depth);
+    FxCaught caught = fx_caught();
+    k = fx_const_own(c, name);
+    if (k) k->loading = 0;
+    fx_reraise(caught);
+  }
+  k = fx_const_own(c, name);   /* the file may have grown the table */
+  if (!k || !k->autoload) return k;
+  free((char *)k->autoload);
+  memmove(k, k + 1, sizeof *k * (size_t)(&c->consts[c->nconsts] - (k + 1)));
+  c->nconsts--;
+  return NULL;
+}
+
+/* The own constant of c for a read (load: an autoload loads its file) or
+   for defined? (an autoload counts as defined). NULL when c has none, and
+   while the file of an autoload runs: the constant is not defined until
+   the file defines it. */
+static FxConst *fx_const_find(const FxClass *c, sp_sym name, int load) {
+  FxConst *k = fx_const_own(c, name);
+  if (!k || !k->autoload) return k;
+  if (k->loading) return NULL;
+  return load ? fx_const_load((FxClass *)c, name, k) : k;
 }
 
 /* ---- class variables ---- */
@@ -631,20 +706,20 @@ static sp_RbVal fx_cvar_names(const FxClass *c, int inherit) {
 }
 
 /* A constant of scope or its ancestors, then a builtin class. With top,
-   the lookup goes on to Object and its ancestors. */
-static int fx_const_in(const FxClass *scope, sp_sym name, sp_RbVal *out, int top) {
+   the lookup goes on to Object and its ancestors. With load, an autoload
+   constant loads its file; without, it counts as defined (defined?). */
+static int fx_const_in(const FxClass *scope, sp_sym name, sp_RbVal *out, int top, int load) {
   const FxClass *anc[128];
   int n = fx_ancestors(scope, anc, 128);
   for (int i = 0; i < n && (top || anc[i] != L.object); i++) {
-    FxConst *k = fx_const_own(anc[i], name);
+    FxConst *k = fx_const_find(anc[i], name, load);
     if (k) { *out = k->value; return 1; }
   }
   if (top && (scope == L.object || scope->is_module)) {
-    FxConst *k = fx_const_own(L.object, name);
+    FxConst *k = fx_const_find(L.object, name, load);
     if (k) { *out = k->value; return 1; }
     FxClass *b = fx_builtin(sp_sym_to_s(name));
     if (b) { *out = fx_class_box(b); return 1; }
-    if (fx_autoload(name)) return fx_const_in(scope, name, out, top);
   }
   /* a builtin class nested in a builtin one (Thread::Queue), or a class of
      the kernel nested in another one */
@@ -660,7 +735,13 @@ static int fx_const_in(const FxClass *scope, sp_sym name, sp_RbVal *out, int top
 }
 
 static int fx_const_scoped(const FxClass *scope, sp_sym name, sp_RbVal *out) {
-  return fx_const_in(scope, name, out, 1);
+  return fx_const_in(scope, name, out, 1, 1);
+}
+
+/* fx_const_scoped for defined?: an autoload constant is defined, and its
+   file does not load. */
+static int fx_const_scoped_peek(const FxClass *scope, sp_sym name, sp_RbVal *out) {
+  return fx_const_in(scope, name, out, 1, 0);
 }
 
 /* A constant of a path (A::B), as CRuby reads it: the ancestors of A,
@@ -668,28 +749,31 @@ static int fx_const_scoped(const FxClass *scope, sp_sym name, sp_RbVal *out) {
    a module M is a NameError, and so is a RUBY_ENGINE that only Object
    has. */
 static int fx_const_path(const FxClass *scope, sp_sym name, sp_RbVal *out) {
-  return fx_const_in(scope, name, out, scope == L.object);
+  return fx_const_in(scope, name, out, scope == L.object, 1);
 }
 
 /* A constant as a bare name reads it: the lexical scopes from cref out
    (but the top level), then the ancestors of cref, then Object. */
-static int fx_const_lookup(const FxClass *cref, sp_sym name, sp_RbVal *out) {
+static int fx_const_lookup_load(const FxClass *cref, sp_sym name, sp_RbVal *out, int load) {
   for (const FxClass *k = cref; k && k != L.object; k = k->lexical) {
-    FxConst *c = fx_const_own(k, name);
+    FxConst *c = fx_const_find(k, name, load);
     if (c) { *out = c->value; return 1; }
   }
-  if (fx_const_scoped(cref, name, out)) return 1;
-  return fx_const_scoped(L.object, name, out);
+  if (fx_const_in(cref, name, out, 1, load)) return 1;
+  return fx_const_in(L.object, name, out, 1, load);
+}
+
+static int fx_const_lookup(const FxClass *cref, sp_sym name, sp_RbVal *out) {
+  return fx_const_lookup_load(cref, name, out, 1);
+}
+
+static int fx_const_lookup_peek(const FxClass *cref, sp_sym name, sp_RbVal *out) {
+  return fx_const_lookup_load(cref, name, out, 0);
 }
 
 static __attribute__((noreturn)) void fx_const_missing(const char *name) {
   fx_trace_missing("const#", name, 0);
   sp_raise_cls("NameError", sp_sprintf("uninitialized constant %s", name));
-}
-
-/* The name of a constant of a path in a message: "A::B", or "B" in Object. */
-static const char *fx_const_full(const FxClass *scope, sp_sym name) {
-  return scope == L.object ? sp_sym_to_s(name) : sp_sprintf("%s::%s", scope->name, sp_sym_to_s(name));
 }
 
 /* ---- objects and instance variables ---- */
@@ -1704,6 +1788,24 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     const char *cn = fx_name_arg(argv[0]);
     if (!fx_const_scoped(k, sp_sym_intern(cn), &v)) fx_const_missing(cn);
     *out = v;
+    return 1;
+  }
+  if (argc == 2 && !strcmp(name, "autoload")) {
+    const char *cn = fx_name_arg(argv[0]);
+    if (!isupper((unsigned char)cn[0]))
+      sp_raise_cls("NameError", sp_sprintf("autoload must be constant name: %s", cn));
+    if (!fx_is_string(argv[1]))
+      sp_raise_cls("TypeError", sp_sprintf("no implicit conversion of %s into String",
+                                           argv[1].tag == SP_TAG_NIL ? "nil" : sp_poly_class_name(argv[1])));
+    const char *path = sp_poly_recv_s(argv[1], name);
+    if (!path[0]) sp_raise_cls("ArgumentError", "empty feature name");
+    fx_autoload_set(k, sp_sym_intern(cn), path);
+    *out = sp_box_nil();
+    return 1;
+  }
+  if (argc == 1 && !strcmp(name, "autoload?")) {
+    const char *path = fx_autoload_path(k, sp_sym_intern(fx_name_arg(argv[0])));
+    *out = path ? fx_new_string((const uint8_t *)path, strlen(path)) : sp_box_nil();
     return 1;
   }
   return 0;
