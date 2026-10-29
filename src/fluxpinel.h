@@ -94,6 +94,10 @@ typedef struct FxClass {
   int native;                       /* a native class of a package (native_struct): an
                                        instance is a C struct of the package, not a
                                        FxObject, and has no ivars */
+  struct FxClass *refined;        /* a refinement (refine C in a module): the class
+                                       C that it refines; super is C */
+  struct FxClass **refines;       /* a module: its refinements, in refine order */
+  int nrefines, refines_cap;
 } FxClass;
 
 #define FX_REC_STRUCT 1
@@ -191,6 +195,8 @@ typedef struct FxFrame {
   int heap;                   /* the frame of a FxEnv */
   struct FxEnv *env;        /* a frame on the C stack: its heap copy, once a
                                  Proc keeps it; a GC root */
+  const pm_node_t *body;      /* a class body frame: the body node, whose end
+                                 ends a `using` in it; NULL otherwise */
 } FxFrame;
 
 /* A frame that a Proc keeps, on the heap, since the Proc can outlive the
@@ -221,6 +227,13 @@ typedef struct {
   pm_options_t options;      /* the parser reads its filepath from here */
   pm_parser_t parser;
   pm_node_t *root;
+  struct {                   /* the refinements that `using` made active in this
+                                file, newest last: a call at a byte in
+                                [from, to) sees r */
+    FxClass *r;
+    const uint8_t *from, *to;
+  } *using;
+  int nusing, using_cap;
 } FxSource;
 
 /* The record of a prism node in the side table (docs/side-table.md). A
@@ -293,6 +306,8 @@ typedef struct {
   int nprocs, procs_cap;
   int mm_why;            /* why the call of the running method_missing hook
                             missed (FX_MISS_*), for a super from the hook */
+  int nusing;            /* the refinements active in all files: zero means no
+                            call looks for one */
 } Fluxpinel;
 
 static Fluxpinel L;
@@ -566,6 +581,11 @@ static sp_RbVal fx_binding_eval(sp_RbVal bv, const char *src, const char *path, 
 static int fx_binding_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                              sp_RbVal *out);
 static int fx_binding_responds(const char *name);
+/* refinements (walk.c) */
+static int fx_refine(FxFrame *f, FxClass *k, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                     sp_RbVal *out);
+static FxClass *fx_class_anon(int is_module, FxClass *super, FxClass *lexical);   /* struct.c */
+static const FxMethod *fx_frame_method(const FxFrame *f);
 /* Marshal (marshal.c) */
 static void fx_marshal_init(void);
 static int fx_marshal_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);

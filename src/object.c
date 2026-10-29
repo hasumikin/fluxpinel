@@ -618,12 +618,15 @@ static FxMethod *fx_find_smethod(const FxClass *c, sp_sym name) {
   return NULL;
 }
 
-/* The method that super calls from m, for a receiver of class c. */
+/* The method that super calls from m, for a receiver of class c. From a
+   method of a refinement, super starts at the refined class itself. */
 static FxMethod *fx_find_super(const FxClass *c, const FxMethod *m) {
   const FxClass *anc[128];
+  const FxClass *from = m->owner->refined ? m->owner->refined : m->owner;
   int n = fx_ancestors(c, anc, 128), i = 0;
-  while (i < n && anc[i] != m->owner) i++;
-  for (i++; i < n; i++) {
+  while (i < n && anc[i] != from) i++;
+  if (!m->owner->refined) i++;
+  for (; i < n; i++) {
     FxMethod *s = fx_table_get(&anc[i]->methods, m->name);
     if (s) return s;
     if (fx_builtin_module_has(anc[i], m->name)) return NULL;
@@ -1898,6 +1901,8 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   if (!k) return 0;
   /* Class.new, Module.new, Struct.new, Data.define and a record class */
   if (fx_struct_class(f, k, name, argc, argv, blk, out)) return 1;
+  /* Module#refine with its block */
+  if (fx_refine(f, k, name, argc, argv, blk, out)) return 1;
   /* ffi_func and its kin in a module body */
   if (!blk && fx_ffi_class(k, name, argc, argv, out)) return 1;
   /* the module functions of Process and GC */

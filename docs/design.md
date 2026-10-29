@@ -687,6 +687,16 @@ Fluxpinel gives walker classes their own object kind (`src/object.c`):
   cache. A value with no heap pointer (an Integer, a Symbol, nil) raises
   TypeError, as in CRuby. The runtime does not see the singleton class:
   `p obj` prints as the class does.
+- **Refinements.** `refine C do ... end` in a module makes a refinement: an
+  anonymous class under C, whose methods the block defines, kept in the
+  module. `using M` makes the refinements of M active in a range of the
+  file: from the call to the end of the file, or to the end of the class
+  body around it. A call node in that range asks the active refinements
+  of a class of its receiver first (`fx_refined_call`); `super` in a
+  refined method starts at C. `send`, `respond_to?` and `method` at such
+  a node see the refinement, as in CRuby. `Symbol#to_proc` does not. A
+  refinement is a Class, not a Refinement; `Module#refinements` and
+  `import_methods` are not defined.
 - **Gaps.** A semantics that Fluxpinel does not model stops the program as an
   unsupported node does (`fx_gap`): an instance of a subclass of a
   builtin class other than Object, Exception, Struct, Data, Array and

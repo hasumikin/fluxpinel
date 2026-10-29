@@ -963,6 +963,103 @@ static int fx_binding_call(FxFrame *f, const pm_node_t *n, int has_recv, sp_RbVa
   return 1;
 }
 
+/* ---- refinements ----
+
+   Module#refine C { ... } makes a refinement of C: an anonymous class
+   under C, whose methods the block defines, kept in the module. `using M`
+   makes the refinements of M active in the file of the call, from that
+   call to the end of the file. A call in such a file asks the active
+   refinements of a class of its receiver first (fx_refined_call); super
+   in a refined method starts at C (fx_find_super). send, respond_to? and
+   method at such a call see the refinement too, as in CRuby; Symbol#to_proc
+   does not. A `using` in a class body ends with the body: the scope is a
+   range of bytes of the file, as the nodes in it tell. */
+
+/* Module#refine, in a module body. */
+static int fx_refine(FxFrame *f, FxClass *k, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                     sp_RbVal *out) {
+  if (strcmp(name, "refine") || argc != 1 || !k->is_module) return 0;
+  FxClass *c = fx_class_value(argv[0]);
+  if (!c)
+    sp_raise_cls("TypeError", sp_sprintf("wrong argument type %s (expected Class or Module)", fx_class_of(argv[0])->name));
+  if (!blk) sp_raise_cls("ArgumentError", "no block given");
+  /* a second refine of the same class in the module adds to the first */
+  FxClass *r = NULL;
+  for (int i = 0; i < k->nrefines; i++)
+    if (k->refines[i]->refined == c) r = k->refines[i];
+  if (!r) {
+    r = fx_class_anon(0, c, f ? f->cref : k);
+    r->name = strdup(sp_sprintf("#<refinement:%s@%s>", c->name, k->name));
+    r->refined = c;
+    fx_push_class(&k->refines, &k->nrefines, &k->refines_cap, r);
+  }
+  sp_RbVal rv = fx_class_box(r);
+  fx_yield_under(blk, rv, r, 0, NULL);
+  *out = rv;
+  return 1;
+}
+
+/* `using M` at the call node n: at the top level or in a class body, with
+   no receiver, unless the program defines a method of the name. */
+static int fx_using_call(FxFrame *f, const pm_node_t *n, int has_recv, const char *name, int argc, sp_RbVal *argv,
+                         const FxBlock *blk, sp_RbVal *out) {
+  if (has_recv || argc != 1 || blk || name[0] != 'u' || strcmp(name, "using")) return 0;
+  sp_RbVal self = f->self;
+  FxClass *k = fx_class_value(self);
+  int top = fx_is_fx_object(self) && self.v.p == L.main.v.p;
+  if (!top && !k) return 0;
+  if (k ? fx_find_smethod(k, sp_sym_intern(name)) != NULL : fx_find_method(fx_lookup_class(self), sp_sym_intern(name)) != NULL)
+    return 0;
+  if (fx_frame_method(f))
+    sp_raise_cls("RuntimeError", top ? "main.using is permitted only at toplevel" : "Module#using is not permitted in methods");
+  FxClass *m = fx_class_value(argv[0]);
+  if (!m || !m->is_module)
+    sp_raise_cls("TypeError", sp_sprintf("wrong argument type %s (expected Module)", m ? "Class" : fx_class_of(argv[0])->name));
+  FxSource *s = fx_source_of(n);
+  /* to the end of the innermost class body around the call, or of the file */
+  const uint8_t *to = s->end;
+  for (const FxFrame *p = f; p; p = p->parent)
+    if (p->body) { to = p->body->location.end; break; }
+  for (int i = 0; i < m->nrefines; i++) {
+    if (s->nusing == s->using_cap) {
+      s->using_cap = s->using_cap ? s->using_cap * 2 : 4;
+      s->using = realloc(s->using, sizeof *s->using * (size_t)s->using_cap);
+    }
+    s->using[s->nusing].r = m->refines[i];
+    s->using[s->nusing].from = n->location.end;
+    s->using[s->nusing].to = to;
+    s->nusing++;
+    L.nusing++;
+  }
+  *out = self;
+  return 1;
+}
+
+/* A call at the node n under an active refinement: the newest active
+   refinement of a class of recv that has the method answers it. A send,
+   respond_to? or method with a Symbol asks for that name. */
+static int fx_refined_call(const pm_node_t *n, sp_RbVal recv, sp_sym sym, int argc, sp_RbVal *argv,
+                           const FxBlock *blk, sp_RbVal *out) {
+  const FxSource *s = fx_source_of(n);
+  const char *name = sp_sym_to_s(sym);
+  int dyn = argc >= 1 && argv[0].tag == SP_TAG_SYM &&
+            (!strcmp(name, "send") || !strcmp(name, "__send__") || !strcmp(name, "public_send") ||
+             !strcmp(name, "respond_to?") || !strcmp(name, "method"));
+  sp_sym look = dyn ? (sp_sym)argv[0].v.i : sym;
+  for (int i = s->nusing - 1; i >= 0; i--) {
+    if (n->location.start < s->using[i].from || n->location.start >= s->using[i].to) continue;
+    FxClass *r = s->using[i].r;
+    FxMethod *m = fx_table_get(&r->methods, look);
+    if (!m || !fx_is_a(recv, r->refined)) continue;
+    if (!dyn) *out = fx_invoke_b(m, recv, argc, argv, blk);
+    else if (name[0] == 'r') *out = sp_box_bool(1);
+    else if (name[0] == 'm') *out = fx_method_value_make(recv, m, look, NULL, 0);
+    else *out = fx_invoke_b(m, recv, argc - 1, argv + 1, blk);
+    return 1;
+  }
+  return 0;
+}
+
 static sp_RbVal fx_call(FxFrame *f, const pm_call_node_t *c) {
   SP_GC_SAVE();
   const sp_sym sym = fx_sym(c->name);
@@ -995,9 +1092,11 @@ static sp_RbVal fx_call(FxFrame *f, const pm_call_node_t *c) {
   sp_RbVal v;
   /* require_relative and __dir__ answer from the file of the call, unless
      the program defines its own */
-  if (c->receiver && !blk && !kw && fx_fast_call(recv, sym, argc, argv, &v)) {
+  if (L.nusing && fx_refined_call((const pm_node_t *)c, c->receiver ? recv : f->self, sym, argc, argv, blk, &v)) {
+  } else if (c->receiver && !blk && !kw && fx_fast_call(recv, sym, argc, argv, &v)) {
   } else if (!c->receiver && !blk && fx_load_call((const pm_node_t *)c, f->self, name, argc, argv, &v)) {
   } else if (fx_binding_call(f, (const pm_node_t *)c, c->receiver != NULL, recv, name, argc, blk, &v)) {
+  } else if (fx_using_call(f, (const pm_node_t *)c, c->receiver != NULL, name, argc, argv, blk, &v)) {
   } else if (fx_call_cached(f, c, cc, sym, recv, argc, argv, blk, &v)) {
   } else {
     L.vcall = PM_NODE_FLAG_P((const pm_node_t *)c, PM_CALL_NODE_FLAGS_VARIABLE_CALL);
@@ -1106,6 +1205,8 @@ static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *a
   if (fx_fiber_kernel(name, argc, argv, &out)) return out;
   if (fx_kernel(name, argc, argv, &out)) return out;
   if (fx_object_core(self, name, argc, argv, &out)) return out;
+  /* a method of a Binding from a method that a refinement gives it */
+  if (fx_is_binding(self) && fx_binding_core(self, name, argc, argv, blk, &out)) return out;
   if (!fx_is_fx_object(self) && self.tag != SP_TAG_CLASS) return fx_send(self, name, argc, argv);
   if (fx_method_missing(self, name, argc, argv, NULL, why, &out)) return out;
   fx_trace_missing("Kernel#", name, argc);
@@ -1958,6 +2059,7 @@ static sp_RbVal fx_class_def(FxFrame *f, const pm_node_t *path, const pm_node_t 
   }
   if (!body) return sp_box_nil();
   FX_FRAME(cf, locals, fx_class_box(k), k);
+  cf.body = body;
   return fx_eval(&cf, body);
 }
 
@@ -1970,6 +2072,7 @@ static sp_RbVal fx_singleton_class(FxFrame *f, const pm_singleton_class_node_t *
     /* class << self in a class body: the defs are its class methods */
     if (!n->body) return sp_box_nil();
     FX_FRAME(sf, &n->locals, target, k);
+    sf.body = n->body;
     sf.singleton_defs = 1;
     return fx_eval(&sf, n->body);
   }
