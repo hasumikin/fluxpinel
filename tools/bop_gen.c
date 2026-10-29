@@ -29,9 +29,13 @@
 /* types.c reads this flag of the analysis (src/analyze.c). */
 int g_infer_optimistic = 0;
 
-/* builtin_names.c calls this lookup of the analysis (src/analyze_util.c)
-   only in builtin_default_cmp, which the generator does not call. */
+/* builtin_names.c calls these lookups of the analysis (src/analyze_util.c)
+   only in builtin_default_cmp, is_toplevel_const_name and
+   is_constless_builtin_name, which the generator does not call. */
 int builtin_class_id(const char *name) { (void)name; abort(); }
+int is_builtin_class_name(const char *n) { (void)n; abort(); }
+int is_builtin_module_name(const char *n) { (void)n; abort(); }
+int is_builtin_exception_name(const char *n) { (void)n; abort(); }
 
 typedef struct {
   TyKind recv;     /* the concrete receiver kind */
