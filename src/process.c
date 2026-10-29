@@ -64,6 +64,13 @@ static int fx_process_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *o
     if (FX_IS("times")) { *out = sp_box_tms(sp_process_times()); return 1; }
     if (FX_IS("groups")) { *out = sp_box_int_array(sp_process_groups()); return 1; }
   }
+  /* Process.kill(sig, *pids): one send for each pid, counted */
+  if (FX_IS("kill") && argc >= 2) {
+    sp_int n = 0;
+    for (int i = 1; i < argc; i++) n += sp_process_kill1(argv[0], sp_poly_arg_int_chk(argv[i]));
+    *out = sp_box_int(n);
+    return 1;
+  }
   if (FX_IS("getsid") && argc <= 1) {
     *out = sp_box_int((sp_int)getsid(argc ? (pid_t)sp_poly_arg_int_chk(argv[0]) : 0));
     return 1;
@@ -113,7 +120,7 @@ static int fx_gc_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
 /* respond_to? on Process or GC: the functions above. */
 static int fx_process_responds(sp_RbVal r, const char *name) {
   static const char *const process[] = { "pid", "ppid", "uid", "gid", "euid", "egid", "getpgrp", "times", "groups",
-                                         "getsid", "clock_gettime", "clock_getres", "getpriority", NULL };
+                                         "getsid", "clock_gettime", "clock_getres", "getpriority", "kill", NULL };
   static const char *const gc[] = { "start", "compact", "stat", "total_time", NULL };
   FxClass *k = fx_class_value(r);
   if (!k || k->cls_id >= 0 || !k->is_module) return 0;

@@ -499,19 +499,96 @@ static int fx_method_missing(sp_RbVal r, const char *name, int argc, sp_RbVal *a
 /* The Kernel methods that are private in CRuby. A call of one with a
    receiver is a private call, unless the receiver has a public method of
    the name (IO#puts, Array#select). */
+static const char *const fx_kernel_private_names[] = {
+  "Array", "Complex", "Float", "Hash", "Integer", "Rational", "String", "__callee__", "__dir__", "__method__",
+  "`", "abort", "at_exit", "autoload", "autoload?", "binding", "block_given?", "caller", "caller_locations",
+  "catch", "eval", "exec", "exit", "exit!", "fail", "fork", "format", "gets", "global_variables", "iterator?",
+  "lambda", "load", "local_variables", "loop", "open", "p", "pp", "print", "printf", "proc", "putc", "puts",
+  "raise", "rand", "readline", "readlines", "require", "require_relative", "select", "sleep", "spawn",
+  "sprintf", "srand", "syscall", "system", "test", "throw", "trap", "warn", "initialize", "initialize_copy",
+  "initialize_clone", "initialize_dup", "respond_to_missing?", "method_missing", NULL
+};
+
 static int fx_kernel_private(const char *name) {
-  static const char *const names[] = {
-    "Array", "Complex", "Float", "Hash", "Integer", "Rational", "String", "__callee__", "__dir__", "__method__",
-    "`", "abort", "at_exit", "autoload", "autoload?", "binding", "block_given?", "caller", "caller_locations",
-    "catch", "eval", "exec", "exit", "exit!", "fail", "fork", "format", "gets", "global_variables", "iterator?",
-    "lambda", "load", "local_variables", "loop", "open", "p", "pp", "print", "printf", "proc", "putc", "puts",
-    "raise", "rand", "readline", "readlines", "require", "require_relative", "select", "sleep", "spawn",
-    "sprintf", "srand", "syscall", "system", "test", "throw", "trap", "warn", "initialize", "initialize_copy",
-    "initialize_clone", "initialize_dup", "respond_to_missing?", "method_missing", NULL
-  };
-  for (int i = 0; names[i]; i++)
-    if (!strcmp(name, names[i])) return 1;
+  for (int i = 0; fx_kernel_private_names[i]; i++)
+    if (!strcmp(name, fx_kernel_private_names[i])) return 1;
   return 0;
+}
+
+/* ---- the names of methods ---- */
+
+/* The visibilities that methods, public_methods, protected_methods and
+   private_methods list, as a mask of 1 << FX_VIS_*; 0 for another name. */
+static int fx_names_mask(const char *name) {
+  if (!strcmp(name, "methods")) return 1 << FX_VIS_PUBLIC | 1 << FX_VIS_PROTECTED;
+  if (!strcmp(name, "public_methods")) return 1 << FX_VIS_PUBLIC;
+  if (!strcmp(name, "protected_methods")) return 1 << FX_VIS_PROTECTED;
+  if (!strcmp(name, "private_methods")) return 1 << FX_VIS_PRIVATE;
+  return 0;
+}
+
+/* A Symbol into a list of names, once. */
+static void fx_names_push(sp_PolyArray *a, sp_sym s) {
+  for (sp_int j = 0; j < a->len; j++)
+    if (a->data[j].v.i == (sp_int)s) return;
+  sp_PolyArray_push(a, sp_box_sym(s));
+}
+
+static void fx_table_names(sp_PolyArray *a, const FxMethodTable *t, int mask) {
+  for (int i = 0; i < t->n; i++)
+    if ((mask >> t->items[i]->vis) & 1) fx_names_push(a, t->items[i]->name);
+}
+
+/* The builtin methods of the class or module c of CRuby: the public ones
+   from the table of responds.c, the private ones of Kernel and of
+   BasicObject. */
+static void fx_builtin_names(sp_PolyArray *a, const FxClass *c, int mask) {
+  static const char *const basic[] = { "initialize", "method_missing", "singleton_method_added",
+                                       "singleton_method_removed", "singleton_method_undefined", NULL };
+  if ((mask >> FX_VIS_PUBLIC) & 1) fx_rs_own_names(a, c->name);
+  if (!((mask >> FX_VIS_PRIVATE) & 1)) return;
+  const char *const *names = !strcmp(c->name, "Kernel") ? fx_kernel_private_names
+                             : !strcmp(c->name, "BasicObject") ? basic : NULL;
+  for (int i = 0; names && names[i]; i++) fx_names_push(a, sp_sym_intern(names[i]));
+}
+
+/* Kernel#methods and its kin on r. With all, the methods of the ancestors;
+   else those of the singleton class alone (methods), or of the singleton
+   class and the class of r (the others), as CRuby lists them. A class
+   value lists its singleton methods, with all those of its superclasses,
+   of the modules they extend, and the methods of Class or Module. */
+static sp_RbVal fx_method_names(sp_RbVal r, const char *name, int mask, int all) {
+  sp_PolyArray *a = sp_PolyArray_new();
+  SP_GC_ROOT(a);
+  const FxClass *anc[128];
+  int n;
+  FxClass *k = fx_class_value(r);
+  if (k) {
+    for (const FxClass *c = k; c; c = all ? c->super : NULL) {
+      fx_table_names(a, &c->smethods, mask);
+      for (int e = c->nextends - 1; e >= 0; e--) fx_table_names(a, &c->extends[e]->methods, mask);
+      if (c->cls_id < FX_CLS_BASE && ((mask >> FX_VIS_PUBLIC) & 1)) fx_rs_singleton_names(a, c->name);
+    }
+    /* with all, the methods of Class or Module and their ancestors; else
+       (but for methods(false)) the own methods of Class or Module */
+    FxClass *meta = fx_builtin(k->is_module ? "Module" : "Class");
+    if (!all && !strcmp(name, "methods")) return sp_box_poly_array(a);
+    n = all ? fx_ancestors(meta, anc, 128) : 0;
+    if (!all) anc[n++] = meta;
+  } else {
+    n = fx_ancestors(fx_lookup_class(r), anc, 128);
+    if (!all) {
+      FxClass *sg = fx_singleton_of(r, 0);
+      n = 0;
+      if (sg) anc[n++] = sg;
+      if (strcmp(name, "methods")) anc[n++] = fx_class_of(r);
+    }
+  }
+  for (int i = 0; i < n; i++) {
+    fx_table_names(a, &anc[i]->methods, mask);
+    if (anc[i]->cls_id < FX_CLS_BASE) fx_builtin_names(a, anc[i], mask);
+  }
+  return sp_box_poly_array(a);
 }
 
 /* m and its mixins, into the ancestors out: the modules that m prepends
@@ -1540,6 +1617,12 @@ static sp_RbVal fx_respond_to(sp_RbVal r, sp_RbVal a, sp_RbVal all) {
 static int fx_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (argc == 2 && !strcmp(name, "respond_to?")) {
     *out = fx_respond_to(r, argv[0], argv[1]);
+    return 1;
+  }
+  /* methods(all = true) and its kin */
+  int nmask = fx_names_mask(name);
+  if (nmask && argc <= 1) {
+    *out = fx_method_names(r, name, nmask, argc == 0 || sp_poly_truthy(argv[0]));
     return 1;
   }
   if (argc == 0) {

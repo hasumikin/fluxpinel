@@ -1,8 +1,14 @@
 # trap and Signal.trap: the handler that a call installs and the previous
-# one that it answers. No signal is delivered here.
+# one that it answers, and one signal that the program sends itself.
 
 prev = trap("INT") { |no| puts "got #{no}" }
 p prev
+got = []
+trap("USR2") { |no| got << no }
+p Process.kill("USR2", Process.pid)
+sleep 0.05
+p got.size == 1, got.first.class
+p Process.kill(0, Process.pid), Process.respond_to?(:kill)
 h = trap("INT", "DEFAULT")
 p h.class, h.lambda?
 p trap(:INT, prev)

@@ -1137,6 +1137,10 @@ static sp_RbVal fx_kernel_rational(int argc, sp_RbVal *argv, int raise) {
 
 /* Kernel methods. Answers 1 and sets *out when it handles the call. */
 static int fx_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (argc == 0 && !strcmp(name, "global_variables")) {
+    *out = fx_global_names();
+    return 1;
+  }
   /* Kernel#select is IO.select */
   if (!strcmp(name, "select") && argc >= 1 && argc <= 4) {
     *out = fx_io_select(argc, argv);

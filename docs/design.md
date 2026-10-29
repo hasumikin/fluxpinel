@@ -654,6 +654,11 @@ Fluxpinel gives walker classes their own object kind (`src/object.c`):
   `sp_user_exc_message_fn` do the same for an exception.
 - **Reflection.** `respond_to?`, `method_defined?` and a miss of a method
   read a table of the public methods of CRuby (`src/responds.c`).
+  `methods`, `public_methods`, `protected_methods` and `private_methods`
+  list the methods of the program along the ancestors, then the builtin
+  names from that table and the private methods of Kernel.
+  `global_variables` lists the special globals that Fluxpinel reads and
+  the globals that the program assigned, not in the order of CRuby.
 - **Constants.** A bare name looks in the lexical scopes but the top
   level, then in the ancestors of the innermost one, then in Object, then
   in the builtin classes. A top-level `def` defines a method of Object.

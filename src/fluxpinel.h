@@ -512,6 +512,11 @@ static int fx_rs_known(sp_RbVal r, const char *mn);
 static int fx_rs_own(sp_RbVal r, const char *mn);
 static int fx_rs_instance(const char *cls, const char *mn);
 static int fx_rs_defined(const FxClass *k, const char *mn, int inherit);
+static void fx_rs_own_names(sp_PolyArray *a, const char *cls);
+static void fx_rs_singleton_names(sp_PolyArray *a, const char *cls);
+static void fx_names_push(sp_PolyArray *a, sp_sym s);   /* object.c */
+static int fx_ancestors(const FxClass *c, const FxClass **out, int cap);
+static sp_RbVal fx_global_names(void);   /* global.c */
 
 /* global.c */
 static sp_RbVal fx_gvar_eval(FxFrame *f, const pm_node_t *n);

@@ -56,6 +56,22 @@ static sp_RbVal fx_gvar_get(const char *name) {
   return sp_box_nil();
 }
 
+/* Kernel#global_variables: the special globals that Fluxpinel reads, with
+   their aliases, and the globals that the program assigned. The order is
+   not CRuby's. */
+static sp_RbVal fx_global_names(void) {
+  static const char *const special[] = {
+    "$stdout", "$stderr", "$stdin", "$>", "$/", "$?", "$$", "$0", "$PROGRAM_NAME", "$LOAD_PATH", "$:", "$-I",
+    "$LOADED_FEATURES", "$\"", "$VERBOSE", "$-v", "$-w", "$DEBUG", "$-d", "$!", "$@", "$~", "$_", "$&", "$`",
+    "$'", "$+", "$;", "$,", "$.", "$*", NULL
+  };
+  sp_PolyArray *a = sp_PolyArray_new();
+  SP_GC_ROOT(a);
+  for (int i = 0; special[i]; i++) fx_names_push(a, sp_sym_intern(special[i]));
+  for (int i = 0; i < L.nglobals; i++) fx_names_push(a, L.globals[i].name);
+  return sp_box_poly_array(a);
+}
+
 /* Whether v has a write method, as CRuby asks of $stdout and $stderr. */
 static int fx_gvar_writable(sp_RbVal v) {
   if (fx_is_io(v)) return 1;

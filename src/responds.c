@@ -58,6 +58,19 @@ static int fx_rs_instance(const char *cls, const char *mn) {
   return 0;
 }
 
+/* The own public instance methods of the builtin class or module cls, as
+   Symbols into a (fx_names_push); nothing for a class with no row. */
+static void fx_rs_own_names(sp_PolyArray *a, const char *cls) {
+  const FxRespondRow *row = fx_rs_row(cls);
+  for (int i = 0; row && row->inst[i]; i++) fx_names_push(a, sp_sym_intern(row->inst[i]));
+}
+
+/* The own public singleton methods of cls (Integer.sqrt, File.open). */
+static void fx_rs_singleton_names(sp_PolyArray *a, const char *cls) {
+  const FxRespondRow *row = fx_rs_row(cls);
+  for (int i = 0; row && row->sing[i]; i++) fx_names_push(a, sp_sym_intern(row->sing[i]));
+}
+
 /* Whether the builtin class of r has the public method mn of its own, not
    from an ancestor. */
 static int fx_rs_own(sp_RbVal r, const char *mn) {
