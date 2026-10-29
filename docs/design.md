@@ -637,7 +637,9 @@ Fluxpinel gives walker classes their own object kind (`src/object.c`):
   slot names. Its runtime id starts at `FX_CLS_BASE` (0x100000), far
   above the ids of AOT classes. A builtin class (Integer, Object,
   StandardError, ...) gets a `FxClass` on first use, with the builtin
-  hierarchy, so that a program can reopen it.
+  hierarchy, so that a program can reopen it. An alias of a builtin
+  method is an entry that calls the builtin method by its name, with the
+  visibility that Kernel gives it.
 - **Object.** A `FxObject` is `{ cls_id, sp_PolyArray *iv }` on the spinel
   heap, allocated with `sp_gc_alloc` and a scan function. It starts with
   the class id, as an AOT object does. An instance of Object (`main`,

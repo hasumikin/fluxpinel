@@ -74,12 +74,27 @@ static void fx_define_method(FxClass *c, FxMethod *m, int singleton) {
   }
 }
 
+static int fx_no_builtin_method(const FxClass *k, const char *name);
+static int fx_kernel_private(const char *name);
+
 /* alias and alias_method: a copy of the method from under the name to. A
-   builtin method has no entry to copy, which is a gap. */
+   builtin method has no entry to copy: the alias is an entry that calls
+   the builtin method by its name (FX_M_BUILTIN), private when Kernel
+   keeps it private. */
 static void fx_alias(FxClass *k, int singleton, sp_sym to, sp_sym from) {
   FxMethod *m = singleton ? fx_find_smethod(k, from) : fx_find_method(k, from);
-  if (!m) fx_gap(sp_sprintf("an alias of the builtin method %s", sp_sym_to_s(from)));
-  FxMethod *c = fx_method_copy(m, m->vis);
+  FxMethod *c;
+  if (m) {
+    c = fx_method_copy(m, m->vis);
+  } else {
+    const char *n = sp_sym_to_s(from);
+    if (!singleton && fx_no_builtin_method(k, n))
+      sp_raise_cls("NameError", sp_sprintf("undefined method '%s' for %s '%s'", n,
+                                           k->is_module ? "module" : "class", k->name));
+    c = fx_method_new(FX_M_BUILTIN, to, NULL, 0, k);
+    c->builtin = from;
+    c->vis = fx_kernel_private(n) ? FX_VIS_PRIVATE : FX_VIS_PUBLIC;
+  }
   c->name = to;
   fx_define_method(k, c, singleton);
 }

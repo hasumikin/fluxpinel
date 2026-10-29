@@ -569,15 +569,18 @@ static sp_RbVal fx_invoke_b(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal
   if (m->kind == FX_M_ENTRY) return fx_entry_invoke(m->entry, argc, argv);
   if (m->kind == FX_M_BUILTIN) {
     /* as super does: an object of the program takes the defaults of
-       Object, which do not call the hooks */
+       Object, which do not call the hooks. An alias calls the builtin
+       method of its original name. */
+    const char *name = sp_sym_to_s(m->builtin ? m->builtin : m->name);
     sp_RbVal out;
-    if (self.tag == SP_TAG_CLASS && fx_class_core(NULL, self, sp_sym_to_s(m->name), argc, argv, blk, &out))
+    if (self.tag == SP_TAG_CLASS && fx_class_core(NULL, self, name, argc, argv, blk, &out)) return out;
+    if (fx_is_fx_object(self) ? fx_record_core(self, name, argc, argv, blk, &out) ||
+                                    fx_object_core(self, name, argc, argv, &out)
+                              : fx_builtin_call(self, name, argc, argv, blk, &out))
       return out;
-    if (fx_is_fx_object(self) ? fx_record_core(self, sp_sym_to_s(m->name), argc, argv, blk, &out) ||
-                                    fx_object_core(self, sp_sym_to_s(m->name), argc, argv, &out)
-                              : fx_builtin_call(self, sp_sym_to_s(m->name), argc, argv, blk, &out))
-      return out;
-    fx_no_method(self, sp_sym_to_s(m->name), FX_MISS_METHOD);
+    /* a function of Kernel (puts, format, ...) under an alias */
+    if (!blk && fx_kernel(name, argc, argv, &out)) return out;
+    fx_no_method(self, name, FX_MISS_METHOD);
   }
   SP_GC_SAVE();
   sp_RbVal me = self;

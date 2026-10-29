@@ -44,6 +44,8 @@ typedef struct {
   struct FxFfi *ffi;        /* FX_M_FFI: what ffi_func and its kin declared */
   int entry;                  /* FX_M_ENTRY: the row of fx_kernel_entries (host.c) */
   void *proc;                 /* FX_M_PROC: the FxProc of define_method; L.procs roots it */
+  sp_sym builtin;             /* FX_M_BUILTIN: the builtin method that the entry calls
+                                 (an alias of one); 0 for the method of its own name */
 } FxMethod;
 
 typedef struct {
