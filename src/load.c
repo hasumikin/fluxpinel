@@ -444,13 +444,15 @@ static sp_RbVal fx_require_lib(const char *name) {
 
 /* require_relative, require of a path, and __dir__: the calls that answer
    from the file of the call node n, unless the program defines a method of
-   the name for self. Answers 1 and sets *out when it handles the call. */
-static int fx_load_call(const pm_node_t *n, sp_RbVal self, const char *name, int argc, sp_RbVal *argv,
-                          sp_RbVal *out) {
+   the name for self. on_kernel is set for `Kernel.load(path)` and its kin,
+   which a method of self does not shadow. Answers 1 and sets *out when it
+   handles the call. */
+static int fx_load_call(const pm_node_t *n, sp_RbVal self, int on_kernel, const char *name, int argc,
+                          sp_RbVal *argv, sp_RbVal *out) {
   /* the first letter turns away most calls, before a strcmp */
   if (name[0] != '_' && name[0] != 'r' && name[0] != 'l') return 0;
   if (!FX_IS("__dir__") && !FX_IS("require_relative") && !FX_IS("require") && !FX_IS("load")) return 0;
-  if (fx_find_method(fx_lookup_class(self), sp_sym_intern(name))) return 0;
+  if (!on_kernel && fx_find_method(fx_lookup_class(self), sp_sym_intern(name))) return 0;
   /* load(path): the file runs at each call, from the path as given, which
      is relative to the current directory. A true wrap is not modeled. */
   if (FX_IS("load") && (argc == 1 || (argc == 2 && !sp_poly_truthy(argv[1])))) {

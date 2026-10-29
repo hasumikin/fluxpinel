@@ -134,6 +134,7 @@ static const struct {
   { "Comparable", NULL, NULL, 1 },
   { "Enumerable", NULL, NULL, 1 },
   { "Math", NULL, NULL, 1 },
+  { "Signal", NULL, NULL, 1 },
   { "Module", "Object", NULL, 0 },
   { "Class", "Module", NULL, 0 },
   { "Numeric", "Object", "Comparable", 0 },
@@ -1918,6 +1919,11 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   if (fx_struct_class(f, k, name, argc, argv, blk, out)) return 1;
   /* Module#refine with its block */
   if (fx_refine(f, k, name, argc, argv, blk, out)) return 1;
+  /* Signal.trap(sig) { } */
+  if (blk && k->cls_id < 0 && k->is_module && !strcmp(k->name, "Signal") && !strcmp(name, "trap")) {
+    *out = fx_trap(argc, argv, blk);
+    return 1;
+  }
   /* ffi_func and its kin in a module body */
   if (!blk && fx_ffi_class(k, name, argc, argv, out)) return 1;
   /* the module functions of Process and GC */

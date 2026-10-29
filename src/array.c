@@ -133,6 +133,17 @@ static int fx_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     /* each and each_with_index with no block: an Enumerator */
     if (FX_IS("each")) { *out = sp_box_obj(sp_Enumerator_new_from(r), SP_BUILTIN_ENUMERATOR); return 1; }
     if (FX_IS("each_with_index")) { *out = sp_box_obj(sp_Enumerator_new_ewi(r, 0), SP_BUILTIN_ENUMERATOR); return 1; }
+    if (FX_IS("reverse_each")) {
+      *out = sp_box_obj(sp_Enumerator_new_from_items(sp_poly_to_poly_array(sp_poly_reverse(r))), SP_BUILTIN_ENUMERATOR);
+      return 1;
+    }
+    /* any?, all?, none? and one? with no block: the truthy elements */
+    if (FX_IS("any?") || FX_IS("all?") || FX_IS("none?") || FX_IS("one?")) {
+      sp_int n = 0, len = sp_poly_length(r);
+      for (sp_int i = 0; i < len; i++) n += sp_poly_truthy(sp_poly_arr_get(r, i));
+      *out = sp_box_bool(name[0] == 'a' && name[1] == 'n' ? n > 0 : name[0] == 'a' ? n == len : name[0] == 'n' ? n == 0 : n == 1);
+      return 1;
+    }
     if (FX_IS("entries")) { *out = sp_box_poly_array(sp_PolyArray_dup(sp_poly_to_poly_array(r))); return 1; }
     if (FX_IS("pop") || FX_IS("shift")) {
       sp_poly_array_recv(r, name, 1);

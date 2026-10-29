@@ -950,6 +950,12 @@ static int fx_call_cached(FxFrame *f, const pm_call_node_t *c, FxCallCache *cc, 
   return 1;
 }
 
+/* The module Kernel as a receiver (`::Kernel.load`). */
+static int fx_is_kernel(sp_RbVal v) {
+  FxClass *k = fx_class_value(v);
+  return k && k->cls_id < 0 && !strcmp(k->name, "Kernel");
+}
+
 /* Kernel#binding at the call node n: with no receiver, or on Kernel
    (`::Kernel.binding`). It needs the frame of the call, so it is answered
    here, unless the program defines a method of the name. */
@@ -957,8 +963,7 @@ static int fx_binding_call(FxFrame *f, const pm_node_t *n, int has_recv, sp_RbVa
                            const FxBlock *blk, sp_RbVal *out) {
   if (argc || blk || name[0] != 'b' || strcmp(name, "binding")) return 0;
   if (has_recv) {
-    FxClass *k = fx_class_value(recv);
-    if (!k || k->cls_id >= 0 || strcmp(k->name, "Kernel")) return 0;
+    if (!fx_is_kernel(recv)) return 0;
   } else if (fx_find_method(fx_lookup_class(f->self), sp_sym_intern(name))) {
     return 0;
   }
@@ -1097,7 +1102,8 @@ static sp_RbVal fx_call(FxFrame *f, const pm_call_node_t *c) {
      the program defines its own */
   if (L.nusing && fx_refined_call((const pm_node_t *)c, c->receiver ? recv : f->self, sym, argc, argv, blk, &v)) {
   } else if (c->receiver && !blk && !kw && fx_fast_call(recv, sym, argc, argv, &v)) {
-  } else if (!c->receiver && !blk && fx_load_call((const pm_node_t *)c, f->self, name, argc, argv, &v)) {
+  } else if ((!c->receiver || fx_is_kernel(recv)) && !blk &&
+             fx_load_call((const pm_node_t *)c, f->self, c->receiver != NULL, name, argc, argv, &v)) {
   } else if (fx_binding_call(f, (const pm_node_t *)c, c->receiver != NULL, recv, name, argc, blk, &v)) {
   } else if (fx_using_call(f, (const pm_node_t *)c, c->receiver != NULL, name, argc, argv, blk, &v)) {
   } else if (fx_call_cached(f, c, cc, sym, recv, argc, argv, blk, &v)) {
@@ -1131,12 +1137,48 @@ static sp_int fx_at_exit_fn(void *cap, sp_int argc, sp_int *args) {
   return 0;
 }
 
+/* The hook of trap: as at_exit, a Proc of the runtime whose fn yields to the
+   block of the Proc of Fluxpinel (cap), with the number of the signal. */
+static sp_int fx_trap_fn(void *cap, sp_int argc, sp_int *args) {
+  sp_RbVal no = sp_box_int(argc ? args[0] : 0);
+  fx_yield(&((FxProc *)cap)->b, 1, &no);
+  L.ctl = FX_CTL_NONE;
+  return 0;
+}
+
+/* trap(sig) { }, trap(sig, handler) and Signal.trap: the runtime keeps
+   the handler (sp_signal_trap) and runs it on the main thread. A Proc of
+   Fluxpinel goes in a Proc of the runtime that yields to it; the previous
+   handler comes back as the Proc of Fluxpinel it holds, or as a String. */
+static sp_RbVal fx_trap(int argc, sp_RbVal *argv, const FxBlock *blk) {
+  if (argc < 1 || argc > 2) fx_arity_error(argc, 1, 1, 0);
+  sp_RbVal h = argc == 2 ? argv[1] : sp_box_nil();
+  SP_GC_ROOT_RBVAL(h);
+  if (blk) {
+    FxBlock l = *blk;
+    l.site = NULL;
+    h = fx_block_proc(&l);
+  } else if (argc == 1) {
+    h = sp_box_str("DEFAULT");
+  }
+  if (fx_is_proc(h) && ((sp_Proc *)h.v.p)->fn != (void *)fx_trap_fn)
+    h = sp_box_proc(sp_proc_new((void *)fx_trap_fn, h.v.p, sp_bm_cap_scan));
+  sp_RbVal prev = sp_signal_trap(argv[0], h);
+  if (fx_is_proc(prev) && ((sp_Proc *)prev.v.p)->fn == (void *)fx_trap_fn)
+    prev = sp_box_proc(((sp_Proc *)prev.v.p)->cap);
+  return prev;
+}
+
 /* The Kernel methods that take the block of the call. Answers 1 and sets
    *out when it handles the call. */
 static int fx_kernel_block(FxFrame *f, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                              sp_RbVal *out) {
   if (argc == 0 && (!strcmp(name, "block_given?") || !strcmp(name, "iterator?"))) {
     *out = sp_box_bool(f->block != NULL);
+    return 1;
+  }
+  if (!strcmp(name, "trap")) {
+    *out = fx_trap(argc, argv, blk);
     return 1;
   }
   if (!blk) return 0;

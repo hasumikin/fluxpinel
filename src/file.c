@@ -140,7 +140,7 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
     return 1;
   }
   static const char *const one[] = { "exist?", "directory?", "file?", "size", "basename", "dirname", "extname",
-                                     NULL };
+                                     "readable?", "writable?", "executable?", NULL };
   int is_one = 0;
   for (int i = 0; argc == 1 && one[i]; i++)
     if (FX_IS(one[i])) is_one = 1;
@@ -154,6 +154,10 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
     if (FX_IS("basename")) { *out = sp_box_str_new(sp_file_basename(path)); return 1; }
     if (FX_IS("dirname")) { *out = sp_box_str_new(sp_file_dirname(path)); return 1; }
     if (FX_IS("extname")) { *out = sp_box_str_new(sp_file_extname(path)); return 1; }
+    /* the access of the process, as CRuby asks with access(2) */
+    int mode = name[0] == 'r' ? R_OK : name[0] == 'w' ? W_OK : X_OK;
+    *out = sp_box_bool(access(path, mode) == 0);
+    return 1;
   }
   if (FX_IS("basename") && argc == 2) {
     const char *path = sp_poly_arg_path(argv[0]);
@@ -370,9 +374,29 @@ static sp_int fx_io_copy_stream(sp_RbVal src, sp_RbVal dst) {
 static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                          sp_RbVal *out) {
   if (k->cls_id >= 0) return 0;
+  if (!strcmp(k->name, "Dir")) {
+    if (argc != 0 || blk) return 0;
+    if (FX_IS("pwd") || FX_IS("getwd")) { *out = sp_box_str_new(sp_dir_pwd()); return 1; }
+    if (FX_IS("home")) { *out = sp_box_str_new(sp_dir_home()); return 1; }
+    return 0;
+  }
   if (!strcmp(k->name, "IO")) {
     /* IO.foreach reads a path, as File.foreach does */
     if (FX_IS("foreach")) return blk && fx_file_foreach(argc, argv, blk, out);
+    /* IO.open(fd[, mode], **enc), IO.new and IO.for_fd: an IO on the
+       descriptor. The standard descriptors stay open when it closes. The
+       keywords of the encoding are taken and do nothing. */
+    if ((FX_IS("open") || FX_IS("new") || FX_IS("for_fd")) && argc >= 1 && argc <= 3 && argv[0].tag == SP_TAG_INT) {
+      int n = argc;
+      if (fx_is_kwargs(argv[n - 1])) n--;
+      if (n > 2) return 0;
+      const char *mode = n == 2 ? sp_poly_arg_str_chk(argv[1]) : "r";
+      int fd = (int)argv[0].v.i;
+      sp_File *f = sp_io_fdopen_ex(fd, mode, fd > 2);
+      if (fd <= 2) f->no_autoclose = 1;   /* a close, or the collector, flushes and leaves the descriptor */
+      *out = blk && FX_IS("open") ? fx_file_with(f, blk) : sp_box_obj(f, SP_BUILTIN_IO);
+      return 1;
+    }
     if (FX_IS("pipe") && argc == 0) {
       *out = blk ? fx_io_pipe_with(blk) : sp_box_poly_array(sp_io_pipe());
       return 1;
@@ -405,7 +429,8 @@ static int fx_file_responds(sp_RbVal r, const char *name) {
   static const char *const names[] = { "open", "new", "foreach", "readlines", "join", "delete", "unlink",
                                        "write", "binwrite", "read", "binread",
                                        "exist?", "directory?", "file?", "size", "basename", "dirname",
-                                       "extname", "expand_path", "absolute_path", NULL };
+                                       "extname", "readable?", "writable?", "executable?", "expand_path",
+                                       "absolute_path", NULL };
   FxClass *k = fx_class_value(r);
   if (!k || k->cls_id >= 0 || strcmp(k->name, "File")) return 0;
   for (int i = 0; names[i]; i++)

@@ -216,8 +216,29 @@ static int fx_exc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
   if (argc == 0 && FX_IS("result")) { *out = sp_exc_result(e); return 1; }
   /* LoadError#path: the feature of a require that loaded nothing, else nil */
   if (argc == 0 && FX_IS("path")) { *out = sp_exc_path_acc(e); return 1; }
-  if (argc == 0 && FX_IS("full_message")) {
+  /* full_message(highlight:, order:): the keywords are taken and do nothing */
+  if ((argc == 0 || (argc == 1 && fx_is_hash(argv[0]) && argv[0].v.p == L.kwhash)) && FX_IS("full_message")) {
     *out = sp_box_str_new(sp_sprintf("%s (%s)", sp_exc_message(e), e->cls_name));
+    return 1;
+  }
+  /* the backtrace that set_backtrace attached, else nil: the walker keeps
+     no frames for an exception */
+  if (argc == 0 && (FX_IS("backtrace") || FX_IS("backtrace_locations"))) {
+    *out = e->backtrace && name[9] == 0 ? sp_box_obj(e->backtrace, SP_BUILTIN_STR_ARRAY) : sp_box_nil();
+    return 1;
+  }
+  /* set_backtrace(array | string | nil) */
+  if (argc == 1 && FX_IS("set_backtrace")) {
+    sp_RbVal a = argv[0];
+    sp_StrArray *bt = NULL;
+    if (fx_is_string(a)) {
+      bt = sp_StrArray_new();
+      SP_GC_ROOT(bt);
+      sp_StrArray_push(bt, sp_poly_recv_s(a, name));
+    } else if (a.tag != SP_TAG_NIL) {
+      bt = sp_poly_as_str_array(a);
+    }
+    *out = sp_Exception_set_backtrace(e, bt);
     return 1;
   }
   /* "msg (Class)" from #message, which a class of the program can define,

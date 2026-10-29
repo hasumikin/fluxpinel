@@ -493,8 +493,8 @@ static void fx_host_init(void);
 static sp_RbVal fx_entry_invoke(int i, int argc, sp_RbVal *argv);
 
 /* load.c */
-static int fx_load_call(const pm_node_t *n, sp_RbVal self, const char *name, int argc, sp_RbVal *argv,
-                          sp_RbVal *out);
+static int fx_load_call(const pm_node_t *n, sp_RbVal self, int on_kernel, const char *name, int argc,
+                          sp_RbVal *argv, sp_RbVal *out);
 static sp_RbVal fx_require_lib(const char *name);
 static sp_RbVal fx_require(const pm_node_t *n, const char *arg, int rel);
 
@@ -583,6 +583,7 @@ static sp_RbVal fx_binding_eval(sp_RbVal bv, const char *src, const char *path, 
 static int fx_binding_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                              sp_RbVal *out);
 static int fx_binding_responds(const char *name);
+static sp_RbVal fx_trap(int argc, sp_RbVal *argv, const FxBlock *blk);   /* walk.c */
 /* refinements (walk.c) */
 static int fx_refine(FxFrame *f, FxClass *k, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                      sp_RbVal *out);
