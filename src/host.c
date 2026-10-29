@@ -85,7 +85,7 @@ static sp_RbVal fx_api_run(const char *path, char *buf, size_t len) {
   char *real = realpath(path, NULL);
   const char *err = fx_parse(strdup(path), real ? real : strdup(path), buf, len, &s);
   if (err) sp_raise_cls("SyntaxError", err);
-  return fx_run_source(s);
+  return fx_run_source_as(s, 1);
 }
 
 /* Fluxpinel.load(path): Kernel#load, but it answers the value of the file. */

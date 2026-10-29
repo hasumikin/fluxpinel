@@ -239,6 +239,18 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   gives it one. A builtin method bound to a value of another class still
   sends by name: `Object.instance_method(:inspect).bind_call(nil)` runs
   `NilClass#inspect`.
+- **Binding.** `binding` makes a `FxBinding` (`src/binding.c`), an
+  instance of the native class `Binding`. It keeps the heap frame of the
+  call, so the scope and the Binding share one set of variables, as a
+  Proc does. `Binding#eval` and `Kernel#eval` with a Binding run the code
+  in a new frame under the last frame of the Binding and keep that frame.
+  Thus a later eval sees the locals of an earlier one, as the console does
+  with its pieces (section 5.1). `local_variable_set` of a new name adds a
+  frame of that one name: the scope of the call does not see it, as in
+  CRuby. `local_variables` lists the frames from the newest, each name
+  once. `dup` shares the frames and takes its own new ones from then on.
+  `TOPLEVEL_BINDING` is the scope of the main program. The default file of
+  an eval is `(eval)`; CRuby names the call site (`(eval at FILE:LINE)`).
 - **Lifetime.** The home frame is on the C stack. Each frame has a serial
   number and an entry in a stack of serials on the heap
   (`FxFrameStack`). Each fiber that runs walker code has its own stack

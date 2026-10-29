@@ -697,6 +697,7 @@ static int fx_builtin_responds(sp_RbVal r, const char *name) {
   if (fx_is_array(r)) lists[nl++] = ary;
   if (fx_is_array(r) || fx_is_range(r) || fx_is_hash(r)) lists[nl++] = enm;
   if (fx_is_hash(r)) lists[nl++] = hsh;
+  if (fx_is_binding(r) && fx_binding_responds(name)) return 1;
   for (int l = 0; l < nl; l++)
     for (int i = 0; lists[l][i]; i++)
       if (!strcmp(lists[l][i], name)) return 1;
@@ -909,6 +910,7 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
   if (fx_record_core(recv, name, argc, argv, blk, out)) return 1;
   if (fx_is_proc(recv) && fx_proc_core(recv, name, argc, argv, out)) return 1;
   if (fx_is_method_value(recv) && fx_method_value_core(recv, name, argc, argv, blk, out)) return 1;
+  if (fx_is_binding(recv) && fx_binding_core(recv, name, argc, argv, blk, out)) return 1;
   if (!blk && fx_range_core(recv, name, argc, argv, out)) return 1;
   if (fx_hash_core(recv, name, argc, argv, blk, out)) return 1;
   if (!blk && fx_array_hash(recv, name, argc, out)) return 1;

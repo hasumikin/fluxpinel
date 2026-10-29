@@ -164,23 +164,30 @@ static const char *fx_parse(const char *path, const char *real, char *buf, size_
   return fx_parse_in(path, real, buf, len, 1, NULL, 0, out);
 }
 
-/* Kernel#eval(src, binding = nil, file = "(eval)", line = 1) with no
-   binding. The code runs in a new scope under the frame of the call, as a
-   block does: it reads and writes the locals of that frame and of the
-   scopes around it, its own new locals stay in it, and self, the lexical
-   class and the block of the method are those of the call, as in CRuby.
-   prism gets the names of these frames as the scopes around the code. */
-static sp_RbVal fx_eval_string(FxFrame *f, int argc, sp_RbVal *argv) {
-  if (argc > 4) fx_arity_error(argc, 1, 3, 0);
-  if (argc >= 2 && argv[1].tag != SP_TAG_NIL) fx_gap("eval with a binding");
-  const char *src = sp_poly_arg_str_chk(argv[0]);
-  const char *path = argc >= 3 ? sp_poly_arg_str_chk(argv[2]) : "(eval)";
-  int line = argc >= 4 ? (int)sp_poly_arg_int_chk(argv[3]) : 1;
+/* Gives the new frame top the context of the frame ctx: the def target,
+   the default visibility, the method (for super) and its block. */
+static void fx_frame_context(FxFrame *top, const FxFrame *ctx) {
+  top->definee = ctx->definee;
+  top->singleton_defs = ctx->singleton_defs;
+  top->vis = ctx->vis;
+  top->method = ctx->method;
+  top->block = ctx->block;
+}
+
+/* Runs the code src in a new scope under the frame under, as a block
+   does: it reads and writes the locals of that frame and of the scopes
+   around it, and its own new locals stay in it. self, the lexical class
+   and the context are those of the frame ctx. prism gets the names of the
+   frames as the scopes around the code. With kept, the new scope moves to
+   the heap after the run, into *kept, so that a later run under it sees
+   its locals (Binding#eval). */
+static sp_RbVal fx_eval_in(FxFrame *under, const FxFrame *ctx, const char *src, const char *path, int line,
+                           FxFrame **kept) {
   int n = 0;
-  for (FxFrame *p = f; p; p = p->parent) n++;
+  for (FxFrame *p = under; p; p = p->parent) n++;
   const pm_constant_id_list_t **scopes = malloc(sizeof *scopes * (size_t)n);
   int i = n;
-  for (FxFrame *p = f; p; p = p->parent) scopes[--i] = p->names;
+  for (FxFrame *p = under; p; p = p->parent) scopes[--i] = p->names;
   size_t len = sp_str_byte_len(src);
   char *buf = malloc(len + 1);
   memcpy(buf, src, len);
@@ -191,26 +198,54 @@ static sp_RbVal fx_eval_string(FxFrame *f, int argc, sp_RbVal *argv) {
   if (err) sp_raise_cls("SyntaxError", err);
   SP_GC_SAVE();
   const pm_program_node_t *prog = (const pm_program_node_t *)s->root;
-  FX_FRAME(top, &prog->locals, f->self, f->cref);
-  top.parent = f;
-  top.definee = f->definee;
-  top.singleton_defs = f->singleton_defs;
-  top.vis = f->vis;
-  top.method = f->method;
-  top.block = f->block;
-  return fx_eval_stmts(&top, prog->statements);
+  FX_FRAME(top, &prog->locals, ctx->self, ctx->cref);
+  fx_frame_context(&top, ctx);
+  top.parent = under;
+  sp_RbVal v = fx_eval_stmts(&top, prog->statements);
+  if (kept) {
+    SP_GC_ROOT_RBVAL(v);
+    *kept = fx_frame_heap(&top);
+  }
+  return v;
+}
+
+/* Kernel#eval(src, binding = nil, file = "(eval)", line = 1). With no
+   binding, the code runs under the frame of the call, with its self, its
+   lexical class and the block of its method, as in CRuby. With a Binding,
+   it runs under the frames of the Binding (binding.c). */
+static sp_RbVal fx_eval_string(FxFrame *f, int argc, sp_RbVal *argv) {
+  if (argc > 4) fx_arity_error(argc, 1, 3, 0);
+  const char *src = sp_poly_arg_str_chk(argv[0]);
+  const char *path = argc >= 3 && argv[2].tag != SP_TAG_NIL ? sp_poly_arg_str_chk(argv[2]) : NULL;
+  int line = argc >= 4 && argv[3].tag != SP_TAG_NIL ? (int)sp_poly_arg_int_chk(argv[3]) : 1;
+  if (argc >= 2 && argv[1].tag != SP_TAG_NIL) {
+    if (!fx_is_binding(argv[1]))
+      sp_raise_cls("TypeError", sp_sprintf("wrong argument type %s (expected binding)", sp_poly_class_name(argv[1])));
+    return fx_binding_eval(argv[1], src, path, line);
+  }
+  return fx_eval_in(f, f, src, path ? path : "(eval)", line, NULL);
 }
 
 /* Runs the top level of a source, as a program of its own. A return at
-   its top level ends the file. */
-static sp_RbVal fx_run_source(const FxSource *s) {
+   its top level ends the file. The first main program sets
+   TOPLEVEL_BINDING to its scope. */
+static sp_RbVal fx_run_source_as(const FxSource *s, int main) {
+  static int toplevel;
   SP_GC_SAVE();
   const pm_program_node_t *prog = (const pm_program_node_t *)s->root;
   FX_FRAME(top, &prog->locals, L.main, L.object);
   top.vis = FX_VIS_PRIVATE;   /* a top-level def is a private method of Object */
+  if (main && !toplevel) {
+    toplevel = 1;
+    fx_const_set(L.object, sp_sym_intern("TOPLEVEL_BINDING"), fx_binding_new(&top, "<main>", 0));
+  }
   sp_RbVal v = fx_eval_stmts(&top, prog->statements);
   if (L.ctl == FX_CTL_RETURN && L.ctl_target == &top) L.ctl = FX_CTL_NONE;
   return v;
+}
+
+static sp_RbVal fx_run_source(const FxSource *s) {
+  return fx_run_source_as(s, 0);
 }
 
 /* Parses the main program from the source buf. A syntax error ends
@@ -226,7 +261,7 @@ static FxSource *fx_parse_main(const char *path, const char *real, char *buf, si
 }
 
 static void fx_load_main_src(const char *path, const char *real, char *buf, size_t len) {
-  fx_run_source(fx_parse_main(path, real, buf, len));
+  fx_run_source_as(fx_parse_main(path, real, buf, len), 1);
 }
 
 /* The directory of a path, as a new C string. */

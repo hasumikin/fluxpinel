@@ -947,6 +947,22 @@ static int fx_call_cached(FxFrame *f, const pm_call_node_t *c, FxCallCache *cc, 
   return 1;
 }
 
+/* Kernel#binding at the call node n: with no receiver, or on Kernel
+   (`::Kernel.binding`). It needs the frame of the call, so it is answered
+   here, unless the program defines a method of the name. */
+static int fx_binding_call(FxFrame *f, const pm_node_t *n, int has_recv, sp_RbVal recv, const char *name, int argc,
+                           const FxBlock *blk, sp_RbVal *out) {
+  if (argc || blk || name[0] != 'b' || strcmp(name, "binding")) return 0;
+  if (has_recv) {
+    FxClass *k = fx_class_value(recv);
+    if (!k || k->cls_id >= 0 || strcmp(k->name, "Kernel")) return 0;
+  } else if (fx_find_method(fx_lookup_class(f->self), sp_sym_intern(name))) {
+    return 0;
+  }
+  *out = fx_binding_new(f, fx_source_of(n)->path, fx_line(n));
+  return 1;
+}
+
 static sp_RbVal fx_call(FxFrame *f, const pm_call_node_t *c) {
   SP_GC_SAVE();
   const sp_sym sym = fx_sym(c->name);
@@ -981,6 +997,7 @@ static sp_RbVal fx_call(FxFrame *f, const pm_call_node_t *c) {
      the program defines its own */
   if (c->receiver && !blk && !kw && fx_fast_call(recv, sym, argc, argv, &v)) {
   } else if (!c->receiver && !blk && fx_load_call((const pm_node_t *)c, f->self, name, argc, argv, &v)) {
+  } else if (fx_binding_call(f, (const pm_node_t *)c, c->receiver != NULL, recv, name, argc, blk, &v)) {
   } else if (fx_call_cached(f, c, cc, sym, recv, argc, argv, blk, &v)) {
   } else {
     L.vcall = PM_NODE_FLAG_P((const pm_node_t *)c, PM_CALL_NODE_FLAGS_VARIABLE_CALL);

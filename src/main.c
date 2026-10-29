@@ -38,6 +38,7 @@
 #include "complex.c"
 #include "encoding.c"
 #include "host.c"
+#include "binding.c"
 #include "console.c"
 
 #ifndef FX_KERNEL_MAIN
@@ -198,7 +199,7 @@ static void fx_run_main(void) {
     fx_require_option(fx_opt.libs[i]);
     if (L.ctl != FX_CTL_NONE) return;
   }
-  fx_run_source(s);
+  fx_run_source_as(s, 1);
 }
 #endif
 
@@ -217,6 +218,7 @@ static void fx_body(void) {
   fx_exc_hooks();
   fx_re_init();
   fx_global_init();
+  fx_binding_init();
   /* a fiber runs the walker, whose frames are larger than those of AOT
      code: the size that codegen asks for an unoptimised build */
   sp_fiber_stack_hint((size_t)1 << 20);

@@ -558,6 +558,15 @@ static FxClass *fx_singleton_of(sp_RbVal v, int create);
 static FxClass *fx_lookup_class(sp_RbVal v);
 static int fx_singleton_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                                sp_RbVal *out);
+/* Binding (binding.c) */
+static void fx_binding_init(void);
+static int fx_is_binding(sp_RbVal v);
+static sp_RbVal fx_binding_new(FxFrame *f, const char *path, int line);
+static sp_RbVal fx_binding_eval(sp_RbVal bv, const char *src, const char *path, int line);
+static int fx_binding_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                             sp_RbVal *out);
+static int fx_binding_responds(const char *name);
+static sp_RbVal fx_run_source_as(const FxSource *s, int main);
 
 /* hash.c */
 static sp_RbVal fx_hash_box(sp_PolyPolyHash *h);
