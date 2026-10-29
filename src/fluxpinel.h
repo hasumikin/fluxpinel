@@ -416,6 +416,8 @@ static sp_RbVal fx_method_value_make(sp_RbVal recv, const FxMethod *m, sp_sym na
 static int fx_is_method_value(sp_RbVal v);
 static const FxBlock *fx_method_value_block(sp_RbVal v);
 static sp_RbVal fx_method_value_step(void *ctx, int argc, sp_RbVal *argv);
+static sp_RbVal fx_method_value_params(const FxMethodValue *mv);
+static sp_RbVal fx_proc_params(const FxBlock *b, int as_lambda);
 static int fx_method_value_arity(const FxMethodValue *mv);
 static int fx_method_value_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                                   sp_RbVal *out);
@@ -517,6 +519,7 @@ static int fx_gvar_stdout(sp_RbVal *out);
 static sp_RbVal fx_gvar_get(const char *name);
 static sp_RbVal fx_io_select(int argc, sp_RbVal *argv);
 static void fx_gvar_set(const char *name, sp_RbVal v);
+static int fx_is_io(sp_RbVal v);
 static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int fx_env_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                          sp_RbVal *out);

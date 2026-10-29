@@ -60,6 +60,9 @@ static int fx_reopened_builtins;
    gives builtin classes methods that the table of responds.c lacks */
 static int fx_feature_loaded;
 
+/* 1 after a require of io/console: IO#winsize and its kin answer */
+static int fx_console_loaded;
+
 static void fx_define_method(FxClass *c, FxMethod *m, int singleton) {
   if (!singleton && fx_always_private(m->name)) m->vis = FX_VIS_PRIVATE;
   fx_table_put(singleton ? &c->smethods : &c->methods, m);

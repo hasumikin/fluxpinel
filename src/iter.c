@@ -1140,6 +1140,17 @@ static int fx_proc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
   if (argc == 0 && FX_IS("to_proc")) { *out = r; return 1; }
   if (argc == 0 && FX_IS("lambda?")) { *out = sp_box_bool(p->b.lambda); return 1; }
   if (argc == 0 && FX_IS("arity")) { *out = sp_box_int(fx_proc_arity(&p->b)); return 1; }
+  /* parameters(lambda: bool): a proc lists a required parameter as :opt,
+     unless lambda: true asks for the list of a lambda */
+  if (FX_IS("parameters") && (argc == 0 || (argc == 1 && fx_is_hash(argv[0]) && argv[0].v.p == L.kwhash))) {
+    int as_lambda = p->b.lambda;
+    if (argc == 1) {
+      sp_RbVal v = sp_PolyPolyHash_get(sp_poly_as_poly_poly_hash(argv[0]), sp_box_sym(sp_sym_intern("lambda")));
+      if (v.tag != SP_TAG_NIL) as_lambda = sp_poly_truthy(v);
+    }
+    *out = fx_proc_params(&p->b, as_lambda);
+    return 1;
+  }
   return 0;
 }
 
@@ -1299,11 +1310,14 @@ static void fx_params_text(sp_String *o, const pm_parameters_node_t *ps) {
 /* One entry of Method#parameters: [kind, name], or [kind] for a name of
    0 with no stand-in (a destructuring parameter). */
 static void fx_param_push(sp_PolyArray *a, const char *kind, pm_constant_id_t name, const char *anon) {
+  /* the name is interned before the allocations: anon can be a string of
+     the heap (sp_sprintf) that the collector would take */
+  int named = name || anon;   /* a symbol can be 0 in the table of the kernel */
+  sp_sym s = name ? fx_sym(name) : anon ? sp_sym_intern(anon) : 0;
   sp_PolyArray *e = sp_PolyArray_new();
   SP_GC_ROOT(e);
   sp_PolyArray_push(e, sp_box_sym(sp_sym_intern(kind)));
-  if (name) sp_PolyArray_push(e, sp_box_sym(fx_sym(name)));
-  else if (anon) sp_PolyArray_push(e, sp_box_sym(sp_sym_intern(anon)));
+  if (named) sp_PolyArray_push(e, sp_box_sym(s));
   sp_PolyArray_push(a, sp_box_poly_array(e));
 }
 
@@ -1351,26 +1365,52 @@ static sp_RbVal fx_params_list(const pm_parameters_node_t *ps) {
 /* Method#parameters: of a def or of the block of define_method; a
    reader has none and a writer one; a builtin method takes a rest, as
    CRuby answers for a method of C with an arity of -1. */
+/* The parameters of a block, as a method lists them (a required one is
+   :req). */
+static sp_RbVal fx_block_params(const FxBlock *b) {
+  const pm_constant_id_list_t *locals;
+  const pm_node_t *params, *body;
+  if (!b->node) return fx_params_list(NULL);
+  fx_block_parts(b->node, &locals, &params, &body);
+  if (params && PM_NODE_TYPE_P(params, PM_BLOCK_PARAMETERS_NODE))
+    return fx_params_list(((const pm_block_parameters_node_t *)params)->parameters);
+  sp_PolyArray *a = sp_PolyArray_new();
+  SP_GC_ROOT(a);
+  if (params && PM_NODE_TYPE_P(params, PM_IT_PARAMETERS_NODE)) fx_param_push(a, "req", 0, NULL);
+  if (params && PM_NODE_TYPE_P(params, PM_NUMBERED_PARAMETERS_NODE))
+    for (int i = 1; i <= ((const pm_numbered_parameters_node_t *)params)->maximum; i++)
+      fx_param_push(a, "req", 0, sp_sprintf("_%d", i));
+  return sp_box_poly_array(a);
+}
+
+/* Proc#parameters: the parameters of the block, each required one as
+   :opt unless as_lambda; [[:req], [:rest]] for a Symbol proc; those of the
+   method for the proc of a Method. */
+static sp_RbVal fx_proc_params(const FxBlock *b, int as_lambda) {
+  if (b->cfn == fx_method_value_step) return fx_method_value_params((const FxMethodValue *)b->ctx);
+  sp_PolyArray *a;
+  if (!b->node && b->sym) {
+    a = sp_PolyArray_new();
+    SP_GC_ROOT(a);
+    fx_param_push(a, "req", 0, NULL);
+    fx_param_push(a, "rest", 0, NULL);
+    return sp_box_poly_array(a);
+  }
+  sp_RbVal v = fx_block_params(b);
+  SP_GC_ROOT_RBVAL(v);
+  a = sp_poly_to_poly_array(v);
+  for (sp_int i = 0; !as_lambda && i < a->len; i++) {
+    sp_PolyArray *e = sp_poly_to_poly_array(a->data[i]);
+    if (e->data[0].v.i == (sp_int)sp_sym_intern("req")) e->data[0] = sp_box_sym(sp_sym_intern("opt"));
+  }
+  return v;
+}
+
 static sp_RbVal fx_method_value_params(const FxMethodValue *mv) {
   const FxMethod *m = mv->m;
   sp_PolyArray *a;
   if (m && m->kind == FX_M_DEF) return fx_params_list(m->def->parameters);
-  if (m && m->kind == FX_M_PROC) {
-    const FxBlock *b = &((FxProc *)m->proc)->b;
-    const pm_constant_id_list_t *locals;
-    const pm_node_t *params, *body;
-    if (!b->node) return fx_params_list(NULL);
-    fx_block_parts(b->node, &locals, &params, &body);
-    if (params && PM_NODE_TYPE_P(params, PM_BLOCK_PARAMETERS_NODE))
-      return fx_params_list(((const pm_block_parameters_node_t *)params)->parameters);
-    a = sp_PolyArray_new();
-    SP_GC_ROOT(a);
-    if (params && PM_NODE_TYPE_P(params, PM_IT_PARAMETERS_NODE)) fx_param_push(a, "req", 0, NULL);
-    if (params && PM_NODE_TYPE_P(params, PM_NUMBERED_PARAMETERS_NODE))
-      for (int i = 1; i <= ((const pm_numbered_parameters_node_t *)params)->maximum; i++)
-        fx_param_push(a, "req", 0, sp_sprintf("_%d", i));
-    return sp_box_poly_array(a);
-  }
+  if (m && m->kind == FX_M_PROC) return fx_block_params(&((FxProc *)m->proc)->b);
   a = sp_PolyArray_new();
   SP_GC_ROOT(a);
   if (m && m->kind == FX_M_READER) return sp_box_poly_array(a);

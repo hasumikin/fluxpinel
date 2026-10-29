@@ -409,6 +409,20 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     return 1;
   }
   if (argc == 0 && FX_IS("internal_encoding")) { *out = sp_box_nil(); return 1; }
+  /* io/console, once it is required: winsize and winsize=, from the
+     terminal (Errno::ENOTTY for a pipe or a file, as CRuby raises) */
+  if (fx_console_loaded && argc == 0 && FX_IS("winsize")) {
+    *out = sp_box_int_array(sp_File_winsize(io));
+    return 1;
+  }
+  if (fx_console_loaded && argc == 1 && FX_IS("winsize=")) {
+    if (!fx_is_array(argv[0]) || (sp_poly_length(argv[0]) != 2 && sp_poly_length(argv[0]) != 4))
+      sp_raise_cls("ArgumentError", sp_sprintf("wrong number of arguments (given %d, expected 2 or 4)",
+                                               fx_is_array(argv[0]) ? (int)sp_poly_length(argv[0]) : 1));
+    sp_File_set_winsize(io, sp_poly_as_int_array(argv[0]));
+    *out = argv[0];
+    return 1;
+  }
   /* a read or a write of a socket, a pipe or a terminal parks the thread:
      the walker lock is given up for its time (FX_UNLOCKED) */
   if (FX_IS("puts")) {

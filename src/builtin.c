@@ -654,6 +654,8 @@ static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_Rb
    methods that Fluxpinel can call, so it answers false for a method of CRuby
    that Fluxpinel lacks. */
 static int fx_builtin_responds(sp_RbVal r, const char *name) {
+  /* io/console on an IO (global.c), once it is required */
+  if (fx_console_loaded && fx_is_io(r) && (!strcmp(name, "winsize") || !strcmp(name, "winsize="))) return 1;
   static const char *const any[] = { "!", "nil?", "to_s", "inspect", "==", "!=", "class", "is_a?", "kind_of?",
                                      "instance_of?", "respond_to?", "send", "__send__", "public_send", "frozen?",
                                      "freeze", "itself", NULL };
@@ -909,6 +911,12 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
   if (fx_env_core(recv, name, argc, argv, blk, out)) return 1;
   if (fx_record_core(recv, name, argc, argv, blk, out)) return 1;
   if (fx_is_proc(recv) && fx_proc_core(recv, name, argc, argv, out)) return 1;
+  /* Symbol#to_proc: the lambda that &:sym passes */
+  if (recv.tag == SP_TAG_SYM && argc == 0 && !blk && !strcmp(name, "to_proc")) {
+    FxBlock b = { .sym = (sp_sym)recv.v.i, .lambda = 1 };
+    *out = fx_block_proc(&b);
+    return 1;
+  }
   if (fx_is_method_value(recv) && fx_method_value_core(recv, name, argc, argv, blk, out)) return 1;
   if (fx_is_binding(recv) && fx_binding_core(recv, name, argc, argv, blk, out)) return 1;
   if (!blk && fx_range_core(recv, name, argc, argv, out)) return 1;
