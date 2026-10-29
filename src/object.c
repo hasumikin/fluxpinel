@@ -172,7 +172,7 @@ static const struct {
 static int fx_unknown_builtin(const char *name) {
   static const char *const names[] = { "Random", "Binding",
                                        "Mutex", "Queue", "SizedQueue", "ConditionVariable", "ObjectSpace",
-                                       "Marshal", "Warning", "RubyVM", NULL };
+                                       "Warning", "RubyVM", NULL };
   for (int i = 0; names[i]; i++)
     if (!strcmp(names[i], name)) return 1;
   return 0;
@@ -215,13 +215,17 @@ static FxClass *fx_builtin(const char *name) {
     if (errnum > 0) fx_const_set(c, sp_sym_intern("Errno"), sp_box_int(errnum));
     return c;
   }
-  /* a module that spinel's codegen answers by name (process.c), and Errno,
-     whose classes (Errno::ENOENT) the runtime names: an id of its own below
-     the table too */
-  if (!id && (!strcmp(name, "Process") || !strcmp(name, "GC") || !strcmp(name, "Errno"))) {
+  /* a module that spinel's codegen answers by name (process.c, marshal.c),
+     and Errno, whose classes (Errno::ENOENT) the runtime names: an id of
+     its own below the table too */
+  if (!id && (!strcmp(name, "Process") || !strcmp(name, "GC") || !strcmp(name, "Errno") || !strcmp(name, "Marshal"))) {
     FxClass *c = fx_class_alloc(FX_EXC_CLS_BASE - L.nbuiltins, strdup(name), 1, NULL, NULL);
     fx_push_class(&L.builtins, &L.nbuiltins, &L.builtins_cap, c);
     if (name[0] == 'P') fx_process_consts(c);
+    if (name[0] == 'M') {
+      fx_const_set(c, sp_sym_intern("MAJOR_VERSION"), sp_box_int(4));
+      fx_const_set(c, sp_sym_intern("MINOR_VERSION"), sp_box_int(8));
+    }
     return c;
   }
   /* Encoding, the class of an SP_TAG_ENCODING value (encoding.c); Method

@@ -28,6 +28,7 @@
 #include "re.c"
 #include "global.c"
 #include "struct.c"
+#include "marshal.c"
 #include "fiber.c"
 #include "load.c"
 #include "prelude.c"
@@ -219,6 +220,7 @@ static void fx_body(void) {
   fx_re_init();
   fx_global_init();
   fx_binding_init();
+  fx_marshal_init();
   /* a fiber runs the walker, whose frames are larger than those of AOT
      code: the size that codegen asks for an unoptimised build */
   sp_fiber_stack_hint((size_t)1 << 20);

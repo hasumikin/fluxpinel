@@ -117,6 +117,7 @@ static int fx_process_responds(sp_RbVal r, const char *name) {
   static const char *const gc[] = { "start", "compact", "stat", "total_time", NULL };
   FxClass *k = fx_class_value(r);
   if (!k || k->cls_id >= 0 || !k->is_module) return 0;
+  if (!strcmp(k->name, "Marshal")) return fx_marshal_responds(name);
   const char *const *names = !strcmp(k->name, "Process") ? process : !strcmp(k->name, "GC") ? gc : NULL;
   for (int i = 0; names && names[i]; i++)
     if (FX_IS(names[i])) return 1;
@@ -198,6 +199,7 @@ static int fx_process_class(const FxClass *k, const char *name, int argc, sp_RbV
   if (!strcmp(k->name, "Process")) return fx_process_fn(name, argc, argv, out);
   if (!strcmp(k->name, "GC")) return fx_gc_fn(name, argc, argv, out);
   if (!strcmp(k->name, "Math")) return fx_math_fn(name, argc, argv, out);
+  if (!strcmp(k->name, "Marshal")) return fx_marshal_fn(name, argc, argv, out);
   /* Kernel.select, the module function of Kernel#select */
   if (!strcmp(k->name, "Kernel") && FX_IS("select") && argc >= 1 && argc <= 4) {
     *out = fx_io_select(argc, argv);

@@ -566,6 +566,10 @@ static sp_RbVal fx_binding_eval(sp_RbVal bv, const char *src, const char *path, 
 static int fx_binding_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                              sp_RbVal *out);
 static int fx_binding_responds(const char *name);
+/* Marshal (marshal.c) */
+static void fx_marshal_init(void);
+static int fx_marshal_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int fx_marshal_responds(const char *name);
 static sp_RbVal fx_run_source_as(const FxSource *s, int main);
 
 /* hash.c */

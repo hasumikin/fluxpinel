@@ -666,6 +666,17 @@ Fluxpinel gives walker classes their own object kind (`src/object.c`):
   first, then the builtin ones; `super` reaches those. `dup` and `clone`
   keep the class, and so do `merge` and `compact` of a Hash; `to_a` and
   `to_h` are plain.
+- **Marshal.** `Marshal.dump` and `Marshal.load` run the serializer of
+  the runtime (`src/marshal.c`). The runtime writes and reads the builtin
+  values, and asks its vtable for an object of the program: Fluxpinel
+  writes an object as CRuby does (`o`, the class, the ivars that are set),
+  an instance of a subclass of Array or Hash as `C`, and reads one back
+  into an instance of the class by its name. In the host build, the kernel
+  fills the vtable for its classes first, and Fluxpinel chains to it. A
+  record (Struct, Data), a native object, a Proc and a Binding raise
+  TypeError. A depth limit, a proc and `freeze: true` are gaps. The
+  runtime writes a Complex with Float parts, so `Complex(1.0, 2.0)` loads
+  as `(1+2i)`.
 - **Singleton class.** `def obj.m`, `class << obj`, `extend` and
   `define_singleton_method` on a heap value give it a singleton class: an
   anonymous class under its class, in a table keyed by the heap pointer
