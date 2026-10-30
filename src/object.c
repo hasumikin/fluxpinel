@@ -588,6 +588,11 @@ static sp_RbVal fx_method_names(sp_RbVal r, const char *name, int mask, int all)
     fx_table_names(a, &anc[i]->methods, mask);
     if (anc[i]->cls_id < FX_CLS_BASE) fx_builtin_names(a, anc[i], mask);
   }
+  /* the private methods of the main object of CRuby */
+  static const char *const mainp[] = { "define_method", "include", "private", "public", "ruby2_keywords", "using",
+                                       NULL };
+  if (!k && ((mask >> FX_VIS_PRIVATE) & 1) && fx_is_fx_object(r) && r.v.p == L.main.v.p)
+    for (int i = 0; mainp[i]; i++) fx_names_push(a, sp_sym_intern(mainp[i]));
   return sp_box_poly_array(a);
 }
 
@@ -2032,6 +2037,7 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   if (!blk && fx_encoding_class(k, name, argc, argv, out)) return 1;
   /* Integer.sqrt */
   if (!blk && fx_integer_class(k, name, argc, argv, out)) return 1;
+  if (!blk && fx_symbol_class(k, name, argc, out)) return 1;
   /* Kernel.format, Kernel.puts, ...: a module function of Kernel */
   if (!blk && k->cls_id < 0 && !strcmp(k->name, "Kernel") && fx_kernel(name, argc, argv, out)) return 1;
   /* X[a, b] of a subclass X of Array: an instance of the elements; of a

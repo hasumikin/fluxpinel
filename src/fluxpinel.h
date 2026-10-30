@@ -370,6 +370,7 @@ static void fx_prelude_gap(const char *name, int argc, sp_RbVal *argv);
 static int fx_is_string(sp_RbVal v);
 static int fx_fast_call(sp_RbVal r, sp_sym s, int argc, sp_RbVal *argv, sp_RbVal *out);   /* builtin.c */
 static int fx_integer_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int fx_symbol_class(const FxClass *k, const char *name, int argc, sp_RbVal *out);
 static int fx_fast_eqq(sp_RbVal v, sp_RbVal s, sp_RbVal *out);
 static FxFrameStack *fx_fs(void);
 static void fx_bt_land(void);

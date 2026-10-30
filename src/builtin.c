@@ -307,6 +307,19 @@ static int fx_integer_class(const FxClass *k, const char *name, int argc, sp_RbV
   return 1;
 }
 
+/* Symbol.all_symbols: every Symbol interned so far, by id. The ids are
+   contiguous, and sp_sym_to_s answers sp_str_empty past the last, as it
+   does for the empty Symbol, which is told apart by its id. */
+static int fx_symbol_class(const FxClass *k, const char *name, int argc, sp_RbVal *out) {
+  if (k->cls_id >= 0 || strcmp(k->name, "Symbol") || argc != 0 || !FX_IS("all_symbols")) return 0;
+  sp_PolyArray *a = sp_PolyArray_new();
+  SP_GC_ROOT(a);
+  sp_sym empty = fx_sym_intern_n(NULL, 0);
+  for (sp_sym id = 0; id == empty || sp_sym_to_s(id) != sp_str_empty; id++) sp_PolyArray_push(a, sp_box_sym(id));
+  *out = sp_box_poly_array(a);
+  return 1;
+}
+
 /* Comparable of an Integer or a Float: between?, clamp(min, max) and
    clamp(range). A Range side may be open; an exclusive Range with an end
    cannot clamp. */
