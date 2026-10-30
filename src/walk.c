@@ -797,6 +797,12 @@ static int fx_eval_block(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
   SP_GC_ROOT_RBVAL(self);
   FxClass *definee = k ? k : fx_class_of(r);
   int sdefs = mod ? 0 : k ? 4 : 3;
+  /* the singleton class of a class: a def in the block is a class method
+     of that class, as in `class << self` */
+  if (k && k->attached) {
+    definee = k->attached;
+    sdefs = 1;
+  }
   *out = fx_yield_in(blk, exec ? argc : 1, exec ? argv : &self, 0, &self, definee, sdefs, NULL, NULL);
   return 1;
 }

@@ -100,6 +100,10 @@ typedef struct FxClass {
                                        C that it refines; super is C */
   struct FxClass **refines;       /* a module: its refinements, in refine order */
   int nrefines, refines_cap;
+  int singleton;                    /* a singleton class, of an object or of a class */
+  struct FxClass *attached;       /* the singleton class of a class M (fx_meta_of): M,
+                                       whose smethods are the methods of this class */
+  struct FxClass *meta;           /* the singleton class of this class, once asked */
 } FxClass;
 
 #define FX_REC_STRUCT 1

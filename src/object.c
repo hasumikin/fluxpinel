@@ -351,10 +351,28 @@ static FxClass *fx_singleton_of(sp_RbVal v, int create) {
   FxClass *base = fx_class_of(v);
   FxClass *k = fx_class_new(NULL, 0, base, base);
   k->name = strdup(sp_sprintf("#<Class:#<%s:0x%016llx>>", base->name, (unsigned long long)(uintptr_t)v.v.p));
+  k->singleton = 1;
   if (!fx_singletons) fx_singletons = sp_PolyArray_new();
   sp_PolyArray_push(fx_singletons, v);
   sp_PolyArray_push(fx_singletons, fx_class_box(k));
   return k;
+}
+
+/* The singleton class of a class or module (M.singleton_class): a class
+   that stands for the class methods of M, which Fluxpinel keeps in the
+   smethods of M. The class is a marker: a definition through it
+   (fx_class_core) and a def in its class_eval (fx_eval_block) go to the
+   smethods of M, as in `class << self`, and instance_methods lists them.
+   Its superclass is the singleton class of the superclass of M, as in
+   CRuby, else Class or Module. */
+static FxClass *fx_meta_of(FxClass *k) {
+  if (k->meta) return k->meta;
+  FxClass *m = fx_class_new(strdup(sp_sprintf("#<Class:%s>", k->name)), 0, NULL, L.object);
+  m->singleton = 1;
+  m->attached = k;
+  k->meta = m;
+  m->super = k->super ? fx_meta_of(k->super) : fx_builtin(k->is_module ? "Module" : "Class");
+  return m;
 }
 
 /* The class where the methods of a value are found: its singleton class
@@ -1971,6 +1989,7 @@ static int fx_singleton_core(sp_RbVal r, const char *name, int argc, sp_RbVal *a
                                sp_RbVal *out) {
   if (name[0] != 's' && name[0] != 'd' && name[0] != 'e') return 0;
   if (argc == 0 && !blk && !strcmp(name, "singleton_class")) {
+    if (r.tag == SP_TAG_CLASS && fx_class_value(r)) { *out = fx_class_box(fx_meta_of(fx_class_value(r))); return 1; }
     /* an Integer, a Symbol, nil, true and false have none */
     if (r.tag != SP_TAG_OBJ || !r.v.p) sp_raise_cls("TypeError", "can't define singleton");
     *out = fx_class_box(fx_singleton_of(r, 1));
@@ -2026,6 +2045,39 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
                            const FxBlock *blk, sp_RbVal *out) {
   FxClass *k = fx_class_value(r);
   if (!k) return 0;
+  if (argc == 0 && !blk && !strcmp(name, "singleton_class")) { *out = fx_class_box(fx_meta_of(k)); return 1; }
+  if (argc == 0 && !strcmp(name, "singleton_class?")) { *out = sp_box_bool(k->singleton); return 1; }
+  /* the singleton class of a class (fx_meta_of) answers for itself by
+     name, and lists the smethods of its class; any other call through it
+     is a singleton definition in that class */
+  int meta = k->attached != NULL;
+  if (meta) {
+    if (argc == 0 && (!strcmp(name, "name") || !strcmp(name, "to_s") || !strcmp(name, "inspect"))) {
+      *out = name[0] == 'n' ? sp_box_nil() : sp_box_str_new(sp_str_dup(k->name));
+      return 1;
+    }
+    if (argc == 0 && !strcmp(name, "superclass")) { *out = k->super ? fx_class_box(k->super) : sp_box_nil(); return 1; }
+    int mask = fx_vis_mask(name);
+    if (mask && name[strlen(name) - 1] == 's' && argc <= 1) {
+      sp_PolyArray *a = sp_PolyArray_new();
+      SP_GC_ROOT(a);
+      fx_table_names(a, &k->attached->smethods, mask);
+      for (int e = k->attached->nextends - 1; e >= 0; e--) fx_table_names(a, &k->attached->extends[e]->methods, mask);
+      *out = sp_box_poly_array(a);
+      return 1;
+    }
+    if (mask && name[strlen(name) - 1] == '?' && (argc == 1 || argc == 2)) {
+      FxMethod *m = fx_find_smethod(k->attached, sp_sym_intern(fx_name_arg(argv[0])));
+      *out = sp_box_bool(m && ((mask >> m->vis) & 1));
+      return 1;
+    }
+    if (argc == 1 && (!strcmp(name, "==") || !strcmp(name, "equal?") || !strcmp(name, "eql?"))) {
+      *out = sp_box_bool(fx_class_value(argv[0]) == k);
+      return 1;
+    }
+    if (!strcmp(name, "include")) name = "extend";
+    k = k->attached;
+  }
   /* Class.new, Module.new, Struct.new, Data.define and a record class */
   if (fx_struct_class(f, k, name, argc, argv, blk, out)) return 1;
   /* Module#refine with its block */
@@ -2138,7 +2190,7 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   }
   if (!strcmp(name, "attr_accessor") || !strcmp(name, "attr_reader") || !strcmp(name, "attr_writer")) {
     int reader = name[5] != 'w', writer = name[5] != 'r';
-    fx_attr(k, reader, writer, f && f->singleton_defs == 1, fx_scope_vis(f), argc, argv);
+    fx_attr(k, reader, writer, meta || (f && f->singleton_defs == 1), fx_scope_vis(f), argc, argv);
     /* the names of the methods: [:x, :x=] for attr_accessor :x */
     sp_PolyArray *a = sp_PolyArray_new();
     SP_GC_ROOT(a);
@@ -2157,13 +2209,13 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
         sp_raise_cls("TypeError", sp_sprintf("%s is not a symbol nor a string", sp_poly_inspect(argv[i])));
       s[i] = argv[i].tag == SP_TAG_SYM ? (sp_sym)argv[i].v.i : sp_sym_intern(sp_poly_recv_s(argv[i], name));
     }
-    fx_alias(k, f && f->singleton_defs == 1, s[0], s[1]);
+    fx_alias(k, meta || (f && f->singleton_defs == 1), s[0], s[1]);
     *out = sp_box_sym(s[0]);
     return 1;
   }
   if (!strcmp(name, "define_method") || !strcmp(name, "define_singleton_method")) {
     int own = name[7] == 's';
-    *out = fx_define_proc_method(k, own || (f && f->singleton_defs == 1), own ? FX_VIS_PUBLIC : fx_scope_vis(f),
+    *out = fx_define_proc_method(k, own || meta || (f && f->singleton_defs == 1), own ? FX_VIS_PUBLIC : fx_scope_vis(f),
                                  argc, argv, blk);
     return 1;
   }
@@ -2233,7 +2285,7 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
       fx_vis_frame(f)->vis = vis;
       if (f->singleton_defs == 2) f->singleton_defs = 0;
     }
-    fx_set_vis_args(k, cm || (f && f->singleton_defs == 1), vis, argc, argv);
+    fx_set_vis_args(k, cm || meta || (f && f->singleton_defs == 1), vis, argc, argv);
     *out = cm ? r : fx_vis_answer(argc, argv);
     return 1;
   }

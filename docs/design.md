@@ -709,7 +709,11 @@ Fluxpinel gives walker classes their own object kind (`src/object.c`):
   node whose receiver has one takes the general path instead of its
   cache. A value with no heap pointer (an Integer, a Symbol, nil) raises
   TypeError, as in CRuby. The runtime does not see the singleton class:
-  `p obj` prints as the class does.
+  `p obj` prints as the class does. The singleton class of a class M
+  (`M.singleton_class`, `fx_meta_of`) is a marker class: a definition
+  through it, and a def in its `class_eval`, go to the class methods of
+  M (`smethods`), as `class << self` does, and `instance_methods` lists
+  them.
 - **Refinements.** `refine C do ... end` in a module makes a refinement: an
   anonymous class under C, whose methods the block defines, kept in the
   module. `using M` makes the refinements of M active in a range of the
