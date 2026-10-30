@@ -272,6 +272,18 @@ static FxClass *fx_builtin(const char *name) {
   return c;
 }
 
+/* The names of the builtin classes and modules at the top level, for
+   Object.constants: those of the table, without the nested ones
+   (Thread::Mutex), and the ones that fx_builtin makes by name. */
+static void fx_builtin_const_names(sp_PolyArray *a) {
+  static const char *const more[] = { "Process", "GC", "Errno", "Marshal", "Encoding", "Method", "UnboundMethod",
+                                      "Queue", "SizedQueue", "Mutex", "ConditionVariable", "LoadError",
+                                      "NoMemoryError", "SystemStackError", NULL };
+  for (int i = 0; i < FX_NBUILTIN_CLASSES; i++)
+    if (!strstr(fx_builtin_class_names[i], "::")) fx_names_push(a, sp_sym_intern(fx_builtin_class_names[i]));
+  for (int i = 0; more[i]; i++) fx_names_push(a, sp_sym_intern(more[i]));
+}
+
 static FxClass *fx_class_by_id(sp_int cls_id) {
   if (cls_id >= FX_CLS_BASE && cls_id < FX_CLS_BASE + L.nclasses) return L.classes[cls_id - FX_CLS_BASE];
   int i = -100 - (int)cls_id;
@@ -2331,14 +2343,15 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     const FxClass *anc[128];
     int n = inherit ? fx_ancestors(k, anc, 128) : 1;
     if (!inherit) anc[0] = k;
-    for (int i = 0; i < n && (i == 0 || anc[i] != L.object); i++)
+    for (int i = 0; i < n && (i == 0 || anc[i] != L.object); i++) {
       for (int j = 0; j < anc[i]->nconsts; j++) {
         if (anc[i]->consts[j].loading) continue;
-        sp_RbVal s = sp_box_sym(anc[i]->consts[j].name);
-        int seen = 0;
-        for (sp_int m = 0; m < a->len; m++) seen |= a->data[m].v.i == s.v.i;
-        if (!seen) sp_PolyArray_push(a, s);
+        fx_names_push(a, anc[i]->consts[j].name);
       }
+      /* the builtin classes and modules, which Object answers by name
+         (fx_builtin) and keeps in no table */
+      if (anc[i] == L.object) fx_builtin_const_names(a);
+    }
     *out = sp_box_poly_array(a);
     return 1;
   }

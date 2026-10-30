@@ -262,8 +262,31 @@ static FxSource *fx_parse_main(const char *path, const char *real, char *buf, si
   return s;
 }
 
+/* Runs the main program. An exception that reaches its top gets the
+   backtrace of its frames at the landing (fx_bt_land) and goes on, as the
+   same object, to the report of the runtime, which prints the backtrace
+   of the exception when sp_bt_enabled is set (as a debug build of spinel
+   sets it). The report then reads as CRuby's: the frame of the raise, the
+   message and the class, then the callers. */
+static void fx_run_main_source(const FxSource *s) {
+  SP_GC_SAVE();
+  const int depth = fx_fs()->depth;
+  FX_TRY_PUSH();
+  if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
+    fx_run_source_as(s, 1);
+    sp_exc_top--;
+    return;
+  }
+  FX_TRY_LANDED(depth);
+  if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
+  FxCaught c = fx_caught();
+  c.obj = fx_caught_obj(c);
+  sp_bt_enabled = 1;
+  fx_reraise(c);
+}
+
 static void fx_load_main_src(const char *path, const char *real, char *buf, size_t len) {
-  fx_run_source_as(fx_parse_main(path, real, buf, len), 1);
+  fx_run_main_source(fx_parse_main(path, real, buf, len));
 }
 
 /* The directory of a path, as a new C string. */

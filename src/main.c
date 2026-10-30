@@ -200,7 +200,7 @@ static void fx_run_main(void) {
     fx_require_option(fx_opt.libs[i]);
     if (L.ctl != FX_CTL_NONE) return;
   }
-  fx_run_source_as(s, 1);
+  fx_run_main_source(s);
 }
 #endif
 

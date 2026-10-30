@@ -300,8 +300,10 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   (`file:line:in 'A#m'`) on the exception, unless it has them already.
   `Kernel#caller` reads the same records. Fluxpinel has no frame for a
   builtin method, so the frames that CRuby shows for them (`Array#each`,
-  `Kernel#Integer`) are not in a backtrace. The report of an uncaught
-  exception is the runtime's, with no backtrace.
+  `Kernel#Integer`) are not in a backtrace. The main program runs under
+  a handler (`fx_run_main_source`) that gives an uncaught exception its
+  backtrace and raises it again, with `sp_bt_enabled` set, so the report
+  of the runtime prints the frames as CRuby does.
 - **Creation.** `k.new` for a subclass of Exception makes an
   `sp_Exception` and calls the `initialize` of the program, if any.
   `super(msg)` from it reaches the builtin `initialize`, which sets the
