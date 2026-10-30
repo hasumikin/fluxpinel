@@ -1898,15 +1898,21 @@ static int fx_method_defined(FxClass *k, int mask, sp_sym name, int inherit) {
 }
 
 /* instance_methods(false) and its kin: the methods that k itself defines,
-   in the order of definition. With inherit, the list takes the builtin
-   methods of the ancestors too, which Fluxpinel does not know. */
+   in the order of definition, and for a builtin class its builtin methods
+   (fx_builtin_names). With inherit, those of the ancestors too, as
+   Kernel#methods lists them. A native class of a package keeps its
+   methods in C, which the tables do not know. */
 static sp_RbVal fx_instance_methods(FxClass *k, int mask, int inherit) {
-  if (inherit || k->cls_id < FX_CLS_BASE || k->native)
-    fx_gap(sp_sprintf("%s.instance_methods with the builtin methods", k->name));
+  if (k->native) fx_gap(sp_sprintf("%s.instance_methods of a native class", k->name));
   sp_PolyArray *a = sp_PolyArray_new();
   SP_GC_ROOT(a);
-  for (int i = 0; i < k->methods.n; i++)
-    if ((mask >> k->methods.items[i]->vis) & 1) sp_PolyArray_push(a, sp_box_sym(k->methods.items[i]->name));
+  const FxClass *anc[128];
+  int n = inherit ? fx_ancestors(k, anc, 128) : 0;
+  if (!inherit) anc[n++] = k;
+  for (int i = 0; i < n; i++) {
+    fx_table_names(a, &anc[i]->methods, mask);
+    if (anc[i]->cls_id < FX_CLS_BASE) fx_builtin_names(a, anc[i], mask);
+  }
   return sp_box_poly_array(a);
 }
 
