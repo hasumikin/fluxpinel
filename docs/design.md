@@ -281,7 +281,9 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   `Integer#times`/`upto`/`downto`/`step`, `String#each_char`, `tap`,
   `then`, `Array.new(n) { }` and `loop`. The prelude writes rarer ones
   in Ruby (section 3.2). A builtin method with a block that neither has
-  stops as a gap, since a generated wrapper would drop the block.
+  stops as a gap, since a generated wrapper would drop the block. A
+  collector with no block (`a.map`, `a.select`) answers an Enumerator
+  that remembers the method, so `a.map.with_index { }` collects as `map`.
 
 ### 3.3.2 Exceptions
 

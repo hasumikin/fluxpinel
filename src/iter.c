@@ -234,6 +234,60 @@ static void fx_array_replace(sp_RbVal r, sp_PolyArray *src) {
 #define FX_IS(s) (!strcmp(name, (s)))
 #define FX_STOP() do { if (L.ctl != FX_CTL_NONE) { *out = sp_box_nil(); return 1; } } while (0)
 
+/* The collectors: the methods that run the block on each element and
+   answer a new Array. 1 map, 2 flat_map, 3 select, 4 reject, 5 filter_map;
+   0 for another name. */
+static int fx_collector_kind(const char *name) {
+  if (FX_IS("map") || FX_IS("collect")) return 1;
+  if (FX_IS("flat_map") || FX_IS("collect_concat")) return 2;
+  if (FX_IS("select") || FX_IS("filter") || FX_IS("find_all")) return 3;
+  if (FX_IS("reject")) return 4;
+  if (FX_IS("filter_map")) return 5;
+  return 0;
+}
+
+/* The collector (fx_collector_kind) that a blockless call answered as an
+   Enumerator, which remembers the method as CRuby does
+   (#<Enumerator: [1, 2]:map>); 0 for any other value. */
+static int fx_enum_collector(sp_RbVal r) {
+  if (r.tag != SP_TAG_OBJ || r.cls_id != SP_BUILTIN_ENUMERATOR || !r.v.p) return 0;
+  const char *m = ((const sp_Enumerator *)r.v.p)->meth;
+  return m ? fx_collector_kind(m) : 0;
+}
+
+/* One step of the collector k: the element v and the answer y of the block. */
+static void fx_collect(int k, sp_PolyArray *acc, sp_RbVal v, sp_RbVal y) {
+  if (k == 1) sp_PolyArray_push(acc, y);
+  else if (k == 5) { if (sp_poly_truthy(y)) sp_PolyArray_push(acc, y); }
+  else if (k == 2) {
+    if (!fx_is_array(y)) { sp_PolyArray_push(acc, y); return; }
+    for (sp_int i = 0; i < sp_poly_length(y); i++) sp_PolyArray_push(acc, sp_poly_arr_get(y, i));
+  } else if (sp_poly_truthy(y) == (k == 3)) sp_PolyArray_push(acc, v);
+}
+
+/* A collector with no block: an Enumerator over the elements that
+   remembers the method, so that with_index, with_object and each collect
+   as the method does (fx_seq_iter). */
+static int fx_seq_collector(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  /* Enumerator#with_index(offset) with no block: the pairs [element, index] */
+  if (FX_IS("with_index") && r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_ENUMERATOR && r.v.p &&
+      (argc == 0 || (argc == 1 && argv[0].tag == SP_TAG_INT))) {
+    *out = sp_box_obj(sp_Enumerator_with_index((sp_Enumerator *)r.v.p, argc ? argv[0].v.i : 0), SP_BUILTIN_ENUMERATOR);
+    return 1;
+  }
+  if (argc != 0 || !fx_collector_kind(name) || (!fx_is_array(r) && !fx_is_hash(r) && !fx_is_range(r))) return 0;
+  SP_GC_ROOT_RBVAL(r);
+  sp_PolyArray *a = fx_seq_array(r);
+  SP_GC_ROOT(a);
+  const char *m = sp_sprintf("%s", name);
+  SP_GC_ROOT_STR(m);
+  sp_Enumerator *e = sp_Enumerator_new_from_items(a);
+  SP_GC_ROOT(e);
+  sp_enum_with_src(e, r, m);
+  *out = sp_box_obj(e, SP_BUILTIN_ENUMERATOR);
+  return 1;
+}
+
 /* The methods of an Array or a Range that take a block. */
 static int fx_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                          sp_RbVal *out) {
@@ -243,6 +297,7 @@ static int fx_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, c
   SP_GC_ROOT_RBVAL(y);
   sp_PolyArray *acc = NULL;
   SP_GC_ROOT(acc);
+  int k;
   /* a beginless Range counts down from its end */
   if (argc == 0 && FX_IS("reverse_each") && fx_is_range(r) && ((const sp_Range *)r.v.p)->nobeg) {
     const sp_Range *g = (const sp_Range *)r.v.p;
@@ -257,6 +312,23 @@ static int fx_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, c
   }
   if (!fx_seq_open(r, &s)) return 0;
   FX_SEQ_ROOT(s);
+  /* the Enumerator of a blockless collector (`a.map.with_index { }`): each,
+     with_index and with_object run the block and collect as the method does */
+  int memo = FX_IS("with_object") || FX_IS("each_with_object");
+  if ((k = fx_enum_collector(r)) &&
+      ((argc == 0 && (FX_IS("each") || FX_IS("each_with_index"))) ||
+       (FX_IS("with_index") && (argc == 0 || (argc == 1 && argv[0].tag == SP_TAG_INT))) ||
+       (memo && argc == 1))) {
+    sp_int i = argc == 1 && !memo ? argv[0].v.i : 0;
+    acc = sp_PolyArray_new();
+    while (fx_seq_next(&s, &v)) {
+      y = FX_IS("each") ? fx_y1(blk, v) : fx_y2(blk, v, memo ? argv[0] : sp_box_int(i++));
+      FX_STOP();
+      fx_collect(k, acc, v, y);
+    }
+    *out = memo ? argv[0] : sp_box_poly_array(acc);
+    return 1;
+  }
   if (argc == 0 && (FX_IS("each") || FX_IS("each_entry") || (s.hash && FX_IS("each_pair")))) {
     while (fx_seq_next(&s, &v)) { fx_y1(blk, v); FX_STOP(); }
     *out = fx_each_answer(r);
@@ -285,19 +357,12 @@ static int fx_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, c
     *out = memo;
     return 1;
   }
-  int map = FX_IS("map") || FX_IS("collect"), flat = FX_IS("flat_map") || FX_IS("collect_concat");
-  int sel = FX_IS("select") || FX_IS("filter"), rej = FX_IS("reject"), fmap = FX_IS("filter_map");
-  if (argc == 0 && (map || flat || sel || rej || fmap)) {
+  if (argc == 0 && (k = fx_collector_kind(name))) {
     acc = sp_PolyArray_new();
     while (fx_seq_next(&s, &v)) {
       y = fx_y1(blk, v);
       FX_STOP();
-      if (map) sp_PolyArray_push(acc, y);
-      else if (fmap) { if (sp_poly_truthy(y)) sp_PolyArray_push(acc, y); }
-      else if (flat) {
-        if (!fx_is_array(y)) { sp_PolyArray_push(acc, y); continue; }
-        for (sp_int i = 0; i < sp_poly_length(y); i++) sp_PolyArray_push(acc, sp_poly_arr_get(y, i));
-      } else if (sp_poly_truthy(y) == sel) sp_PolyArray_push(acc, v);
+      fx_collect(k, acc, v, y);
     }
     *out = sp_box_poly_array(acc);
     return 1;
@@ -504,12 +569,15 @@ static int fx_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, c
     *out = r;
     return 1;
   }
-  /* the mutators of an Array that the program built (a poly Array) */
+  /* the mutators of an Array: a poly Array takes the new elements itself;
+     a typed one (`str.chars`) takes them through the write-back of the
+     runtime, which refuses an element of another type */
   int mmap = FX_IS("map!") || FX_IS("collect!");
   int msel = FX_IS("select!") || FX_IS("filter!") || FX_IS("keep_if");
   int mrej = FX_IS("reject!") || FX_IS("delete_if");
   if (argc == 0 && (mmap || msel || mrej)) {
-    if (r.cls_id != SP_BUILTIN_POLY_ARRAY) fx_gap(sp_sprintf("%s on a typed Array", name));
+    if (!fx_is_array(r)) return 0;
+    sp_poly_array_recv(r, name, 1);   /* FrozenError before any change */
     acc = sp_PolyArray_new();
     sp_int before = sp_poly_length(r);
     while (fx_seq_next(&s, &v)) {
@@ -518,7 +586,8 @@ static int fx_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, c
       if (mmap) sp_PolyArray_push(acc, y);
       else if (sp_poly_truthy(y) == msel) sp_PolyArray_push(acc, v);
     }
-    fx_array_replace(r, acc);
+    if (r.cls_id == SP_BUILTIN_POLY_ARRAY) fx_array_replace(r, acc);
+    else sp_poly_arr_writeback(r, acc);
     int bang = name[strlen(name) - 1] == '!';
     *out = !mmap && bang && acc->len == before ? sp_box_nil() : r;
     return 1;
@@ -1058,7 +1127,7 @@ static int fx_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const
   }
   if (!blk)
     return fx_inject_sym(r, name, argc, argv, out) || fx_num_step(r, name, argc, argv, out) ||
-           fx_int_iter(r, name, argc, argv, NULL, out) ||
+           fx_seq_collector(r, name, argc, argv, out) || fx_int_iter(r, name, argc, argv, NULL, out) ||
            fx_range_step(r, name, argc, argv, NULL, out) || fx_range_via_array(r, name, argc, argv, NULL, out) ||
            fx_seq_pattern(r, name, argc, argv, out);
   if (fx_range_step(r, name, argc, argv, blk, out) || fx_range_via_array(r, name, argc, argv, blk, out)) return 1;

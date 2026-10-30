@@ -141,7 +141,7 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
   }
   static const char *const one[] = { "exist?", "directory?", "file?", "size", "basename", "dirname", "extname",
                                      "readable?", "writable?", "executable?", "mtime", "atime", "ctime", "path",
-                                     NULL };
+                                     "stat", "lstat", NULL };
   int is_one = 0;
   for (int i = 0; argc == 1 && one[i]; i++)
     if (FX_IS(one[i])) is_one = 1;
@@ -161,6 +161,10 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
     if (FX_IS("mtime")) { *out = sp_box_timev(sp_filev_mtime(path)); return 1; }
     if (FX_IS("atime")) { *out = sp_box_timev(sp_filev_atime(path)); return 1; }
     if (FX_IS("ctime")) { *out = sp_box_timev(sp_filev_ctime(path)); return 1; }
+    /* File.stat and File.lstat: a handle of the runtime whose readers are
+       in fx_stat_core (global.c) */
+    if (FX_IS("stat")) { *out = sp_box_obj(sp_file_stat_handle(path), SP_BUILTIN_IO); return 1; }
+    if (FX_IS("lstat")) { *out = sp_box_obj(sp_file_lstat_handle(path), SP_BUILTIN_IO); return 1; }
     /* the access of the process, as CRuby asks with access(2) */
     int mode = name[0] == 'r' ? R_OK : name[0] == 'w' ? W_OK : X_OK;
     *out = sp_box_bool(access(path, mode) == 0);
@@ -437,7 +441,7 @@ static int fx_file_responds(sp_RbVal r, const char *name) {
                                        "write", "binwrite", "read", "binread",
                                        "exist?", "directory?", "file?", "size", "basename", "dirname",
                                        "extname", "readable?", "writable?", "executable?", "mtime", "atime",
-                                       "ctime", "path", "expand_path", "absolute_path", NULL };
+                                       "ctime", "path", "stat", "lstat", "expand_path", "absolute_path", NULL };
   FxClass *k = fx_class_value(r);
   if (!k || k->cls_id >= 0 || strcmp(k->name, "File")) return 0;
   for (int i = 0; names[i]; i++)
