@@ -720,8 +720,49 @@ static int fx_int_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, c
 /* String#each_char: one String per UTF-8 character. String#each_grapheme_cluster:
    one per match of \X (re.c). */
 static int fx_str_iter(sp_RbVal r, const char *name, int argc, const FxBlock *blk, sp_RbVal *out) {
-  if (!fx_is_string(r) || argc != 0 || !blk || (!FX_IS("each_char") && !FX_IS("each_grapheme_cluster"))) return 0;
+  if (!fx_is_string(r) || argc != 0 || !blk) return 0;
+  if (!FX_IS("each_char") && !FX_IS("each_grapheme_cluster") && !FX_IS("scrub") && !FX_IS("scrub!")) return 0;
   SP_GC_ROOT_RBVAL(r);
+  /* scrub { |bad| } and scrub! { }: the block answers the replacement of
+     each invalid byte sequence (sp_str_scrub_bad finds them). The bytes
+     are read once, as the block can change the String. */
+  if (name[0] == 's') {
+    const char *s = FX_IS("scrub!") ? fx_str_mut(r, name) : sp_poly_recv_s(r, name);
+    sp_int bl = (sp_int)sp_str_byte_len(s);
+    char *src = malloc((size_t)bl + 1), *o = malloc((size_t)bl + 1);
+    memcpy(src, s, (size_t)bl);
+    sp_int n = 0, cap = bl + 1;
+    for (sp_int i = 0; i < bl;) {
+      sp_int len, bad = sp_str_scrub_bad(src, bl, i, &len);
+      memcpy(o + n, src + i, (size_t)(bad - i));
+      n += bad - i;
+      i = bad;
+      if (bad >= bl) break;
+      char *c = sp_str_alloc((size_t)len);
+      memcpy(c, src + i, (size_t)len);
+      c[len] = 0;
+      sp_RbVal y = fx_y1(blk, sp_box_str_new(c));
+      if (L.ctl != FX_CTL_NONE) { free(src); free(o); *out = sp_box_nil(); return 1; }
+      const char *rep = sp_str_scrub_repl(sp_poly_arg_str_chk(y));
+      sp_int rl = (sp_int)sp_str_byte_len(rep);
+      if (n + rl + (bl - i) >= cap) o = realloc(o, (size_t)(cap = (n + rl + bl - i) * 2 + 1));
+      memcpy(o + n, rep, (size_t)rl);
+      n += rl;
+      i += len;
+    }
+    free(src);
+    char *t = sp_str_alloc((size_t)n);
+    memcpy(t, o, (size_t)n);
+    t[n] = 0;
+    free(o);
+    if (FX_IS("scrub!")) {
+      sp_poly_str_become(r, t);
+      *out = r;
+    } else {
+      *out = sp_box_str_new(t);
+    }
+    return 1;
+  }
   if (FX_IS("each_grapheme_cluster")) {
     sp_RbVal a = fx_re_graphemes(sp_poly_recv_s(r, name));
     SP_GC_ROOT_RBVAL(a);

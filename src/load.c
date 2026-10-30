@@ -201,6 +201,8 @@ static sp_RbVal fx_eval_in(FxFrame *under, const FxFrame *ctx, const char *src, 
   FX_FRAME(top, &prog->locals, ctx->self, ctx->cref);
   fx_frame_context(&top, ctx);
   top.parent = under;
+  /* a backtrace names the frame of an eval after its method, as CRuby does */
+  fx_frame_tag(&top, top.method ? FX_TR_METHOD : FX_TR_TOP, top.method, NULL, NULL, top.self.tag == SP_TAG_CLASS, 0);
   sp_RbVal v = fx_eval_stmts(&top, prog->statements);
   if (kept) {
     SP_GC_ROOT_RBVAL(v);

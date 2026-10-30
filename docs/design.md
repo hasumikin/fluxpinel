@@ -292,6 +292,16 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   name, and `sp_user_exc_parent_fn` answers its superclass. Thus
   `sp_exc_cls_matches` and the report of an uncaught exception see the
   classes of the program (`src/exc.c`).
+- **Backtrace.** A raise unwinds the frames on the C stack before a
+  handler runs, so each frame stack keeps a record per depth on the heap
+  (`FxTrace`): the statement or call under evaluation, the method or
+  block, and the kind of frame. A landing (`FX_TRY_LANDED`) reads the
+  records of the unwound frames before it cuts them, and puts the lines
+  (`file:line:in 'A#m'`) on the exception, unless it has them already.
+  `Kernel#caller` reads the same records. Fluxpinel has no frame for a
+  builtin method, so the frames that CRuby shows for them (`Array#each`,
+  `Kernel#Integer`) are not in a backtrace. The report of an uncaught
+  exception is the runtime's, with no backtrace.
 - **Creation.** `k.new` for a subclass of Exception makes an
   `sp_Exception` and calls the `initialize` of the program, if any.
   `super(msg)` from it reaches the builtin `initialize`, which sets the

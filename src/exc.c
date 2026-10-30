@@ -200,6 +200,55 @@ static int fx_exc_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *o
 }
 
 /* The builtin methods of an exception. */
+/* #detailed_message: "msg (Class)" from #message, which a class of the
+   program can define, as the runtime writes it (no class for an unnamed
+   Class.new class, "unhandled exception" for an empty message); with
+   highlight, in the bold and the underline of CRuby. */
+static const char *fx_exc_detailed(sp_RbVal r, sp_Exception *e, int hl) {
+  SP_GC_ROOT_RBVAL(r);
+  SP_GC_ROOT(e);
+  const char *msg = sp_poly_to_s(fx_send(r, "message", 0, NULL));
+  SP_GC_ROOT_STR(msg);
+  return hl ? sp_exc_detailed_highlight(e, msg) : sp_exc_detailed_text(e, msg);
+}
+
+/* #full_message from the detailed message d: the first frame of the
+   backtrace, the message, then the other frames as "\tfrom" lines; with
+   order: :bottom, the frames first, as a traceback. An exception with no
+   backtrace names the line of the call, as CRuby does. */
+static const char *fx_exc_full(sp_Exception *e, const char *d, int bottom) {
+  SP_GC_ROOT(e);
+  SP_GC_ROOT_STR(d);
+  sp_StrArray *bt = e->backtrace && e->backtrace->len ? e->backtrace : NULL;
+  const char *first;
+  if (bt) {
+    first = sp_StrArray_get(bt, 0);
+  } else {
+    const FxFrameStack *s = fx_fs();
+    const pm_node_t *n = s->depth ? s->tr[s->depth - 1].at : NULL;
+    first = n ? sp_sprintf("%s:%d:in 'full_message'", fx_source_of(n)->path, fx_line(n))
+              : sp_sprintf("%s:in 'full_message'", L.path);
+  }
+  SP_GC_ROOT_STR(first);
+  const char *s = sp_sprintf("%s: %s\n", first, d);
+  SP_GC_ROOT_STR(s);
+  if (!bt) return s;
+  if (bottom) {
+    const char *t = sp_sprintf("Traceback (most recent call last):\n");
+    SP_GC_ROOT_STR(t);
+    for (sp_int i = bt->len - 1; i >= 1; i--) {
+      t = sp_sprintf("%s\t%d: from %s\n", t, (int)i, sp_StrArray_get(bt, i));
+      SP_GC_ROOT_STR(t);
+    }
+    return sp_sprintf("%s%s", t, s);
+  }
+  for (sp_int i = 1; i < bt->len; i++) {
+    s = sp_sprintf("%s\tfrom %s\n", s, sp_StrArray_get(bt, i));
+    SP_GC_ROOT_STR(s);
+  }
+  return s;
+}
+
 static int fx_exc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (!fx_is_exc(r)) return 0;
   sp_Exception *e = (sp_Exception *)r.v.p;
@@ -216,13 +265,40 @@ static int fx_exc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
   if (argc == 0 && FX_IS("result")) { *out = sp_exc_result(e); return 1; }
   /* LoadError#path: the feature of a require that loaded nothing, else nil */
   if (argc == 0 && FX_IS("path")) { *out = sp_exc_path_acc(e); return 1; }
-  /* full_message(highlight:, order:): the keywords are taken and do nothing */
-  if ((argc == 0 || (argc == 1 && fx_is_hash(argv[0]) && argv[0].v.p == L.kwhash)) && FX_IS("full_message")) {
-    *out = sp_box_str_new(sp_sprintf("%s (%s)", sp_exc_message(e), e->cls_name));
+  /* full_message(highlight:, order:) and detailed_message(highlight:) */
+  int kw = argc == 1 && fx_is_hash(argv[0]) && argv[0].v.p == L.kwhash;
+  if ((argc == 0 || kw) && (FX_IS("full_message") || FX_IS("detailed_message"))) {
+    int hl = 0, bottom = 0;
+    if (kw) {
+      sp_PolyPolyHash *h = sp_poly_as_poly_poly_hash(argv[0]);
+      hl = sp_poly_truthy(sp_PolyPolyHash_get(h, sp_box_sym(sp_sym_intern("highlight"))));
+      sp_RbVal order = sp_PolyPolyHash_get(h, sp_box_sym(sp_sym_intern("order")));
+      bottom = order.tag == SP_TAG_SYM && !strcmp(sp_sym_to_s((sp_sym)order.v.i), "bottom");
+    }
+    const char *d = fx_exc_detailed(r, e, hl);
+    SP_GC_ROOT_STR(d);
+    *out = sp_box_str_new(name[0] == 'd' ? d : fx_exc_full(e, d, bottom));
     return 1;
   }
-  /* the backtrace that set_backtrace attached, else nil: the walker keeps
-     no frames for an exception */
+  /* clone and dup: a copy with the ivars, as irb clones an exception to
+     set a filtered backtrace on the copy */
+  if (argc == 0 && (FX_IS("clone") || FX_IS("dup"))) {
+    SP_GC_ROOT_RBVAL(r);
+    sp_RbVal c = fx_exc_box(name[0] == 'c' ? sp_exc_clone(e) : sp_exc_dup(e));
+    SP_GC_ROOT_RBVAL(c);
+    sp_RbVal names = fx_send(r, "instance_variables", 0, NULL);
+    SP_GC_ROOT_RBVAL(names);
+    for (sp_int i = 0; i < sp_poly_length(names); i++) {
+      sp_RbVal args[2] = { sp_poly_arr_get(names, i), sp_box_nil() };
+      args[1] = fx_send(r, "instance_variable_get", 1, args);
+      fx_send(c, "instance_variable_set", 2, args);
+    }
+    *out = c;
+    return 1;
+  }
+  /* the backtrace that the landing of the raise attached (fx_bt_land) or
+     that set_backtrace set, else nil. backtrace_locations is nil: Fluxpinel
+     has no Thread::Backtrace::Location. */
   if (argc == 0 && (FX_IS("backtrace") || FX_IS("backtrace_locations"))) {
     *out = e->backtrace && name[9] == 0 ? sp_box_obj(e->backtrace, SP_BUILTIN_STR_ARRAY) : sp_box_nil();
     return 1;
@@ -239,15 +315,6 @@ static int fx_exc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
       bt = sp_poly_as_str_array(a);
     }
     *out = sp_Exception_set_backtrace(e, bt);
-    return 1;
-  }
-  /* "msg (Class)" from #message, which a class of the program can define,
-     with no class for an unnamed Class.new class */
-  if (argc == 0 && FX_IS("detailed_message")) {
-    SP_GC_ROOT(e);
-    const char *msg = sp_poly_to_s(fx_send(r, "message", 0, NULL));
-    SP_GC_ROOT_STR(msg);
-    *out = sp_box_str_new(sp_exc_detailed_text(e, msg));
     return 1;
   }
   /* the same class and message; two UncaughtThrowErrors are equal */

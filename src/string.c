@@ -204,6 +204,17 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       return 1;
     }
     if (FX_IS("getbyte")) { *out = sp_poly_getbyte(r, sp_poly_arg_int_chk(a)); return 1; }
+    /* scrub(repl) and scrub!(repl): the invalid byte sequences replaced */
+    if (FX_IS("scrub") || FX_IS("scrub!")) {
+      const char *rep = sp_str_scrub_repl(sp_poly_arg_str_chk(a));
+      SP_GC_ROOT_STR(rep);
+      if (FX_IS("scrub")) { *out = sp_box_str_new(sp_str_scrub(sp_poly_recv_s(r, name), rep)); return 1; }
+      const char *s = fx_str_mut(r, name);
+      const char *t = sp_str_scrub_bang(s, rep);
+      if (!sp_poly_str_is_own(r, t)) sp_poly_str_become(r, t);
+      *out = r;
+      return 1;
+    }
     if (FX_IS("unpack") || FX_IS("unpack1")) {
       sp_PolyArray *p = sp_str_unpack(sp_poly_recv_s(r, name), sp_poly_arg_str_chk(a));
       *out = name[6] ? sp_PolyArray_get(p, 0) : sp_box_poly_array(p);

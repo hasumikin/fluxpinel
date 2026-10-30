@@ -190,9 +190,84 @@ static int fx_frame_enter(uint64_t serial) {
   if (s->depth == s->cap) {
     s->cap = s->cap ? s->cap * 2 : 256;
     s->serial = realloc(s->serial, sizeof *s->serial * (size_t)s->cap);
+    s->tr = realloc(s->tr, sizeof *s->tr * (size_t)s->cap);
   }
   s->serial[s->depth] = serial;
+  s->tr[s->depth] = (FxTrace){ 0 };   /* a top frame, until fx_frame_tag */
   return s->depth++;
+}
+
+/* What the backtrace says of the frame f (FxTrace). */
+static void fx_frame_tag(const FxFrame *f, int kind, const FxMethod *m, const char *cls, const pm_node_t *body,
+                         int singleton, int levels) {
+  FxTrace *t = &f->fs->tr[f->depth];
+  t->kind = (uint8_t)kind;
+  t->method = m;
+  t->cls = cls;
+  t->body = body;
+  t->singleton = (uint8_t)singleton;
+  t->levels = (uint8_t)levels;
+}
+
+/* The label of a frame in a backtrace, as CRuby writes it: "A#m", "A.m",
+   "block in A#m", "block (2 levels) in A#m", "<class:A>", "<module:A>",
+   "singleton class" and "<main>". A heap String. */
+static const char *fx_bt_label(const FxTrace *t) {
+  SP_GC_SAVE();
+  const char *in;
+  switch (t->kind) {
+    case FX_TR_METHOD:
+    case FX_TR_BLOCK:
+      in = t->method ? sp_sprintf("%s%s%s", t->method->owner->name ? t->method->owner->name : "#<Class>",
+                                  t->singleton ? "." : "#", sp_sym_to_s(t->method->name))
+                     : sp_sprintf("<main>");
+      break;
+    case FX_TR_CLASS: in = sp_sprintf("<class:%s>", t->cls); break;
+    case FX_TR_MODULE: in = sp_sprintf("<module:%s>", t->cls); break;
+    case FX_TR_SCLASS: in = sp_sprintf("singleton class"); break;
+    default: in = sp_sprintf("<main>");
+  }
+  if (t->kind != FX_TR_BLOCK) return in;
+  SP_GC_ROOT_STR(in);
+  return t->levels > 1 ? sp_sprintf("block (%d levels) in %s", t->levels, in) : sp_sprintf("block in %s", in);
+}
+
+/* The backtrace of the frames of s below top, the innermost first, after
+   the skip innermost ones: "file:line:in 'label'" for each, as CRuby
+   writes a frame of Ruby. Fluxpinel has no frame for a builtin method, so
+   the frames that CRuby shows for them (`Array#each`, `Kernel#Integer`)
+   are not in it. */
+static sp_StrArray *fx_bt_build(const FxFrameStack *s, int top, int skip) {
+  SP_GC_SAVE();
+  sp_StrArray *a = sp_StrArray_new();
+  SP_GC_ROOT(a);
+  for (int d = top - 1 - skip; d >= 0; d--) {
+    SP_GC_SAVE();
+    const FxTrace *t = &s->tr[d];
+    const pm_node_t *n = t->at ? t->at : t->body;
+    const char *label = fx_bt_label(t);
+    SP_GC_ROOT_STR(label);
+    sp_StrArray_push(a, n ? sp_sprintf("%s:%d:in '%s'", fx_source_of(n)->path, fx_line(n), label)
+                          : sp_sprintf("%s:in '%s'", L.path, label));
+  }
+  return a;
+}
+
+/* At a landing (FX_TRY_LANDED): the backtrace of the frames that the
+   raise unwound, read before the landing cuts them. It goes on the
+   exception, when it has none yet (a raise of a caught exception keeps
+   its own). The runtime raises by name with no object: fx_caught_obj
+   makes the object later and takes the trace from L.bt. */
+static void fx_bt_land(void) {
+  sp_Exception *e = (sp_Exception *)sp_exc_obj[sp_exc_top];
+  L.bt = NULL;
+  if (e && e->backtrace) return;
+  SP_GC_SAVE();
+  if (e) { SP_GC_ROOT(e); }
+  FxFrameStack *s = fx_fs();
+  sp_StrArray *bt = fx_bt_build(s, s->depth, 0);
+  if (e) sp_Exception_set_backtrace(e, bt);
+  else L.bt = bt;
 }
 
 /* A frame that ends pops its entry. A raise skips this cleanup; the
@@ -598,6 +673,7 @@ static sp_RbVal fx_invoke_b(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal
   FX_FRAME(f, &def->locals, me, m->lexical ? m->lexical : m->owner);
   f.method = m;
   f.block = blk;
+  fx_frame_tag(&f, FX_TR_METHOD, m, NULL, (const pm_node_t *)def, me.tag == SP_TAG_CLASS, 0);
   fx_bind_params(&f, def->parameters, argc, argv);
   sp_RbVal v = def->body ? fx_eval(&f, def->body) : sp_box_nil();
   if (L.ctl == FX_CTL_RETURN && L.ctl_target == &f) { v = L.ctl_val; L.ctl = FX_CTL_NONE; }
@@ -652,6 +728,9 @@ static sp_RbVal fx_yield_in(const FxBlock *b, int argc, sp_RbVal *argv, int stri
   bf.parent = h;
   bf.block = m ? mblk : h->block;
   bf.lambda = b->lambda;
+  /* a block in a block of a live home is one level deeper */
+  int lv = live && h->fs->tr[h->depth].kind == FX_TR_BLOCK ? h->fs->tr[h->depth].levels + 1 : 1;
+  fx_frame_tag(&bf, FX_TR_BLOCK, bf.method, NULL, b->node, bf.self.tag == SP_TAG_CLASS, lv);
   fx_bind_block(&bf, params, argc, argv, b->lambda, strict);
   sp_RbVal v;
   for (;;) {
@@ -1097,6 +1176,7 @@ static sp_RbVal fx_call(FxFrame *f, const pm_call_node_t *c) {
   /* the callee's binder takes the keyword Hash; a builtin leaves it, so
      it is cleared after the call, before its address can be reused */
   L.kwhash = kw;
+  f->fs->tr[f->depth].at = (const pm_node_t *)c;   /* the line of this frame in a backtrace */
   sp_RbVal v;
   /* require_relative and __dir__ answer from the file of the call, unless
      the program defines its own */
@@ -1182,6 +1262,19 @@ static int fx_kernel_block(FxFrame *f, const char *name, int argc, sp_RbVal *arg
   if (argc == 0 && (!strcmp(name, "__method__") || !strcmp(name, "__callee__"))) {
     const FxMethod *m = fx_frame_method(f);
     *out = m ? sp_box_sym(m->name) : sp_box_nil();
+    return 1;
+  }
+  /* caller(start = 1, length = nil): the backtrace of the frames out of
+     this one (fx_bt_build); nil when start is past the outermost */
+  if (!blk && !strcmp(name, "caller") && argc <= 2 && (argc == 0 || argv[0].tag == SP_TAG_INT)) {
+    sp_int start = argc >= 1 ? argv[0].v.i : 1;
+    sp_int len = argc == 2 && argv[1].tag != SP_TAG_NIL ? sp_poly_arg_int_chk(argv[1]) : -1;
+    if (start < 0) sp_raise_cls("ArgumentError", sp_sprintf("negative level (%d)", (int)start));
+    if (len < -1) sp_raise_cls("ArgumentError", sp_sprintf("negative size (%d)", (int)len));
+    if (start > f->fs->depth) { *out = sp_box_nil(); return 1; }
+    sp_StrArray *a = fx_bt_build(f->fs, f->fs->depth, (int)start);
+    if (len >= 0 && a->len > len) a->len = len;
+    *out = sp_box_nullable_obj((void *)a, SP_BUILTIN_STR_ARRAY);
     return 1;
   }
   if (!strcmp(name, "trap")) {
@@ -1403,6 +1496,7 @@ static sp_RbVal fx_eval_stmts(FxFrame *f, const pm_statements_node_t *s) {
   sp_RbVal v = sp_box_nil();
   if (!s) return v;
   for (size_t i = 0; i < s->body.size; i++) {
+    f->fs->tr[f->depth].at = s->body.nodes[i];
     v = fx_eval(f, s->body.nodes[i]);
     if (L.ctl != FX_CTL_NONE) break;
   }
@@ -2115,6 +2209,7 @@ static sp_RbVal fx_class_def(FxFrame *f, const pm_node_t *path, const pm_node_t 
   if (!body) return sp_box_nil();
   FX_FRAME(cf, locals, fx_class_box(k), k);
   cf.body = body;
+  fx_frame_tag(&cf, k->is_module ? FX_TR_MODULE : FX_TR_CLASS, NULL, k->name, body, 0, 0);
   return fx_eval(&cf, body);
 }
 
@@ -2129,6 +2224,7 @@ static sp_RbVal fx_singleton_class(FxFrame *f, const pm_singleton_class_node_t *
     FX_FRAME(sf, &n->locals, target, k);
     sf.body = n->body;
     sf.singleton_defs = 1;
+    fx_frame_tag(&sf, FX_TR_SCLASS, NULL, NULL, n->body, 0, 0);
     return fx_eval(&sf, n->body);
   }
   /* class << obj: the body runs in the singleton class of the object, and
@@ -2137,6 +2233,7 @@ static sp_RbVal fx_singleton_class(FxFrame *f, const pm_singleton_class_node_t *
   if (!k) sp_raise_cls("TypeError", "can't define singleton");
   if (!n->body) return sp_box_nil();
   FX_FRAME(of, &n->locals, fx_class_box(k), k);
+  fx_frame_tag(&of, FX_TR_SCLASS, NULL, NULL, n->body, 0, 0);
   return fx_eval(&of, n->body);
 }
 
@@ -2524,6 +2621,9 @@ static FxCaught fx_caught(void) {
    the raise happened (sp_pending_cause), as the code of spinel does. */
 static sp_Exception *fx_caught_obj(FxCaught c) {
   sp_Exception *e = c.obj ? (sp_Exception *)c.obj : sp_exc_new_for_catch(c.cls, c.msg);
+  /* the backtrace that the landing read (fx_bt_land) for a raise by name */
+  if (!e->backtrace && L.bt) sp_Exception_set_backtrace(e, L.bt);
+  L.bt = NULL;
   if (!e->cause) {
     sp_gc_wb(e);
     e->cause = (sp_Exception *)sp_pending_cause;

@@ -117,9 +117,25 @@ struct FxFrame;
 /* The frames of one fiber that are live, outermost first, by serial. Each
    fiber that runs walker code has its own, since fibers interleave their
    frames. A stack is never freed: a block may still name it. */
+/* What a backtrace says of a frame (fx_bt_build). The frames live on the
+   C stack, which a raise unwinds before a handler can read them, so each
+   frame stack keeps one of these per depth, on the heap. */
+enum { FX_TR_TOP, FX_TR_METHOD, FX_TR_BLOCK, FX_TR_CLASS, FX_TR_MODULE, FX_TR_SCLASS };
+typedef struct {
+  const pm_node_t *at;            /* the statement or call under evaluation */
+  const pm_node_t *body;          /* the def or block node, for a frame before its
+                                     first statement */
+  const FxMethod *method;         /* a method frame, or the method of a block */
+  const char *cls;                /* a class or module body: its name */
+  uint8_t kind;                   /* FX_TR_* */
+  uint8_t singleton;              /* the method runs on a class: "A.m", not "A#m" */
+  uint8_t levels;                 /* a block: how many blocks deep in its method */
+} FxTrace;
+
 typedef struct FxFrameStack {
   const void *fiber;              /* the sp_Fiber that runs these frames */
   uint64_t *serial;
+  FxTrace *tr;                    /* by depth, with serial */
   int depth, cap;
 } FxFrameStack;
 
@@ -297,6 +313,8 @@ typedef struct {
                             its entry when it ends; a rescue cuts the entries of
                             the frames that a raise unwound */
   FxFrameStack *main_fs;   /* the stack of the frames of a root fiber */
+  sp_StrArray *bt;     /* the backtrace of a raise by name that landed, for the
+                          exception object that fx_caught_obj makes */
   struct { const void *fiber; FxFrameStack *fs; } *fstacks;   /* by fiber */
   int nfstacks, fstacks_cap;
   FxConst *globals;    /* the global variables that the program assigned;
@@ -354,6 +372,10 @@ static int fx_fast_call(sp_RbVal r, sp_sym s, int argc, sp_RbVal *argv, sp_RbVal
 static int fx_integer_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int fx_fast_eqq(sp_RbVal v, sp_RbVal s, sp_RbVal *out);
 static FxFrameStack *fx_fs(void);
+static void fx_bt_land(void);
+static const char *fx_str_mut(sp_RbVal r, const char *name);   /* string.c */
+static void fx_frame_tag(const FxFrame *f, int kind, const FxMethod *m, const char *cls, const pm_node_t *body,
+                         int singleton, int levels);
 
 /* The exception that a handler caught: its class name, message and object
    (NULL when the runtime raised by name only). */
@@ -382,6 +404,7 @@ static __attribute__((noreturn)) void fx_reraise(FxCaught c);
   sp_gc_nroots = sp_exc_rootmark[sp_exc_top];                                          \
   sp_rescue_sp = sp_rescue_mark[sp_exc_top];                                           \
   fx_lock_set_depth(_fx_lockmark);   /* after the roots: a lock can park and collect */ \
+  fx_bt_land();                      /* the trace of the frames, before the cut */   \
   fx_fs()->depth = (d);                                                              \
   L.kwhash = NULL
 

@@ -1559,6 +1559,7 @@ static void fx_hook_mark(void) {
   if (fx_singletons) sp_gc_mark(fx_singletons);
   for (int i = 0; i < L.nglobals; i++) sp_mark_rbval(L.globals[i].value);
   for (int i = 0; i < L.nprocs; i++) sp_gc_mark(L.procs[i]);
+  if (L.bt) sp_gc_mark(L.bt);
 }
 
 static void fx_object_init(void) {
@@ -1643,7 +1644,8 @@ static int fx_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     if (!strcmp(name, "freeze")) {
       FxClass *k = fx_class_value(r);
       if (k) k->frozen = 1;
-      else if (fx_is_fx_object(r)) sp_gc_freeze(r.v.p);
+      else if (fx_is_fx_object(r) || (r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_EXCEPTION && r.v.p))
+        sp_gc_freeze(r.v.p);
       *out = r;
       return 1;
     }
