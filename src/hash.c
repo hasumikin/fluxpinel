@@ -163,6 +163,13 @@ static int fx_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
     }
     if (FX_IS("to_a") || FX_IS("entries")) { *out = sp_box_poly_array(fx_seq_array(r)); return 1; }
     if (FX_IS("to_h") || FX_IS("to_hash")) { *out = r; return 1; }
+    /* compare_by_identity: the runtime finds the keys by equal? from then on */
+    if (FX_IS("compare_by_identity")) {
+      sp_PolyPolyHash_compare_by_identity(fx_hash_mut(r, name));
+      *out = r;
+      return 1;
+    }
+    if (FX_IS("compare_by_identity?")) { *out = sp_box_bool(h->ident); return 1; }
     if (FX_IS("dup") || FX_IS("clone")) { *out = fx_hash_box(fx_hash_dup(h)); return 1; }
     if (FX_IS("default")) { *out = h->default_v; return 1; }
     if (FX_IS("invert")) {

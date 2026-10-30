@@ -382,15 +382,98 @@ static sp_int fx_io_copy_stream(sp_RbVal src, sp_RbVal dst) {
 
 /* A class method of File on paths, or one that opens a File. Answers 1
    and sets *out when it handles the call. */
-static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
-                         sp_RbVal *out) {
-  if (k->cls_id >= 0) return 0;
-  if (!strcmp(k->name, "Dir")) {
-    if (argc != 0 || blk) return 0;
+/* Dir.glob(pattern | [patterns], base:, flags:, sort:) { } and
+   Dir[pattern, ...]: the matches of each pattern, in order, through the
+   glob of the runtime (sp_dir_glob_keywords, which takes the keywords).
+   With a block, each match goes to it and the answer is nil. */
+static int fx_dir_glob(const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out) {
+  int kw = argc > 0 && fx_is_kwargs(argv[argc - 1]);
+  if (FX_IS("[]") ? kw || argc < 1 : argc - kw != 1) return 0;
+  static const char *const keys[] = { "base", "flags", "sort", NULL };
+  sp_RbVal base = sp_box_nil(), flags = sp_box_nil(), sort = sp_box_nil();
+  int fg = 0, sg = 0;
+  if (kw) {
+    if (!fx_kwargs_only(argv[argc - 1], keys)) return 0;
+    sp_PolyPolyHash *h = sp_poly_as_poly_poly_hash(argv[argc - 1]);
+    sp_RbVal kb = sp_box_sym(sp_sym_intern("base")), kf = sp_box_sym(sp_sym_intern("flags"));
+    sp_RbVal ks = sp_box_sym(sp_sym_intern("sort"));
+    if (sp_PolyPolyHash_has_key(h, kb)) base = sp_PolyPolyHash_get(h, kb);
+    if ((fg = sp_PolyPolyHash_has_key(h, kf))) flags = sp_PolyPolyHash_get(h, kf);
+    if ((sg = sp_PolyPolyHash_has_key(h, ks))) sort = sp_PolyPolyHash_get(h, ks);
+    argc--;
+  }
+  SP_GC_ROOT_RBVAL(base);
+  SP_GC_ROOT_RBVAL(flags);
+  SP_GC_ROOT_RBVAL(sort);
+  /* the patterns: the arguments of Dir[], or the one argument of glob,
+     which can be an Array */
+  sp_RbVal pats = argc == 1 && fx_is_array(argv[0]) ? argv[0] : sp_box_nil();
+  SP_GC_ROOT_RBVAL(pats);
+  sp_int n = pats.tag == SP_TAG_NIL ? argc : sp_poly_length(pats);
+  sp_StrArray *a = sp_StrArray_new();
+  SP_GC_ROOT(a);
+  for (sp_int i = 0; i < n; i++) {
+    sp_RbVal p = pats.tag == SP_TAG_NIL ? argv[i] : sp_poly_arr_get(pats, i);
+    sp_StrArray *one = sp_dir_glob_keywords(p, base, flags, fg, sort, sg);
+    SP_GC_ROOT(one);
+    for (sp_int j = 0; one && j < one->len; j++) sp_StrArray_push(a, sp_StrArray_get(one, j));
+  }
+  if (!blk) { *out = sp_box_nullable_obj((void *)a, SP_BUILTIN_STR_ARRAY); return 1; }
+  for (sp_int i = 0; i < a->len; i++) {
+    fx_y1(blk, sp_box_str_new(sp_str_dup(sp_StrArray_get(a, i))));
+    if (L.ctl != FX_CTL_NONE) break;
+  }
+  *out = sp_box_nil();
+  return 1;
+}
+
+/* The class methods of Dir on paths, through the runtime: the lists
+   (children, entries, glob), the tests (exist?, empty?) and mkdir, rmdir
+   and chdir without a block. each_child and foreach yield the names, or
+   answer an Enumerator over them. */
+static int fx_dir_class(const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out) {
+  if (FX_IS("glob") || FX_IS("[]")) return fx_dir_glob(name, argc, argv, blk, out);
+  if (argc == 0 && !blk) {
     if (FX_IS("pwd") || FX_IS("getwd")) { *out = sp_box_str_new(sp_dir_pwd()); return 1; }
     if (FX_IS("home")) { *out = sp_box_str_new(sp_dir_home()); return 1; }
     return 0;
   }
+  if (argc < 1 || argc > 2 || (argc == 2 && !FX_IS("mkdir"))) return 0;
+  int each = FX_IS("each_child") || FX_IS("foreach");
+  if (blk && !each) return 0;
+  const char *path = sp_poly_arg_path(argv[0]);
+  SP_GC_ROOT_STR(path);
+  if (FX_IS("exist?")) { *out = sp_box_bool(sp_file_directory(path)); return 1; }
+  if (FX_IS("empty?")) { *out = sp_box_bool(sp_dir_empty(path)); return 1; }
+  if (FX_IS("home")) { *out = sp_box_str_new(sp_dir_home_user(path)); return 1; }
+  if (FX_IS("mkdir")) {
+    *out = sp_box_int(argc == 2 ? sp_dir_mkdir_mode(path, sp_poly_arg_int_chk(argv[1])) : sp_dir_mkdir(path));
+    return 1;
+  }
+  if (FX_IS("rmdir") || FX_IS("delete") || FX_IS("unlink")) { *out = sp_box_int(sp_dir_rmdir(path)); return 1; }
+  if (FX_IS("chdir")) { *out = sp_box_int(sp_dir_chdir(path)); return 1; }
+  if (!FX_IS("children") && !FX_IS("entries") && !each) return 0;
+  sp_StrArray *a = FX_IS("children") || FX_IS("each_child") ? sp_dir_children(path) : sp_dir_entries(path);
+  SP_GC_ROOT(a);
+  sp_RbVal list = sp_box_nullable_obj((void *)a, SP_BUILTIN_STR_ARRAY);
+  SP_GC_ROOT_RBVAL(list);
+  if (!each) { *out = list; return 1; }
+  if (!blk) {
+    *out = sp_box_obj(sp_Enumerator_new_from_items(sp_poly_to_poly_array(list)), SP_BUILTIN_ENUMERATOR);
+    return 1;
+  }
+  for (sp_int i = 0; i < a->len; i++) {
+    fx_y1(blk, sp_box_str_new(sp_str_dup(sp_StrArray_get(a, i))));
+    if (L.ctl != FX_CTL_NONE) break;
+  }
+  *out = sp_box_nil();
+  return 1;
+}
+
+static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                         sp_RbVal *out) {
+  if (k->cls_id >= 0) return 0;
+  if (!strcmp(k->name, "Dir")) return fx_dir_class(name, argc, argv, blk, out);
   if (!strcmp(k->name, "IO")) {
     /* IO.foreach reads a path, as File.foreach does */
     if (FX_IS("foreach")) return blk && fx_file_foreach(argc, argv, blk, out);
