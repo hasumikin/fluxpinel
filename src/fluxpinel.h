@@ -526,6 +526,8 @@ static sp_RbVal fx_io_select(int argc, sp_RbVal *argv);
 static void fx_gvar_set(const char *name, sp_RbVal v);
 static int fx_is_io(sp_RbVal v);
 static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int fx_io_console(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                         sp_RbVal *out);
 static int fx_env_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                          sp_RbVal *out);
 static int fx_is_proc(sp_RbVal v);

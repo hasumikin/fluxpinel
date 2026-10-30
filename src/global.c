@@ -11,6 +11,7 @@
    write to obj. */
 
 #include "fluxpinel.h"
+#include <termios.h>
 
 #define FX_IS(s) (!strcmp(name, (s)))
 
@@ -407,6 +408,103 @@ static sp_RbVal fx_io_select(int argc, sp_RbVal *argv) {
   sp_RbVal r;
   FX_UNLOCKED(r = sp_io_select(sets[0], sets[1], sets[2], timeout));
   return r;
+}
+
+/* The terminal modes of io/console, once it is required: CRuby's
+   set_rawmode and set_noecho over termios(3). The options of IO#raw: min:
+   and time: set VMIN and VTIME, and intr: true keeps the signal keys
+   (BRKINT, ISIG and OPOST stay). A handle that is not a terminal raises the
+   Errno of tcgetattr (ENOTTY), as CRuby does. Fluxpinel keeps the saved
+   settings itself, on the C stack of the block form, so a raw! (which
+   restores nothing) takes no slot of the runtime. */
+static __attribute__((noreturn)) void fx_tty_raise(void) {
+  int e = errno;
+  sp_raise_cls(sp_errno_class_name(e), strerror(e));
+}
+
+/* the keywords of IO#raw and IO#raw! */
+static void fx_tty_opts(sp_RbVal kw, int *min, int *time, int *intr) {
+  sp_PolyPolyHash *h = sp_poly_as_poly_poly_hash(kw);
+  for (sp_int i = 0; i < h->len; i++) {
+    sp_RbVal k = h->keys[h->order[i]];
+    const char *kn = k.tag == SP_TAG_SYM ? sp_sym_to_s((sp_sym)k.v.i) : "";
+    sp_RbVal v = sp_PolyPolyHash_get(h, k);
+    if (!strcmp(kn, "min")) *min = (int)sp_poly_arg_int_chk(v);
+    else if (!strcmp(kn, "time")) *time = (int)sp_poly_arg_int_chk(v);
+    else if (!strcmp(kn, "intr")) *intr = sp_poly_truthy(v);
+    else sp_raise_cls("ArgumentError", sp_sprintf("unknown keyword: :%s", kn));
+  }
+}
+
+/* Sets the mode kind (1 raw, 2 noecho) on fd and leaves the settings before
+   it in *saved. */
+static void fx_tty_mode(int fd, struct termios *saved, int kind, sp_RbVal kw) {
+  if (tcgetattr(fd, saved) != 0) fx_tty_raise();
+  struct termios t = *saved;
+  if (kind == 1) {
+    int min = -1, time = -1, intr = 0;
+    if (kw.tag != SP_TAG_NIL) fx_tty_opts(kw, &min, &time, &intr);
+    cfmakeraw(&t);
+    t.c_lflag &= ~(tcflag_t)(ECHOE | ECHOK);
+    if (min >= 0) t.c_cc[VMIN] = (cc_t)min;
+    if (time >= 0) t.c_cc[VTIME] = (cc_t)time;
+    if (intr) {
+      t.c_iflag |= BRKINT;
+      t.c_lflag |= ISIG;
+      t.c_oflag |= OPOST;
+    }
+  } else {
+    t.c_lflag &= ~(tcflag_t)(ECHO | ECHOE | ECHOK | ECHONL);
+  }
+  if (tcsetattr(fd, TCSANOW, &t) != 0) fx_tty_raise();
+}
+
+/* The block form: the block takes the IO, and the settings come back when
+   the block ends, also by a raise or a jump. Answers the value of the
+   block. */
+static sp_RbVal fx_tty_with(sp_RbVal r, int kind, sp_RbVal kw, const FxBlock *blk) {
+  int fd = (int)sp_File_fileno((sp_File *)r.v.p);
+  struct termios saved;
+  fx_tty_mode(fd, &saved, kind, kw);
+  sp_RbVal v = sp_box_nil();
+  SP_GC_ROOT_RBVAL(v);
+  SP_GC_ROOT_RBVAL(r);
+  const int depth = fx_fs()->depth;
+  FX_TRY_PUSH();
+  if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
+    v = fx_y1(blk, r);
+    sp_exc_top--;
+  } else {
+    FX_TRY_LANDED(depth);
+    tcsetattr(fd, TCSANOW, &saved);
+    if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
+    fx_reraise(fx_caught());
+  }
+  tcsetattr(fd, TCSANOW, &saved);
+  return v;
+}
+
+/* IO#raw(**opts) { |io| }, IO#raw!(**opts) and IO#noecho { |io| }. Answers
+   1 and sets *out when it handles the call. */
+static int fx_io_console(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                         sp_RbVal *out) {
+  if (!fx_console_loaded || !fx_is_io(r)) return 0;
+  int raw = FX_IS("raw"), bang = FX_IS("raw!");
+  if (!raw && !bang && !FX_IS("noecho")) return 0;
+  int kw = argc > 0 && fx_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash;
+  if (argc - kw != 0)
+    sp_raise_cls("ArgumentError", sp_sprintf("wrong number of arguments (given %d, expected 0)", argc - kw));
+  if (kw && !raw && !bang) sp_raise_cls("ArgumentError", "wrong number of arguments (given 1, expected 0)");
+  sp_RbVal opts = kw ? argv[0] : sp_box_nil();
+  if (bang) {
+    struct termios saved;
+    fx_tty_mode((int)sp_File_fileno((sp_File *)r.v.p), &saved, 1, opts);
+    *out = r;
+    return 1;
+  }
+  if (!blk) sp_raise_cls("LocalJumpError", "no block given (yield)");
+  *out = fx_tty_with(r, raw ? 1 : 2, opts, blk);
+  return 1;
 }
 
 static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {

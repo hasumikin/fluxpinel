@@ -110,6 +110,36 @@ static int fx_string_class(sp_RbVal r, const char *name, int argc, sp_RbVal *arg
   return 1;
 }
 
+/* String#encode(dst = nil, src = nil, invalid:, undef:, replace:), as
+   codegen passes them to sp_str_encode: the destination and the source
+   encodings, and the keywords that put a replacement in for a bad byte or
+   an unmappable character. Another keyword (xml:, fallback:, a newline
+   option) is a gap. Answers a new String. */
+static sp_RbVal fx_str_encode(sp_RbVal r, const char *name, int argc, sp_RbVal *argv) {
+  sp_RbVal nil = sp_box_nil(), invalid = nil, undef = nil, replace = nil;
+  if (argc > 0 && fx_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash) {
+    sp_PolyPolyHash *kw = sp_poly_as_poly_poly_hash(argv[--argc]);
+    SP_GC_ROOT(kw);
+    for (sp_int i = 0; i < kw->len; i++) {
+      sp_RbVal k = kw->keys[kw->order[i]];
+      const char *kn = k.tag == SP_TAG_SYM ? sp_sym_to_s((sp_sym)k.v.i) : "";
+      sp_RbVal v = sp_PolyPolyHash_get(kw, k);
+      if (!strcmp(kn, "invalid")) invalid = v;
+      else if (!strcmp(kn, "undef")) undef = v;
+      else if (!strcmp(kn, "replace")) replace = v;
+      else fx_gap(sp_sprintf("String#encode with the keyword %s", kn));
+    }
+  }
+  if (argc > 2)
+    sp_raise_cls("ArgumentError", sp_sprintf("wrong number of arguments (given %d, expected 0..2)", argc));
+  SP_GC_ROOT_RBVAL(invalid);
+  SP_GC_ROOT_RBVAL(undef);
+  SP_GC_ROOT_RBVAL(replace);
+  const char *s = sp_poly_recv_s(r, name);
+  return sp_box_str_new(sp_str_encode(s, argc, argc > 0 ? argv[0] : nil, argc > 1 ? argv[1] : nil,
+                                      invalid, undef, replace));
+}
+
 /* The methods of String with no block. Answers 1 and sets *out when it
    handles the call. */
 static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
@@ -118,6 +148,7 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
   if (blk || !fx_is_string(r)) return 0;
   SP_GC_ROOT_RBVAL(r);
   if (fx_str_bang(r, name, argc, argv, out)) return 1;
+  if (FX_IS("encode")) { *out = fx_str_encode(r, name, argc, argv); return 1; }
   if (argc == 0) {
     if (FX_IS("dup")) { *out = sp_poly_dup(r, 0); return 1; }
     if (FX_IS("clone")) { *out = sp_poly_dup(r, 1); return 1; }
@@ -236,11 +267,6 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
         else if (mode == 0) sp_str_as_text(r.v.s);
       }
       *out = r;
-      return 1;
-    }
-    if (FX_IS("encode") && !(fx_is_hash(a) && a.v.p == L.kwhash)) {
-      sp_RbVal nil = sp_box_nil();
-      *out = sp_box_str_new(sp_str_encode(sp_poly_recv_s(r, name), 1, a, nil, nil, nil, nil));
       return 1;
     }
   }

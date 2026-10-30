@@ -655,7 +655,9 @@ static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_Rb
    that Fluxpinel lacks. */
 static int fx_builtin_responds(sp_RbVal r, const char *name) {
   /* io/console on an IO (global.c), once it is required */
-  if (fx_console_loaded && fx_is_io(r) && (!strcmp(name, "winsize") || !strcmp(name, "winsize="))) return 1;
+  if (fx_console_loaded && fx_is_io(r) && (!strcmp(name, "winsize") || !strcmp(name, "winsize=") ||
+                                           !strcmp(name, "raw") || !strcmp(name, "raw!") || !strcmp(name, "noecho")))
+    return 1;
   static const char *const any[] = { "!", "nil?", "to_s", "inspect", "==", "!=", "class", "is_a?", "kind_of?",
                                      "instance_of?", "respond_to?", "send", "__send__", "public_send", "frozen?",
                                      "freeze", "itself", NULL };
@@ -936,6 +938,7 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
   if (fx_re_call(recv, name, argc, argv, blk, out)) return 1;
   if (fx_string_core(recv, name, argc, argv, blk, out)) return 1;
   if (fx_fiber_core(recv, name, argc, argv, blk, out)) return 1;
+  if (fx_io_console(recv, name, argc, argv, blk, out)) return 1;
   if (!blk && fx_io_core(recv, name, argc, argv, out)) return 1;
   if (!blk && fx_time_core(recv, name, argc, argv, out)) return 1;
   if (!blk && fx_complex_core(recv, name, argc, argv, out)) return 1;

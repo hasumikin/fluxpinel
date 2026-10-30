@@ -1177,6 +1177,13 @@ static int fx_kernel_block(FxFrame *f, const char *name, int argc, sp_RbVal *arg
     *out = sp_box_bool(f->block != NULL);
     return 1;
   }
+  /* __method__ and __callee__: the name of the running method, through
+     the frames of its blocks; nil outside a method */
+  if (argc == 0 && (!strcmp(name, "__method__") || !strcmp(name, "__callee__"))) {
+    const FxMethod *m = fx_frame_method(f);
+    *out = m ? sp_box_sym(m->name) : sp_box_nil();
+    return 1;
+  }
   if (!strcmp(name, "trap")) {
     *out = fx_trap(argc, argv, blk);
     return 1;
@@ -1383,6 +1390,9 @@ static sp_RbVal fx_super_call(FxFrame *f, const pm_node_t *n, const pm_arguments
        knows (a method of a module that a singleton class includes) */
     fx_gap(sp_sprintf("super with a block to the builtin %s", name));
   }
+  /* a function of Kernel (warn, puts, ...): the super of a method of a
+     module that Kernel or Object prepends, as prism's polyfill of warn */
+  if (!blk && fx_kernel(name, argc, argv, &out)) return out;
   fx_trace_missing("super#", name, argc);
   sp_raise_cls("NoMethodError", sp_sprintf("super: no superclass method '%s'", name));
 }

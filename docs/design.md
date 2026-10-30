@@ -456,7 +456,9 @@ The walker evaluates the prism AST directly (`src/walk.c`).
     `<name>.share.rb` follows it when that file exists.
   - A feature of the runtime (`socket`, `ostruct`, `monitor`, `time`,
     `io/console`) and a core capability (`thread`, `fiber`, `rbconfig`,
-    ...) load nothing. The require answers false.
+    ...) load nothing. The require answers false. `io/console` turns on
+    `IO#winsize`, `winsize=`, `raw`, `raw!` and `noecho` (`src/global.c`),
+    which an IO does not answer before the require, as in CRuby.
   - Any other name is a LoadError. spinel refuses it at compile time under
     `--require-gate`, and ignores it with a warning otherwise.
 - **Autoload.** `autoload(name, path)` records the path on the module

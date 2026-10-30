@@ -88,14 +88,43 @@ static int fx_encoding_core(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
   return 0;
 }
 
+/* The default external and internal encodings, as the program set them:
+   the canonical name of the runtime (a static string), NULL for the
+   default (UTF-8 external, nil internal). The runtime converts nothing on
+   a read or a write, so the names only answer the readers. */
+static const char *fx_enc_default_ext, *fx_enc_default_int;
+
+/* Encoding.default_external= and default_internal=: an Encoding or a name,
+   and nil for the internal one. Answers the argument. */
+static sp_RbVal fx_enc_set_default(int internal, sp_RbVal v) {
+  const char **slot = internal ? &fx_enc_default_int : &fx_enc_default_ext;
+  if (v.tag == SP_TAG_NIL) {
+    if (!internal) sp_raise_cls("ArgumentError", "default external can not be nil");
+    *slot = NULL;
+    return v;
+  }
+  sp_RbVal e = sp_encoding_find(v);
+  if (e.tag != SP_TAG_ENCODING) sp_raise_cls("ArgumentError", "unknown encoding name - internal");
+  *slot = e.v.s;
+  return v;
+}
+
 /* A class method of Encoding. Answers 1 and sets *out when it handles the
    call. */
 static int fx_encoding_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (k->cls_id >= 0 || strcmp(k->name, "Encoding")) return 0;
   if (FX_IS("find") && argc == 1) { *out = sp_encoding_find(argv[0]); return 1; }
   if (FX_IS("list") && argc == 0) { *out = sp_box_poly_array(sp_encoding_list()); return 1; }
-  if (FX_IS("default_external") && argc == 0) { *out = sp_box_encoding(sp_encoding_utf8()); return 1; }
-  if (FX_IS("default_internal") && argc == 0) { *out = sp_box_nil(); return 1; }
+  if (FX_IS("default_external") && argc == 0) {
+    *out = sp_box_encoding(fx_enc_default_ext ? (sp_Encoding){ fx_enc_default_ext } : sp_encoding_utf8());
+    return 1;
+  }
+  if (FX_IS("default_internal") && argc == 0) {
+    *out = fx_enc_default_int ? sp_box_encoding((sp_Encoding){ fx_enc_default_int }) : sp_box_nil();
+    return 1;
+  }
+  if (FX_IS("default_external=") && argc == 1) { *out = fx_enc_set_default(0, argv[0]); return 1; }
+  if (FX_IS("default_internal=") && argc == 1) { *out = fx_enc_set_default(1, argv[0]); return 1; }
   /* an Encoding is made only by the runtime */
   if (FX_IS("new")) sp_raise_nomethod(sp_nomethod_msg(name, fx_class_box(k)));
   if (FX_IS("allocate")) sp_raise_cls("TypeError", "allocator undefined for Encoding");

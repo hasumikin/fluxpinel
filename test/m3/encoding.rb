@@ -48,3 +48,15 @@ begin
 rescue TypeError => x
   p x.message
 end
+
+# the defaults, as the program sets them (the runtime converts nothing)
+p (Encoding.default_external = "US-ASCII"), Encoding.default_external
+Encoding.default_external = Encoding::UTF_8
+p Encoding.default_external, (Encoding.default_internal = "UTF-8"), Encoding.default_internal
+Encoding.default_internal = nil
+p Encoding.default_internal
+begin
+  Encoding.default_external = nil
+rescue ArgumentError => x
+  p x.message
+end
