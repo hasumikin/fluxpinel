@@ -6,7 +6,7 @@
 module CBox
   RET = { "sp_RbVal" => "%s", "sp_int" => "sp_box_int(%s)", "sp_float" => "sp_box_float(%s)",
           "sp_bool" => "sp_box_bool(%s)", "sp_sym" => "sp_box_sym(%s)", "const char *" => "fx_entry_str(%s)",
-          "sp_oint" => "fx_entry_oint(%s)",
+          "sp_oint" => "fx_entry_oint(%s)", "sp_String *" => "sp_box_obj(%s, SP_BUILTIN_STRBUF)",
           "sp_PolyArray *" => "sp_box_poly_array(%s)", "sp_IntArray *" => "sp_box_int_array(%s)",
           "sp_FloatArray *" => "sp_box_float_array(%s)", "sp_StrArray *" => "sp_box_str_array(%s)" }.freeze
 

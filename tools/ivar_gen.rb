@@ -10,13 +10,14 @@
 #
 #   static sp_RbVal fx_iv_box_N(void *s, const uint8_t *nb);
 #
-# A scalar kind renders through sp_poly_inspect(BOX), so its box is BOX. A
-# container kind renders through its typed inspect, so its box comes from the
-# C type of the field (tools/c_box.rb). A kind with no box gets a function
-# that raises NotImplementedError. With no table in the kernel, the output defines
-# nothing, and Fluxpinel builds without the ivars of the kernel. The output
-# goes into the TU of the host build after entries.c (docs/design.md,
-# section 5.1).
+# A poly kind renders through sp_poly_inspect(BOX), so its box is BOX. Any
+# other kind reads its field as (*(TYPE *)s) and renders it through the
+# inspect of TYPE, so its box comes from TYPE (tools/c_box.rb); a kind that
+# tests the nil byte ((nb && *nb)) boxes nil for it. A kind with no box gets
+# a function that raises NotImplementedError. With no table in the kernel,
+# the output defines nothing, and Fluxpinel builds without the ivars of the
+# kernel. The output goes into the TU of the host build after entries.c
+# (docs/design.md, section 5.1).
 
 require_relative "c_box"
 
@@ -43,8 +44,9 @@ n.times do |k|
   box =
     if body.nil? then nil
     elsif body =~ /\Asp_poly_inspect\((.*)\)\z/ then $1
-    elsif body =~ /\(\*\(([\w ]+ \*) \*\)s\)/ then CBox.box($1, "(*(#{$1} *)s)")
+    elsif body =~ /\(\*\(([\w ]+(?: \*)?) \*\)s\)/ then CBox.box($1, "(*(#{$1} *)s)")
     end
+  box = "((nb && *nb) ? sp_box_nil() : #{box})" if box && body.include?("(nb && *nb)")
   box ||= %{(sp_raise_cls("NotImplementedError", "fluxpinel: no box for an ivar of the kernel of kind #{k}"), sp_box_nil())}
   out << "static sp_RbVal fx_iv_box_#{k}(void *s, const uint8_t *nb) { (void)s; (void)nb; return #{box}; }\n"
 end
