@@ -275,6 +275,35 @@ static int fx_seq_collector(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
     *out = sp_box_obj(sp_Enumerator_with_index((sp_Enumerator *)r.v.p, argc ? argv[0].v.i : 0), SP_BUILTIN_ENUMERATOR);
     return 1;
   }
+  /* Enumerator#first: the first element or nil; first(n): the first n
+     elements as an Array (sp_Enumerator_take) */
+  if (FX_IS("first") && r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_ENUMERATOR && r.v.p && argc <= 1) {
+    sp_int n = 1;
+    if (argc == 1) {
+      n = sp_poly_arg_int_chk(argv[0]);
+      if (n < 0) sp_raise_cls("ArgumentError", "attempt to take negative size");
+    }
+    sp_PolyArray *a = sp_Enumerator_take((sp_Enumerator *)r.v.p, n);
+    *out = argc == 1 ? sp_box_poly_array(a) : a->len ? a->data[0] : sp_box_nil();
+    return 1;
+  }
+  /* each, each_pair and each_with_index with no block on a Hash or a Range
+     with an end: an Enumerator over the elements that remembers the
+     method (#<Enumerator: {a: 1}:each>); the Array arms are in array.c */
+  if (argc == 0 && (FX_IS("each") || FX_IS("each_with_index") || (fx_is_hash(r) && FX_IS("each_pair"))) &&
+      (fx_is_hash(r) || (fx_is_range(r) && !((const sp_Range *)r.v.p)->noend))) {
+    SP_GC_ROOT_RBVAL(r);
+    sp_PolyArray *a = fx_seq_array(r);
+    SP_GC_ROOT(a);
+    const char *m = sp_sprintf("%s", name);
+    SP_GC_ROOT_STR(m);
+    sp_Enumerator *e = sp_Enumerator_new_from_items(a);
+    SP_GC_ROOT(e);
+    if (FX_IS("each_with_index")) e = sp_Enumerator_with_index(e, 0);
+    sp_enum_with_src(e, r, m);
+    *out = sp_box_obj(e, SP_BUILTIN_ENUMERATOR);
+    return 1;
+  }
   if (argc != 0 || !fx_collector_kind(name) || (!fx_is_array(r) && !fx_is_hash(r) && !fx_is_range(r))) return 0;
   SP_GC_ROOT_RBVAL(r);
   sp_PolyArray *a = fx_seq_array(r);

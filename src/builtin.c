@@ -1282,6 +1282,13 @@ static int fx_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) 
     *out = sp_box_nil();
     return 1;
   }
+  /* putc(ch): one byte of an Integer or the first character of a String
+     to $stdout; answers the argument (sp_File_putc) */
+  if (!strcmp(name, "putc") && argc == 1) {
+    if (fx_gvar_stdout(&so)) *out = fx_send(so, "putc", 1, argv);
+    else FX_UNLOCKED(*out = sp_File_putc(sp_io_stdout(), argv[0]));
+    return 1;
+  }
   if (!strcmp(name, "p")) {
     if (fx_gvar_stdout(&so)) {
       SP_GC_ROOT_RBVAL(so);

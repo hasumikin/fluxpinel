@@ -212,6 +212,18 @@ static int fx_process_class(const FxClass *k, const char *name, int argc, sp_RbV
     *out = fx_trap(argc, argv, NULL);
     return 1;
   }
+  /* Signal.list: the names and numbers of the signal table of the
+     runtime, EXIT first as in CRuby; Signal.signame(no): the name, or nil
+     for an unknown number */
+  if (!strcmp(k->name, "Signal") && FX_IS("list") && argc == 0) {
+    *out = sp_box_obj(sp_signal_list(), SP_BUILTIN_STR_INT_HASH);
+    return 1;
+  }
+  if (!strcmp(k->name, "Signal") && FX_IS("signame") && argc == 1) {
+    const char *s = sp_signal_signame(sp_poly_arg_int_chk(argv[0]));
+    *out = s ? sp_box_str_new(s) : sp_box_nil();
+    return 1;
+  }
   /* Kernel.select, the module function of Kernel#select */
   if (!strcmp(k->name, "Kernel") && FX_IS("select") && argc >= 1 && argc <= 4) {
     *out = fx_io_select(argc, argv);
