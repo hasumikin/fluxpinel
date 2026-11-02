@@ -272,9 +272,12 @@ static FxClass *fx_builtin(const char *name) {
   return c;
 }
 
+static void fx_kernel_const_names(const FxClass *k, sp_PolyArray *a);
+
 /* The names of the builtin classes and modules at the top level, for
    Object.constants: those of the table, without the nested ones
-   (Thread::Mutex), and the ones that fx_builtin makes by name. */
+   (Thread::Mutex), the ones that fx_builtin makes by name, and the
+   classes of the kernel. */
 static void fx_builtin_const_names(sp_PolyArray *a) {
   static const char *const more[] = { "Process", "GC", "Errno", "Marshal", "Encoding", "Method", "UnboundMethod",
                                       "Queue", "SizedQueue", "Mutex", "ConditionVariable", "LoadError",
@@ -282,6 +285,25 @@ static void fx_builtin_const_names(sp_PolyArray *a) {
   for (int i = 0; i < FX_NBUILTIN_CLASSES; i++)
     if (!strstr(fx_builtin_class_names[i], "::")) fx_names_push(a, sp_sym_intern(fx_builtin_class_names[i]));
   for (int i = 0; more[i]; i++) fx_names_push(a, sp_sym_intern(more[i]));
+  fx_kernel_const_names(NULL, a);
+}
+
+/* The names of the classes and modules of the kernel (host.c) that k
+   holds: with k NULL, those at the top level; else those one level under
+   k, by their names (K::Counter under K). */
+static void fx_kernel_const_names(const FxClass *k, sp_PolyArray *a) {
+  size_t n = k ? strlen(k->name) : 0;
+  for (int i = 0; i < L.nbuiltins; i++) {
+    const FxClass *c = L.builtins[i];
+    if (!fx_kernel_cls(c->cls_id)) continue;
+    const char *rest = c->name;
+    if (k) {
+      if (strncmp(rest, k->name, n) || strncmp(rest + n, "::", 2)) continue;
+      rest += n + 2;
+    }
+    if (strstr(rest, "::")) continue;
+    fx_names_push(a, sp_sym_intern(rest));
+  }
 }
 
 static FxClass *fx_class_by_id(sp_int cls_id) {
@@ -413,6 +435,9 @@ static const char *fx_recv_words(sp_RbVal self) {
 /* The error of a call that missed for the reason why (FX_MISS_*):
    NameError for a bare name, else NoMethodError. */
 static __attribute__((noreturn)) void fx_no_method(sp_RbVal self, const char *name, int why) {
+  /* the receiver of the NameError or NoMethodError (#receiver), as the
+     runtime stages it for its own raise (sp_nomethod_msg) */
+  sp_exc_stage_recv(self);
   const char *on = fx_recv_words(self);
   if (why == FX_MISS_VCALL)
     sp_raise_cls("NameError", sp_sprintf("undefined local variable or method '%s' for %s", name, on));
@@ -420,6 +445,16 @@ static __attribute__((noreturn)) void fx_no_method(sp_RbVal self, const char *na
     sp_raise_cls("NoMethodError", sp_sprintf("%s method '%s' called for %s",
                                              why == FX_MISS_PRIVATE ? "private" : "protected", name, on));
   sp_raise_cls("NoMethodError", sp_sprintf("undefined method '%s' for %s", name, on));
+}
+
+/* The same, with the arguments of the call (NoMethodError#args). */
+static __attribute__((noreturn)) void fx_no_method_args(sp_RbVal self, const char *name, int argc, sp_RbVal *argv,
+                                                        int why) {
+  sp_PolyArray *a = sp_PolyArray_new();
+  SP_GC_ROOT(a);
+  for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
+  sp_exc_stage_key(sp_box_poly_array(a));
+  fx_no_method(self, name, why);
 }
 
 /* Whether name is a method of Object or Kernel in CRuby. Such a call does
@@ -2403,6 +2438,8 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
       /* the builtin classes and modules, which Object answers by name
          (fx_builtin) and keeps in no table */
       if (anc[i] == L.object) fx_builtin_const_names(a);
+      /* the classes of the kernel under a class or module of the kernel */
+      else if (fx_kernel_cls(anc[i]->cls_id)) fx_kernel_const_names(anc[i], a);
     }
     *out = sp_box_poly_array(a);
     return 1;

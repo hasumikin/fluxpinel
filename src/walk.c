@@ -655,7 +655,7 @@ static sp_RbVal fx_invoke_b(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal
       return out;
     /* a function of Kernel (puts, format, ...) under an alias */
     if (!blk && fx_kernel(name, argc, argv, &out)) return out;
-    fx_no_method(self, name, FX_MISS_METHOD);
+    fx_no_method_args(self, name, argc, argv, FX_MISS_METHOD);
   }
   SP_GC_SAVE();
   sp_RbVal me = self;
@@ -1362,7 +1362,7 @@ static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *a
   if (fx_method_missing(self, name, argc, argv, NULL, why, &out)) return out;
   fx_trace_missing("Kernel#", name, argc);
   /* a bare name that could be a local variable is a NameError */
-  fx_no_method(self, name, why);
+  fx_no_method_args(self, name, argc, argv, why);
 }
 
 /* The arguments that a bare super passes, into out: the current values of
@@ -1463,7 +1463,7 @@ static sp_RbVal fx_super_call(FxFrame *f, const pm_node_t *n, const pm_arguments
   /* the builtin method_missing: the error of the method that was missing;
      the builtin respond_to_missing?: false */
   if (!strcmp(name, "method_missing") && argc >= 1 && argv[0].tag == SP_TAG_SYM)
-    fx_no_method(f->self, sp_sym_to_s((sp_sym)argv[0].v.i), L.mm_why);
+    fx_no_method_args(f->self, sp_sym_to_s((sp_sym)argv[0].v.i), argc - 1, argv + 1, L.mm_why);
   if (!strcmp(name, "respond_to_missing?")) return sp_box_bool(0);
   /* the builtin initialize: an exception takes its message, a Struct or a
      Data its members */

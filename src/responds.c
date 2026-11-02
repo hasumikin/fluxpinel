@@ -92,7 +92,7 @@ static int fx_rs_singleton(const char *cls, const char *mn) {
 
 /* The nearest builtin class of c: c, or a superclass. */
 static const FxClass *fx_rs_builtin_of(const FxClass *c) {
-  while (c && c->cls_id >= FX_CLS_BASE) c = c->super;
+  while (c && c->cls_id >= 0) c = c->super;
   return c;
 }
 
@@ -101,7 +101,10 @@ static const FxClass *fx_rs_builtin_of(const FxClass *c) {
    inherit, else of the builtin modules that k includes and of its nearest
    builtin class. -1 when the table cannot tell (k has no row). */
 static int fx_rs_defined(const FxClass *k, const char *mn, int inherit) {
-  if (k->cls_id < FX_CLS_BASE) {
+  /* a builtin class of the runtime has a negative id; a class of the
+     kernel (0 and up) or of the walker (FX_CLS_BASE and up) has methods of
+     its own, which the caller looks up first, and a builtin superclass */
+  if (k->cls_id < 0) {
     const FxRespondRow *row = fx_rs_row(k->name);
     if (!row) return -1;
     return inherit ? fx_rs_instance(k->name, mn) : fx_rs_in(row->inst, mn);

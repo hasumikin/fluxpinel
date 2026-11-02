@@ -1017,7 +1017,7 @@ static int fx_vis_denied(const FxMethod *m, int check, const sp_RbVal *caller) {
 static sp_RbVal fx_denied(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, int why) {
   sp_RbVal out;
   if (fx_method_missing(recv, name, argc, argv, blk, why, &out)) return out;
-  fx_no_method(recv, name, why);
+  fx_no_method_args(recv, name, argc, argv, why);
 }
 
 /* The same, with the visibility of the method. check is 0 for a call
@@ -1068,7 +1068,7 @@ static sp_RbVal fx_send_v(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
   if (fx_method_missing(recv, name, argc, argv, blk, FX_MISS_METHOD, &out)) return out;
   FxClass *rk = recv.tag == SP_TAG_CLASS ? fx_class_value(recv) : NULL;
   fx_trace_missing(rk ? sp_sprintf("%s.", rk->name) : sp_sprintf("%s#", sp_poly_class_name(recv)), name, argc);
-  fx_no_method(recv, name, FX_MISS_METHOD);
+  fx_no_method_args(recv, name, argc, argv, FX_MISS_METHOD);
 }
 
 /* p v to the object that $stdout holds: its write takes the inspect and a
