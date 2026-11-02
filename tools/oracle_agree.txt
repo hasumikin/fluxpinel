@@ -1,5 +1,5 @@
 # The spinel tests that Fluxpinel answers right, for make regress.
-# make oracle writes this file. spinel: cbb0f5e2c95a
+# make oracle writes this file. spinel: 9c647386fb13
 absolute_class_reopen_inside_module
 abstract_raise_override_return
 alias_attr_reader_source
@@ -757,6 +757,7 @@ builtin_splice_heredoc_opening_line
 builtin_value_kinds_skip_program_method
 builtin_value_methods
 builtins_comparable
+builtins_each_with_index
 builtins_grep
 builtins_integer_bit_length
 builtins_integer_digits
@@ -1111,6 +1112,7 @@ class_new_factory_without_identity
 class_new_rest_block_gc_root
 class_new_superclass_ancestors
 class_new_superclass_namespace
+class_new_variable_superclass_uncalled
 class_new_without_block
 class_object_dispatch
 class_object_dispatch_arg_once
@@ -1331,9 +1333,14 @@ concurrency_logical_operands
 cond_and_or_unboxed
 cond_string_beside_strbuf_arm
 conditional_class_receiver_new
+conditional_def_every_body
+conditional_def_kept_histories
 conditional_def_module_function
+conditional_def_over_inherited
+conditional_def_partial_bodies
 conditional_def_private_arm
 conditional_def_runtime_arm
+conditional_define_method_forms
 conditional_defs_differ_in_param_kind
 conditional_require_inline
 conditional_require_line
@@ -1361,6 +1368,7 @@ const_defined_deferred_early
 const_defined_receiver_scope
 const_defined_runtime_name
 const_env_defined_parity
+const_get_beside_instance_const_get
 const_get_builtin
 const_get_class_name
 const_get_dynamic_name
@@ -1750,6 +1758,7 @@ enum_answer_order_ancestors
 enum_answer_order_qualified
 enum_by_nil_element
 enum_call_on_late_typed_array
+enum_ctor_receiver_root
 enum_each_with_index_values
 enum_each_with_object_memo_beside_open_yield
 enum_instance_eval_receiver
@@ -1783,6 +1792,7 @@ enumerator_generator_user_each
 enumerator_in_container
 enumerator_new
 enumerator_new_yielder_shadowed
+enumerator_range
 enumerator_reyield_packed_item
 enumerator_symbol_proc_step_arity
 enumerator_to_a
@@ -2023,9 +2033,11 @@ find_ifnone
 find_pattern_match
 find_pattern_poly_scrutinee
 flat_map_identity
+flat_map_pair_index_param
 flat_map_poly_receiver
 flat_map_poly_return
 flat_map_str_array_beside_forwarding_map
+flat_map_take_rooted
 flatten_splices_to_ary
 float_arg_signed_zero_nan
 float_array_array
@@ -2139,6 +2151,7 @@ forward_args
 forward_args_after_leading_param
 forward_args_block
 forward_args_mixed_targets
+forward_block_boxed_builtin_blockless
 forward_block_to_yielding
 forward_call_param_type_inference
 forward_dots_empty_after_leading_param
@@ -2308,6 +2321,7 @@ hash_dispatch_missing_cells
 hash_double_splat
 hash_double_splat_update_kinds
 hash_each_entry_literal
+hash_each_enumerator
 hash_each_key_value
 hash_each_next
 hash_each_pair_boxed_kinds
@@ -2319,6 +2333,7 @@ hash_empty_block_methods
 hash_empty_literal_alias_key
 hash_empty_literal_alias_mixed_keys
 hash_empty_literal_and_map
+hash_enum_with_index_chain
 hash_eq_boxed
 hash_eq_empty_literal
 hash_eq_nullable_value
@@ -2446,6 +2461,7 @@ hash_shorthand
 hash_shorthand_str
 hash_simple_returns
 hash_slice
+hash_solo_block_pair
 hash_sort_by
 hash_sort_by_key_rooted
 hash_sort_pairs
@@ -2615,6 +2631,7 @@ index_opassign_value_prelude_rhs
 index_opw_local_hash_recv_root
 index_opw_local_recv_root
 index_or_write_empty_hash
+index_or_write_empty_hash_boxed_receiver
 index_or_write_module_class_index
 index_or_write_poly_value
 index_or_write_user_recv
@@ -2818,6 +2835,7 @@ int_min_min_sum_compact_pack
 int_min_nullable_slot_holds
 int_min_param_return
 int_min_plain_locals
+int_min_range_begin
 int_min_sign_mask
 int_named_division_boxed_divisor
 int_nil_shift_recv
@@ -2827,6 +2845,7 @@ int_pow_modulus_argument_errors
 int_round_large_precision
 int_sentinel_class_nilclass
 int_table_subclass_of_float_table
+int_word_end_ranges
 integer_0d_prefix
 integer_argument_error
 integer_bignum_batch2
@@ -3097,6 +3116,7 @@ issue_3069
 issue_3070
 issue_3071
 issue_3072
+issue_3076
 issue_3077
 issue_3078
 issue_3079
@@ -3121,6 +3141,7 @@ issue_3100
 issue_3101
 issue_3102
 issue_3103
+issue_3105
 issue_3108
 issue_3109
 issue_3110
@@ -3218,6 +3239,7 @@ issue_3227_ivar_shared
 issue_3227_matrix
 issue_3227_poly_mutators
 issue_3227_reflection_reads
+issue_3229
 issue_3231
 issue_3232
 issue_3233
@@ -3489,6 +3511,7 @@ loop_size_hoist_mutators
 loop_stop_iteration_kept_blocks
 loop_stop_iteration_kept_yield
 loop_stop_iteration_sources
+loop_stopiteration_result
 loop_string_getbyte_unheld
 loop_tail_return_poly_array
 loop_value_break_classes
@@ -4011,6 +4034,7 @@ nilable_int_slot_boxed_nil
 nilable_poly_array
 nilable_time_strftime
 nilclass_numeric_reopen_over_object
+nilclass_reopen_block_param
 nilfree_operand_nil_recv
 nmatch_sets_last_match
 no_poly_values_dropped
@@ -4422,6 +4446,7 @@ poly_enum_fallback_csv
 poly_enum_fallback_many_classes
 poly_enum_range_and_scalar_recv
 poly_enum_to_a_builtin_arm
+poly_enumerator_peek
 poly_eq_immediates
 poly_eq_large_integers
 poly_eq_nil_user_eq
@@ -4657,6 +4682,7 @@ poly_splice_value_rooted
 poly_split_beside_module_split
 poly_split_module_value_arm
 poly_stat_metadata_readers
+poly_step_blockless
 poly_step_int_and_float
 poly_store_lifted_string
 poly_str_append
@@ -4952,6 +4978,7 @@ push_onto_boxed_builtin_array
 push_splat_poly_receiver
 push_through_boxed_param_into_literal
 push_widens_through_boxed_and_sequence
+putc_boxed_nil
 puts_array_call_once
 puts_class_value
 puts_in_case_value_arm
@@ -5009,6 +5036,7 @@ range_cover_boxed_range_arg
 range_cover_poly_rational
 range_cover_range_boxed
 range_each_fusion
+range_each_no_block
 range_each_no_block_param
 range_each_slice_answers_receiver
 range_each_slice_returns_receiver
@@ -5365,6 +5393,7 @@ return_valueless_in_rescue
 return_void_and_nullable_object
 returned_container_mutable_string
 returned_lambda_param_boxed
+rewind_boxed_enumerator
 rightward_assign
 rightward_assign_destructure
 rightward_assign_object_deconstruct
@@ -5394,6 +5423,10 @@ ruby_patchlevel
 ruby_revision
 ruby_version_fold
 ruby_version_value
+runtime_condition_def_class_new
+runtime_condition_def_lists_other_receivers
+runtime_condition_def_over_accessor
+runtime_condition_def_override
 runtime_condition_single_def
 runtime_type_name_classes
 safe_nav_arg_iterators
@@ -6429,6 +6462,7 @@ tail_ivar_write_nullable_number
 take_while_boxed_predicate
 take_while_param_widened_slot
 tap_block_param_cell
+tap_param_unread_slot
 tap_then_expr
 tap_then_forwarded_callable
 tap_then_tail_value
@@ -6440,6 +6474,7 @@ then_forwarded_beside_own_then
 then_literal_and_user_blocks
 then_next_arm_array_kinds
 then_tap_nil_receiver
+then_without_block
 thread_alloc_heavy_workers
 thread_alloc_scaling
 thread_anon_class_display_text

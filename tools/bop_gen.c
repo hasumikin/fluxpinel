@@ -29,13 +29,18 @@
 /* types.c reads this flag of the analysis (src/analyze.c). */
 int g_infer_optimistic = 0;
 
-/* builtin_names.c calls these lookups of the analysis (src/analyze_util.c)
-   only in builtin_default_cmp, is_toplevel_const_name and
-   is_constless_builtin_name, which the generator does not call. */
+/* builtin_names.c calls these lookups of the analysis (src/analyze_util.c,
+   src/codegen_call.c) only in builtin_default_cmp, is_toplevel_const_name,
+   is_constless_builtin_name, builtin_every_object_answers and
+   builtin_class_id_answers, which the generator does not call. */
 int builtin_class_id(const char *name) { (void)name; abort(); }
 int is_builtin_class_name(const char *n) { (void)n; abort(); }
 int is_builtin_module_name(const char *n) { (void)n; abort(); }
 int is_builtin_exception_name(const char *n) { (void)n; abort(); }
+int builtin_class_parent_id(int id) { (void)id; abort(); }
+int builtin_method_known(const char *cls, const char *m) { (void)cls; (void)m; abort(); }
+int builtin_cmethod_known(const char *cls, const char *m) { (void)cls; (void)m; abort(); }
+int builtin_instance_method_known(const char *cls, const char *m) { (void)cls; (void)m; abort(); }
 
 typedef struct {
   TyKind recv;     /* the concrete receiver kind */

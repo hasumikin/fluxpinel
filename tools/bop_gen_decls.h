@@ -9,3 +9,7 @@ int builtin_class_id(const char *name);
 int is_builtin_class_name(const char *n);
 int is_builtin_module_name(const char *n);
 int is_builtin_exception_name(const char *n);
+int builtin_class_parent_id(int id);
+int builtin_method_known(const char *cls, const char *m);
+int builtin_cmethod_known(const char *cls, const char *m);
+int builtin_instance_method_known(const char *cls, const char *m);
