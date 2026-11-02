@@ -80,10 +80,23 @@ static void fx_exc_init(sp_RbVal v, int argc, sp_RbVal *argv) {
       e->has_key = 1;
     }
   }
+  /* SystemExit.new(status = 0, msg): a first argument of true (0), false
+     (1) or an Integer (a Float through to_int) is the status, which the
+     runtime keeps in the result slot (sp_exc_exit_status); any other value
+     leaves the status 0 and stays the message */
+  if (fx_exc_is(v, "SystemExit")) {
+    sp_int st = 0;
+    if (argc > 0 && argv[0].tag == SP_TAG_BOOL) { st = !argv[0].v.b; argc--; argv++; }
+    else if (argc > 0 && argv[0].tag == SP_TAG_INT) { st = argv[0].v.i; argc--; argv++; }
+    else if (argc > 0 && argv[0].tag == SP_TAG_FLT) { st = (sp_int)argv[0].v.f; argc--; argv++; }
+    sp_Exception *e = (sp_Exception *)v.v.p;
+    sp_gc_wb(e);
+    e->result = sp_box_int(st);
+  }
   /* the builtin classes with more arguments (NameError, SignalException,
-     SystemExit, ...) keep them in fields that Fluxpinel does not set yet */
+     ...) keep them in fields that Fluxpinel does not set yet */
   if (argc > 1) {
-    static const char *const more[] = { "NameError", "KeyError", "SignalException", "SystemExit", "StopIteration",
+    static const char *const more[] = { "NameError", "KeyError", "SignalException", "StopIteration",
                                         "FrozenError", "UncaughtThrowError", "NoMatchingPatternKeyError",
                                         "LocalJumpError", "SystemCallError", NULL };
     for (FxClass *k = fx_class_of(v); k; k = k->super)

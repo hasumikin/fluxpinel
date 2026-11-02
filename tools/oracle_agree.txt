@@ -690,6 +690,7 @@ boxed_struct_to_h_block
 boxed_sym_proc_user_map
 boxed_symbol_id2name_user
 boxed_symbol_name_beside_user_name
+boxed_systemexit_status
 boxed_time_asctime_to_a
 boxed_time_deconstruct_keys
 boxed_time_round_ctime
