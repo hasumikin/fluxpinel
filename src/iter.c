@@ -91,7 +91,14 @@ static int fx_seq_open(sp_RbVal r, FxSeq *s) {
   if (g->nobeg) sp_raise_cls("TypeError", "can't iterate from NilClass");
   s->range = 1;
   s->i = g->first;
-  s->last = g->noend ? INT64_MAX : g->excl ? g->last - 1 : g->last;
+  /* a Float end walks the Integers up to its floor ((1..2.5) gives 1, 2;
+     (1...3.0) gives 1, 2), and an infinite one has no end */
+  if (g->fe && g->fend == HUGE_VAL) s->last = INT64_MAX;
+  else if (g->fe) s->last = (sp_int)floor(g->fend) - (g->excl && floor(g->fend) == g->fend);
+  else s->last = g->noend ? INT64_MAX : g->excl ? g->last - 1 : g->last;
+  /* (INT64_MIN...INT64_MIN) is empty: its last word minus one would wrap
+     to INT64_MAX and the walk would never end */
+  if (g->excl && !g->noend && !g->fe && g->last == INT64_MIN) { s->i = 0; s->last = -1; }
   return 1;
 }
 
@@ -287,17 +294,21 @@ static int fx_seq_collector(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
     *out = argc == 1 ? sp_box_poly_array(a) : a->len ? a->data[0] : sp_box_nil();
     return 1;
   }
-  /* each, each_pair and each_with_index with no block on a Hash or a Range
-     with an end: an Enumerator over the elements that remembers the
-     method (#<Enumerator: {a: 1}:each>); the Array arms are in array.c */
+  /* each, each_pair and each_with_index with no block on a Hash or a
+     Range: an Enumerator over the elements that remembers the method
+     (#<Enumerator: {a: 1}:each>); a Range with no end, or with an infinite
+     Float end, gives the endless generator of the runtime, read only as
+     far as first(n) or next pulls it. The Array arms are in array.c. */
   if (argc == 0 && (FX_IS("each") || FX_IS("each_with_index") || (fx_is_hash(r) && FX_IS("each_pair"))) &&
-      (fx_is_hash(r) || (fx_is_range(r) && !((const sp_Range *)r.v.p)->noend))) {
+      (fx_is_hash(r) || fx_is_range(r))) {
     SP_GC_ROOT_RBVAL(r);
-    sp_PolyArray *a = fx_seq_array(r);
-    SP_GC_ROOT(a);
+    const sp_Range *g = fx_is_range(r) ? (const sp_Range *)r.v.p : NULL;
+    if (g && g->nobeg) sp_raise_cls("TypeError", "can't iterate from NilClass");
     const char *m = sp_sprintf("%s", name);
     SP_GC_ROOT_STR(m);
-    sp_Enumerator *e = sp_Enumerator_new_from_items(a);
+    sp_Enumerator *e;
+    if (g && (g->noend || (g->fe && g->fend == HUGE_VAL))) e = sp_range_endless_step(sp_box_int(g->first), sp_box_int(1));
+    else e = sp_Enumerator_new_from_items(fx_seq_array(r));
     SP_GC_ROOT(e);
     if (FX_IS("each_with_index")) e = sp_Enumerator_with_index(e, 0);
     sp_enum_with_src(e, r, m);

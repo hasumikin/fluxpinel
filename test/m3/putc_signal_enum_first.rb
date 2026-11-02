@@ -36,6 +36,17 @@ p((1..3).each)
 p((1..3).each.first(2))
 p((1..3).each_with_index.to_a)
 p({ a: 1 }.each.with_index(1).to_a)
+p((1..).each.first(2))
+p((1..Float::INFINITY).each)
+p((1..Float::INFINITY).each.first(3))
+p((7..Float::INFINITY).each_with_index.first(2))
+p((1..2.5).each.to_a)
+p((1...3.0).each.to_a)
+p((1..2.5).to_a)
+(1..Float::INFINITY).each { |i| break if i > 2; p i }
+m = -9223372036854775807 - 1
+p((m...m).to_a)
+p((m..m).each.to_a)
 begin
   e.first(-1)
 rescue ArgumentError => x
