@@ -68,6 +68,10 @@ test-roundhouse:
 # Moves the pin to the main of Roundhouse and checks the blog on it. It
 # stops when deps/roundhouse has changes. It does not commit: commit
 # ROUNDHOUSE_COMMIT when the check passes.
+#
+# The checkout follows the fetch here, so that the stamp rule does not
+# fetch again: a fetch leaves a gc in the background, which rewrites
+# .git/shallow under a second fetch ("shallow file has changed").
 upgrade_roundhouse:
 	@if [ -d $(DEPS_ROUNDHOUSE)/.git ] && [ -n "$$(git -C $(DEPS_ROUNDHOUSE) status --porcelain)" ]; then \
 	  echo "upgrade_roundhouse: $(DEPS_ROUNDHOUSE) has changes" >&2; \
@@ -75,7 +79,8 @@ upgrade_roundhouse:
 	if [ ! -d $(DEPS_ROUNDHOUSE)/.git ]; then \
 	  git init -q $(DEPS_ROUNDHOUSE) && git -C $(DEPS_ROUNDHOUSE) remote add origin $(ROUNDHOUSE_URL); fi
 	git -C $(DEPS_ROUNDHOUSE) fetch -q --depth 1 $(ROUNDHOUSE_URL) main
-	git -C $(DEPS_ROUNDHOUSE) rev-parse FETCH_HEAD > ROUNDHOUSE_COMMIT
+	git -C $(DEPS_ROUNDHOUSE) checkout -q --detach FETCH_HEAD
+	git -C $(DEPS_ROUNDHOUSE) rev-parse HEAD > ROUNDHOUSE_COMMIT
 	@$(MAKE) roundhouse && $(MAKE) test-roundhouse || { \
 	  echo "upgrade_roundhouse: the check failed on $$(cat ROUNDHOUSE_COMMIT)." \
 	    "The pin was $(ROUNDHOUSE_COMMIT)." >&2; \
