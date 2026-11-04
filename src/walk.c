@@ -1416,7 +1416,7 @@ static const void *fx_zsuper_args(FxFrame *f, const pm_node_t *n, sp_PolyArray *
 }
 
 static sp_RbVal fx_super_call(FxFrame *f, const pm_node_t *n, const pm_arguments_node_t *args, int forward,
-                                const FxBlock *blk);
+                                const pm_node_t *bnode, FxBlock *lit, sp_RbVal *holder);
 
 /* super, and super with no arguments, which passes the parameters. Both
    pass the block of the method, unless the super has its own. */
@@ -1427,15 +1427,13 @@ static sp_RbVal fx_super(FxFrame *f, const pm_node_t *n, const pm_arguments_node
   FxBlock lit;
   sp_RbVal holder = sp_box_nil();
   SP_GC_ROOT_RBVAL(holder);
-  const FxBlock *blk = bnode ? fx_make_block(f, bnode, &lit, &holder) : f->block;
-  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
-  sp_RbVal v = fx_super_call(f, n, args, forward, blk);
+  sp_RbVal v = fx_super_call(f, n, args, forward, bnode, &lit, &holder);
   L.kwhash = NULL;
   return fx_catch_break(&lit, v);
 }
 
 static sp_RbVal fx_super_call(FxFrame *f, const pm_node_t *n, const pm_arguments_node_t *args, int forward,
-                                const FxBlock *blk) {
+                                const pm_node_t *bnode, FxBlock *lit, sp_RbVal *holder) {
   SP_GC_SAVE();
   FX_ARGS(f, forward ? NULL : args, argc, argv, kw, ok);
   if (!ok) return sp_box_nil();
@@ -1448,6 +1446,10 @@ static sp_RbVal fx_super_call(FxFrame *f, const pm_node_t *n, const pm_arguments
     argc = (int)argc_spread->len;
     argv = argc_spread->data;
   }
+  /* the block after the arguments, as a call does: `super((s = :b; a), &s)`
+     reads the s that the argument wrote */
+  const FxBlock *blk = bnode ? fx_make_block(f, bnode, lit, holder) : f->block;
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
   L.kwhash = kw;
   const FxMethod *m = f->method;
   FxMethod *s = NULL;
