@@ -37,6 +37,10 @@ jobs:
       - name: Install libffi
         run: sudo apt-get update && sudo apt-get install -y libffi-dev
 
+      # test/m3/ffi_gem.rb compares with the ffi gem under CRuby.
+      - name: Install the ffi gem
+        run: gem install ffi --no-document
+
       # The build of spinel takes most of the time. The cache keeps it for
       # one pin, so only a change of SPINEL_COMMIT builds spinel again.
       - name: Restore spinel
@@ -91,6 +95,9 @@ jobs:
 
       - name: Install libffi
         run: sudo apt-get update && sudo apt-get install -y libffi-dev
+
+      - name: Install the ffi gem
+        run: gem install ffi --no-document
 
       - name: Fetch and build spinel master
         run: |

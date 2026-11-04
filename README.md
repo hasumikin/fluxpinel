@@ -210,6 +210,7 @@ can change while it runs.
 ## Build and test
 
 Fluxpinel needs git, a C compiler, libffi and Ruby for the build tools.
+`make test` also needs the ffi gem under CRuby (`gem install ffi`).
 `make deps` fetches spinel at the commit in `SPINEL_COMMIT` into
 `deps/spinel`, and builds it there.
 
