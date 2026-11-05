@@ -10,8 +10,8 @@
 #      ones that reach a park of the green thread: sp_sched_block and its
 #      kin, the I/O wait, a leave of the world for a native call,
 #   2. finds each call of such a function in FILE... that is not inside
-#      FX_UNLOCKED(...), and not in a function that runs without the lock
-#      (ALLOW below),
+#      FX_UNLOCKED(...) or FX_UNLOCKED_ROOT(...), and not in a function
+#      that runs without the lock (ALLOW below),
 #   3. prints the calls, and exits 1 when there is one.
 #
 # A wait inside a collection is not a park here: a collection ends without
@@ -157,10 +157,10 @@ findings = []
 FILES.each do |path|
   text = File.read(path)
   each_function(text) do |name, body, line0|
-    next if ALLOW.key?(name) || name == "FX_UNLOCKED"
-    depth = 0   # of FX_UNLOCKED( ... ) around the current position
+    next if ALLOW.key?(name) || name.start_with?("FX_UNLOCKED")
+    depth = 0   # of FX_UNLOCKED( ... ) or FX_UNLOCKED_ROOT( ... ) around the current position
     body.each_line.with_index(line0) do |line, lineno|
-      line.scan(/\bFX_UNLOCKED\s*\(|\b(sp_\w+)\s*\(|[()]/) do
+      line.scan(/\bFX_UNLOCKED(?:_ROOT)?\s*\(|\b(sp_\w+)\s*\(|[()]/) do
         tok = $~[0]
         callee = $~[1]
         if tok.start_with?("FX_UNLOCKED")

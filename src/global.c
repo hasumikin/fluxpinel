@@ -406,7 +406,7 @@ static sp_RbVal fx_io_select(int argc, sp_RbVal *argv) {
   SP_GC_ROOT(sets[2]);
   double timeout = argc < 4 || argv[3].tag == SP_TAG_NIL ? -1.0 : sp_io_wait_interval(argv[3]);
   sp_RbVal r;
-  FX_UNLOCKED(r = sp_io_select(sets[0], sets[1], sets[2], timeout));
+  FX_UNLOCKED_ROOT(r = sp_io_select(sets[0], sets[1], sets[2], timeout), SP_GC_ROOT_RBVAL(r));
   return r;
 }
 
@@ -603,7 +603,7 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     SP_GC_ROOT(a);
     for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
     const char *s;
-    FX_UNLOCKED(s = sp_io_read_splat(io, a));
+    FX_UNLOCKED_ROOT(s = sp_io_read_splat(io, a), SP_GC_ROOT_STR(s));
     *out = s ? sp_box_str_new(s) : sp_box_nil();
     return 1;
   }
@@ -615,7 +615,7 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     sp_RbVal t = argc >= 1 ? argv[0] : sp_box_nil();
     if (FX_IS("wait_writable")) {
       sp_File *w;
-      FX_UNLOCKED(w = sp_io_wait_writable_timeout(io, t));
+      FX_UNLOCKED_ROOT(w = sp_io_wait_writable_timeout(io, t), SP_GC_ROOT(w));
       *out = sp_box_nullable_obj(w, SP_BUILTIN_IO);
       return 1;
     }
@@ -626,7 +626,7 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
       ev = !strcmp(k, "write") ? 1 : !strcmp(k, "priority") ? 2 : !strcmp(k, "read_write") ? 3 : 0;
     }
     int plain = FX_IS("wait") && argc > 0;
-    FX_UNLOCKED(*out = sp_io_wait_timeout_value(io, t, ev, plain));
+    FX_UNLOCKED_ROOT(*out = sp_io_wait_timeout_value(io, t, ev, plain), SP_GC_ROOT_RBVAL(*out));
     return 1;
   }
   /* pread(len, offset), pwrite(str, offset), readpartial(n), sysread(n)
@@ -635,7 +635,7 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
   if (!kw && argc == 2 && FX_IS("pread")) {
     sp_int len = sp_poly_arg_int_chk(argv[0]), off = sp_poly_arg_int_chk(argv[1]);
     const char *s;
-    FX_UNLOCKED(s = sp_File_pread_checked(io, len, off));
+    FX_UNLOCKED_ROOT(s = sp_File_pread_checked(io, len, off), SP_GC_ROOT_STR(s));
     *out = sp_box_str_new(s);
     return 1;
   }
@@ -652,7 +652,8 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
   if (!kw && argc == 1 && (FX_IS("readpartial") || FX_IS("sysread"))) {
     sp_int n = sp_poly_arg_int_chk(argv[0]);
     const char *s;
-    FX_UNLOCKED(s = name[0] == 'r' ? sp_File_readpartial_checked(io, n) : sp_File_sysread_checked(io, n));
+    FX_UNLOCKED_ROOT(s = name[0] == 'r' ? sp_File_readpartial_checked(io, n) : sp_File_sysread_checked(io, n),
+                     SP_GC_ROOT_STR(s));
     *out = sp_box_str_new(s);
     return 1;
   }
@@ -680,7 +681,7 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     if (FX_IS("gets")) {
       sp_oint lim = sp_io_gets_args(a, &sep);
       const char *s;
-      FX_UNLOCKED(s = sp_File_gets_limit(io, sep, lim, chomp));
+      FX_UNLOCKED_ROOT(s = sp_File_gets_limit(io, sep, lim, chomp), SP_GC_ROOT_STR(s));
       *out = s ? sp_box_str_new(s) : sp_box_nil();
       return 1;
     }
@@ -688,7 +689,7 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     if (FX_IS("readline")) {
       sp_oint lim = sp_io_gets_args(a, &sep);
       const char *s;
-      FX_UNLOCKED(s = sp_File_readline_limit(io, sep, lim, chomp));
+      FX_UNLOCKED_ROOT(s = sp_File_readline_limit(io, sep, lim, chomp), SP_GC_ROOT_STR(s));
       *out = sp_box_str_new(s);
       return 1;
     }
@@ -698,7 +699,7 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     sp_StrArray *lines = sp_StrArray_new();
     SP_GC_ROOT(lines);
     for (const char *s;;) {
-      FX_UNLOCKED(s = sp_File_gets_sep(io, sep, lim, chomp));
+      FX_UNLOCKED_ROOT(s = sp_File_gets_sep(io, sep, lim, chomp), SP_GC_ROOT_STR(s));
       if (!s) break;
       sp_StrArray_push(lines, s);
     }

@@ -325,8 +325,11 @@ int main(int argc, char **argv) {
         fprintf(out, "sp_RbVal fx_bop_%d(sp_RbVal recv, sp_RbVal *argv) {\n", id);
         fprintf(out, "  (void)argv;\n  %s r = %s;\n", rt->ctype, recv.p);
         /* a runtime function that parks the green thread runs without the
-           walker lock (fx_tu.c) */
-        if (parks(body.p)) fprintf(out, "  sp_RbVal res;\n  FX_UNLOCKED(res = %s);\n  return res;\n}\n#endif\n", boxed.p);
+           walker lock, and its result is a root until the lock is back
+           (fx_tu.c) */
+        if (parks(body.p))
+          fprintf(out, "  sp_RbVal res;\n  FX_UNLOCKED_ROOT(res = %s, SP_GC_ROOT_RBVAL(res));\n  return res;\n}\n#endif\n",
+                  boxed.p);
         else fprintf(out, "  return %s;\n}\n#endif\n", boxed.p);
         fprintf(man, "%d\t%zu\t%s\t%s\t%s\tgen\t\n", id, i, rname, op->name, vname);
         if (id >= MAX_WRAPPERS) { fprintf(stderr, "bop_gen: more than %d wrappers\n", MAX_WRAPPERS); return 1; }

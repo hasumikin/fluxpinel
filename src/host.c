@@ -64,7 +64,7 @@ static sp_RbVal fx_entry_invoke(int i, int argc, sp_RbVal *argv) {
   /* the kernel runs without the walker lock: an entry can run long (a
      server), and it calls Fluxpinel again from any of its threads */
   sp_RbVal r;
-  FX_UNLOCKED(r = fx_kernel_entries[i].fn(argv));
+  FX_UNLOCKED_ROOT(r = fx_kernel_entries[i].fn(argv), SP_GC_ROOT_RBVAL(r));
   return r;
 }
 

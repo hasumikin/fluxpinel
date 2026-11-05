@@ -226,6 +226,19 @@ static void fx_lock_init(void) {}
     fx_lock_set_depth(_fx_n);                                                          \
   } while (0)
 
+/* The same, for a wait whose result is a value of the heap (a String, a
+   handle, an Array): the lock can park on its way back, and a collection in
+   that park frees what no root names. root is the SP_GC_ROOT* of the result,
+   which lives until the lock is back. */
+#define FX_UNLOCKED_ROOT(stmt, root)                                                   \
+  do {                                                                                 \
+    int _fx_n = fx_lock_depth();                                                       \
+    fx_lock_set_depth(0);                                                              \
+    stmt;                                                                              \
+    root;                                                                              \
+    fx_lock_set_depth(_fx_n);                                                          \
+  } while (0)
+
 /* A safepoint poll of the walker: a collection or a preemption parks the
    thread, and another thread of the walker may run meanwhile. */
 static void fx_safepoint(void) {

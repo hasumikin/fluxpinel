@@ -120,12 +120,12 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
     const char *path = sp_poly_arg_path(argv[0]);
     SP_GC_ROOT_STR(path);
     sp_File *f;
-    FX_UNLOCKED(f = sp_File_open(path, "r"));   /* an open of a FIFO waits for its peer */
+    FX_UNLOCKED_ROOT(f = sp_File_open(path, "r"), SP_GC_ROOT(f));   /* an open of a FIFO waits for its peer */
     SP_GC_ROOT(f);
     sp_StrArray *a = sp_StrArray_new();
     SP_GC_ROOT(a);
     for (const char *s;;) {
-      FX_UNLOCKED(s = sp_File_gets_sep(f, sep, limit, chomp));
+      FX_UNLOCKED_ROOT(s = sp_File_gets_sep(f, sep, limit, chomp), SP_GC_ROOT_STR(s));
       if (!s) break;
       sp_StrArray_push(a, s);
     }
@@ -208,7 +208,7 @@ static sp_File *fx_file_open(int argc, sp_RbVal *argv) {
   }
   sp_oint p = sp_poly_arg_perm(perm);
   sp_File *f;
-  FX_UNLOCKED(f = sp_File_open_val(path, mode, p));   /* an open of a FIFO waits for its peer */
+  FX_UNLOCKED_ROOT(f = sp_File_open_val(path, mode, p), SP_GC_ROOT(f));   /* an open of a FIFO waits for its peer */
   return f;
 }
 
@@ -267,7 +267,7 @@ static int fx_file_foreach(int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVa
   const char *path = sp_poly_arg_path(argv[0]);
   SP_GC_ROOT_STR(path);
   sp_File *f;
-  FX_UNLOCKED(f = sp_File_open_val(path, mode, sp_oint_nil()));   /* an open of a FIFO waits for its peer */
+  FX_UNLOCKED_ROOT(f = sp_File_open_val(path, mode, sp_oint_nil()), SP_GC_ROOT(f));   /* an open of a FIFO waits for its peer */
   SP_GC_SAVE();
   SP_GC_ROOT(f);
   sp_RbVal line = sp_box_nil();
@@ -276,7 +276,7 @@ static int fx_file_foreach(int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVa
   FX_TRY_PUSH();
   if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
     for (const char *s;;) {
-      FX_UNLOCKED(s = sp_File_gets_sep(f, sep, limit, chomp));
+      FX_UNLOCKED_ROOT(s = sp_File_gets_sep(f, sep, limit, chomp), SP_GC_ROOT_STR(s));
       if (!s) break;
       line = sp_box_str_new(s);
       fx_y1(blk, line);
@@ -349,15 +349,15 @@ static sp_int fx_io_copy_stream(sp_RbVal src, sp_RbVal dst) {
     const char *path = sp_poly_arg_path(src);
     SP_GC_ROOT_STR(path);
     sp_File *in;
-    FX_UNLOCKED(in = sp_File_open(path, "rb"));   /* an open of a FIFO waits for its peer */
+    FX_UNLOCKED_ROOT(in = sp_File_open(path, "rb"), SP_GC_ROOT(in));   /* an open of a FIFO waits for its peer */
     SP_GC_ROOT(in);
     const char *s;
-    FX_UNLOCKED(s = sp_File_read(in));
+    FX_UNLOCKED_ROOT(s = sp_File_read(in), SP_GC_ROOT_STR(s));
     sp_File_close(in);
     data = s ? sp_box_str_new(s) : sp_box_nil();
   } else if (fx_is_io(src)) {
     const char *s;
-    FX_UNLOCKED(s = sp_File_read((sp_File *)src.v.p));
+    FX_UNLOCKED_ROOT(s = sp_File_read((sp_File *)src.v.p), SP_GC_ROOT_STR(s));
     data = s ? sp_box_str_new(s) : sp_box_nil();
   } else {
     data = fx_send(src, "read", 0, NULL);
@@ -368,7 +368,7 @@ static sp_int fx_io_copy_stream(sp_RbVal src, sp_RbVal dst) {
     const char *path = sp_poly_arg_path(dst);
     SP_GC_ROOT_STR(path);
     sp_File *out;
-    FX_UNLOCKED(out = sp_File_open(path, "wb"));
+    FX_UNLOCKED_ROOT(out = sp_File_open(path, "wb"), SP_GC_ROOT(out));
     SP_GC_ROOT(out);
     FX_UNLOCKED(sp_File_write_poly(out, data));
     sp_File_close(out);

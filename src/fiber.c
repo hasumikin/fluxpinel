@@ -342,17 +342,17 @@ static int fx_fiber_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
       return 1;
     }
     if (FX_IS("pop") || FX_IS("shift") || FX_IS("deq")) {
-      if (argc == 0) { FX_UNLOCKED(*out = sp_Queue_pop(q)); return 1; }
+      if (argc == 0) { FX_UNLOCKED_ROOT(*out = sp_Queue_pop(q), SP_GC_ROOT_RBVAL(*out)); return 1; }
       if (argc == 1 && fx_is_kwhash(argv[0])) {
         sp_RbVal key = sp_box_sym(sp_sym_intern("timeout"));
         sp_RbVal t = fx_send(argv[0], "[]", 1, &key);
-        if (t.tag == SP_TAG_NIL) FX_UNLOCKED(*out = sp_Queue_pop(q));
-        else FX_UNLOCKED(*out = sp_Queue_pop_timeout(q, sp_poly_to_f(t)));
+        if (t.tag == SP_TAG_NIL) FX_UNLOCKED_ROOT(*out = sp_Queue_pop(q), SP_GC_ROOT_RBVAL(*out));
+        else FX_UNLOCKED_ROOT(*out = sp_Queue_pop_timeout(q, sp_poly_to_f(t)), SP_GC_ROOT_RBVAL(*out));
         return 1;
       }
       if (argc == 1) {
         if (sp_poly_truthy(argv[0])) *out = sp_Queue_pop_nb(q);
-        else FX_UNLOCKED(*out = sp_Queue_pop(q));
+        else FX_UNLOCKED_ROOT(*out = sp_Queue_pop(q), SP_GC_ROOT_RBVAL(*out));
         return 1;
       }
     }
@@ -369,9 +369,9 @@ static int fx_fiber_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
       sp_mutex *m = (sp_mutex *)argv[0].v.p;
       if (argc == 2 && argv[1].tag != SP_TAG_NIL) {
         double t = sp_poly_to_f(argv[1]);
-        FX_UNLOCKED(*out = sp_CondVar_wait_timeout(cv, m, t));
+        FX_UNLOCKED_ROOT(*out = sp_CondVar_wait_timeout(cv, m, t), SP_GC_ROOT_RBVAL(*out));
       } else {
-        FX_UNLOCKED(*out = sp_CondVar_wait(cv, m));
+        FX_UNLOCKED_ROOT(*out = sp_CondVar_wait(cv, m), SP_GC_ROOT_RBVAL(*out));
       }
       return 1;
     }
