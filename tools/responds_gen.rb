@@ -15,6 +15,9 @@ EXTRA = %w[MatchData Set Thread Thread::Queue Thread::SizedQueue Thread::Mutex
            Process GC ObjectSpace Random Binding File::Stat Enumerator::Lazy
            Enumerator::Yielder Marshal].freeze
 
+# the socket classes are an extension, not loaded by default
+require "socket"
+
 src = File.read(ARGV[0] || abort("usage: ruby tools/responds_gen.rb src/fx_tu.c"))
 list = src[/fx_builtin_class_names\[\] = \{(.*?)\};/m, 1] or abort "responds_gen.rb: no fx_builtin_class_names"
 names = list.scan(/"([^"]+)"/).flatten + Object.constants.map(&:to_s) + EXTRA

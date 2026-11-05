@@ -45,6 +45,7 @@
 #include "ffi.c"
 #include "process.c"
 #include "file.c"
+#include "socket.c"
 #include "time.c"
 #include "complex.c"
 #include "encoding.c"
@@ -268,6 +269,7 @@ static void fx_body(void) {
   fx_exc_hooks();
   fx_re_init();
   fx_global_init();
+  fx_sock_init();
   fx_binding_init();
   fx_marshal_init();
   /* a fiber runs the walker, whose frames are larger than those of AOT

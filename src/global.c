@@ -541,6 +541,8 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
   if (!fx_is_io(r)) return 0;
   sp_File *io = (sp_File *)r.v.p;
   if (io->mode && (!strcmp(io->mode, "stat") || !strcmp(io->mode, "lstat"))) return fx_stat_core(io, name, argc, out);
+  /* accept, addr and the other methods of a socket (socket.c) */
+  if (io->is_sock && fx_sock_core(io, name, argc, argv, out)) return 1;
   /* IO#stat and File#stat: a stat of the open handle */
   if (argc == 0 && FX_IS("stat")) { *out = sp_box_obj(sp_io_stat_handle(io), SP_BUILTIN_IO); return 1; }
   /* external_encoding: what set_encoding chose (ext_enc), else BINARY after

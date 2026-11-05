@@ -205,6 +205,7 @@ static sp_int fx_builtin_id(const char *name) {
 }
 
 static void fx_const_set(FxClass *c, sp_sym name, sp_RbVal v);   /* the constants section */
+static int fx_const_scoped(const FxClass *scope, sp_sym name, sp_RbVal *out);
 static sp_RbVal fx_ivar_get(sp_RbVal self, sp_sym name);          /* the objects section */
 
 /* The FxClass of a builtin class name, made on first use, or NULL. */
@@ -232,6 +233,13 @@ static FxClass *fx_builtin(const char *name) {
     fx_push_class(&L.builtins, &L.nbuiltins, &L.builtins_cap, c);
     c->super = fx_builtin(exc_parent);
     if (errnum > 0) fx_const_set(c, sp_sym_intern("Errno"), sp_box_int(errnum));
+    /* a nonblocking error of IO includes its wait module: IO::EAGAINWaitReadable
+       is an Errno::EAGAIN that is an IO::WaitReadable (global.c makes the two
+       modules) */
+    const char *wait = strncmp(name, "IO::", 4) ? NULL : strstr(name, "Wait");
+    sp_RbVal mod;
+    if (wait && fx_const_scoped(fx_builtin("IO"), sp_sym_intern(wait), &mod))
+      fx_push_class(&c->includes, &c->nincludes, &c->includes_cap, fx_class_value(mod));
     return c;
   }
   /* a module that spinel's codegen answers by name (process.c, marshal.c),
@@ -2128,6 +2136,8 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   if (!blk && fx_process_class(k, name, argc, argv, out)) return 1;
   /* the class methods of File on paths */
   if (fx_file_class(k, name, argc, argv, blk, out)) return 1;
+  /* TCPServer.new and the other socket constructors */
+  if (fx_sock_class(k, name, argc, argv, blk, out)) return 1;
   /* Time.now, Time.at, Time.new and the civil forms */
   if (!blk && fx_time_class(k, name, argc, argv, out)) return 1;
   /* Complex.rect and Complex.polar */

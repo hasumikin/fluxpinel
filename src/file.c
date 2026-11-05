@@ -139,9 +139,9 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
     *out = fx_file_read(name[0] == 'b', argc, argv);
     return 1;
   }
-  static const char *const one[] = { "exist?", "directory?", "file?", "size", "basename", "dirname", "extname",
-                                     "readable?", "writable?", "executable?", "mtime", "atime", "ctime", "path",
-                                     "stat", "lstat", NULL };
+  static const char *const one[] = { "exist?", "directory?", "file?", "symlink?", "size", "basename", "dirname",
+                                     "extname", "readable?", "writable?", "executable?", "mtime", "atime", "ctime",
+                                     "path", "stat", "lstat", NULL };
   int is_one = 0;
   for (int i = 0; argc == 1 && one[i]; i++)
     if (FX_IS(one[i])) is_one = 1;
@@ -151,6 +151,7 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
     if (FX_IS("exist?")) { *out = sp_box_bool(sp_file_exist(path)); return 1; }
     if (FX_IS("directory?")) { *out = sp_box_bool(sp_file_directory(path)); return 1; }
     if (FX_IS("file?")) { *out = sp_box_bool(!sp_file_directory(path) && sp_file_exist(path)); return 1; }
+    if (FX_IS("symlink?")) { *out = sp_box_bool(sp_file_symlink(path)); return 1; }
     if (FX_IS("size")) { *out = sp_box_int(sp_file_size(path)); return 1; }
     if (FX_IS("basename")) { *out = sp_box_str_new(sp_file_basename(path)); return 1; }
     if (FX_IS("dirname")) { *out = sp_box_str_new(sp_file_dirname(path)); return 1; }
@@ -522,7 +523,7 @@ static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal 
 static int fx_file_responds(sp_RbVal r, const char *name) {
   static const char *const names[] = { "open", "new", "foreach", "readlines", "join", "delete", "unlink",
                                        "write", "binwrite", "read", "binread",
-                                       "exist?", "directory?", "file?", "size", "basename", "dirname",
+                                       "exist?", "directory?", "file?", "symlink?", "size", "basename", "dirname",
                                        "extname", "readable?", "writable?", "executable?", "mtime", "atime",
                                        "ctime", "path", "stat", "lstat", "expand_path", "absolute_path", NULL };
   FxClass *k = fx_class_value(r);

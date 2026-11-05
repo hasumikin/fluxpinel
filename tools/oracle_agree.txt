@@ -945,6 +945,7 @@ call_plan_descendant_string
 call_plan_descendant_targets
 call_plan_literal_send
 call_plan_method_source
+call_plan_misc_targets
 call_plan_native_block_value
 call_plan_operator_target
 call_plan_pinned_target
@@ -1023,6 +1024,7 @@ case_value_array_hash_when
 case_value_untaken_arm_effects
 case_when_boxed_module_eq
 case_when_boxed_pattern
+case_when_builtin_value_const
 case_when_class
 case_when_class_scalar_predicate
 case_when_dynamic_regexp
@@ -1979,6 +1981,7 @@ exception_message_override
 exception_message_private_helper
 exception_message_super_private_def
 exception_message_super_tail
+exception_module_hierarchy
 exception_namespaced_default_message
 exception_nested_builtin_name
 exception_new_nil_message
@@ -2115,6 +2118,7 @@ field_from_unpassed_nil_param
 file_basename_extname_rooted
 file_basename_gc
 file_close_without_dev_null
+file_close_write_closed
 file_delete_no_args
 file_delete_splat
 file_dir_methods
@@ -2365,6 +2369,7 @@ gc_str_arg_rooted
 gc_str_budget_kept
 gc_str_budget_objects
 gc_str_budget_still
+gc_str_major_interval
 gc_threshold_no_runaway
 gc_threshold_per_heap
 gc_total_time
@@ -3042,11 +3047,15 @@ introspection_constant_path
 invalid_utf8_split_one_and_setbyte
 io_access_mode_checks
 io_binary_write_paths
+io_close_cancels_waiting_accept
+io_close_handler_watermark
+io_close_wakes_polled_waiter
 io_closed_stream_raises
 io_console_raw_noecho
 io_copy_stream_boxed_path
 io_copy_stream_poly_union
 io_each_line_splat_args
+io_getc_binary_handle
 io_gets_long_line
 io_gets_splat_sep_and_limit
 io_gets_zero_limit
@@ -5981,6 +5990,22 @@ size_nil_receivers
 sized_poly_array_nil_n
 sleep_poly_arg
 slice_when_first_class
+socket_addr_boxed_handle
+socket_const_defined
+socket_handle_kind
+socket_large_read_n
+socket_large_write_slow_reader
+socket_open_without_block
+socket_read_partial_while_allocating
+socket_readpartial_then_write
+socket_recv_after_read
+socket_recv_closed_in_thread
+socket_send_boxed_initialize
+socket_server_boxed_accept
+socket_shutdown_boxed_handle
+socket_tcp_basic
+socket_tcp_thread
+socket_two_readers_one_buffer
 sort_block_nil_answer
 sort_block_nil_compare
 sort_block_poly_receiver
@@ -6732,6 +6757,7 @@ symbol_to_proc_call
 symbol_to_proc_unary_op
 symbol_upcase_interpolation
 systemcallerror_errno_namespaced_subclass
+systemcallerror_hierarchy
 table_row_copy_push
 table_row_join_keeps_kind
 tail_iter_call_receiver
@@ -6745,6 +6771,7 @@ tap_then_expr
 tap_then_forwarded_callable
 tap_then_tail_value
 tap_void_receiver
+tcp_connect_concurrent
 template_self_call_shared_string
 ternary_lazy_arms
 then_block_always_breaks
@@ -6770,6 +6797,7 @@ thread_ensure_inside_block
 thread_enumerator_preempt
 thread_exit_beside_main_raise
 thread_exit_does_not_wait_for_blocked
+thread_exit_raises_in_main
 thread_fiber_current_override
 thread_fiber_param_push
 thread_file_gets
