@@ -13,3 +13,4 @@ int builtin_class_parent_id(int id);
 int builtin_method_known(const char *cls, const char *m);
 int builtin_cmethod_known(const char *cls, const char *m);
 int builtin_instance_method_known(const char *cls, const char *m);
+int str_in(const char *s, const char *const *set);

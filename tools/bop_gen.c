@@ -41,6 +41,9 @@ int builtin_class_parent_id(int id) { (void)id; abort(); }
 int builtin_method_known(const char *cls, const char *m) { (void)cls; (void)m; abort(); }
 int builtin_cmethod_known(const char *cls, const char *m) { (void)cls; (void)m; abort(); }
 int builtin_instance_method_known(const char *cls, const char *m) { (void)cls; (void)m; abort(); }
+/* fresh_array_builtin_name asks str_in (src/analyze_util.c), a lookup of a
+   name in a NULL-ended list; the generator does not call it either */
+int str_in(const char *s, const char *const *set) { (void)s; (void)set; abort(); }
 
 typedef struct {
   TyKind recv;     /* the concrete receiver kind */
@@ -237,7 +240,8 @@ static int variants_of(TyKind recv, Variant *out) {
 static int parks(const char *body) {
   static const char *const names[] = {
     "sp_File_gets", "sp_File_getc", "sp_File_getbyte", "sp_File_readbyte", "sp_File_readchar",
-    "sp_File_eof_p", "sp_File_read", "sp_File_flock", "sp_File_write", "sp_File_puts", "sp_File_syswrite",
+    "sp_File_eof_p", "sp_File_read", "sp_File_flock", "sp_File_write", "sp_File_puts", "sp_File_putc",
+    "sp_File_syswrite",
     "sp_File_pread", "sp_File_pwrite", "sp_File_open", "sp_io_copy_stream", "sp_io_select", "sp_io_wait",
     "sp_net_", "sp_sock_", "sp_addrinfo_",
     "sp_Thread_join", "sp_Thread_value", "sp_Thread_run", "sp_Thread_pass", "sp_Mutex_lock", "sp_Mutex_sleep",
