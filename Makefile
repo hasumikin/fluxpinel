@@ -112,6 +112,14 @@ $(BUILD)/off.flags: $(BUILD)/bop_gen_out.c tools/bop_report.rb
 	SPINEL=$(SPINEL) RT_ARCHIVE=$(RT_ARCHIVE) RT_CFLAGS="$(RT_CFLAGS)" RT_LIBS="$(RT_LIBS)" \
 	  ruby tools/bop_report.rb $(BUILD) > $(BUILD)/bop_report.txt
 
+# gem_dirs.h names the lib directories of the gems of --irb on this
+# machine. The header changes only when the directories change, so a
+# newer gem relinks and nothing else does.
+IRB_GEMS = irb reline prism rdoc
+$(BUILD)/gem_dirs.h: tools/gem_dirs.rb FORCE
+	@mkdir -p $(BUILD)
+	@ruby tools/gem_dirs.rb $(IRB_GEMS) > $@.tmp && { cmp -s $@.tmp $@ && rm $@.tmp || mv $@.tmp $@; }
+
 # spinel.rev records the spinel commit that the binary was built from. The
 # oracle compares it with the spinel tree it tests.
 $(BUILD)/native.flags: tools/native_link.rb $(wildcard $(SPINEL)/packages/*/*.rb)
@@ -130,7 +138,7 @@ $(BUILD)/responds.inc: tools/responds_gen.rb src/fx_tu.c
 	ruby --disable-gems tools/responds_gen.rb src/fx_tu.c > $@
 
 $(BUILD)/fluxpinel: src/*.c src/*.h $(BUILD)/bop_gen_out.c $(BUILD)/off.flags $(BUILD)/prelude.inc $(BUILD)/responds.inc \
-                    $(NATIVE_FLAGS) VERSION
+                    $(BUILD)/gem_dirs.h $(NATIVE_FLAGS) VERSION
 	$(CC) $(CFLAGS) $$(cat $(BUILD)/off.flags) -o $@ src/main.c $(if $(NATIVE_FLAGS),$$(cat $(NATIVE_FLAGS))) \
 	  $(LIBS)
 	git -C $(SPINEL) rev-parse HEAD > $(BUILD)/spinel.rev
@@ -216,7 +224,8 @@ $(HOST)/ivars.c: $(HOST)/kernel.c tools/ivar_gen.rb tools/c_box.rb
 	ruby tools/ivar_gen.rb $(HOST)/kernel.c > $@
 
 $(HOST)/$(HOST_NAME): src/*.c src/*.h $(HOST)/kernel.c $(HOST)/entries.c $(HOST)/ivars.c $(BUILD)/bop_gen_out.c \
-              $(BUILD)/off.flags $(BUILD)/prelude.inc $(BUILD)/responds.inc $(NATIVE_FLAGS) $(HOST)/link.args
+              $(BUILD)/off.flags $(BUILD)/prelude.inc $(BUILD)/responds.inc $(BUILD)/gem_dirs.h $(NATIVE_FLAGS) \
+              $(HOST)/link.args
 	$(CC) $(CFLAGS) -I$(HOST) -DFX_KERNEL=fx_kernel_init $(if $(KERNEL_MAIN),'-DFX_KERNEL_MAIN="$(KERNEL_MAIN)"') \
 	  -include src/kernel_prelude.h -include $(HOST)/kernel.c \
 	  -include $(HOST)/entries.c -include $(HOST)/ivars.c $$(cat $(BUILD)/off.flags) -o $@ src/main.c \

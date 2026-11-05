@@ -1,14 +1,24 @@
 /* main.c -- the Fluxpinel command and the root of the one TU.
 
    Usage: fluxpinel [options] [--] [FILE.rb | -] [ARG...]
+          fluxpinel [options] --irb [ARG...]    IRB, with ARG... as its options
           fluxpinel --console    a console on stdin (console.c)
 
    The options are a part of those of ruby: -c, -e, -I, -r, -v, -w, -W,
    -h and --version (fx_options). With no file and no -e, the program
-   comes from stdin.
+   comes from stdin. The directories of RUBYLIB follow those of -I in
+   $LOAD_PATH, as in ruby.
+
+   --irb runs `require "irb"; IRB.start`. The IRB and Reline of CRuby are
+   pure Ruby: FX_GEM_DIRS (build/gem_dirs.h, from tools/gem_dirs.rb) names
+   the lib directories of their gems on the machine of the build, and --irb
+   adds them at the end of $LOAD_PATH. -I and RUBYLIB come first, so they
+   can name other copies.
 
    A host build with FX_KERNEL_MAIN (an entry such as "Logq.main") takes
    no FILE.rb: it calls the entry with ARGV, which holds every argument.
+   With --irb as the first argument, it opens IRB instead, with the program
+   loaded by its init but not run.
 
    spinel_rt.h declares hooks as static, so all Fluxpinel code that uses the
    runtime is one TU. This file includes the others in order. */
@@ -41,6 +51,37 @@
 #include "host.c"
 #include "binding.c"
 #include "console.c"
+#include "gem_dirs.h"
+
+static int fx_irb;   /* --irb */
+
+/* The program of --irb. IRB reads its options from ARGV. */
+static const char fx_irb_src[] = "require \"irb\"\nIRB.start\n";
+
+/* Puts the directories of a list such as RUBYLIB ("a:b") in $LOAD_PATH at
+   index at, or at its end when at is -1, as they are: ruby does not expand
+   the directories of RUBYLIB. An empty entry is skipped. */
+static void fx_load_path_add(const char *list, int at) {
+  if (!list) return;
+  sp_StrArray *lp = sp_get_load_path();
+  for (const char *p = list; *p;) {
+    const char *end = strchr(p, ':');
+    size_t n = end ? (size_t)(end - p) : strlen(p);
+    if (n) {
+      const char *dir = sp_str_dup(sp_sprintf("%.*s", (int)n, p));
+      if (at < 0) sp_StrArray_push(lp, dir);
+      else sp_StrArray_insert(lp, at++, dir);
+    }
+    p += n + (end ? 1 : 0);
+  }
+}
+
+/* The gem directories of IRB, after -I and RUBYLIB. */
+static void fx_irb_load_path(void) {
+#ifdef FX_GEM_DIRS
+  fx_load_path_add(FX_GEM_DIRS, -1);
+#endif
+}
 
 #ifndef FX_KERNEL_MAIN
 /* The options of the command line, as ruby takes them. */
@@ -68,6 +109,7 @@ static const char fx_usage[] =
   "  -W[level=2]     Set $VERBOSE: 0 nil, 1 false, 2 true\n"
   "  -h, --help      Print this help message\n"
   "  --version       Print the version\n"
+  "  --irb [arg...]  Start IRB (the gems of CRuby); arg... are its options\n"
   "  --console       Read Ruby from stdin, one line at a time, as irb does\n";
 
 /* A wrong command line ends Fluxpinel, as it ends ruby. fx_options runs
@@ -106,6 +148,8 @@ static int fx_options(int argc, char **argv) {
     const char *a = argv[i];
     if (a[0] != '-' || !a[1]) break;   /* the file, or "-" for stdin */
     if (!strcmp(a, "--")) { i++; break; }
+    /* the arguments after --irb are the options of IRB */
+    if (!strcmp(a, "--irb")) { fx_irb = 1; i++; break; }
     if (a[1] == '-') {
       if (!strcmp(a, "--console")) fx_opt.console = 1;
       else if (!strcmp(a, "--help")) { fputs(fx_usage, stdout); exit(0); }
@@ -170,17 +214,22 @@ static const char *fx_opt_dir(const char *dir) {
 
 /* The main program, as the command line names it: the code of -e, the
    file, or stdin. Then -c checks it, or the libraries of -r load and the
-   program runs. */
+   program runs. With --irb, the libraries of -r load and IRB starts. */
 static void fx_run_main(void) {
   SP_GC_SAVE();
   sp_StrArray *lp = sp_get_load_path();
   for (int i = 0; i < fx_opt.ndirs; i++) sp_StrArray_insert(lp, i, sp_str_dup(fx_opt_dir(fx_opt.dirs[i])));
+  fx_load_path_add(getenv("RUBYLIB"), fx_opt.ndirs);
   if (fx_opt.verbose >= 0)
     fx_gvar_set("$VERBOSE", fx_opt.verbose == 0 ? sp_box_nil() : sp_box_bool(fx_opt.verbose == 2));
   char *buf;
   size_t len;
   const char *real = L.path;
-  if (fx_opt.code) {
+  if (fx_irb) {
+    fx_irb_load_path();
+    buf = strdup(fx_irb_src);
+    len = sizeof fx_irb_src - 1;
+  } else if (fx_opt.code) {
     buf = fx_opt.code;
     len = fx_opt.code_len;
   } else if (!strcmp(L.path, "-")) {
@@ -237,8 +286,14 @@ static void fx_body(void) {
   fx_lock();
 
 #ifdef FX_KERNEL_MAIN
-  const char *src = FX_KERNEL_MAIN "(ARGV)";
-  fx_load_main_src(L.path, L.path, strdup(src), strlen(src));
+  fx_load_path_add(getenv("RUBYLIB"), 0);
+  if (fx_irb) {
+    fx_irb_load_path();
+    fx_load_main_src(L.path, L.path, strdup(fx_irb_src), sizeof fx_irb_src - 1);
+  } else {
+    const char *src = FX_KERNEL_MAIN "(ARGV)";
+    fx_load_main_src(L.path, L.path, strdup(src), strlen(src));
+  }
 #else
   if (fx_opt.console) {
     /* an empty main program starts the constant pool of the sources */
@@ -264,12 +319,14 @@ static void fx_body(void) {
 int main(int argc, char **argv) {
 #ifdef FX_KERNEL_MAIN
   L.path = argv[0];
-  L.args = argv + 1;
-  L.nargs = argc - 1;
+  fx_irb = argc > 1 && !strcmp(argv[1], "--irb");
+  L.args = argv + 1 + fx_irb;
+  L.nargs = argc - 1 - fx_irb;
 #else
   int i = fx_options(argc, argv);
-  /* $0: "-e" for the code of -e, "-" for stdin, else the file */
+  /* $0: "-e" for the code of -e, "-" for stdin, "irb" for --irb, else the file */
   if (fx_opt.console) L.path = "(console)";
+  else if (fx_irb) L.path = "irb";
   else if (fx_opt.code) L.path = "-e";
   else if (i < argc) L.path = argv[i++];
   else L.path = "-";

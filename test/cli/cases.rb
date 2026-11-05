@@ -1,5 +1,7 @@
 # The cases of test/cli.rb. Each one runs in test/cli.
 
+require "tmpdir"
+
 DESCRIPTION = /\Afluxpinel \d+ \(spinel \h+, ruby \d+\.\d+\.\d+\) \[[^\]]+\]\n/
 
 CLI_CASES = [
@@ -32,6 +34,16 @@ CLI_CASES = [
   { args: ["-I", "lib", "-e", "p require('greet'), require('greet.rb'), Greet.hi"] },
   { args: ["-e", "$LOAD_PATH.unshift(File.expand_path('lib')); p require('greet'), Greet.hi"] },
   { args: ["-e", "begin; require 'greet'; rescue LoadError => e; p e.message; end"] },
+  # RUBYLIB, after -I
+  { args: ["-Iother", "-e", "p $LOAD_PATH.first(3).map { |d| File.basename(d) }"],
+    env: { "RUBYLIB" => "lib:#{File.expand_path('lib', __dir__)}" } },
+  { args: ["-e", "p $LOAD_PATH.first == File.expand_path('lib')"], env: { "RUBYLIB" => "lib" } },
+  # --irb: the IRB of CRuby on stdin; the arguments after it are its
+  # options, and HOME keeps the history out of the home of the user
+  { args: ["--irb", "-f", "--nocolorize", "--noprompt"], stdin: "1 + 1\n[$0, ARGV]\nrequire 'greet'\nGreet.hi\n",
+    env: { "HOME" => Dir.tmpdir, "RUBYLIB" => "lib" }, out: /^2\n.*^\["irb", \[\]\]\n.*^true\n.*^"hi"\n+\z/m },
+  { args: ["-rgreet", "-Ilib", "--irb", "-f", "--nocolorize", "--noprompt"], stdin: "Greet.hi\n",
+    env: { "HOME" => Dir.tmpdir }, out: /^"hi"\n+\z/ },
   # the engine constants: the values of spinel, frozen
   { args: ["-e", "p RUBY_ENGINE, RUBY_VERSION, RUBY_PATCHLEVEL, RUBY_PLATFORM"],
     out: /\A"spinel"\n"\d+\.\d+\.\d+"\n0\n"\w+-\w[\w-]*"\n\z/ },

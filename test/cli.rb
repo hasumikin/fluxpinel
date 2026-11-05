@@ -8,7 +8,7 @@
 # stdout and the exit status are the same. With err: true, stderr must be
 # the same too, after "ruby:" at the start of a line reads "fluxpinel:". A
 # case with :out (a Regexp) passes when stdout matches it and the status
-# is :status (0 by default).
+# is :status (0 by default). :env adds to the environment of the command.
 
 require "open3"
 require_relative "cli/cases"
@@ -17,20 +17,20 @@ fluxpinel = ARGV[0] or abort "usage: ruby test/cli.rb FLUXPINEL"
 fluxpinel = File.expand_path(fluxpinel)
 DIR = File.expand_path("cli", __dir__)
 
-def run(cmd, args, stdin)
-  Open3.capture3(cmd, *args, stdin_data: stdin || "", chdir: DIR)
+def run(cmd, args, stdin, env = {})
+  Open3.capture3(env, cmd, *args, stdin_data: stdin || "", chdir: DIR)
 end
 
 failed = CLI_CASES.reject do |c|
   args = c[:args]
-  out, err, st = run(fluxpinel, args, c[:stdin])
+  out, err, st = run(fluxpinel, args, c[:stdin], c[:env] || {})
   why = nil
   if c[:out]
     want = c.fetch(:status, 0)
     why = "stdout #{out.inspect} does not match #{c[:out].inspect}" unless c[:out].match?(out)
     why ||= "status #{st.exitstatus}, not #{want}" unless st.exitstatus == want
   else
-    rout, rerr, rst = run("ruby", args, c[:stdin])
+    rout, rerr, rst = run("ruby", args, c[:stdin], c[:env] || {})
     rerr = rerr.gsub(/^ruby:/, "fluxpinel:")
     why = "stdout: ruby #{rout.inspect}, fluxpinel #{out.inspect}" unless rout == out
     why ||= "status: ruby #{rst.exitstatus}, fluxpinel #{st.exitstatus}" unless rst.exitstatus == st.exitstatus

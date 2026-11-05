@@ -184,6 +184,7 @@ build/promote/fluxpinel -v
 The command line takes a part of the options of `ruby`:
 
 - `-e`, `-c`, `-I`, `-r`, `-v`, `-w`, `-W`, `-h` and `--version`
+- `--irb`, for IRB; the arguments after it are the options of IRB
 - `--console`, for a console on stdin
 
 With no script and no `-e`, Fluxpinel reads the program from stdin. `-v`
@@ -191,7 +192,15 @@ prints the version of Fluxpinel (one integer in `VERSION`), the commit of
 spinel and the version of Ruby that spinel gives.
 
 `require "name"` looks for `name.rb` in each directory of `$LOAD_PATH`
-(`-I`, or a change of the program), then in the packages of spinel.
+(`-I`, then `RUBYLIB`, or a change of the program), then in the packages
+of spinel.
+
+`--irb` runs the IRB and Reline gems of CRuby, which are pure Ruby. The
+build records the lib directories of the gems `irb`, `reline`, `prism`
+and `rdoc` of the Ruby that builds Fluxpinel (`tools/gem_dirs.rb`), and
+`--irb` adds them at the end of `$LOAD_PATH`. Name other copies with `-I`
+or `RUBYLIB`. A host program with `KERNEL_MAIN` opens IRB with `--irb` as
+its first argument, with the program loaded but not run.
 `RUBY_ENGINE` is `"spinel"`, and `RUBY_VERSION` is the version that spinel
 gives. Thus a branch on `RUBY_ENGINE == "spinel"` goes the same way in
 Fluxpinel and in AOT code. `RUBY_DESCRIPTION` is the line that `-v`
