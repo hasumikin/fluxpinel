@@ -546,6 +546,13 @@ static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_Rb
   if (argc == 0) {
     if (!strcmp(name, "!")) { *out = sp_box_bool(!sp_poly_truthy(r)); return 1; }
     if (!strcmp(name, "nil?")) { *out = sp_box_bool(r.tag == SP_TAG_NIL); return 1; }
+    /* the conversions of nil: the empty value of each kind */
+    if (r.tag == SP_TAG_NIL) {
+      if (!strcmp(name, "to_i")) { *out = sp_box_int(0); return 1; }
+      if (!strcmp(name, "to_f")) { *out = sp_box_float(0.0); return 1; }
+      if (!strcmp(name, "to_a")) { *out = sp_box_poly_array(sp_PolyArray_new()); return 1; }
+      if (!strcmp(name, "to_h")) { *out = sp_box_obj(sp_PolyPolyHash_new(), SP_BUILTIN_POLY_POLY_HASH); return 1; }
+    }
     /* String#to_s answers the String itself, so a change to it shows */
     if (!strcmp(name, "to_s")) { *out = fx_is_string(r) ? r : sp_poly_to_s_box(r); return 1; }
     if (!strcmp(name, "inspect")) { *out = sp_box_str_new(sp_str_dup(sp_poly_inspect(r))); return 1; }
@@ -574,6 +581,11 @@ static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_Rb
   }
   if (argc == 1) {
     sp_RbVal a = argv[0];
+    /* nil & x is false; nil | x and nil ^ x are the truth of x */
+    if (r.tag == SP_TAG_NIL && (!strcmp(name, "&") || !strcmp(name, "|") || !strcmp(name, "^"))) {
+      *out = sp_box_bool(name[0] != '&' && sp_poly_truthy(a));
+      return 1;
+    }
     if (!strcmp(name, "+")) { *out = sp_poly_add(r, a); return 1; }
     if (!strcmp(name, "-")) { *out = sp_poly_sub(r, a); return 1; }
     if (!strcmp(name, "*")) { *out = sp_poly_mul(r, a); return 1; }
