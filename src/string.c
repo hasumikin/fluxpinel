@@ -150,7 +150,13 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
   if (fx_str_bang(r, name, argc, argv, out)) return 1;
   if (FX_IS("encode")) { *out = fx_str_encode(r, name, argc, argv); return 1; }
   if (argc == 0) {
-    if (FX_IS("dup")) { *out = sp_poly_dup(r, 0); return 1; }
+    /* dup of a String of the runtime: a new handle, which keeps the
+       encoding and can change */
+    if (FX_IS("dup")) {
+      *out = r.tag == SP_TAG_STR ? sp_box_str_new(sp_str_dup(r.v.s)) : sp_poly_dup(r, 0);
+      return 1;
+    }
+    if (FX_IS("to_str")) { *out = r; return 1; }
     if (FX_IS("clone")) { *out = sp_poly_dup(r, 1); return 1; }
     /* -s: s itself when frozen, else a frozen copy */
     if (FX_IS("-@") || FX_IS("dedup")) {

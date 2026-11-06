@@ -556,11 +556,11 @@ static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_Rb
       *out = r.tag == SP_TAG_INT ? sp_box_int(~r.v.i) : sp_box_bigint(sp_bigint_not((sp_Bigint *)r.v.p));
       return 1;
     }
-    /* +str: the String itself when it can change, else a mutable copy */
+    /* +str: the String itself when it can change, else a mutable copy
+       with the same encoding */
     if (!strcmp(name, "+@") && fx_is_string(r)) {
       if (r.tag == SP_TAG_OBJ && !sp_gc_is_frozen(r.v.p)) { *out = r; return 1; }
-      const char *s = sp_poly_recv_s(r, name);
-      *out = fx_new_string((const uint8_t *)s, strlen(s));
+      *out = sp_box_str_new(sp_str_dup(sp_poly_recv_s(r, name)));
       return 1;
     }
     if (!strcmp(name, "+@") && (fx_is_integer(r) || r.tag == SP_TAG_FLT)) { *out = r; return 1; }

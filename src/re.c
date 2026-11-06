@@ -671,6 +671,8 @@ static int fx_re_md_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     return 1;
   }
   if (FX_IS("hash") && argc == 0) { *out = sp_box_int(sp_MatchData_hash(m)); return 1; }
+  /* the subject, frozen as CRuby answers it */
+  if (FX_IS("string") && argc == 0) { *out = sp_box_str(sp_MatchData_string(m)); return 1; }
   if (FX_IS("values_at")) {
     sp_PolyArray *a = sp_PolyArray_new();
     SP_GC_ROOT(a);

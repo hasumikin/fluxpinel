@@ -195,6 +195,10 @@ static const char *box(Str *s, TyKind k, int oint, const char *expr) {
      Integer / Float (IO#getbyte). Only the C type tells, so box by it. */
   if (k == TY_INT) { str_printf(s, "FX_BOX_INT(%s)", expr); return NULL; }
   if (k == TY_FLOAT) { str_printf(s, "FX_BOX_FLOAT(%s)", expr); return NULL; }
+  /* A String the call made (upcase, b, pack) is a new String that the
+     caller may change: a new handle over the heap bytes, as spinel boxes
+     one it keeps. A static or frozen answer stays a frozen String. */
+  if (k == TY_STRING) { str_printf(s, "sp_box_str_new(%s)", expr); return NULL; }
   const TyTraits *tr = ty_traits_of(k);
   if (!tr) return "result kind with no box";
   /* box_nil names a function (sp_box_oint); box_text renders $e */

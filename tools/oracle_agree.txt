@@ -660,6 +660,7 @@ boxed_hash_local_walk_params
 boxed_index_elements_passed_strict
 boxed_index_or_write_no_aref
 boxed_io_to_i
+boxed_io_write_poly_nul
 boxed_kill_user_and_thread
 boxed_local_container_unaffected
 boxed_map_bang_dispatch_write_barrier
@@ -738,6 +739,7 @@ boxed_struct_kw_new
 boxed_struct_size
 boxed_struct_to_h_block
 boxed_sym_proc_user_map
+boxed_symbol_id2name
 boxed_symbol_id2name_user
 boxed_symbol_name_beside_user_name
 boxed_systemexit_status
@@ -748,6 +750,7 @@ boxed_time_round_ctime
 boxed_tms_times
 boxed_to_h_block
 boxed_to_s_base_from_call
+boxed_transform_poly_answer
 boxed_user_exception_accessors
 boxed_values_at_hoisted_index
 boxed_writer_arm_nilable_int_param
@@ -907,6 +910,7 @@ byref_param_name_group
 byref_param_rebound_fresh
 byref_param_rebound_fresh_handed_on
 byref_poly_receiver_takes_handle
+byref_string_arg_in_rescue_method
 byref_string_param_instance_method
 byref_string_selective_volatile
 cached_element_literal_eq
@@ -1792,6 +1796,7 @@ element_string_handed_on_to_appender
 else_runs_ensure
 elsif_condition_args_wait_for_their_branch
 elsif_isa_chain
+embedded_nul_promoted_handle
 empty_array_arg_typed_by_pushes
 empty_array_arm_takes_sibling_kind
 empty_array_arm_user_constructor
@@ -2422,6 +2427,7 @@ gvar_or_assign_empty_array_typed
 gvar_pid
 gvar_read_through_alias_before_write
 gvar_write_value
+handle_argument_held_before_nil_test
 handle_shape_k12_masgn_poly_into_index
 handle_shape_m09_cvar_target
 handle_shape_r02_poly_chain
@@ -2501,6 +2507,7 @@ hash_int_keyed_none_one
 hash_invert
 hash_iter_forwarded_proc
 hash_itself_enum_nil
+hash_key_from_appended_copy
 hash_key_mutate_rehash
 hash_key_no_string_block_param_store
 hash_key_user_hash_only
@@ -3462,6 +3469,7 @@ iter_recv_evaluated_once
 iter_shadow_param_nil_elem
 iter_splat_reopened_builtin
 iterator_tail_returns_receiver
+ivar_append_accumulator
 ivar_array_empty_row_push
 ivar_array_filled_from_outside
 ivar_array_foreign_push_shapes
@@ -3718,6 +3726,8 @@ map_recv_emitted_once
 map_shadowed_param_poly_arg
 map_to_heap_objects
 map_to_value_type_objects
+mapped_array_mutable_elements
+marshal_boxed_shared_string
 marshal_hash_default
 marshal_integer_fixnum_range
 marshal_io_stream
@@ -5534,6 +5544,7 @@ reopened_builtin_optional_block
 reopened_iter_with_block_and_args
 reopened_module_superclass_method
 reopened_operator_op_assign
+replace_typed_array_from_boxed
 report_on_exception_surface
 require_after_margin_heredoc
 require_computed_as_condition
@@ -5883,6 +5894,7 @@ set_predicate_arg
 set_range_operand
 set_required_hash_aref_from_array
 setbyte_handle_in_place
+setbyte_nul_bytes
 setjmp_local_volatile
 setter_nullable_result
 setter_override_attr_value
@@ -6093,6 +6105,7 @@ store_into_nested_container_literal
 stored_block_call_returns_value
 stored_block_param_fresh_yields
 str_append_accumulator
+str_append_ascii_int
 str_array_delete_boxed_needle
 str_array_include_nil_arg
 str_array_ivar_widen_frozen
@@ -6145,7 +6158,9 @@ strbuf_accumulator_lent
 strbuf_accumulator_lent_bare
 strbuf_append_value_alias
 strbuf_append_value_position
+strbuf_binary_length_preserved
 strbuf_cmethod_ivar_write_alias
+strbuf_demand_value_widens_later
 strbuf_from_container_converts
 strbuf_index_after_mutation
 strbuf_ivar_chained_append
@@ -6182,6 +6197,7 @@ string_alias_routes_unobserved
 string_alias_yield_block_param
 string_append_binary_safe
 string_append_boxed_integer
+string_append_boxed_integer_stmt
 string_append_call_receiver_order
 string_append_chain_long
 string_append_chain_prepend
@@ -6193,6 +6209,7 @@ string_append_through_new
 string_append_through_new_global
 string_append_through_proc_keyword
 string_aref_regexp_value
+string_arg_conformance
 string_arg_sequence_bang
 string_array_append_value
 string_array_chained_push
@@ -6211,6 +6228,8 @@ string_bang_nil_receiver
 string_bang_result_mutation
 string_bang_result_second_name
 string_bang_sub_nil_contract
+string_binary_tag
+string_block_param_store_unaffected
 string_block_tail_nested_parens
 string_boxed_local_container_element
 string_boxed_local_iterator_element
@@ -6297,6 +6316,7 @@ string_gsub_block_arg
 string_gsub_str_hash
 string_handed_on_down_a_chain
 string_handle_and_or_truthiness
+string_handle_assign_raise_gate
 string_handle_box_reader_args
 string_handle_captured_param
 string_handle_eql
@@ -6318,6 +6338,7 @@ string_handle_poly_alias
 string_handle_poly_methods
 string_handle_poly_variable
 string_handle_post_param
+string_handle_proc_method
 string_handle_rest_elements
 string_handle_splat_gather
 string_handle_splat_ivar
@@ -6406,6 +6427,7 @@ string_method_unread_value_linear
 string_multiply_overflow
 string_mutation_plus
 string_mutator_answers_handle
+string_mutator_expr_receiver
 string_narrowed_element_append
 string_nested_masgn_alias
 string_nested_masgn_deep
@@ -6429,6 +6451,7 @@ string_param_inference_from_body
 string_param_lent_beside_symbol
 string_param_mutate_byref
 string_param_or_arm_handle
+string_param_retained_in_ivar
 string_partition_regex_and_puts
 string_plain_mutator_result_kept
 string_plain_mutator_result_mutation
@@ -6504,6 +6527,7 @@ string_slot_root_form
 string_splat_changed_array
 string_splat_global_toplevel
 string_splice_family
+string_splice_repeated_gc
 string_split_capture
 string_split_element_read_mutation
 string_split_inline_arg_gc_root
@@ -6536,10 +6560,12 @@ string_to_i_signed_minimum
 string_to_r_forms
 string_to_s_receiver_rebind
 string_to_s_store_boxed_local
+string_to_s_store_shares
 string_unary_minus_poly
 string_unary_plus
 string_unary_plus_frozen_receiver
 string_unbox_keeps_identity
+string_unchanged_result_is_new
 string_undump
 string_unpack_directives
 string_with_embedded_nul
@@ -6733,6 +6759,7 @@ sym_proc_rest_view_lowered_again
 sym_proc_rest_view_lowered_two_values
 sym_to_proc_computed_name
 sym_to_proc_expr_recv
+sym_to_s_hash_key
 sym_var_block_arg_snapshot
 symbol_block_arg_spellings
 symbol_case_setbyte_chr_toc

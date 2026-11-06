@@ -10,6 +10,11 @@ end
 
 s = "Hello, World"
 t("dup") { [s.dup, s.dup.equal?(s), s.clone] }
+t("b") { x = "".b; x << 97; x << "\xC3\xA9".b; [x, x.frozen?, x.encoding.to_s] }
+t("new") { x = "ab".upcase; x << "c"; y = [97].pack("C*"); y << 98; [x, y, " ab ".strip << "!", "ab".upcase.frozen?] }
+t("dup b") { x = "\xC3\xA9".b.dup; [x.frozen?, x.encoding.to_s, x.bytesize] }
+t("+@") { x = +("\xC3\xA9".b); [x.frozen?, x.encoding.to_s, x.bytesize] }
+t("to_str") { x = +"a"; [x.to_str.equal?(x), x.to_s.equal?(x)] }
 t("[]") { [s[1], s[1..3], s["World"], s["xyz"], s[/W\w+/], s[1, 3], s.slice(2), s.slice(2, 2)] }
 t("upcase!") { x = +"abc"; [x.upcase!, x, "ABC".dup.upcase!] }
 t("bang") { x = +" a\n"; [x.strip!, x.chomp!, x.reverse!, x] }
