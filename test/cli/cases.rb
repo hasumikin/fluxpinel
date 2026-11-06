@@ -46,7 +46,7 @@ CLI_CASES = [
     env: { "HOME" => Dir.tmpdir }, out: /^"hi"\n+\z/ },
   # --irb-port: the program itself is the telnet client of its listener
   { args: ["--irb-port", "0", "remote_irb.rb"], env: { "HOME" => Dir.tmpdir },
-    out: /\A(=> 2\n=> "abc"\nbye\n|skip\n)\z/ },
+    out: /\A(=> 2\n=> "abc"\nabort then interrupt!\n\^C\nbye\n|skip\n)\z/ },
   { args: ["--irb-port", "x", "remote_irb.rb"], out: /\A\z/, status: 1 },
   # the engine constants: the values of spinel, frozen
   { args: ["-e", "p RUBY_ENGINE, RUBY_VERSION, RUBY_PATCHLEVEL, RUBY_PLATFORM"],

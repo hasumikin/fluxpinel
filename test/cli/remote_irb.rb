@@ -34,6 +34,16 @@ s.write("1 + 1\r")
 wait_for.call("=> 2\r\n")
 s.write("'ab' + 'c'\r")
 wait_for.call("=> \"abc\"\r\n")
+# Ctrl-C stops an evaluation, and drops the line at the prompt
+s.write("sleep 30\r")
+wait_for.call("irb(main):003> sleep 30\r\n")
+s.write("\x03")
+wait_for.call("abort then interrupt!")
+wait_for.call("irb(main):004")
+s.write("1 +")
+wait_for.call("1 +")
+s.write("\x03")
+wait_for.call("^C\r\n")
 s.write("exit\r")
 begin
   s.read
@@ -41,4 +51,5 @@ rescue SystemCallError
   # the server closed first
 end
 puts plain.call.scan(/=> .*?\r\n/).map(&:chomp)
+puts plain.call.scan(/abort then interrupt!|\^C\r\n/).map(&:chomp).uniq
 puts "bye"

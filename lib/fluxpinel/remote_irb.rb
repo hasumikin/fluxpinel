@@ -22,6 +22,7 @@ module Fluxpinel
     WONT = 252
     WILL = 251
     SB = 250
+    IP = 244
     SE = 240
     OPT_BINARY = 0
     OPT_ECHO = 1
@@ -33,13 +34,13 @@ module Fluxpinel
     # chunk waits in the carry for the next chunk.
     class Telnet
       attr_reader :rows, :cols
-      attr_accessor :on_naws
+      attr_accessor :on_naws, :on_interrupt
 
       def initialize(sock)
         @sock = sock
         @carry = +""
         @rows = @cols = nil
-        @on_naws = nil
+        @on_naws = @on_interrupt = nil
       end
 
       # The server echoes, sends each key as it comes, takes the window
@@ -49,7 +50,9 @@ module Fluxpinel
                      IAC, WILL, OPT_BINARY, IAC, DO, OPT_BINARY].pack("C*")
       end
 
-      # Answers the data bytes of chunk, as an Array of Integers.
+      # Answers the data bytes of chunk, as an Array of Integers. Ctrl-C
+      # comes as the byte 3 or as IAC IP: both call on_interrupt and are not
+      # data.
       def feed(chunk)
         buf = @carry + chunk
         @carry = +""
@@ -57,6 +60,11 @@ module Fluxpinel
         i = 0
         while i < buf.bytesize
           b = buf.getbyte(i)
+          if b == 3
+            @on_interrupt&.call
+            i += 1
+            next
+          end
           if b != IAC
             data << b
             i += 1
@@ -70,6 +78,9 @@ module Fluxpinel
           case cmd
           when IAC
             data << IAC
+            i += 2
+          when IP
+            @on_interrupt&.call
             i += 2
           when DONT, DO, WONT, WILL
             opt = buf.getbyte(i + 2)
@@ -114,13 +125,15 @@ module Fluxpinel
       end
     end
 
-    # The keys of the connection, as the ANSI gate of Reline reads them:
-    # the IAC sequences are gone, and a size report reaches Reline.
+    # The keys of the connection, as the ANSI gate of Reline reads them.
+    # A reader thread (RemoteIRB.read_keys) puts the data bytes of each
+    # chunk in the queue as an Array, and :eof at the end, so that Ctrl-C
+    # reaches the session while it evaluates and nobody reads keys.
     class Input
-      def initialize(sock, telnet)
-        @sock = sock
-        @telnet = telnet
+      def initialize(queue)
+        @q = queue
         @buf = []
+        @eof = false
       end
 
       def tty? = false
@@ -128,14 +141,16 @@ module Fluxpinel
 
       def wait_readable(timeout = nil)
         return self unless @buf.empty?
-        @sock.wait_readable(timeout)
+        return self if @eof
+        take(timeout) ? self : nil
       end
 
       def getbyte
-        fill while @buf.empty?
+        while @buf.empty?
+          return nil if @eof
+          take(nil)
+        end
         @buf.shift
-      rescue EOFError, SystemCallError
-        nil
       end
 
       # Reline.input= asks respond_to?(:getc) only
@@ -145,14 +160,22 @@ module Fluxpinel
       end
 
       def readpartial(n)
-        fill if @buf.empty?
+        take(nil) if @buf.empty? && !@eof
         @buf.shift(n).pack("C*")
       end
 
       private
 
-      def fill
-        @buf.concat @telnet.feed(@sock.readpartial(1024))
+      # Takes the next chunk; false when timeout passed with none.
+      def take(timeout)
+        item = timeout ? @q.pop(timeout: timeout) : @q.pop
+        return false if item.nil?
+        if item == :eof
+          @eof = true
+        else
+          @buf.concat(item)
+        end
+        true
       end
     end
 
@@ -279,12 +302,44 @@ module Fluxpinel
         IRB.conf[:USE_PAGER] = false
       end
 
+      # Reads sock until its end, in a thread: the data bytes go to queue,
+      # and Ctrl-C interrupts the session as SIGINT does in irb: the line
+      # editor drops the line at the prompt (Reline.line_editor.interrupt),
+      # or the evaluation stops (IRB.irb_abort, an Abort in the thread of
+      # the session).
+      def read_keys(sock, telnet, queue, session)
+        telnet.on_interrupt = lambda do
+          irb = session[:irb]
+          next unless irb
+          if irb.instance_variable_get(:@signal_status) == :IN_INPUT
+            Reline.line_editor.interrupt
+          else
+            IRB.irb_abort(irb)
+          end
+        end
+        Thread.new do
+          begin
+            loop do
+              data = telnet.feed(sock.readpartial(1024))
+              queue << data unless data.empty?
+            end
+          rescue EOFError, IOError, SystemCallError
+            # the connection ended
+          ensure
+            queue << :eof
+          end
+        end
+      end
+
       # One session of IRB on sock, until exit or the end of the connection.
       def serve(sock)
         setup
         telnet = Telnet.new(sock)
         telnet.negotiate
-        input = Input.new(sock, telnet)
+        queue = Queue.new
+        input = Input.new(queue)
+        session = {}
+        reader = read_keys(sock, telnet, queue, session)
         telnet.on_naws = ->(rows, cols) { Reline.screen_size = [rows, cols] }
         gate = Reline::ANSI.new(input: input, output: sock, terminal: true)
         Reline.io_gate = gate
@@ -302,9 +357,13 @@ module Fluxpinel
           im = InputMethod.new(IRB::RegexpCompletor.new, input, sock, telnet)
           irb = IRB::Irb.new(nil, im)
           IRB.conf[:MAIN_CONTEXT] = irb.context
+          session[:irb] = irb
           irb.run(IRB.conf)
         ensure
+          session[:irb] = nil
           $stdout, $stderr = saved
+          sock.close rescue nil
+          reader.join
           Reline.io_gate = nil
           Reline.send(:remove_const, :IOGate)
           Reline.const_set(:IOGate, default_gate)
