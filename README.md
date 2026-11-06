@@ -206,8 +206,10 @@ its first argument, with the program loaded but not run.
 `--irb-port PORT` listens on `127.0.0.1:PORT` before the program runs.
 `telnet localhost PORT` then opens IRB in the running program, with the
 line editor of Reline on the terminal of the client
-(`lib/fluxpinel/remote_irb.rb`). One session runs at a time, and the
-output of the program goes to the client during a session. This needs a
+(`lib/fluxpinel/remote_irb.rb`). One session runs at a time. The output
+of the thread of the session goes to the client, and the other threads of
+the program keep theirs: a thread with a value in `Thread.current[:fluxpinel_stdout]`
+or `[:fluxpinel_stderr]` writes `$stdout` and `$stderr` there. This needs a
 Reline that runs on a socket (`Reline.io_gate=`); name its lib directory
 with `-I`, `RUBYLIB` or `make GEM_DIRS_FIRST=DIR`.
 `RUBY_ENGINE` is `"spinel"`, and `RUBY_VERSION` is the version that spinel

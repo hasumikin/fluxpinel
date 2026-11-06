@@ -7,9 +7,10 @@
 #   Fluxpinel::RemoteIRB.serve(socket)  runs one session on a socket
 #
 # One session runs at a time; a second connection reads "busy" and is
-# closed. During a session $stdout and $stderr of the program go to the
-# client. Reline needs io_gate= (a Reline after 0.7.0); with an older
-# Reline, listen warns and does nothing.
+# closed. $stdout and $stderr of the thread of the session go to the
+# client (the thread-local slots that src/global.c reads); the other
+# threads of the program keep theirs. Reline needs io_gate= (a Reline
+# after 0.7.0); with an older Reline, listen warns and does nothing.
 
 require "socket"
 require "irb"
@@ -349,10 +350,11 @@ module Fluxpinel
         default_gate = Reline::IOGate
         Reline.send(:remove_const, :IOGate)
         Reline.const_set(:IOGate, gate)
-        # the messages of the start of a session (inspect mode) go to the
-        # client too
-        saved = [$stdout, $stderr]
-        $stdout = $stderr = Output.new(sock, telnet)
+        # $stdout and $stderr of this thread go to the client (src/global.c
+        # reads these slots first); the other threads of the program keep
+        # theirs. The messages of the start of a session (inspect mode) go
+        # to the client too.
+        Thread.current[:fluxpinel_stdout] = Thread.current[:fluxpinel_stderr] = Output.new(sock, telnet)
         begin
           im = InputMethod.new(IRB::RegexpCompletor.new, input, sock, telnet)
           irb = IRB::Irb.new(nil, im)
@@ -361,7 +363,7 @@ module Fluxpinel
           irb.run(IRB.conf)
         ensure
           session[:irb] = nil
-          $stdout, $stderr = saved
+          Thread.current[:fluxpinel_stdout] = Thread.current[:fluxpinel_stderr] = nil
           sock.close rescue nil
           reader.join
           Reline.io_gate = nil

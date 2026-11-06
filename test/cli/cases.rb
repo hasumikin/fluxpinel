@@ -48,6 +48,9 @@ CLI_CASES = [
   { args: ["--irb-port", "0", "remote_irb.rb"], env: { "HOME" => Dir.tmpdir },
     out: /\A(=> 2\n=> "abc"\nabort then interrupt!\n\^C\nbye\n|skip\n)\z/ },
   { args: ["--irb-port", "x", "remote_irb.rb"], out: /\A\z/, status: 1 },
+  # a thread with its own $stdout and $stderr (the slots of src/global.c)
+  { args: ["-rstringio", "-e", "o = StringIO.new; t = Thread.new { Thread.current[:fluxpinel_stdout] = o; Thread.current[:fluxpinel_stderr] = o; puts 1; $stdout.print 2; warn 3; $stderr << 4; p $stdout.equal?(o) }; t.join; puts 5; $stdout.puts 6; p o.string"],
+    out: /\A5\n6\n"1\\n23\\n4true\\n"\n\z/ },
   # the engine constants: the values of spinel, frozen
   { args: ["-e", "p RUBY_ENGINE, RUBY_VERSION, RUBY_PATCHLEVEL, RUBY_PLATFORM"],
     out: /\A"spinel"\n"\d+\.\d+\.\d+"\n0\n"\w+-\w[\w-]*"\n\z/ },

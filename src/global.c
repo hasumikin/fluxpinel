@@ -8,7 +8,13 @@
    spinel emits does: the standard streams, $?, $0, $LOAD_PATH, ... An
    assignment to a writable special global goes into the table, and a read
    prefers the table. After `$stdout = obj`, Kernel#puts, #print and #p
-   write to obj. */
+   write to obj.
+
+   A thread can have $stdout and $stderr of its own: the thread-local
+   slots :fluxpinel_stdout and :fluxpinel_stderr (Thread#[]=) come before
+   the table in a read. A remote IRB session (lib/fluxpinel/remote_irb.rb)
+   sends the output of its thread to the client this way, and the other
+   threads of the program keep theirs. */
 
 #include "fluxpinel.h"
 #include <termios.h>
@@ -39,8 +45,22 @@ static int fx_is_io(sp_RbVal v) {
   return v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_IO && v.v.p;
 }
 
+/* The stream of the current thread for $stdout or $stderr, when the thread
+   has one in its slot key (:fluxpinel_stdout, :fluxpinel_stderr). */
+static int fx_thread_stream(const char *key, sp_RbVal *out) {
+  sp_thread *t = sp_Thread_current();
+  if (!t) return 0;
+  sp_sym k = sp_sym_intern(key);
+  if (!sp_Thread_tls_key(t, k)) return 0;
+  *out = sp_Thread_tls_get(t, k);
+  return out->tag != SP_TAG_NIL;
+}
+
 static sp_RbVal fx_gvar_get(const char *name) {
   name = fx_gvar_canon(name);
+  sp_RbVal ts;
+  if (FX_IS("$stdout") && fx_thread_stream("fluxpinel_stdout", &ts)) return ts;
+  if (FX_IS("$stderr") && fx_thread_stream("fluxpinel_stderr", &ts)) return ts;
   FxConst *g = fx_gvar_slot(sp_sym_intern(name));
   if (g) return g->value;
   if (FX_IS("$stdout")) return fx_io_box(sp_io_stdout());
@@ -97,9 +117,11 @@ static void fx_gvar_set(const char *name, sp_RbVal v) {
   L.globals[L.nglobals++] = (FxConst){ s, v };
 }
 
-/* The object that Kernel#puts writes to, when the program has assigned
-   $stdout another one than the standard output. */
+/* The object that Kernel#puts writes to, when the thread has a $stdout of
+   its own or the program has assigned $stdout another one than the
+   standard output. */
 static int fx_gvar_stdout(sp_RbVal *out) {
+  if (fx_thread_stream("fluxpinel_stdout", out)) return 1;
   FxConst *g = fx_gvar_slot(sp_sym_intern("$stdout"));
   if (!g || (fx_is_io(g->value) && g->value.v.p == (void *)sp_io_stdout())) return 0;
   *out = g->value;
