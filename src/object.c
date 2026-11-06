@@ -79,6 +79,7 @@ static void fx_define_method(FxClass *c, FxMethod *m, int singleton) {
 
 static int fx_no_builtin_method(const FxClass *k, const char *name);
 static int fx_kernel_private(const char *name);
+static int fx_object_method_name(const char *name);
 
 /* alias and alias_method: a copy of the method from under the name to. A
    builtin method has no entry to copy: the alias is an entry that calls
@@ -100,6 +101,69 @@ static void fx_alias(FxClass *k, int singleton, sp_sym to, sp_sym from) {
   }
   c->name = to;
   fx_define_method(k, c, singleton);
+}
+
+/* undef and undef_method: an entry that stops the lookup of name at k, so
+   the method of a superclass or a builtin method is no longer there.
+   NameError when k has no such method to undefine. */
+static void fx_undef(FxClass *k, int singleton, sp_sym name) {
+  FxMethod *m = singleton ? fx_find_smethod(k, name) : fx_find_method(k, name);
+  const char *n = sp_sym_to_s(name);
+  if (!m && (singleton || fx_no_builtin_method(k, n)) && !fx_object_method_name(n) && !fx_kernel_private(n))
+    sp_raise_cls("NameError", sp_sprintf("undefined method '%s' for %s '%s'", n,
+                                         k->is_module ? "module" : "class", k->name));
+  fx_table_put(singleton ? &k->smethods : &k->methods, fx_method_new(FX_M_UNDEF, name, NULL, 0, k));
+  L.nundefs++;
+}
+
+/* remove_method: the entry of name leaves the table of k itself, and the
+   lookup goes on to the superclasses. NameError when k has no entry. */
+static void fx_remove_method(FxClass *k, int singleton, sp_sym name) {
+  FxMethodTable *t = singleton ? &k->smethods : &k->methods;
+  int i = 0;
+  while (i < t->n && (t->items[i]->name != name || t->items[i]->kind == FX_M_UNDEF)) i++;
+  if (i == t->n)
+    sp_raise_cls("NameError", sp_sprintf("method '%s' not defined in %s", sp_sym_to_s(name), k->name));
+  for (; i + 1 < t->n; i++) t->items[i] = t->items[i + 1];
+  t->n--;
+  fx_methods_gen++;
+}
+
+/* Whether an undef hides name from recv: the lookup found no method of
+   the program, and a class on the way has the undef entry, so the builtin
+   method of the name must not answer either. */
+static int fx_undef_in(const FxClass *k, sp_sym name, int singleton) {
+  if (!L.nundefs) return 0;
+  if (singleton) {
+    for (const FxClass *c = k; c; c = c->super) {
+      const FxMethod *m = fx_table_get(&c->smethods, name);
+      if (m) return m->kind == FX_M_UNDEF;
+    }
+    return 0;
+  }
+  const FxClass *anc[128];
+  int n = fx_ancestors(k, anc, 128);
+  for (int i = 0; i < n; i++) {
+    const FxMethod *m = fx_table_get(&anc[i]->methods, name);
+    if (m) return m->kind == FX_M_UNDEF;
+  }
+  return 0;
+}
+
+static int fx_undef_hides(sp_RbVal recv, sp_sym name) {
+  if (!L.nundefs) return 0;
+  if (recv.tag == SP_TAG_CLASS) {
+    FxClass *k = fx_class_value(recv);
+    return k && fx_undef_in(k, name, 1);
+  }
+  return fx_undef_in(fx_lookup_class(recv), name, 0);
+}
+
+/* The method name an argument of alias_method and its kin gives. */
+static sp_sym fx_method_name_arg(sp_RbVal v, const char *name) {
+  if (v.tag != SP_TAG_SYM && !fx_is_string(v))
+    sp_raise_cls("TypeError", sp_sprintf("%s is not a symbol nor a string", sp_poly_inspect(v)));
+  return v.tag == SP_TAG_SYM ? (sp_sym)v.v.i : sp_sym_intern(sp_poly_recv_s(v, name));
 }
 
 /* ---- classes ---- */
@@ -609,7 +673,7 @@ static void fx_names_push(sp_PolyArray *a, sp_sym s) {
 
 static void fx_table_names(sp_PolyArray *a, const FxMethodTable *t, int mask) {
   for (int i = 0; i < t->n; i++)
-    if ((mask >> t->items[i]->vis) & 1) fx_names_push(a, t->items[i]->name);
+    if (t->items[i]->kind != FX_M_UNDEF && (mask >> t->items[i]->vis) & 1) fx_names_push(a, t->items[i]->name);
 }
 
 /* The builtin methods of the class or module c of CRuby: the public ones
@@ -751,7 +815,7 @@ static SP_NOINLINE FxMethod *fx_find_method_slow(const FxClass *c, sp_sym name) 
   int n = fx_ancestors(c, anc, 128);
   for (int i = 0; i < n; i++) {
     FxMethod *m = fx_table_get(&anc[i]->methods, name);
-    if (m) return m;
+    if (m) return m->kind == FX_M_UNDEF ? NULL : m;
     if (fx_builtin_module_has(anc[i], name)) return NULL;
   }
   return NULL;
@@ -785,7 +849,7 @@ static FxMethod *fx_find_method(const FxClass *c, sp_sym name) {
 static FxMethod *fx_find_smethod(const FxClass *c, sp_sym name) {
   for (const FxClass *k = c; k; k = k->super) {
     FxMethod *m = fx_table_get(&k->smethods, name);
-    if (m) return m;
+    if (m) return m->kind == FX_M_UNDEF ? NULL : m;
     for (int i = k->nextends - 1; i >= 0; i--)
       if ((m = fx_find_method(k->extends[i], name))) return m;
   }
@@ -802,7 +866,7 @@ static FxMethod *fx_find_super(const FxClass *c, const FxMethod *m) {
   if (!m->owner->refined) i++;
   for (; i < n; i++) {
     FxMethod *s = fx_table_get(&anc[i]->methods, m->name);
-    if (s) return s;
+    if (s) return s->kind == FX_M_UNDEF ? NULL : s;
     if (fx_builtin_module_has(anc[i], m->name)) return NULL;
   }
   return NULL;
@@ -1675,6 +1739,7 @@ static sp_RbVal fx_respond_to(sp_RbVal r, sp_RbVal a, sp_RbVal all) {
   sp_sym s = sp_sym_intern(mn);
   FxMethod *pm = r.tag == SP_TAG_CLASS ? fx_find_smethod(fx_class_value(r), s) : NULL;
   if (!pm) pm = fx_find_method(fx_lookup_class(r), s);
+  if (!pm && fx_undef_hides(r, s)) return sp_box_bool(0);
   int yes = pm && pm->vis == FX_VIS_PUBLIC;
   if (!yes && !pm)
     yes = fx_builtin_responds(r, mn) || fx_record_responds(r, mn) || fx_process_responds(r, mn) ||
@@ -1951,7 +2016,7 @@ static int fx_vis_mask(const char *name) {
    method is not known here, which is a gap. */
 static int fx_method_defined(FxClass *k, int mask, sp_sym name, int inherit) {
   FxMethod *m = inherit ? fx_find_method(k, name) : fx_table_get(&k->methods, name);
-  if (m) return (mask >> m->vis) & 1;
+  if (m) return m->kind != FX_M_UNDEF && (mask >> m->vis) & 1;
   /* a record defines the accessors of its members in its table: a Data
      class has no writer */
   const FxClass *rec = fx_record_of(k);
@@ -1961,6 +2026,7 @@ static int fx_method_defined(FxClass *k, int mask, sp_sym name, int inherit) {
     if (!strncmp(n, mn, len) && (!n[len] || !strcmp(n + len, "="))) return 0;
   }
   const char *n = sp_sym_to_s(name);
+  if (inherit && fx_undef_in(k, name, 0)) return 0;
   if (k->cls_id < FX_CLS_BASE || k->native || (inherit && fx_builtin_ancestor(k))) {
     /* the public builtin methods of CRuby answer from the table, which has
        the methods of the features of the runtime too (tools/responds_gen.rb);
@@ -2048,7 +2114,7 @@ static int fx_singleton_core(sp_RbVal r, const char *name, int argc, sp_RbVal *a
     for (int e = -1; k && e < (all ? k->nincludes : 0); e++) {
       const FxMethodTable *t = e < 0 ? &k->methods : &k->includes[e]->methods;
       for (int i = 0; i < t->n; i++) {
-        if (t->items[i]->vis != FX_VIS_PUBLIC) continue;
+        if (t->items[i]->vis != FX_VIS_PUBLIC || t->items[i]->kind == FX_M_UNDEF) continue;
         sp_RbVal s = sp_box_sym(t->items[i]->name);
         int seen = 0;
         for (sp_int j = 0; j < a->len; j++) seen |= a->data[j].v.i == s.v.i;
@@ -2250,13 +2316,18 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   }
   if (!strcmp(name, "alias_method") && argc == 2) {
     sp_sym s[2];
-    for (int i = 0; i < 2; i++) {
-      if (argv[i].tag != SP_TAG_SYM && !fx_is_string(argv[i]))
-        sp_raise_cls("TypeError", sp_sprintf("%s is not a symbol nor a string", sp_poly_inspect(argv[i])));
-      s[i] = argv[i].tag == SP_TAG_SYM ? (sp_sym)argv[i].v.i : sp_sym_intern(sp_poly_recv_s(argv[i], name));
-    }
+    for (int i = 0; i < 2; i++) s[i] = fx_method_name_arg(argv[i], name);
     fx_alias(k, meta || (f && f->singleton_defs == 1), s[0], s[1]);
     *out = sp_box_sym(s[0]);
+    return 1;
+  }
+  if (!strcmp(name, "undef_method") || !strcmp(name, "remove_method")) {
+    for (int i = 0; i < argc; i++) {
+      sp_sym s = fx_method_name_arg(argv[i], name);
+      if (name[0] == 'u') fx_undef(k, meta || (f && f->singleton_defs == 1), s);
+      else fx_remove_method(k, meta || (f && f->singleton_defs == 1), s);
+    }
+    *out = r;
     return 1;
   }
   if (!strcmp(name, "define_method") || !strcmp(name, "define_singleton_method")) {
@@ -2395,7 +2466,7 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
       for (int e = -1; e < c->nextends; e++) {
         const FxMethodTable *t = e < 0 ? &c->smethods : &c->extends[e]->methods;
         for (int i = 0; i < t->n; i++) {
-          if (t->items[i]->vis != FX_VIS_PUBLIC) continue;
+          if (t->items[i]->vis != FX_VIS_PUBLIC || t->items[i]->kind == FX_M_UNDEF) continue;
           sp_RbVal s = sp_box_sym(t->items[i]->name);
           int seen = 0;
           for (sp_int j = 0; j < a->len; j++) seen |= a->data[j].v.i == s.v.i;

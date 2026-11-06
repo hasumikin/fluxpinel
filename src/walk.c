@@ -3235,6 +3235,23 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
              (sp_sym)from.v.i);
     return sp_box_nil();
   }
+  /* `# shareable_constant_value:` wraps each constant write: the value is
+     frozen, as CRuby makes it shareable (the elements of a container stay
+     as they are: a program with no Ractor shares nothing) */
+  case PM_SHAREABLE_CONSTANT_NODE: {
+    sp_RbVal v = fx_eval(f, ((const pm_shareable_constant_node_t *)n)->write);
+    SP_GC_ROOT_RBVAL(v);
+    return fx_send(v, "freeze", 0, NULL);
+  }
+  case PM_UNDEF_NODE: {
+    const pm_undef_node_t *u = (const pm_undef_node_t *)n;
+    for (size_t i = 0; i < u->names.size; i++) {
+      if (!PM_NODE_TYPE_P(u->names.nodes[i], PM_SYMBOL_NODE)) fx_unsupported(n, "undef of an interpolated name");
+      sp_RbVal s = fx_eval(f, u->names.nodes[i]);
+      fx_undef(f->definee ? f->definee : f->cref, f->singleton_defs == 1 || f->singleton_defs == 4, (sp_sym)s.v.i);
+    }
+    return sp_box_nil();
+  }
   case PM_CALL_NODE:
     return fx_call(f, (const pm_call_node_t *)n);
   case PM_CALL_OPERATOR_WRITE_NODE:

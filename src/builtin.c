@@ -1057,6 +1057,8 @@ static sp_RbVal fx_send_v(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
     if (why) return fx_denied(recv, name, argc, argv, blk, why);
     return fx_invoke_b(m, recv, argc, argv, blk);
   }
+  /* an undef of the name hides the builtin method too */
+  if (fx_undef_hides(recv, fx_name_sym(name))) fx_no_method(recv, name, FX_MISS_METHOD);
   if (fx_builtin_call(recv, name, argc, argv, blk, &out)) return out;
   if (blk && argc >= 1 && (!strcmp(name, "send") || !strcmp(name, "__send__") || !strcmp(name, "public_send")))
     return fx_send_v(recv, fx_name_arg(argv[0]), argc - 1, argv + 1, blk, name[0] == 'p' ? 2 : 0, NULL);

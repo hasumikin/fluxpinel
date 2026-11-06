@@ -8,6 +8,7 @@ alias_captures_def_twice
 alias_captures_earlier_def
 alias_chain_over_builtin
 alias_counterpart_own_class
+alias_date_compare_without_coercion
 alias_deconstruct_boxed
 alias_in_builtin_reopen
 alias_in_included_and_extended_module
@@ -417,6 +418,7 @@ bigint_boxed_ord
 bigint_branch_arm
 bigint_compare_object_operand
 bigint_div_by_zero
+bigint_eq_boxed_result
 bigint_float_compare_exact
 bigint_float_mixed_arith
 bigint_format_negative_radix
@@ -552,6 +554,7 @@ block_local_shadow
 block_local_shadows_later_outer_local
 block_local_widens_map_result
 block_next_nil_typed_map
+block_next_value_join
 block_nil_fill
 block_on_user_call_receiver_once
 block_optional_before_required
@@ -569,6 +572,8 @@ block_param_from_every_block_call
 block_param_guard_folds
 block_param_into_thread
 block_param_nullable_float
+block_param_nullable_int
+block_param_nullable_nil
 block_param_read_only_allowed
 block_param_reassigned_other_class
 block_param_rebound_string_mutation
@@ -698,6 +703,7 @@ boxed_rational_abs2
 boxed_rational_value_surface
 boxed_reader_alias_after_dup
 boxed_reader_named_like_time_method
+boxed_reader_visibility
 boxed_receiver_aliases
 boxed_receiver_nil_argument_converted_after
 boxed_recv_block_param_shapes
@@ -749,6 +755,7 @@ boxed_time_deconstruct_keys
 boxed_time_round_ctime
 boxed_tms_times
 boxed_to_h_block
+boxed_to_i_nomethod
 boxed_to_s_base_from_call
 boxed_transform_poly_answer
 boxed_user_exception_accessors
@@ -779,6 +786,7 @@ builtin_include_keeps_own_method
 builtin_iter_block_keyword_params
 builtin_iter_block_param_shapes
 builtin_iter_block_stragglers
+builtin_iter_extra_params_nil
 builtin_iter_scalar_yield_shapes
 builtin_iter_step_frame
 builtin_kwarg_user_clone
@@ -875,6 +883,7 @@ bundle_classd_39
 bundle_classd_45
 bundle_classd_46
 bundle_classd_48
+bundle_classd_49
 bundle_classd_50
 bundle_classd_51
 bundle_file_a
@@ -891,6 +900,8 @@ bundle_misc_c_17
 bundle_misc_c_26
 bundle_misc_c_30
 bundle_misc_c_31
+bundle_misc_c_33
+bundle_misc_c_34
 bundle_misc_c_37
 bundle_poly
 bundle_poly_b1
@@ -1086,6 +1097,7 @@ class_body_bare_private_new
 class_body_call_before_def_raises
 class_body_constant_bare_new
 class_body_dsl_call
+class_body_in_block_runs_whole
 class_body_instance_variable_set
 class_body_ivar_write_as_value
 class_body_listing_beside_instance_def_of_name
@@ -1423,6 +1435,7 @@ concurrency_logical_operands
 cond_and_or_unboxed
 cond_string_beside_strbuf_arm
 conditional_class_receiver_new
+conditional_def_alias_chain
 conditional_def_every_body
 conditional_def_kept_histories
 conditional_def_missing_module_error
@@ -1607,6 +1620,7 @@ data_with_shared_string_member
 data_with_splat_order
 data_with_unknown_kw
 date_class_of_its_own
+date_plus_inherited_by_datetime
 dead_call_binds_parameters
 dead_method_same_name_other_class
 def_delegator_setter
@@ -1774,6 +1788,7 @@ each_elem_into_mutated_param
 each_entry_reverse_each
 each_index_forwarded_proc
 each_pair_boxed_receiver_key
+each_params_literal_empty_row
 each_return_value
 each_row_boxed_params
 each_window_boxed_receiver_block
@@ -2667,6 +2682,7 @@ hash_write_through_getter_alias
 hash_write_through_super_getter
 hash_zero_arguments_own_methods
 hashsub_kw_splat
+hashsub_store_value
 helper_results_rooted
 heterogeneous_tuple_return
 hoisted_arg_keeps_nil
@@ -2674,6 +2690,8 @@ hoisted_begin_value_held
 hoisted_handle_arg_into_boxed_param
 hoisted_read_after_nil_store
 hoisted_store_clears_nil_bit
+hook_included_per_point
+hook_method_added_per_point
 hook_param_class
 hook_removed_program_method
 i1006
@@ -2957,6 +2975,7 @@ int_array_uniq_bang
 int_bit_beginless_raises
 int_bitop_class_operand
 int_bitop_mutable_string_operand
+int_bitop_operand_type
 int_bits_bignum_mask
 int_bitwise_raise_operand
 int_bracket_skip_sym_idx
@@ -3007,6 +3026,7 @@ int_table_range_store
 int_table_reopened_at
 int_table_store_untyped_value
 int_table_subclass_of_float_table
+int_unbox_nil_sentinel
 int_word_end_ranges
 integer_0d_prefix
 integer_argument_error
@@ -3014,6 +3034,7 @@ integer_bignum_batch2
 integer_bit_index_clamped
 integer_bit_read_never_nil
 integer_clamp_float_bound
+integer_conversion_of_nilable
 integer_digits_base
 integer_digits_invalid_radix
 integer_div_by_zero
@@ -3260,6 +3281,7 @@ issue_3032
 issue_3035
 issue_3037
 issue_3039
+issue_3040
 issue_3043
 issue_3044
 issue_3045
@@ -3546,6 +3568,7 @@ kernel_fail_alias
 kernel_float_integer_strict
 kernel_float_strict
 kernel_integer_float_errors
+kernel_integer_float_strict_nil
 kernel_integer_negative_radix
 kernel_integer_true_message
 kernel_integer_with_base
@@ -4053,6 +4076,7 @@ module_store_fetch_early_return_poly_value
 module_store_fetch_yield_poly_value
 more_truthies_nil_compare
 multi_arg_lambda
+multi_arg_yield
 multi_assign_array_underfill
 multi_assign_ivar_type
 multi_assign_operand_gc_root
@@ -4070,8 +4094,10 @@ multi_value_return_splat
 multi_write_call_rhs_as_expr
 multi_write_ivar_const_from_array_rhs
 multi_write_scalar_rhs
+multiple_assignment_to_ary
 mutable_str_force_encoding_return
 mutable_str_into_str_array
+mutable_string_container_shapes
 mutator_value_forms_bang_nil
 mutex_boxed_receiver
 mutex_boxed_synchronize_yield_values
@@ -4181,6 +4207,7 @@ nil_guard_narrows_int_or_nil
 nil_guard_param_narrow
 nil_guard_post_test_loop
 nil_hash_param_boxed_as_nil
+nil_hashdefault_complex_followups
 nil_into_number_and_or_write
 nil_into_object_param_raises
 nil_ivar
@@ -4207,12 +4234,14 @@ nil_receiver_program_method
 nil_receiver_reassigned_by_argument
 nil_receiver_tap_then
 nil_receiver_user_object_plan
+nil_recv_alias_of_reader
 nil_recv_cached_loop
 nil_recv_compare_nomethod
 nil_recv_integer_builtin
 nil_reopen_private_maybe_nil
 nil_scalar_slot_widen
 nil_sentinel_from_index_compact
+nil_sentinel_receiver_surface
 nil_spaceship_variable
 nil_store_through_chooser
 nil_string_join
@@ -4225,6 +4254,7 @@ nil_time_return_narrow_case
 nil_time_return_narrow_case_in
 nil_time_return_narrow_logic
 nil_time_return_narrow_rescue_mod
+nil_to_h_beside_user_to_h
 nil_to_r_rational
 nil_typed_arg_object_param
 nil_typed_call_equality
@@ -4239,6 +4269,7 @@ nilable_int_constant_default_and_return
 nilable_int_slot_boxed_nil
 nilable_poly_array
 nilable_time_strftime
+nilclass_bool_ops_conversions
 nilclass_numeric_reopen_over_object
 nilclass_reopen_block_param
 nilclass_reopen_recv_order
@@ -4271,6 +4302,7 @@ nullable_int_to_s_evaluates_once
 nullable_num_compare
 nullable_obj_nil_compare
 nullable_poly_hash_arg_unbox
+nullable_scalar_carriers
 nullable_scalar_join
 nullable_string_identity
 numbered_param_arity
@@ -4453,6 +4485,7 @@ paren_nil_string_slot
 paren_operand_rooted_beside_alloc
 paren_receiver_each_changes_elements
 paren_receiver_shapes
+paren_sequence_empty_container
 paren_sequence_stays_in_place
 paren_string_operand_order
 paren_string_store_element_handle
@@ -4664,6 +4697,7 @@ poly_dispatch_splat_args
 poly_dispatch_splat_class_value
 poly_dispatch_string_receiver_split
 poly_dispatch_struct_arg_arm
+poly_dispatch_table_int_row_nil
 poly_dispatch_type_receiver_classes
 poly_dispatch_uninstantiated_arm
 poly_dispatch_user_return_widens
@@ -4713,6 +4747,7 @@ poly_fill_boxed_recv_value_gc_root
 poly_filter_bang_stmt_block
 poly_filter_block_pred_beside_user
 poly_find_index_block
+poly_float_conversions
 poly_float_next_float_beside_class_method
 poly_forwarded_block_builtin_read
 poly_from_typed_array_widen_root
@@ -5184,6 +5219,7 @@ promote_bigint_toom3_negative_eval
 promote_bigrational_to_i
 promote_block_loop_bigint
 promote_block_param_nil
+promote_boxed_index_header_cache
 promote_const_from_boxed_local_array
 promote_float_div_bignum
 promote_float_divmod_bignum_quotient
@@ -5293,6 +5329,7 @@ range_each_no_block
 range_each_no_block_param
 range_each_slice_answers_receiver
 range_each_slice_returns_receiver
+range_enum_family
 range_enumerable_finite
 range_eq_across_numeric
 range_equality
@@ -5399,6 +5436,7 @@ recv_read_before_args
 redef_reopen_alias_earlier_body
 redef_reopen_prepend_between
 redo
+redo_block_keeps_writes
 redo_in_yielded_block
 redo_pops_frame_and_clause
 reduce_acc_shadow
@@ -5438,6 +5476,7 @@ regex_value_as_match_arg_object_recv
 regexp_alternation_priority
 regexp_atomic_group_quantified
 regexp_backref_ignorecase
+regexp_backtrack_heap_stack
 regexp_boxed_match_char_position
 regexp_brace_zero_lower
 regexp_capture_ceiling
@@ -5616,12 +5655,16 @@ respond_to_exception_own_class
 respond_to_folded_dead_branch
 respond_to_generated_tables
 respond_to_implicit_self
+respond_to_in_base_sees_subclass
 respond_to_kernel_mixin
 respond_to_missing_builtin_probe
 respond_to_module_singleton_accessor
 respond_to_nil_builtin_slot
 respond_to_nil_slot
 respond_to_object_methods
+respond_to_object_private_methods
+respond_to_object_reopen
+respond_to_object_reopen_attr_undef
 respond_to_other_builtin_method
 respond_to_override_super
 respond_to_poly
@@ -5635,6 +5678,7 @@ respond_to_reopened_builtin_visibility_other_types
 respond_to_runtime_name
 respond_to_runtime_name_list
 respond_to_runtime_name_many_methods
+respond_to_self_undef_method
 respond_to_send
 respond_to_singleton_alias
 respond_to_static_enum_methods
@@ -5720,6 +5764,7 @@ safe_nav_poly_dispatch
 safe_nav_predicate
 safe_nav_push_nil_array
 safe_nav_reopened_builtin
+safe_nav_specialized_miss
 safe_nav_step_skips_args_on_nil
 safe_nav_string_bang_arg_runs
 safe_nav_string_mutator_statement
@@ -5953,6 +5998,7 @@ share_strings_rule_locals
 share_strings_transform_argument_order
 share_stub_raise_target_handle
 share_uplus_literal_call_copies
+shareable_constant
 shared_handle_arg_keeps_object
 shared_handle_nonunique_callee
 shared_handle_poly_args
@@ -5990,6 +6036,7 @@ singleton_deep_paren_receiver
 singleton_def_class_receivers
 singleton_def_on_const_alias
 singleton_def_on_new_block_param
+singleton_def_on_variable
 singleton_dsm_local
 singleton_extend_chain_object_poly_dispatch
 singleton_extend_timing
@@ -6330,6 +6377,7 @@ string_handle_initialize_kept_block
 string_handle_ivar_in_container
 string_handle_keyword_args
 string_handle_keyword_dyn_sites
+string_handle_nil_ivar_reads
 string_handle_nil_local_tap
 string_handle_object_new_method
 string_handle_optional_param
@@ -6595,6 +6643,7 @@ struct_bare_super_initialize
 struct_block_ancestors
 struct_block_attr_not_member
 struct_block_bare_self_calls
+struct_block_declarations
 struct_block_define_method
 struct_block_define_method_cond
 struct_block_define_method_cond_unused
@@ -6891,9 +6940,11 @@ time_between_clamp
 time_cmp_nilable_operand
 time_compare_nontime
 time_deconstruct_keys
+time_fixed_offset_formatters
 time_fixed_offset_zone
 time_fractional_seconds
 time_hash_pattern
+time_httpdate_rfc2822
 time_in_container
 time_in_container_accessors
 time_inplace_param_class_method
@@ -6926,10 +6977,13 @@ time_numeric_string_args
 time_object_method_type
 time_operand_type_errors
 time_operator_assignment
+time_parser_symbol_arg
+time_parser_symbol_then_string_error
 time_plus_rational
 time_predicates_getgm
 time_reopen_boxed_cmp
 time_reopen_boxed_operator
+time_require_alone_stays_native
 time_respond_to
 time_round_floor_ceil
 time_round_negative_digits
@@ -6940,6 +6994,7 @@ time_strftime_directives
 time_strftime_epoch_zone
 time_strftime_long_format
 time_strftime_z_minimal
+time_strptime
 time_subsec_offset_family
 time_subsec_utc
 time_threaded_conversion
@@ -6954,6 +7009,7 @@ time_zone_argument_validation
 time_zone_inplace
 times_chain_boxed_receiver
 times_upto_boxed_nil_recv
+to_h_on_boxed_hash
 to_h_with_block
 to_path_boxed_shared_string
 tools_bisect_search
@@ -7023,6 +7079,11 @@ unbound_method_bind_call
 unbound_method_identity
 uncaught_exception_message
 undef_const_scalar_position
+undef_forms_from_load_record
+undef_method_literal_in_class_body
+undef_method_raises
+undef_respond_to
+undef_then_def_at_point
 undefined_constant_into_typed_slot
 undefined_constant_warns
 undefined_name_method_receiver

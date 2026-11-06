@@ -14,7 +14,9 @@ struct FxClass;
 /* What a method does when it is called. FX_M_BUILTIN is the builtin
    method of the name, which an entry carries for its visibility only
    (`private :first` in a reopened Array, `private_class_method :new`). */
-typedef enum { FX_M_DEF, FX_M_READER, FX_M_WRITER, FX_M_FFI, FX_M_ENTRY, FX_M_PROC, FX_M_BUILTIN } FxMethodKind;
+typedef enum { FX_M_DEF, FX_M_READER, FX_M_WRITER, FX_M_FFI, FX_M_ENTRY, FX_M_PROC, FX_M_BUILTIN, FX_M_UNDEF } FxMethodKind;
+/* FX_M_UNDEF: an undef of the name in this class; a lookup that reaches it
+   stops with no method, so a method of a superclass stays hidden */
 
 /* The visibility of a method, and the default of a scope for a def. */
 enum { FX_VIS_PUBLIC, FX_VIS_PRIVATE, FX_VIS_PROTECTED };
@@ -332,6 +334,8 @@ typedef struct {
                             missed (FX_MISS_*), for a super from the hook */
   int nusing;            /* the refinements active in all files: zero means no
                             call looks for one */
+  int nundefs;           /* the undef entries of all tables: zero means no call
+                            looks for one */
 } Fluxpinel;
 
 static Fluxpinel L;
