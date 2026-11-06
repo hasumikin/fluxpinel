@@ -1964,8 +1964,10 @@ static int fx_method_defined(FxClass *k, int mask, sp_sym name, int inherit) {
   if (k->cls_id < FX_CLS_BASE || k->native || (inherit && fx_builtin_ancestor(k))) {
     /* the public builtin methods of CRuby answer from the table; a miss
        is no method for a query without private, as CRuby has few
-       protected builtin methods */
-    int d = k->native || fx_feature_loaded ? -1 : fx_rs_defined(k, n, inherit);
+       protected builtin methods. After a feature of the runtime loaded
+       (io/console), a miss is unknown: the feature may define the method. */
+    int d = k->native ? -1 : fx_rs_defined(k, n, inherit);
+    if (d == 0 && fx_feature_loaded) d = -1;
     if (d == 1) return (mask >> FX_VIS_PUBLIC) & 1;
     if (d < 0 || (mask >> FX_VIS_PRIVATE) & 1)
       fx_gap(sp_sprintf("%s.method_defined? of a builtin method", k->name));

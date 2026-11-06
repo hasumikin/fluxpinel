@@ -22,3 +22,5 @@ rescue ArgumentError => e
   puts e.message
 end
 p $stdout.respond_to?(:winsize)
+# a method of the table is defined after the feature loaded (Reline asks)
+p IO.method_defined?(:wait_readable, false), IO.method_defined?(:readpartial)
