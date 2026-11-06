@@ -210,7 +210,7 @@ line editor of Reline on the terminal of the client
 of the thread of the session goes to the client, and the other threads of
 the program keep theirs: a thread with a value in `Thread.current[:fluxpinel_stdout]`
 or `[:fluxpinel_stderr]` writes `$stdout` and `$stderr` there. This needs a
-Reline that runs on a socket (`Reline.io_gate=`); name its lib directory
+Reline that runs on a socket (`Reline.io_gate=` and `Reline::Telnet`); name its lib directory
 with `-I`, `RUBYLIB` or `make GEM_DIRS_FIRST=DIR`.
 `RUBY_ENGINE` is `"spinel"`, and `RUBY_VERSION` is the version that spinel
 gives. Thus a branch on `RUBY_ENGINE == "spinel"` goes the same way in
