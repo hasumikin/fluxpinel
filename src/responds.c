@@ -14,10 +14,20 @@ typedef struct {
   const char *super;                /* the superclass, or NULL */
   const char *const *inst;          /* the own public instance methods */
   const char *const *sing;          /* the own public singleton methods */
+  const char *const *feat_inst;     /* the instance methods a feature of the runtime adds */
+  const char *const *feat_sing;     /* the singleton methods a feature adds */
   const char *const *anc;           /* the ancestors after the class */
 } FxRespondRow;
 
 #include "responds.inc"
+
+static int fx_rs_in(const char *const *list, const char *mn);
+
+/* Whether the own list of a row has mn: the methods of a feature count
+   after a require of a feature (fx_feature_loaded). */
+static int fx_rs_has(const char *const *list, const char *const *feat, const char *mn) {
+  return fx_rs_in(list, mn) || (fx_feature_loaded && fx_rs_in(feat, mn));
+}
 
 #define FX_RS_NROWS ((int)(sizeof fx_rs_rows / sizeof fx_rs_rows[0]))
 
@@ -50,10 +60,10 @@ static int fx_rs_in(const char *const *list, const char *mn) {
 static int fx_rs_instance(const char *cls, const char *mn) {
   const FxRespondRow *row = fx_rs_row(cls);
   if (!row) return 0;
-  if (fx_rs_in(row->inst, mn)) return 1;
+  if (fx_rs_has(row->inst, row->feat_inst, mn)) return 1;
   for (int i = 0; row->anc[i]; i++) {
     const FxRespondRow *a = fx_rs_row(row->anc[i]);
-    if (a && fx_rs_in(a->inst, mn)) return 1;
+    if (a && fx_rs_has(a->inst, a->feat_inst, mn)) return 1;
   }
   return 0;
 }
@@ -75,7 +85,7 @@ static void fx_rs_singleton_names(sp_PolyArray *a, const char *cls) {
    from an ancestor. */
 static int fx_rs_own(sp_RbVal r, const char *mn) {
   const FxRespondRow *row = fx_rs_row(sp_poly_class_name(r));
-  return row && fx_rs_in(row->inst, mn);
+  return row && fx_rs_has(row->inst, row->feat_inst, mn);
 }
 
 /* Whether the builtin class or module cls itself has the public method mn:
@@ -86,7 +96,7 @@ static int fx_rs_singleton(const char *cls, const char *mn) {
   if (!row) return 0;
   int module = row->is_module;
   for (; row; row = row->super ? fx_rs_row(row->super) : NULL)
-    if (fx_rs_in(row->sing, mn)) return 1;
+    if (fx_rs_has(row->sing, row->feat_sing, mn)) return 1;
   return fx_rs_instance(module ? "Module" : "Class", mn);
 }
 
@@ -107,7 +117,7 @@ static int fx_rs_defined(const FxClass *k, const char *mn, int inherit) {
   if (k->cls_id < 0) {
     const FxRespondRow *row = fx_rs_row(k->name);
     if (!row) return -1;
-    return inherit ? fx_rs_instance(k->name, mn) : fx_rs_in(row->inst, mn);
+    return inherit ? fx_rs_instance(k->name, mn) : fx_rs_has(row->inst, row->feat_inst, mn);
   }
   if (!inherit) return 0;
   const FxClass *anc[128];
