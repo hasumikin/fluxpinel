@@ -317,8 +317,8 @@ else
 	git -C $(SPINEL) fetch -q $(SPINEL_URL) master
 	git -C $(SPINEL) merge -q --ff-only FETCH_HEAD
 endif
-	$(MAKE) -C $(SPINEL) deps
-	$(MAKE) -C $(SPINEL)
+	MAKEFLAGS= $(MAKE) -C $(SPINEL) deps
+	MAKEFLAGS= $(MAKE) -C $(SPINEL)
 	git -C $(SPINEL) rev-parse HEAD > SPINEL_COMMIT
 	@$(MAKE) all && $(MAKE) test && $(MAKE) test-host && $(MAKE) regress || { \
 	  echo "upgrade_spinel: the check failed on $$(cat SPINEL_COMMIT)." \
