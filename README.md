@@ -185,6 +185,7 @@ The command line takes a part of the options of `ruby`:
 
 - `-e`, `-c`, `-I`, `-r`, `-v`, `-w`, `-W`, `-h` and `--version`
 - `--irb`, for IRB; the arguments after it are the options of IRB
+- `--irb-port PORT`, for IRB on a telnet connection to the running program
 - `--console`, for a console on stdin
 
 With no script and no `-e`, Fluxpinel reads the program from stdin. `-v`
@@ -201,6 +202,14 @@ and `rdoc` of the Ruby that builds Fluxpinel (`tools/gem_dirs.rb`), and
 `--irb` adds them at the end of `$LOAD_PATH`. Name other copies with `-I`
 or `RUBYLIB`. A host program with `KERNEL_MAIN` opens IRB with `--irb` as
 its first argument, with the program loaded but not run.
+
+`--irb-port PORT` listens on `127.0.0.1:PORT` before the program runs.
+`telnet localhost PORT` then opens IRB in the running program, with the
+line editor of Reline on the terminal of the client
+(`lib/fluxpinel/remote_irb.rb`). One session runs at a time, and the
+output of the program goes to the client during a session. This needs a
+Reline that runs on a socket (`Reline.io_gate=`); name its lib directory
+with `-I`, `RUBYLIB` or `make GEM_DIRS_FIRST=DIR`.
 `RUBY_ENGINE` is `"spinel"`, and `RUBY_VERSION` is the version that spinel
 gives. Thus a branch on `RUBY_ENGINE == "spinel"` goes the same way in
 Fluxpinel and in AOT code. `RUBY_DESCRIPTION` is the line that `-v`

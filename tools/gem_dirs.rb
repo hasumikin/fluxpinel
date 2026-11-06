@@ -7,9 +7,11 @@
 # that builds it. FX_GEM_DIRS holds their lib directories, joined by ":",
 # and --irb adds them at the end of $LOAD_PATH (src/main.c). A gem that
 # CRuby does not have prints a warning and stays out: --irb then needs -I
-# or RUBYLIB. With no gem found, the header defines nothing.
+# or RUBYLIB. With no gem found, the header defines nothing. The
+# directories of GEM_DIRS_FIRST ("a:b") come before those of the gems.
 
-dirs = ARGV.filter_map do |name|
+first = ENV.fetch("GEM_DIRS_FIRST", "").split(":").reject(&:empty?)
+dirs = first + ARGV.filter_map do |name|
   spec = Gem::Specification.find_by_name(name)
   dir = File.join(spec.full_gem_path, "lib")
   next dir if Dir.exist?(dir)

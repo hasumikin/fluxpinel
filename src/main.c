@@ -15,10 +15,15 @@
    adds them at the end of $LOAD_PATH. -I and RUBYLIB come first, so they
    can name other copies.
 
+   --irb-port PORT starts the listener of lib/fluxpinel/remote_irb.rb
+   before the program: a telnet connection to 127.0.0.1:PORT opens IRB in
+   the running program.
+
    A host build with FX_KERNEL_MAIN (an entry such as "Logq.main") takes
    no FILE.rb: it calls the entry with ARGV, which holds every argument.
    With --irb as the first argument, it opens IRB instead, with the program
-   loaded by its init but not run.
+   loaded by its init but not run. With --irb-port PORT first, it listens
+   and then runs the entry.
 
    spinel_rt.h declares hooks as static, so all Fluxpinel code that uses the
    runtime is one TU. This file includes the others in order. */
@@ -84,6 +89,23 @@ static void fx_irb_load_path(void) {
 #endif
 }
 
+static const char *fx_irb_port;   /* --irb-port PORT, as given */
+
+/* Whether s is a port number. */
+static int fx_is_port(const char *s) {
+  if (!*s) return 0;
+  for (; *s; s++) if (*s < '0' || *s > '9') return 0;
+  return 1;
+}
+
+/* Starts the listener of --irb-port, as a program of its own before the
+   main program. */
+static void fx_irb_listen(void) {
+  fx_irb_load_path();
+  const char *src = sp_sprintf("require \"fluxpinel/remote_irb\"\nFluxpinel::RemoteIRB.listen(%s)\n", fx_irb_port);
+  fx_run_source_top(fx_parse_main("(irb-port)", "(irb-port)", strdup(src), strlen(src)), 0);
+}
+
 #ifndef FX_KERNEL_MAIN
 /* The options of the command line, as ruby takes them. */
 static struct {
@@ -111,6 +133,7 @@ static const char fx_usage[] =
   "  -h, --help      Print this help message\n"
   "  --version       Print the version\n"
   "  --irb [arg...]  Start IRB (the gems of CRuby); arg... are its options\n"
+  "  --irb-port PORT Open IRB to each telnet connection on 127.0.0.1:PORT\n"
   "  --console       Read Ruby from stdin, one line at a time, as irb does\n";
 
 /* A wrong command line ends Fluxpinel, as it ends ruby. fx_options runs
@@ -152,7 +175,11 @@ static int fx_options(int argc, char **argv) {
     /* the arguments after --irb are the options of IRB */
     if (!strcmp(a, "--irb")) { fx_irb = 1; i++; break; }
     if (a[1] == '-') {
-      if (!strcmp(a, "--console")) fx_opt.console = 1;
+      if (!strcmp(a, "--irb-port")) {
+        if (i + 1 >= argc || !fx_is_port(argv[i + 1])) fx_opt_fail("--irb-port needs a port number", "", "ArgumentError");
+        fx_irb_port = argv[++i];
+      }
+      else if (!strcmp(a, "--console")) fx_opt.console = 1;
       else if (!strcmp(a, "--help")) { fputs(fx_usage, stdout); exit(0); }
       else if (!strcmp(a, "--version")) { puts(FX_DESCRIPTION); exit(0); }
       else fx_opt_invalid("", a, (int)strlen(a));
@@ -250,6 +277,10 @@ static void fx_run_main(void) {
     fx_require_option(fx_opt.libs[i]);
     if (L.ctl != FX_CTL_NONE) return;
   }
+  if (fx_irb_port) {
+    fx_irb_listen();
+    if (L.ctl != FX_CTL_NONE) return;
+  }
   fx_run_main_source(s);
 }
 #endif
@@ -293,8 +324,9 @@ static void fx_body(void) {
     fx_irb_load_path();
     fx_load_main_src(L.path, L.path, strdup(fx_irb_src), sizeof fx_irb_src - 1);
   } else {
+    if (fx_irb_port) fx_irb_listen();
     const char *src = FX_KERNEL_MAIN "(ARGV)";
-    fx_load_main_src(L.path, L.path, strdup(src), strlen(src));
+    if (L.ctl == FX_CTL_NONE) fx_load_main_src(L.path, L.path, strdup(src), strlen(src));
   }
 #else
   if (fx_opt.console) {
@@ -321,9 +353,18 @@ static void fx_body(void) {
 int main(int argc, char **argv) {
 #ifdef FX_KERNEL_MAIN
   L.path = argv[0];
-  fx_irb = argc > 1 && !strcmp(argv[1], "--irb");
-  L.args = argv + 1 + fx_irb;
-  L.nargs = argc - 1 - fx_irb;
+  int skip = 0;
+  if (argc > 1 && !strcmp(argv[1], "--irb")) { fx_irb = 1; skip = 1; }
+  else if (argc > 1 && !strcmp(argv[1], "--irb-port")) {
+    if (argc < 3 || !fx_is_port(argv[2])) {
+      fprintf(stderr, "%s: --irb-port needs a port number (ArgumentError)\n", argv[0]);
+      return 1;
+    }
+    fx_irb_port = argv[2];
+    skip = 2;
+  }
+  L.args = argv + 1 + skip;
+  L.nargs = argc - 1 - skip;
 #else
   int i = fx_options(argc, argv);
   /* $0: "-e" for the code of -e, "-" for stdin, "irb" for --irb, else the file */

@@ -268,12 +268,12 @@ static FxSource *fx_parse_main(const char *path, const char *real, char *buf, si
    of the exception when sp_bt_enabled is set (as a debug build of spinel
    sets it). The report then reads as CRuby's: the frame of the raise, the
    message and the class, then the callers. */
-static void fx_run_main_source(const FxSource *s) {
+static void fx_run_source_top(const FxSource *s, int main) {
   SP_GC_SAVE();
   const int depth = fx_fs()->depth;
   FX_TRY_PUSH();
   if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
-    fx_run_source_as(s, 1);
+    fx_run_source_as(s, main);
     sp_exc_top--;
     return;
   }
@@ -283,6 +283,10 @@ static void fx_run_main_source(const FxSource *s) {
   c.obj = fx_caught_obj(c);
   sp_bt_enabled = 1;
   fx_reraise(c);
+}
+
+static void fx_run_main_source(const FxSource *s) {
+  fx_run_source_top(s, 1);
 }
 
 static void fx_load_main_src(const char *path, const char *real, char *buf, size_t len) {

@@ -114,11 +114,13 @@ $(BUILD)/off.flags: $(BUILD)/bop_gen_out.c tools/bop_report.rb
 
 # gem_dirs.h names the lib directories of the gems of --irb on this
 # machine. The header changes only when the directories change, so a
-# newer gem relinks and nothing else does.
+# newer gem relinks and nothing else does. GEM_DIRS_FIRST names
+# directories that come before the gems' (a checkout of Reline).
 IRB_GEMS = irb reline prism rdoc
+GEM_DIRS_FIRST =
 $(BUILD)/gem_dirs.h: tools/gem_dirs.rb FORCE
 	@mkdir -p $(BUILD)
-	@ruby tools/gem_dirs.rb $(IRB_GEMS) > $@.tmp && { cmp -s $@.tmp $@ && rm $@.tmp || mv $@.tmp $@; }
+	@GEM_DIRS_FIRST="$(GEM_DIRS_FIRST)" ruby tools/gem_dirs.rb $(IRB_GEMS) > $@.tmp && { cmp -s $@.tmp $@ && rm $@.tmp || mv $@.tmp $@; }
 
 # spinel.rev records the spinel commit that the binary was built from. The
 # oracle compares it with the spinel tree it tests.
