@@ -791,6 +791,7 @@ builder_header_next_under_rescue
 builder_reopen_colliding_leaf
 builder_unless_defined_next_under_rescue
 builder_unless_defined_reopen
+builtin_answer_kinds
 builtin_array_method_capture
 builtin_callbacks_join_format
 builtin_class_const_call_keeps_marking
@@ -839,6 +840,7 @@ builtin_singleton_alias_call
 builtin_singleton_alias_user
 builtin_singleton_valued_break
 builtin_splice_heredoc_opening_line
+builtin_splice_line_numbers
 builtin_value_kinds_skip_program_method
 builtin_value_methods
 builtins_comparable
@@ -1731,6 +1733,7 @@ defined_const_path_member_const_set
 defined_const_path_member_user_const_set
 defined_cvar_before_assignment
 defined_globals_methods
+defined_guard_absent_constant
 defined_guard_and_quiet
 defined_guard_dead_branch
 defined_guard_object_alias
@@ -3812,6 +3815,7 @@ loop_bigint_return
 loop_bound_hoist_helper_appends
 loop_bounded_index_nested
 loop_bounded_index_nested_quiet
+loop_bounded_index_polls
 loop_bounded_index_read
 loop_break_runs_ensure
 loop_break_value
@@ -4541,6 +4545,8 @@ object_reopen_private_explicit_receiver
 object_reopen_time_file_receiver
 object_reopen_yield_no_block
 object_scoped_ruby_constants
+object_space_finalizer
+object_space_finalizer_safepoint
 object_space_word_in_string
 object_spaceship_default
 object_spaceship_exception_own_cmp
@@ -7069,6 +7075,7 @@ thread_fiber_current_override
 thread_fiber_param_push
 thread_file_gets
 thread_gc_start
+thread_group
 thread_index_or_write
 thread_io_beside_busy_threads
 thread_io_wake_storm
@@ -7227,9 +7234,11 @@ toplevel_method_runtime_name
 toplevel_mixin_hooks_fire
 toplevel_name_collides_with_runtime
 toplevel_proc_return
+toplevel_proc_return_at_exit
 toplevel_proc_return_ensure
 toplevel_reader_string_append
 toplevel_return_at_exit
+toplevel_return_finalizer
 toplevel_scan_tag
 toplevel_self_main
 transform_keys_symproc

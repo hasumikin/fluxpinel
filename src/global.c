@@ -355,6 +355,11 @@ static void fx_global_init(void) {
   fx_autoload_set(L.object, sp_sym_intern("Set"), "set");
   fx_autoload_set(L.object, sp_sym_intern("RbConfig"), FX_BUILTINS_DIR "/rbconfig.rb");
   fx_autoload_set(L.object, sp_sym_intern("Gem"), FX_BUILTINS_DIR "/gem.rb");
+  /* ThreadGroup and ObjectSpace: builtins/*.rb that spinel splices when a
+     program names them (the finalizers of ObjectSpace bind to the
+     runtime with native_func) */
+  fx_autoload_set(L.object, sp_sym_intern("ThreadGroup"), FX_BUILTINS_DIR "/thread_group.rb");
+  fx_autoload_set(L.object, sp_sym_intern("ObjectSpace"), FX_BUILTINS_DIR "/object_space.rb");
   /* ARGV: the arguments after the path, as frozen Strings (CRuby 4.0) */
   sp_PolyArray *argv = sp_PolyArray_new();
   SP_GC_ROOT(argv);

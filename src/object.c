@@ -254,7 +254,7 @@ static const struct {
    body for one of them reopens the builtin in CRuby; Fluxpinel cannot. */
 static int fx_unknown_builtin(const char *name) {
   static const char *const names[] = { "Random", "Binding",
-                                       "Mutex", "Queue", "SizedQueue", "ConditionVariable", "ObjectSpace",
+                                       "Mutex", "Queue", "SizedQueue", "ConditionVariable",
                                        "Warning", "RubyVM", NULL };
   for (int i = 0; names[i]; i++)
     if (!strcmp(names[i], name)) return 1;
