@@ -244,6 +244,12 @@ static int fx_fiber_class(FxClass *k, const char *name, int argc, sp_RbVal *argv
     *out = sp_box_obj(sp_Mutex_new(), SP_BUILTIN_MUTEX);
     return 1;
   }
+  /* Monitor: a Mutex of the runtime that its owner takes again
+     (sp_Monitor_new); the runtime names its class "Monitor" */
+  if (!strcmp(cn, "Monitor") && FX_IS("new") && argc == 0) {
+    *out = sp_box_obj(sp_Monitor_new(), SP_BUILTIN_MUTEX);
+    return 1;
+  }
   if (!strcmp(cn, "Thread::ConditionVariable") && FX_IS("new") && argc == 0) {
     *out = sp_box_obj(sp_CondVar_new(), SP_BUILTIN_CONDVAR);
     return 1;
@@ -360,7 +366,30 @@ static int fx_fiber_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
   }
   case SP_BUILTIN_MUTEX: {
     sp_mutex *m = (sp_mutex *)r.v.p;
-    if (FX_IS("synchronize") && argc == 0 && blk) { *out = fx_synchronize(m, blk); return 1; }
+    if ((FX_IS("synchronize") || FX_IS("mon_synchronize")) && argc == 0 && blk) {
+      *out = fx_synchronize(m, blk);
+      return 1;
+    }
+    if (strcmp(sp_Mutex_class_name(m), "Monitor")) return 0;
+    /* the names of Monitor over the lock of the runtime; enter and exit
+       answer nil as CRuby's */
+    if (argc == 0 && (FX_IS("enter") || FX_IS("mon_enter"))) { fx_send(r, "lock", 0, NULL); *out = sp_box_nil(); return 1; }
+    if (argc == 0 && (FX_IS("exit") || FX_IS("mon_exit"))) { fx_send(r, "unlock", 0, NULL); *out = sp_box_nil(); return 1; }
+    if (argc == 0 && (FX_IS("try_enter") || FX_IS("mon_try_enter") || FX_IS("try_mon_enter"))) {
+      *out = fx_send(r, "try_lock", 0, NULL);
+      return 1;
+    }
+    if (argc == 0 && FX_IS("mon_locked?")) { *out = fx_send(r, "locked?", 0, NULL); return 1; }
+    /* new_cond: MonitorMixin::ConditionVariable.new(self), the condition
+       variable of spinel's builtins/monitor_mixin.rb (autoloaded) */
+    if (argc == 0 && FX_IS("new_cond")) {
+      sp_RbVal mm, cv;
+      if (!fx_const_scoped(L.object, sp_sym_intern("MonitorMixin"), &mm) ||
+          !fx_const_scoped(fx_class_value(mm), sp_sym_intern("ConditionVariable"), &cv))
+        sp_raise_cls("NameError", "uninitialized constant MonitorMixin::ConditionVariable");
+      *out = fx_send(cv, "new", 1, &r);
+      return 1;
+    }
     return 0;
   }
   case SP_BUILTIN_CONDVAR: {

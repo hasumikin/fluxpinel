@@ -1218,6 +1218,7 @@ class_name_compact_path_builtin
 class_name_in_cmeth
 class_named_like_builtin_module
 class_named_like_builtin_module_path
+class_named_like_monitor
 class_named_like_native_class
 class_new_anonymous_exception_text
 class_new_anonymous_identity
@@ -1254,6 +1255,7 @@ class_public_instance_methods_from_self
 class_qualification_leaf_collisions
 class_qualification_leaf_collisions_reversed
 class_reader_through_obj_class
+class_receiver_block_after_struct_widen
 class_receiver_kept_block
 class_reflection_builtins
 class_reopen_replaces_methods
@@ -4216,6 +4218,9 @@ module_version_super_extend
 module_version_super_include
 module_version_super_late_include
 module_version_super_prepend
+monitor_mixin_new_cond
+monitor_new_cond
+monitor_reentrant
 more_truthies_nil_compare
 multi_arg_lambda
 multi_arg_yield
@@ -4246,6 +4251,7 @@ mutex_boxed_synchronize_yield_values
 mutex_class_alias_reopen
 mutex_contended_pool_rounds
 mutex_handoff_race
+mutex_synchronize_block
 mutex_synchronize_block_beside_user_synchronize
 mutex_synchronize_ensure
 mutex_synchronize_forward_widened_receiver
@@ -4253,6 +4259,7 @@ mutex_synchronize_inner_rescue
 mutex_synchronize_nested_ensure
 mutex_synchronize_next
 mutex_synchronize_poly
+mutex_uncontended_paths
 name_reach_arity
 name_reach_arity_object_default
 name_reach_arity_send_fallback
@@ -7023,6 +7030,7 @@ symbol_reopen_string_names
 symbol_to_proc_call
 symbol_to_proc_unary_op
 symbol_upcase_interpolation
+synchronize_block_argument
 systemcallerror_errno_namespaced_subclass
 systemcallerror_hierarchy
 table_empty_row_literal
