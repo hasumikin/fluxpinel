@@ -549,6 +549,12 @@ static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_Rb
   if (argc == 0) {
     if (!strcmp(name, "!")) { *out = sp_box_bool(!sp_poly_truthy(r)); return 1; }
     if (!strcmp(name, "nil?")) { *out = sp_box_bool(r.tag == SP_TAG_NIL); return 1; }
+    /* dup and clone of an immediate value: the value */
+    if ((!strcmp(name, "dup") || !strcmp(name, "clone")) &&
+        (r.tag == SP_TAG_NIL || r.tag == SP_TAG_BOOL || r.tag == SP_TAG_INT || r.tag == SP_TAG_FLT || r.tag == SP_TAG_SYM)) {
+      *out = r;
+      return 1;
+    }
     /* the conversions of nil: the empty value of each kind */
     if (r.tag == SP_TAG_NIL) {
       if (!strcmp(name, "to_i")) { *out = sp_box_int(0); return 1; }
@@ -730,6 +736,7 @@ static int fx_builtin_responds(sp_RbVal r, const char *name) {
   if (fx_is_array(r) || fx_is_range(r) || fx_is_hash(r)) lists[nl++] = enm;
   if (fx_is_hash(r)) lists[nl++] = hsh;
   if (fx_is_binding(r) && fx_binding_responds(name)) return 1;
+  if (fx_ostruct_responds(r, name)) return 1;
   for (int l = 0; l < nl; l++)
     for (int i = 0; lists[l][i]; i++)
       if (!strcmp(lists[l][i], name)) return 1;
@@ -971,6 +978,8 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
   if (!blk && fx_time_core(recv, name, argc, argv, out)) return 1;
   if (!blk && fx_random_core(recv, name, argc, argv, out)) return 1;
   if (!blk && fx_addrinfo_core(recv, name, argc, out)) return 1;
+  if (fx_ostruct_core(recv, name, argc, argv, blk, out)) return 1;
+  if (!blk && fx_ostruct_member(recv, name, argc, argv, out)) return 1;
   if (!blk && fx_complex_core(recv, name, argc, argv, out)) return 1;
   if (!blk && fx_to_c(recv, name, argc, out)) return 1;
   if (!blk && fx_encoding_core(recv, name, argc, argv, out)) return 1;

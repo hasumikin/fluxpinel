@@ -653,12 +653,16 @@ static void *fx_ffi_closure(const FxFfiCallback *cb, sp_RbVal v) {
 
 static sp_RbVal fx_ffi_call(FxFfi *x, int argc, sp_RbVal *argv) {
   /* AOT code passes the declared arguments of a native_func and drops the
-     rest, but for JSON.parse(s, symbolize_names: true) (codegen_call_class.c) */
-  int symbolize = 0;
+     rest, but for JSON.parse(s, symbolize_names: true) and
+     JSON.parse(s, object_class: OpenStruct) (codegen_call_class.c) */
+  int symbolize = 0, ostruct = 0;
   if (x->native && argc > x->nargs) {
     if (!strcmp(x->name, "sp_json_parse") && argc == 2 && fx_is_kwhash(argv[1])) {
       sp_RbVal key = sp_box_sym(sp_sym_intern("symbolize_names"));
       symbolize = sp_poly_truthy(fx_send(argv[1], "[]", 1, &key));
+      key = sp_box_sym(sp_sym_intern("object_class"));
+      FxClass *oc = fx_class_value(fx_send(argv[1], "[]", 1, &key));
+      ostruct = oc && oc->cls_id < 0 && !strcmp(oc->name, "OpenStruct");
     }
     argc = x->nargs;
   }
@@ -684,6 +688,7 @@ static sp_RbVal fx_ffi_call(FxFfi *x, int argc, sp_RbVal *argv) {
   FX_UNLOCKED(ffi_call(&x->cif, FFI_FN(x->fn), &r, values));
   for (int i = 0; i < x->nargs; i++) free(heap[i]);
   sp_RbVal v = fx_ffi_ret(x->ret, &r);
+  if (ostruct) return sp_json_ostructify(v);
   return symbolize ? sp_json_symbolize(v) : v;
 }
 

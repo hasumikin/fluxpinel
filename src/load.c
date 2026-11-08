@@ -467,6 +467,7 @@ static sp_RbVal fx_require_lib(const char *name) {
   if (fx_lib_in(name, builtin)) {
     fx_feature_loaded = 1;
     if (!strcmp(name, "io/console")) fx_console_loaded = 1;
+    if (!strcmp(name, "ostruct")) fx_ostruct_loaded = 1;
     return sp_box_bool(0);
   }
   sp_raise_load_error(name);

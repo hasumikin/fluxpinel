@@ -26,6 +26,7 @@ alias_of_accessor_int64
 alias_of_alias_only_last_called
 alias_of_inherited_method
 alias_param_narrowed_from_callers
+alias_reader_bool_and_ostruct
 alias_reader_is_no_writer
 alias_reader_subclass_ivar
 alias_rebind_elsewhere_same_name
@@ -679,6 +680,7 @@ boxed_handle_face_args
 boxed_hash_local_walk_params
 boxed_index_elements_passed_strict
 boxed_index_or_write_no_aref
+boxed_index_write_rooted
 boxed_io_to_i
 boxed_io_write_poly_nul
 boxed_kill_user_and_thread
@@ -701,6 +703,7 @@ boxed_nil_string_identity
 boxed_num_array_cross_kind
 boxed_numeric_polar
 boxed_object_inspect_returns_boxed
+boxed_openstruct_to_s
 boxed_param_value_into_typed_hash_slot
 boxed_pow_integer_only
 boxed_predicate_mutation
@@ -720,6 +723,7 @@ boxed_rational_abs2
 boxed_rational_value_surface
 boxed_reader_alias_after_dup
 boxed_reader_named_like_time_method
+boxed_reader_nil_arm_alias
 boxed_reader_visibility
 boxed_receiver_aliases
 boxed_receiver_nil_argument_converted_after
@@ -846,6 +850,7 @@ builtin_row_recv_once
 builtin_send_kwsplat_hash
 builtin_singleton_alias_call
 builtin_singleton_alias_user
+builtin_singleton_class_unused
 builtin_singleton_valued_break
 builtin_splice_heredoc_opening_line
 builtin_splice_line_numbers
@@ -1230,6 +1235,7 @@ class_named_like_builtin_module
 class_named_like_builtin_module_path
 class_named_like_monitor
 class_named_like_native_class
+class_named_like_open_struct
 class_new_anonymous_exception_text
 class_new_anonymous_first_class
 class_new_anonymous_identity
@@ -3487,6 +3493,7 @@ issue_3125
 issue_3129
 issue_3130
 issue_3132
+issue_3135
 issue_3135_norequire
 issue_3136
 issue_3137
@@ -3505,6 +3512,7 @@ issue_3151
 issue_3152
 issue_3153
 issue_3154
+issue_3155
 issue_3156
 issue_3157
 issue_3158
@@ -3534,10 +3542,14 @@ issue_3188
 issue_3189
 issue_3190
 issue_3191
+issue_3193
+issue_3194
 issue_3196
+issue_3197
 issue_3198
 issue_3199
 issue_3200
+issue_3201
 issue_3204
 issue_3205
 issue_3207
@@ -3585,12 +3597,16 @@ issue_3254
 issue_3258
 issue_3262
 issue_3263
+issue_3270
+issue_3272
 issue_3273
 issue_3281
 issue_3283
 issue_3285_singleton_name_override
+issue_3288
 issue_3289
 issue_3295
+issue_3296_aliased_reader_symbol_proc
 issue_3297
 issue_3298
 issue_3299_integer_base_poly
@@ -3619,6 +3635,7 @@ issue_3331_poly_to_sym_arm
 issue_3332_empty_literal_zip
 issue_3337_yield_local_tail_multistmt
 issue_3340_zero_arg_array_mutators
+issue_3341_ostruct_shadows_builtin
 issue_3341_poly_uniq
 issue_3342_threads_with_native_packages
 issue_4454
@@ -3694,6 +3711,7 @@ ivar_widened_late_hash_return_bound
 ivar_write_tail_nullable_number
 ivar_write_value_ptr_array
 join_separator_slot
+json_parse_ostruct_member_names
 json_parse_temp_source
 kept_block_index_write_non_string
 kept_block_param_not_hash
@@ -4327,6 +4345,7 @@ nested_catch
 nested_class_inherits_outer_same_name
 nested_class_module_const_resolution
 nested_class_named_like_builtin
+nested_class_named_like_untabled_builtin
 nested_container_array_surface
 nested_empty_rows_push_evidence
 nested_ensure_handler
@@ -4379,6 +4398,7 @@ nil_arg_runs_ahead_of_keywords
 nil_array_destructure_splat
 nil_array_difference_operand
 nil_array_ivar_frozen_p
+nil_array_to_a_entries
 nil_call_argument_keeps_side_effects
 nil_closed_method_maybe_nil
 nil_collection_methods_raise
@@ -4414,6 +4434,7 @@ nil_number_program_method
 nil_object_local_call_raises
 nil_only_local_int_param
 nil_only_local_into_number
+nil_poly_array_ivar_dup
 nil_push_arguments_run_first
 nil_rationalize_variable
 nil_receiver_program_method
@@ -4431,6 +4452,7 @@ nil_sentinel_receiver_surface
 nil_spaceship_variable
 nil_store_through_chooser
 nil_string_join
+nil_string_receiver_raises
 nil_tested_once_guards
 nil_tested_recv_root
 nil_time_return_guard_narrow
@@ -4639,6 +4661,16 @@ or_write_scalar_nil
 ordered_recv_splice_writeback
 ordered_string_recv_byte_face_writeback
 orphan_method_same_name_refusal
+ostruct_case_when
+ostruct_dup_clone
+ostruct_frozen_error_names_receiver
+ostruct_nil_slot_inspect
+ostruct_nil_union_to_h
+ostruct_poly_user_name_clash
+ostruct_size_beside_class
+ostruct_string_key_inspect
+ostruct_temp_rooted
+ostruct_writer_value_rooted
 output_args_eval_before_write
 override_rest_slot_keeps_array
 own_def_overrides_module_reader
@@ -5480,6 +5512,7 @@ push_widens_through_boxed_and_sequence
 putc_boxed_nil
 puts_array_call_once
 puts_class_value
+puts_hash_and_ostruct
 puts_in_case_value_arm
 puts_nested_inspect_container
 puts_nil
@@ -7579,6 +7612,7 @@ yield_receiver_numeric_site_kinds
 yield_receiver_push_append_unshift_rotate_bang_site_kinds
 yield_receiver_sort_reverse_site_kinds
 yield_receiver_spaceship_site_kinds
+yield_reopen_array_hash_mixed_sites
 yield_reopen_builtin_any_site
 yield_reopen_builtin_poly_arg
 yield_rescue_poly_site

@@ -60,6 +60,10 @@ static int fx_reopened_builtins;
    gives builtin classes methods that the table of responds.c lacks */
 static int fx_feature_loaded;
 
+/* 1 after a require of ostruct: OpenStruct is a constant, as in CRuby; a
+   program that defines its own OpenStruct without the require keeps it */
+static int fx_ostruct_loaded;
+
 /* 1 after a require of io/console: IO#winsize and its kin answer */
 static int fx_console_loaded;
 
@@ -280,6 +284,7 @@ static FxClass *fx_builtin(const char *name) {
                                           { "ConditionVariable", "Thread::ConditionVariable" } };
   for (size_t i = 0; i < sizeof alias / sizeof alias[0]; i++)
     if (!strcmp(name, alias[i][0])) name = alias[i][1];
+  if (!fx_ostruct_loaded && !strcmp(name, "OpenStruct")) return NULL;
   for (int i = 0; i < L.nbuiltins; i++)
     if (!strcmp(L.builtins[i]->name, name)) return L.builtins[i];
   sp_int id = fx_builtin_id(name);
@@ -2210,6 +2215,7 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   if (!blk && fx_time_class(k, name, argc, argv, out)) return 1;
   /* Random.new, Random.rand, Random.srand, ... */
   if (!blk && fx_random_class(k, name, argc, argv, out)) return 1;
+  if (!blk && fx_ostruct_class(k, name, argc, argv, out)) return 1;
   /* Complex.rect and Complex.polar */
   if (!blk && fx_complex_class(k, name, argc, argv, out)) return 1;
   /* Encoding.find, Encoding.list, ... */

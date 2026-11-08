@@ -522,6 +522,13 @@ static int fx_random_class(const FxClass *k, const char *name, int argc, sp_RbVa
 static int fx_random_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int fx_random_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 
+/* ostruct.c */
+static int fx_ostruct_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int fx_ostruct_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                           sp_RbVal *out);
+static int fx_ostruct_member(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int fx_ostruct_responds(sp_RbVal r, const char *name);
+
 /* time.c */
 static int fx_time_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int fx_time_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
