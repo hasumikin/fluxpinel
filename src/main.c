@@ -52,6 +52,7 @@
 #include "file.c"
 #include "socket.c"
 #include "time.c"
+#include "random.c"
 #include "complex.c"
 #include "encoding.c"
 #include "host.c"

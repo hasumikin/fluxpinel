@@ -253,7 +253,7 @@ static const struct {
 /* Core classes of CRuby that spinel's class table does not name. A class
    body for one of them reopens the builtin in CRuby; Fluxpinel cannot. */
 static int fx_unknown_builtin(const char *name) {
-  static const char *const names[] = { "Random", "Binding",
+  static const char *const names[] = { "Binding",
                                        "Mutex", "Queue", "SizedQueue", "ConditionVariable",
                                        "Warning", "RubyVM", NULL };
   for (int i = 0; names[i]; i++)
@@ -2208,6 +2208,8 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   if (fx_sock_class(k, name, argc, argv, blk, out)) return 1;
   /* Time.now, Time.at, Time.new and the civil forms */
   if (!blk && fx_time_class(k, name, argc, argv, out)) return 1;
+  /* Random.new, Random.rand, Random.srand, ... */
+  if (!blk && fx_random_class(k, name, argc, argv, out)) return 1;
   /* Complex.rect and Complex.polar */
   if (!blk && fx_complex_class(k, name, argc, argv, out)) return 1;
   /* Encoding.find, Encoding.list, ... */

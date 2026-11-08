@@ -181,6 +181,19 @@ static int fx_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
       return 1;
     }
   }
+  /* shuffle, shuffle! and sample given random: draw from that Random */
+  if (argc >= 1 && argc <= 2 && fx_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash &&
+      (FX_IS("shuffle") || FX_IS("shuffle!") || FX_IS("sample"))) {
+    sp_PolyPolyHash *h = sp_poly_as_poly_poly_hash(argv[argc - 1]);
+    sp_RbVal key = sp_box_sym(sp_sym_intern("random"));
+    if (h->len != 1 || !sp_PolyPolyHash_has_key(h, key)) return 0;
+    sp_Random *g = sp_poly_random_recv(sp_PolyPolyHash_get(h, key), name);
+    if (FX_IS("sample")) *out = argc == 2 ? sp_poly_sample_n_r(r, sp_poly_arg_int_chk(argv[0]), g) : sp_poly_sample_r(r, g);
+    else if (argc == 2) return 0;
+    else if (FX_IS("shuffle")) *out = sp_poly_shuffle_r(r, g);
+    else { sp_poly_shuffle_bang_r(r, g); *out = r; }
+    return 1;
+  }
   if (argc == 1) {
     sp_RbVal a = argv[0];
     /* an object of the program converts by its to_int */

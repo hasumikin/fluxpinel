@@ -208,6 +208,7 @@ array_new_forward_no_block
 array_new_poly_size
 array_new_size_before_literal_fill
 array_nil_elem_in_proved_loop
+array_nil_elem_through_answered_receiver
 array_nil_elem_through_splatted_yield
 array_nil_flag_intersect_offset
 array_object_id
@@ -245,6 +246,7 @@ array_push_stmt_ctor_aliased
 array_push_stmt_ivar_set_by_name
 array_push_stmt_operand_order
 array_push_value_poly_elem
+array_random_keyword
 array_reduce_search_methods
 array_reopen_yield_block_memo
 array_repeat_float_count
@@ -658,6 +660,7 @@ boxed_class_singleton_accessor
 boxed_complex_finite
 boxed_container_read_at
 boxed_dig_receiver_checked
+boxed_dispatch_opaque_named_method_param
 boxed_dispatch_self_class_arg
 boxed_dispatch_shared_private_helper_sibling_widen
 boxed_dispatch_string_mutator_writeback
@@ -705,6 +708,7 @@ boxed_proc_index_no_args_user
 boxed_proc_parameters_lambda
 boxed_push_statement
 boxed_quantifier_pattern
+boxed_random_methods
 boxed_range_eq_float_range
 boxed_range_eql
 boxed_range_iterators
@@ -788,6 +792,7 @@ bsearch_find_any_mixed
 bsearch_nilable_int_elements
 builder_header_in_ensure
 builder_header_next_under_rescue
+builder_param_class_value_reflection
 builder_reopen_colliding_leaf
 builder_unless_defined_next_under_rescue
 builder_unless_defined_reopen
@@ -797,6 +802,7 @@ builtin_callbacks_join_format
 builtin_class_const_call_keeps_marking
 builtin_class_const_call_skips_class_method
 builtin_class_mixin_call
+builtin_class_singleton_override
 builtin_const_path_beside_nested_namesake
 builtin_forwarded_yield_proc_form
 builtin_include_keeps_own_method
@@ -921,6 +927,7 @@ bundle_misc_c_30
 bundle_misc_c_31
 bundle_misc_c_33
 bundle_misc_c_34
+bundle_misc_c_36
 bundle_misc_c_37
 bundle_poly
 bundle_poly_b1
@@ -1144,6 +1151,7 @@ class_const_defined
 class_constant_path_read
 class_def_order
 class_eqq_nullable_string
+class_eqq_user_object
 class_escape_rescue_clause
 class_eval_block_class_ivar
 class_eval_def_versions
@@ -1221,6 +1229,7 @@ class_named_like_builtin_module_path
 class_named_like_monitor
 class_named_like_native_class
 class_new_anonymous_exception_text
+class_new_anonymous_first_class
 class_new_anonymous_identity
 class_new_anonymous_name
 class_new_arity
@@ -1285,6 +1294,7 @@ class_value_hash_key
 class_value_include_poly
 class_value_inherited_cmethod_new
 class_value_local_superclass_walk
+class_value_many_candidates
 class_value_mixed_singleton_accessor
 class_value_new_arity_error
 class_value_new_block_param_class
@@ -1328,6 +1338,7 @@ class_value_new_yielding_init_variants
 class_value_object_id
 class_value_or_write_slots
 class_value_ordering_user_operator
+class_value_own_name_via_class
 class_value_reopened_builtin_new
 class_value_respond_to
 class_value_rest_cmethod
@@ -1485,6 +1496,7 @@ conditional_def_private_arm
 conditional_def_runtime_arm
 conditional_define_method_forms
 conditional_defs_differ_in_param_kind
+conditional_empty_hash_or_array
 conditional_require_inline
 conditional_require_line
 conditional_require_native_package
@@ -1887,6 +1899,7 @@ empty_array_value_write_slot
 empty_array_write_over_string
 empty_block_body_iterators
 empty_block_param_shadow
+empty_constructor_rebinds_scalar_slot
 empty_container_arg_default
 empty_container_rebinds_scalar_slot
 empty_hash_arg_param_widen
@@ -1935,6 +1948,7 @@ ensure_retval_value_class
 ensure_runs_on_return
 enum_alias_boxed_arity
 enum_alias_class_method
+enum_alias_scalar_receiver
 enum_alias_scalar_receiver_chain
 enum_alias_toplevel_def
 enum_alias_toplevel_receiver
@@ -2455,6 +2469,7 @@ gc_minor_byref_lent_slot
 gc_minor_byref_param_cond_store
 gc_minor_byref_param_same_name_cell
 gc_minor_never_young_store
+gc_minor_store_value_after_collect
 gc_minor_thread_local_slot
 gc_minor_thread_retval
 gc_minor_thread_tls_first_write
@@ -2547,6 +2562,7 @@ handle_shape_r18_poly_chain_concat_one
 handle_shape_r20_poly_arg_alloc_gc
 handle_shape_v18_poly_tap_masgn
 hangs_548
+harness_batch_2453_2456
 hash_all_pattern
 hash_arg_through_sequence
 hash_block_methods_variants
@@ -2764,6 +2780,7 @@ hash_update_widens_slot
 hash_user_key
 hash_user_key_eql
 hash_value_array_element_bang
+hash_value_block_poly_setter_class_fact
 hash_value_into_appended_ivar
 hash_value_method_answer_appending_writer
 hash_value_p
@@ -2804,6 +2821,7 @@ i1031
 i1035
 i1041
 i709
+i898
 i912
 i916
 i918
@@ -3187,6 +3205,7 @@ io_closed_stream_raises
 io_console_raw_noecho
 io_copy_stream_boxed_path
 io_copy_stream_poly_union
+io_each_forward_poly_respond_to
 io_each_line_splat_args
 io_getc_binary_handle
 io_gets_long_line
@@ -3216,6 +3235,7 @@ io_respond_to_winsize_no_console
 io_select_high_fd
 io_select_nonio_array_elements
 io_select_set_parks_thread
+io_select_timeout_interval
 io_set_encoding
 io_stat_from_fd
 io_stdin_lines_chomp_paragraph
@@ -3266,6 +3286,8 @@ issue_2863
 issue_2864
 issue_2865
 issue_2866
+issue_2868
+issue_2869
 issue_2870
 issue_2871
 issue_2872
@@ -3289,6 +3311,7 @@ issue_2892
 issue_2893
 issue_2894
 issue_2896
+issue_2897
 issue_2899
 issue_2900
 issue_2901
@@ -3345,6 +3368,7 @@ issue_2964
 issue_2965
 issue_2966
 issue_2969
+issue_2970
 issue_2971
 issue_2972
 issue_2973
@@ -3394,11 +3418,15 @@ issue_3045
 issue_3046
 issue_3047
 issue_3047b
+issue_3049
+issue_3049b
+issue_3050
 issue_3053
 issue_3054
 issue_3055
 issue_3056
 issue_3057
+issue_3058
 issue_3059
 issue_3060
 issue_3061
@@ -3519,6 +3547,7 @@ issue_3217
 issue_3218
 issue_3219
 issue_3220
+issue_3221
 issue_3222
 issue_3223
 issue_3224
@@ -3852,6 +3881,7 @@ main_singleton_object_method
 main_singleton_required
 main_singleton_unused_def
 main_singleton_versions
+main_thread_name_survives_gc
 map_bang_element_kind
 map_bang_empty_receiver
 map_bang_nil_elem
@@ -4737,6 +4767,7 @@ poly_array_mul
 poly_array_op_assign_mixed
 poly_array_plus_assign_boxed
 poly_array_plus_concat
+poly_array_pop_under_user_name
 poly_array_product_block
 poly_array_push_with_user_push
 poly_array_range_aref
@@ -4805,6 +4836,7 @@ poly_container_stores_own_element
 poly_count_arg_beside_class_method_count
 poly_count_arg_root
 poly_count_block_arg_hoist
+poly_count_nilable_user_count
 poly_count_nullable_arm
 poly_cover_beside_user_cover
 poly_cover_user_answer
@@ -4911,6 +4943,7 @@ poly_fill_boxed_recv_value_gc_root
 poly_filter_bang_stmt_block
 poly_filter_block_pred_beside_user
 poly_find_index_block
+poly_flatten_user_set_defines
 poly_float_conversions
 poly_float_next_float_beside_class_method
 poly_forwarded_block_builtin_read
@@ -5485,6 +5518,20 @@ raise_user_subclass
 raising_arm_nil_receiver
 raising_arm_typed_conditional
 raising_call_value_slot
+rand_bignum_bound_literal
+rand_prng_stream
+rand_range_argument
+random_bignum_seed
+random_empty_float_range
+random_float_seed
+random_methods
+random_rand_argument
+random_reopen_block_parameter
+random_reopen_methods
+random_seed_range_base64_pad
+random_self_defaults
+random_urandom_binary_length
+random_urandom_entropy
 range
 range_begin_end_polyarr_include_delete_bang
 range_boxed_open_inspect
@@ -5753,6 +5800,7 @@ reopened_builtin_case_equality
 reopened_builtin_class_identity
 reopened_builtin_class_method_missing
 reopened_builtin_key_without_own_method
+reopened_builtin_kwrest_keys
 reopened_builtin_optional_block
 reopened_iter_with_block_and_args
 reopened_module_superclass_method
@@ -5955,6 +6003,7 @@ safe_nav_void_method
 safe_navigation_returns_nil
 same_name_forwarder_union_receiver
 same_named_attr_no_widen
+sample_random_boxed
 scalar_builtin_call_receiver_widens
 scalar_class_test_reads_nil
 scalar_isa_dead_branch
@@ -7303,6 +7352,8 @@ undefined_name_operand_typed_chain
 unicode_case_latin1
 uninit_const_raises_nameerror
 uninit_ivar_returns_nil
+union_class_value_const_cvar
+union_class_value_reflection
 uniq_bang_block_result
 uniq_block
 uniq_user_eql_hash
@@ -7493,6 +7544,7 @@ yield_receiver_builtin_reopened
 yield_receiver_builtin_reverse_bang
 yield_receiver_builtin_rotate
 yield_receiver_builtin_sample_n
+yield_receiver_builtin_sample_random_kw
 yield_receiver_builtin_sample_zero_arg
 yield_receiver_builtin_shuffle
 yield_receiver_builtin_sort_bang

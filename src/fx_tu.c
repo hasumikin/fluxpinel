@@ -136,7 +136,7 @@ static const char *const fx_builtin_class_names[] = {
   "Process::Tms", "Dir", "BasicSocket", "IPSocket", "TCPSocket", "TCPServer",
   "UDPSocket", "UNIXSocket", "UNIXServer", "Socket", "Thread",
   "Thread::Mutex", "Thread::Queue", "Thread::SizedQueue",
-  "Thread::ConditionVariable", "Fiber", "MatchData", "Monitor",
+  "Thread::ConditionVariable", "Fiber", "MatchData", "Monitor", "Random",
 };
 #define FX_NBUILTIN_CLASSES ((int)(sizeof fx_builtin_class_names / sizeof fx_builtin_class_names[0]))
 
