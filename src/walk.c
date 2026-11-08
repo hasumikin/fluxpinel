@@ -1352,6 +1352,8 @@ static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *a
   if (fx_kernel_block(f, name, argc, argv, blk, &out)) return out;
   /* Kernel#eval needs the frame of the call for its locals */
   if (argc >= 1 && !blk && !strcmp(name, "eval")) return fx_eval_string(f, argc, argv);
+  /* to_enum and enum_for of self (`return to_enum(:each) unless block_given?`) */
+  if (!strcmp(name, "to_enum") || !strcmp(name, "enum_for")) return fx_to_enum(self, argc, argv);
   if (blk) return fx_send_b(self, name, argc, argv, blk);
   if (fx_exc_kernel(name, argc, argv, &out)) return out;
   if (fx_fiber_kernel(name, argc, argv, &out)) return out;

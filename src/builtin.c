@@ -980,6 +980,8 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
   if (!blk && fx_addrinfo_core(recv, name, argc, out)) return 1;
   if (fx_ostruct_core(recv, name, argc, argv, blk, out)) return 1;
   if (!blk && fx_ostruct_member(recv, name, argc, argv, out)) return 1;
+  /* to_enum and enum_for of any value; a block (the size) is not read */
+  if (!strcmp(name, "to_enum") || !strcmp(name, "enum_for")) { *out = fx_to_enum(recv, argc, argv); return 1; }
   if (!blk && fx_complex_core(recv, name, argc, argv, out)) return 1;
   if (!blk && fx_to_c(recv, name, argc, out)) return 1;
   if (!blk && fx_encoding_core(recv, name, argc, argv, out)) return 1;

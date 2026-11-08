@@ -250,6 +250,7 @@ static int fx_collector_kind(const char *name) {
   if (FX_IS("select") || FX_IS("filter") || FX_IS("find_all")) return 3;
   if (FX_IS("reject")) return 4;
   if (FX_IS("filter_map")) return 5;
+  if (FX_IS("sort_by")) return 6;
   return 0;
 }
 
@@ -266,11 +267,30 @@ static int fx_enum_collector(sp_RbVal r) {
 static void fx_collect(int k, sp_PolyArray *acc, sp_RbVal v, sp_RbVal y) {
   if (k == 1) sp_PolyArray_push(acc, y);
   else if (k == 5) { if (sp_poly_truthy(y)) sp_PolyArray_push(acc, y); }
+  else if (k == 6) { sp_PolyArray_push(acc, y); sp_PolyArray_push(acc, v); }   /* the key, then the element */
   else if (k == 2) {
     if (!fx_is_array(y)) { sp_PolyArray_push(acc, y); return; }
     for (sp_int i = 0; i < sp_poly_length(y); i++) sp_PolyArray_push(acc, sp_poly_arr_get(y, i));
   } else if (sp_poly_truthy(y) == (k == 3)) sp_PolyArray_push(acc, v);
 }
+
+/* The answer of the collector k over what fx_collect gathered: sort_by
+   sorts the elements by their keys */
+static sp_RbVal fx_collect_done(int k, sp_PolyArray *acc) {
+  if (k != 6) return sp_box_poly_array(acc);
+  SP_GC_ROOT(acc);
+  sp_PolyArray *keys = sp_PolyArray_new(), *vals = NULL;
+  SP_GC_ROOT(keys);
+  vals = sp_PolyArray_new();
+  SP_GC_ROOT(vals);
+  for (sp_int i = 0; i + 1 < acc->len; i += 2) {
+    sp_PolyArray_push(keys, acc->data[i]);
+    sp_PolyArray_push(vals, acc->data[i + 1]);
+  }
+  return fx_sorted(vals, keys, NULL);
+}
+
+static int fx_enum_include(sp_RbVal r, sp_RbVal x, sp_RbVal *out);
 
 /* A collector with no block: an Enumerator over the elements that
    remembers the method, so that with_index, with_object and each collect
@@ -282,6 +302,11 @@ static int fx_seq_collector(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
     *out = sp_box_obj(sp_Enumerator_with_index((sp_Enumerator *)r.v.p, argc ? argv[0].v.i : 0), SP_BUILTIN_ENUMERATOR);
     return 1;
   }
+  /* Enumerator#include? and member?: each of it, stopped at the hit, so
+     that an endless one ends */
+  if ((FX_IS("include?") || FX_IS("member?")) && r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_ENUMERATOR && r.v.p &&
+      argc == 1)
+    return fx_enum_include(r, argv[0], out);
   /* Enumerator#first: the first element or nil; first(n): the first n
      elements as an Array (sp_Enumerator_take) */
   if (FX_IS("first") && r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_ENUMERATOR && r.v.p && argc <= 1) {
@@ -311,6 +336,58 @@ static int fx_seq_collector(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
     else e = sp_Enumerator_new_from_items(fx_seq_array(r));
     SP_GC_ROOT(e);
     if (FX_IS("each_with_index")) e = sp_Enumerator_with_index(e, 0);
+    sp_enum_with_src(e, r, m);
+    *out = sp_box_obj(e, SP_BUILTIN_ENUMERATOR);
+    return 1;
+  }
+  /* the blockless forms that the runtime builds for a boxed receiver:
+     each_slice(n) and each_cons(n) (an Enumerator or an endless Range
+     regroups as it is pulled), cycle and cycle(n), each_index, and
+     combination(k) over the rows of the runtime */
+  int seq = fx_is_array(r) || fx_is_hash(r) || fx_is_range(r) || (r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_ENUMERATOR && r.v.p);
+  if (seq && argc == 1 && (FX_IS("each_slice") || FX_IS("each_cons"))) {
+    SP_GC_ROOT_RBVAL(r);
+    sp_int n = sp_poly_arg_int_chk(argv[0]);
+    *out = sp_box_obj(sp_poly_regroup(r, n, FX_IS("each_cons")), SP_BUILTIN_ENUMERATOR);
+    return 1;
+  }
+  if (seq && FX_IS("cycle") && (argc == 0 || argc == 1)) {
+    SP_GC_ROOT_RBVAL(r);
+    sp_Enumerator *e = argc == 0 || argv[0].tag == SP_TAG_NIL ? sp_poly_cycle(r)
+                     : sp_poly_cycle_n(r, sp_poly_cycle_count(r, argv[0]));
+    *out = sp_box_obj(e, SP_BUILTIN_ENUMERATOR);
+    return 1;
+  }
+  if (fx_is_array(r) && argc == 0 && FX_IS("each_index")) {
+    *out = sp_box_obj(sp_Enumerator_new_indices(r), SP_BUILTIN_ENUMERATOR);
+    return 1;
+  }
+  if (fx_is_array(r) && argc == 1 && FX_IS("combination")) {
+    SP_GC_ROOT_RBVAL(r);
+    sp_int k = sp_poly_arg_int_chk(argv[0]);
+    sp_PolyArray *rows = sp_PolyArray_combination(sp_poly_to_poly_array(r), k);
+    SP_GC_ROOT(rows);
+    const char *m = sp_sprintf("combination(%lld)", (long long)k);
+    SP_GC_ROOT_STR(m);
+    sp_Enumerator *e = sp_Enumerator_new_from_items(rows);
+    SP_GC_ROOT(e);
+    sp_enum_with_src(e, r, m);
+    *out = sp_box_obj(e, SP_BUILTIN_ENUMERATOR);
+    return 1;
+  }
+  /* reverse_each with no block on a Hash or a Range; the Array arm is in
+     array.c */
+  if ((fx_is_hash(r) || fx_is_range(r)) && argc == 0 && FX_IS("reverse_each")) {
+    SP_GC_ROOT_RBVAL(r);
+    sp_PolyArray *a = fx_seq_array(r);
+    SP_GC_ROOT(a);
+    sp_PolyArray *rev = sp_PolyArray_new();
+    SP_GC_ROOT(rev);
+    for (sp_int i = a->len - 1; i >= 0; i--) sp_PolyArray_push(rev, a->data[i]);
+    const char *m = sp_sprintf("reverse_each");
+    SP_GC_ROOT_STR(m);
+    sp_Enumerator *e = sp_Enumerator_new_from_items(rev);
+    SP_GC_ROOT(e);
     sp_enum_with_src(e, r, m);
     *out = sp_box_obj(e, SP_BUILTIN_ENUMERATOR);
     return 1;
@@ -366,7 +443,7 @@ static int fx_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, c
       FX_STOP();
       fx_collect(k, acc, v, y);
     }
-    *out = memo ? argv[0] : sp_box_poly_array(acc);
+    *out = memo ? argv[0] : fx_collect_done(k, acc);
     return 1;
   }
   if (argc == 0 && (FX_IS("each") || FX_IS("each_entry") || (s.hash && FX_IS("each_pair")))) {
@@ -404,7 +481,7 @@ static int fx_seq_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, c
       FX_STOP();
       fx_collect(k, acc, v, y);
     }
-    *out = sp_box_poly_array(acc);
+    *out = fx_collect_done(k, acc);
     return 1;
   }
   int find = FX_IS("find") || FX_IS("detect");
@@ -1111,6 +1188,19 @@ static int fx_enum_walk(sp_RbVal r, FxEnumWalk *w) {
   fx_send_b(r, "each", 0, NULL, &cb);
   if (L.ctl == FX_CTL_BREAK_BLOCK && L.ctl_target == &cb) L.ctl = FX_CTL_NONE;
   return L.ctl == FX_CTL_NONE;
+}
+
+/* include?(x) of an Enumerator: each of it, stopped at the hit, so that an
+   endless one ends. Answers 0 when a jump of the program is pending. */
+static int fx_enum_include(sp_RbVal r, sp_RbVal x, sp_RbVal *out) {
+  SP_GC_ROOT_RBVAL(r);
+  FxEnumWalk w = { .mode = FX_EN_INCLUDE, .limit = -1, .arg = x, .found = sp_box_nil() };
+  SP_GC_ROOT_RBVAL(w.arg);
+  w.acc = sp_PolyArray_new();
+  SP_GC_ROOT(w.acc);
+  if (!fx_enum_walk(r, &w)) { *out = sp_box_nil(); return 1; }
+  *out = sp_box_bool(w.hit);
+  return 1;
 }
 
 /* The methods of Enumerable on an object whose class includes Enumerable

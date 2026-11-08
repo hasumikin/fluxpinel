@@ -15,19 +15,25 @@
 
 #define FX_IS(s) (!strcmp(name, (s)))
 
-enum { FX_FIB_FIBER, FX_FIB_THREAD, FX_FIB_GEN };
+enum { FX_FIB_FIBER, FX_FIB_THREAD, FX_FIB_GEN, FX_FIB_TOENUM };
 
 typedef struct {
-  FxProc *proc;        /* the block that the fiber runs */
-  sp_PolyArray *args;    /* a Thread: the arguments of Thread.new */
+  FxProc *proc;        /* the block that the fiber runs; NULL for to_enum */
+  sp_PolyArray *args;    /* a Thread: the arguments of Thread.new; to_enum: of the method */
   int kind;
+  sp_RbVal recv;         /* to_enum: the receiver and the method it calls */
+  const char *meth;
 } FxFiberData;
 
 static void fx_fiber_data_scan(void *p) {
   FxFiberData *d = (FxFiberData *)p;
   if (d->proc) sp_gc_mark(d->proc);
   if (d->args) sp_gc_mark(d->args);
+  sp_mark_rbval(d->recv);
+  if (d->meth) sp_mark_string(d->meth);
 }
+
+static sp_RbVal fx_toenum_step(void *ctx, int argc, sp_RbVal *argv);
 
 /* The Proc that a fiber runs, from the block of the call. A break in it
    has no call to end. */
@@ -44,6 +50,8 @@ static FxFiberData *fx_fiber_data(const FxBlock *blk, int kind) {
   d->proc = p;
   d->args = NULL;
   d->kind = kind;
+  d->recv = sp_box_nil();
+  d->meth = NULL;
   return d;
 }
 
@@ -78,6 +86,8 @@ static void fx_fiber_body(sp_Fiber *f) {
     for (sp_int i = 0; d->args && i < d->args->len; i++) sp_PolyArray_push(args, d->args->data[i]);
   } else if (d->kind == FX_FIB_GEN) {
     sp_PolyArray_push(args, sp_box_obj(f, SP_BUILTIN_YIELDER));
+  } else if (d->kind == FX_FIB_TOENUM) {
+    /* the arguments of the method come from d->args below */
   } else if (f->pass_argc > 1 && fx_is_array(f->resumed_value)) {
     for (sp_int i = 0; i < sp_poly_length(f->resumed_value); i++)
       sp_PolyArray_push(args, sp_poly_arr_get(f->resumed_value, i));
@@ -90,7 +100,13 @@ static void fx_fiber_body(sp_Fiber *f) {
      does not read the stack of a dead fiber */
   FX_TRY_PUSH();
   if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
-    v = fx_yield(&d->proc->b, (int)args->len, args->data);
+    if (d->kind == FX_FIB_TOENUM) {
+      FxBlock cb = { .cfn = fx_toenum_step, .ctx = f };
+      for (sp_int i = 0; d->args && i < d->args->len; i++) sp_PolyArray_push(args, d->args->data[i]);
+      v = fx_send_b(d->recv, d->meth, (int)args->len, args->data, &cb);
+    } else {
+      v = fx_yield(&d->proc->b, (int)args->len, args->data);
+    }
     sp_exc_top--;
   } else {
     FX_TRY_LANDED(0);
@@ -146,6 +162,48 @@ static sp_Exception *fx_fiber_exc(int argc, sp_RbVal *argv) {
   }
   if (!fx_is_exc(e)) sp_raise_cls("TypeError", "exception class/object expected");
   return (sp_Exception *)e.v.p;
+}
+
+/* The block of C that to_enum's method yields to: each value goes to the
+   Enumerator, as `y << v` does */
+static sp_RbVal fx_toenum_step(void *ctx, int argc, sp_RbVal *argv) {
+  (void)ctx;
+  return sp_Fiber_yield(fx_fiber_pack(argc, argv));
+}
+
+/* Kernel#to_enum(meth = :each, *args) and enum_for: an Enumerator that
+   runs the method of the receiver as a generator, each value it yields an
+   item; its size is nil, and inspect names the call
+   (#<Enumerator: [1, 2]:each_slice(2)>) */
+static sp_RbVal fx_to_enum(sp_RbVal recv, int argc, sp_RbVal *argv) {
+  SP_GC_ROOT_RBVAL(recv);
+  /* a String of the heap: the scan of d marks it */
+  const char *meth = sp_sprintf("%s", argc ? fx_name_arg(argv[0]) : "each");
+  SP_GC_ROOT_STR(meth);
+  FxFiberData *d = (FxFiberData *)sp_gc_alloc(sizeof *d, NULL, fx_fiber_data_scan);
+  SP_GC_ROOT(d);
+  d->proc = NULL;
+  d->args = NULL;
+  d->kind = FX_FIB_TOENUM;
+  d->recv = recv;
+  d->meth = meth;
+  sp_PolyArray *a = sp_PolyArray_new();
+  SP_GC_ROOT(a);
+  for (int i = 1; i < argc; i++) sp_PolyArray_push(a, argv[i]);
+  sp_gc_wb(d);
+  d->args = a;
+  const char *label = meth;
+  SP_GC_ROOT_STR(label);
+  if (argc > 1) {
+    const char *in = "";
+    SP_GC_ROOT_STR(in);
+    for (sp_int i = 0; i < a->len; i++) in = sp_sprintf("%s%s%s", in, i ? ", " : "", sp_poly_inspect(a->data[i]));
+    label = sp_sprintf("%s(%s)", meth, in);
+  }
+  sp_Enumerator *e = sp_Enumerator_new_gen(fx_fiber_body, d, sp_box_nil());
+  SP_GC_ROOT(e);
+  sp_enum_with_src(e, recv, label);
+  return sp_box_obj(e, SP_BUILTIN_ENUMERATOR);
 }
 
 /* ---- the class methods ---- */

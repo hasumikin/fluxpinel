@@ -493,6 +493,7 @@ static int fx_record_responds(sp_RbVal r, const char *name);
 static int fx_fiber_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                            sp_RbVal *out);
 static int fx_fiber_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static sp_RbVal fx_to_enum(sp_RbVal recv, int argc, sp_RbVal *argv);
 static void fx_sched_end(void);
 
 /* ffi.c */
