@@ -2,6 +2,7 @@
 # make oracle writes this file. spinel: 41492f494e95
 absolute_class_reopen_inside_module
 abstract_raise_override_return
+addrinfo_family_predicates
 alias_attr_reader_source
 alias_capture_outlives_redefined_alias
 alias_captures_def_twice
@@ -803,6 +804,7 @@ builtin_class_const_call_keeps_marking
 builtin_class_const_call_skips_class_method
 builtin_class_mixin_call
 builtin_class_singleton_override
+builtin_cls_id_distinct
 builtin_const_path_beside_nested_namesake
 builtin_forwarded_yield_proc_form
 builtin_include_keeps_own_method
@@ -1504,6 +1506,7 @@ condvar_wait_negative_timeout
 condvar_wait_result
 condvar_wait_timeout
 condvar_wait_timeout_single
+connect_nonblock_sockaddr_1arg
 const_alias_case_eq_receiver
 const_alias_class_case_when
 const_alias_class_is_a
@@ -1809,6 +1812,7 @@ display_method_optional_params
 display_method_taking_block
 display_noarg_sibling_hidden
 dlx_subclass_ring_attr
+dns_lookup_leaves_world
 dotdotdot_leading_param_forward
 double_splat_keyword_check
 double_splat_keyword_not_positional
@@ -3253,6 +3257,7 @@ io_write_print_splat
 io_write_receiver_once
 io_write_stdout_stderr
 iow_float_nil_rhs
+ipsocket_getaddress
 is_a_builtin_classes
 is_a_builtin_module_of_boxed_object
 is_a_builtin_module_of_subclass_in_inherited_method
@@ -4587,6 +4592,7 @@ object_space_finalizer_safepoint
 object_space_word_in_string
 object_spaceship_default
 object_spaceship_exception_own_cmp
+object_spaceship_same_object
 object_truthy
 one_class_hash_read_local
 one_line_in_deconstruct
@@ -4958,6 +4964,7 @@ poly_gsub_boxed_replacement
 poly_gsub_runtime_regexp
 poly_gsub_str_arm
 poly_gsub_str_str_hash
+poly_handle_face
 poly_handle_reader_name_with_args
 poly_hash_fetch_dispatch
 poly_hash_fetch_with_default
@@ -5965,6 +5972,7 @@ ruby_patchlevel
 ruby_revision
 ruby_version_fold
 ruby_version_value
+runtime_args_rooted
 runtime_condition_def_class_new
 runtime_condition_def_lists_other_receivers
 runtime_condition_def_over_accessor
@@ -6284,12 +6292,20 @@ sized_poly_array_nil_n
 sleep_poly_arg
 slice_when_first_class
 socket_addr_boxed_handle
+socket_addrinfo_and_option
+socket_bind_connect_sockaddr
+socket_boxed_connect_nonblock_sockopt
+socket_class_constants
 socket_close_read_write
 socket_const_defined
+socket_constants
+socket_getaddrinfo_family_socktype
+socket_getsockname
 socket_handle_kind
 socket_large_read_n
 socket_large_write_slow_reader
 socket_open_without_block
+socket_pack_sockaddr
 socket_read_partial_while_allocating
 socket_readpartial_then_write
 socket_recv_after_read
@@ -6297,10 +6313,12 @@ socket_recv_closed_in_thread
 socket_reopen_takes_shut_state
 socket_send_boxed_initialize
 socket_server_boxed_accept
+socket_setsockopt_bool_value
 socket_shutdown_boxed_handle
 socket_tcp_basic
 socket_tcp_thread
 socket_two_readers_one_buffer
+socket_unpack_sockaddr_un_edges
 sort_block_nil_answer
 sort_block_nil_compare
 sort_block_poly_receiver
@@ -6605,6 +6623,7 @@ string_handed_on_down_a_chain
 string_handle_and_or_truthiness
 string_handle_assign_raise_gate
 string_handle_box_reader_args
+string_handle_box_readers
 string_handle_captured_param
 string_handle_eql
 string_handle_force_encoding

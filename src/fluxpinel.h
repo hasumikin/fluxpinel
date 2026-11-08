@@ -514,6 +514,7 @@ static int fx_file_responds(sp_RbVal r, const char *name);
 static int fx_sock_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                          sp_RbVal *out);
 static int fx_sock_core(sp_File *f, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int fx_addrinfo_core(sp_RbVal r, const char *name, int argc, sp_RbVal *out);
 static void fx_sock_init(void);
 
 /* random.c */

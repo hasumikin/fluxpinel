@@ -1,5 +1,5 @@
 /* socket.c -- the socket classes of the runtime: TCPServer, TCPSocket,
-   UNIXServer, UNIXSocket, UDPSocket and Socket.
+   UNIXServer, UNIXSocket, UDPSocket and Socket, and Addrinfo.
 
    A socket is an sp_File whose mode labels the kind (sp_io_fdopen_sock),
    so the IO methods of global.c read and write it as they do a file. This
@@ -25,14 +25,92 @@ static int fx_is_sock_class(const char *cls) {
   return fx_sock_kind(cls) || !strcmp(cls, "Socket") || !strcmp(cls, "BasicSocket") || !strcmp(cls, "IPSocket");
 }
 
+/* A packed sockaddr that the runtime answers: a binary String, as CRuby's */
+static sp_RbVal fx_sockaddr_box(const char *sa) { return sp_box_str_new(sp_str_as_binary(sa)); }
+
+/* A packed sockaddr argument (Socket.sockaddr_in, Addrinfo#to_sockaddr): a
+   byte String, which may hold NUL */
+static const char *fx_sockaddr_arg(sp_RbVal v, sp_int *len) {
+  const char *sa = sp_poly_arg_str_chk(v);
+  *len = (sp_int)sp_str_byte_len(sa);
+  return sa;
+}
+
+/* Addrinfo.tcp(host, port), .udp(host, port), .ip(host) and .unix(path):
+   an sp_Addrinfo of the runtime, as codegen_call_module.c makes them */
+static int fx_addrinfo_class(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  sp_Addrinfo *a;
+  if ((FX_IS("tcp") || FX_IS("udp")) && argc == 2) {
+    const char *host = sp_poly_arg_str_chk(argv[0]);
+    SP_GC_ROOT_STR(host);
+    a = sp_addrinfo_new(host, sp_poly_arg_int_chk(argv[1]), sp_sock_const(FX_IS("udp") ? "SOCK_DGRAM" : "SOCK_STREAM"), 0);
+  } else if (FX_IS("ip") && argc == 1) {
+    a = sp_addrinfo_new(sp_poly_arg_str_chk(argv[0]), 0, 0, 0);
+  } else if (FX_IS("unix") && argc == 1) {
+    a = sp_addrinfo_new(sp_poly_arg_str_chk(argv[0]), 0, sp_sock_const("SOCK_STREAM"), 1);
+  } else {
+    return 0;
+  }
+  *out = sp_box_addrinfo(a);
+  return 1;
+}
+
 /* The class methods: new and open of each class, for_fd, and the class
    methods of Socket. */
 static int fx_sock_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                          sp_RbVal *out) {
-  if (k->cls_id >= 0 || blk || !fx_is_sock_class(k->name)) return 0;
+  if (k->cls_id >= 0 || blk) return 0;
+  if (!strcmp(k->name, "Addrinfo")) return fx_addrinfo_class(name, argc, argv, out);
+  if (!fx_is_sock_class(k->name)) return 0;
   const char *cn = k->name;
   int is_new = FX_IS("new") || FX_IS("open");
   sp_File *f = NULL;
+  /* IPSocket.getaddress(host), on IPSocket and the classes below it: the
+     first address of the name; the lookup can wait */
+  if (FX_IS("getaddress") && argc == 1 && (!strcmp(cn, "IPSocket") || !strcmp(cn, "TCPSocket") || !strcmp(cn, "UDPSocket"))) {
+    const char *host = sp_poly_arg_str_chk(argv[0]), *s;
+    SP_GC_ROOT_STR(host);
+    FX_UNLOCKED_ROOT(s = sp_sock_getaddress(host), SP_GC_ROOT_STR(s));
+    *out = sp_box_str_new(s);
+    return 1;
+  }
+  if (!strcmp(cn, "Socket")) {
+    /* Socket.getaddrinfo(host, port[, family[, socktype]]): the family and
+       the socket type as an Integer, a String or a Symbol, or nil for any */
+    if (FX_IS("getaddrinfo") && argc >= 2 && argc <= 4) {
+      const char *host = argv[0].tag == SP_TAG_NIL ? NULL : sp_poly_arg_str_chk(argv[0]);
+      SP_GC_ROOT_STR(host);
+      sp_int port = argv[1].tag == SP_TAG_NIL ? 0 : sp_poly_arg_int_chk(argv[1]);
+      sp_int fam = argc > 2 && argv[2].tag != SP_TAG_NIL ? sp_sock_addrinfo_hint(argv[2], 1) : 0;
+      sp_int st = argc > 3 && argv[3].tag != SP_TAG_NIL ? sp_sock_addrinfo_hint(argv[3], 0) : 0;
+      sp_PolyArray *a;
+      FX_UNLOCKED_ROOT(a = sp_sock_getaddrinfo(host, port, fam, st), SP_GC_ROOT(a));
+      *out = sp_box_poly_array(a);
+      return 1;
+    }
+    if ((FX_IS("sockaddr_in") || FX_IS("pack_sockaddr_in")) && argc == 2) {
+      const char *host = sp_poly_arg_str_chk(argv[1]);
+      SP_GC_ROOT_STR(host);
+      sp_int port = sp_poly_arg_int_chk(argv[0]);
+      const char *sa;
+      /* the lookup of a host name can wait */
+      FX_UNLOCKED_ROOT(sa = sp_sock_pack_sockaddr_in(port, host), SP_GC_ROOT_STR(sa));
+      *out = fx_sockaddr_box(sa);
+      return 1;
+    }
+    if ((FX_IS("sockaddr_un") || FX_IS("pack_sockaddr_un")) && argc == 1) {
+      *out = fx_sockaddr_box(sp_sock_pack_sockaddr_un(sp_poly_arg_str_chk(argv[0])));
+      return 1;
+    }
+    if (FX_IS("unpack_sockaddr_in") && argc == 1) {
+      *out = sp_box_poly_array(sp_sock_unpack_sockaddr_in(sp_poly_arg_str_chk(argv[0])));
+      return 1;
+    }
+    if (FX_IS("unpack_sockaddr_un") && argc == 1) {
+      *out = sp_box_str_new(sp_sock_unpack_sockaddr_un(sp_poly_arg_str_chk(argv[0])));
+      return 1;
+    }
+  }
   if (FX_IS("for_fd") && argc == 1) {
     f = sp_sock_for_fd(sp_poly_arg_int_chk(argv[0]), fx_sock_kind(cn));
   } else if (is_new && !strcmp(cn, "TCPServer") && argc >= 1 && argc <= 2) {
@@ -110,6 +188,50 @@ static int fx_sock_core(sp_File *f, const char *name, int argc, sp_RbVal *argv, 
     *out = sp_box_int(sp_sock_listen(f, sp_poly_arg_int_chk(argv[0])));
     return 1;
   }
+  /* bind and connect take a host and a port, or the address packed
+     (Socket.sockaddr_in, Addrinfo#to_sockaddr); a connect can wait */
+  if ((FX_IS("bind") || FX_IS("connect")) && (argc == 1 || argc == 2) && !kw) {
+    int is_bind = FX_IS("bind");
+    sp_int n;
+    if (argc == 2) {
+      const char *host = sp_poly_arg_str_chk(argv[0]);
+      SP_GC_ROOT_STR(host);
+      sp_int port = sp_poly_arg_int_chk(argv[1]);
+      if (is_bind) FX_UNLOCKED(n = sp_sock_bind(f, host, port));
+      else FX_UNLOCKED(n = sp_sock_connect(f, host, port));
+    } else {
+      sp_int len;
+      const char *sa = fx_sockaddr_arg(argv[0], &len);
+      SP_GC_ROOT_STR(sa);
+      if (is_bind) n = sp_sock_bind_sa(f, sa, len);
+      else FX_UNLOCKED(n = sp_sock_connect_sa(f, sa, len));
+    }
+    *out = sp_box_int(n);
+    return 1;
+  }
+  /* connect_nonblock(sockaddr[, exception: false]) answers :wait_writable
+     while the connection is in progress, as codegen emits it */
+  if (FX_IS("connect_nonblock") && argc == 1 + kw) {
+    int exc = kw ? fx_kw_exception(argv[1]) : 1;
+    sp_int len;
+    const char *sa = fx_sockaddr_arg(argv[0], &len);
+    SP_GC_ROOT_STR(sa);
+    sp_oint n = sp_sock_connect_nb_sa(f, sa, len, exc);
+    *out = n.nil ? sp_box_sym(sp_sym_intern("wait_writable")) : sp_box_int(n.v);
+    return 1;
+  }
+  if (FX_IS("getsockopt") && argc == 2) {
+    *out = sp_box_sockopt(sp_sock_getsockopt(f, sp_poly_arg_int_chk(argv[0]), sp_poly_arg_int_chk(argv[1])));
+    return 1;
+  }
+  if ((FX_IS("local_address") || FX_IS("remote_address")) && argc == 0) {
+    *out = sp_box_addrinfo(sp_sock_address(f, FX_IS("remote_address")));
+    return 1;
+  }
+  if ((FX_IS("getsockname") || FX_IS("getpeername")) && argc == 0) {
+    *out = fx_sockaddr_box(sp_sock_getname(f, FX_IS("getpeername")));
+    return 1;
+  }
   if (FX_IS("setsockopt") && argc == 3) {
     sp_int v = argv[2].tag == SP_TAG_INT ? argv[2].v.i : sp_sock_optval(argv[2]);
     *out = sp_box_int(sp_sock_setsockopt(f, sp_poly_arg_int_chk(argv[0]), sp_poly_arg_int_chk(argv[1]), v));
@@ -135,6 +257,32 @@ static int fx_sock_core(sp_File *f, const char *name, int argc, sp_RbVal *argv, 
     *out = argv[0];
     return 1;
   }
+  return 0;
+}
+
+/* An Addrinfo and a Socket::Option: inspect and to_s before the generic
+   inspect of fx_core, and the level of an option, which the generated
+   table leaves out */
+static int fx_addrinfo_core(sp_RbVal r, const char *name, int argc, sp_RbVal *out) {
+  if (r.tag != SP_TAG_OBJ || !r.v.p || argc != 0) return 0;
+  if (r.cls_id == SP_BUILTIN_ADDRINFO && FX_IS("inspect")) {
+    const char *s;
+    FX_UNLOCKED_ROOT(s = sp_addrinfo_inspect((sp_Addrinfo *)r.v.p), SP_GC_ROOT_STR(s));
+    *out = sp_box_str_new(s);
+    return 1;
+  }
+  /* Addrinfo#to_sockaddr, and to_s, which is the same in CRuby: a binary
+     String (the generated row answers it as text) */
+  if (r.cls_id == SP_BUILTIN_ADDRINFO && (FX_IS("to_sockaddr") || FX_IS("to_s"))) {
+    const char *s;
+    FX_UNLOCKED_ROOT(s = sp_addrinfo_to_sockaddr((sp_Addrinfo *)r.v.p), SP_GC_ROOT_STR(s));
+    *out = fx_sockaddr_box(s);
+    return 1;
+  }
+  if (r.cls_id != SP_BUILTIN_SOCKOPT) return 0;
+  sp_SockOpt *o = (sp_SockOpt *)r.v.p;
+  if (FX_IS("inspect") || FX_IS("to_s")) { *out = sp_box_str_new(sp_sockopt_inspect(o)); return 1; }
+  if (FX_IS("level")) { *out = sp_box_int(o->level); return 1; }
   return 0;
 }
 

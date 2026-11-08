@@ -49,6 +49,8 @@ static int fx_kind_of(sp_RbVal v, const char **family, const char **variant) {
     case SP_BUILTIN_MUTEX: fam = var = "mutex"; kind = FX_TY_MUTEX; break;
     case SP_BUILTIN_CONDVAR: fam = var = "condvar"; kind = FX_TY_CONDVAR; break;
     case SP_BUILTIN_RANDOM: fam = var = "random"; break;
+    case SP_BUILTIN_ADDRINFO: fam = var = "addrinfo"; break;
+    case SP_BUILTIN_SOCKOPT: fam = var = "sockopt"; break;
     case SP_BUILTIN_TMS: fam = var = "tms"; break;
     case SP_BUILTIN_TIME: fam = var = "time"; kind = FX_TY_TIME; break;
     case SP_BUILTIN_RATIONAL: fam = var = "rational"; kind = FX_TY_RATIONAL; break;
@@ -968,6 +970,7 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
   if (!blk && fx_io_core(recv, name, argc, argv, out)) return 1;
   if (!blk && fx_time_core(recv, name, argc, argv, out)) return 1;
   if (!blk && fx_random_core(recv, name, argc, argv, out)) return 1;
+  if (!blk && fx_addrinfo_core(recv, name, argc, out)) return 1;
   if (!blk && fx_complex_core(recv, name, argc, argv, out)) return 1;
   if (!blk && fx_to_c(recv, name, argc, out)) return 1;
   if (!blk && fx_encoding_core(recv, name, argc, argv, out)) return 1;
