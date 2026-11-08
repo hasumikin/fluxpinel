@@ -1702,6 +1702,7 @@ static void fx_hook_mark(void) {
   for (int i = 0; i < L.nglobals; i++) sp_mark_rbval(L.globals[i].value);
   for (int i = 0; i < L.nprocs; i++) sp_gc_mark(L.procs[i]);
   if (L.bt) sp_gc_mark(L.bt);
+  fx_ffi_mark();
 }
 
 static void fx_object_init(void) {

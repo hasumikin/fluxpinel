@@ -497,6 +497,7 @@ static void fx_sched_end(void);
 
 /* ffi.c */
 static int fx_ffi_class(FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static void fx_ffi_mark(void);
 static sp_RbVal fx_ffi_invoke(const struct FxFfi *x, sp_RbVal self, int argc, sp_RbVal *argv);
 
 /* process.c */

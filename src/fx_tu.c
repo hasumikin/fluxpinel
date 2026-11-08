@@ -245,6 +245,15 @@ static void fx_safepoint(void) {
   FX_UNLOCKED(sp_safepoint());
 }
 
+/* The polls of a loop's back-edge and of a method's or a block's entry, as
+   AOT code has them: the safepoint, and the finalizers of what a collection
+   freed (ObjectSpace.define_finalizer), which run between two statements
+   and never inside the allocation that collected. */
+static void fx_poll(void) {
+  if (SP_UNLIKELY(SP_SAFEPOINT_POLL())) fx_safepoint();
+  if (SP_UNLIKELY(SP_ATOMIC_LOAD(&sp_fin_pending_flag, __ATOMIC_RELAXED))) FX_UNLOCKED(sp_fin_run_pending());
+}
+
 /* ---- init ---- */
 
 /* The walker marks its own globals (constants, class ivars) here. */

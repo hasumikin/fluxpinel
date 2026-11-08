@@ -580,10 +580,19 @@ static sp_RbVal fx_ffi_c_value(FxFfiType t, const void *p) {
 /* A Method or a Proc given for an argument of a type of ffi_callback, and
    the closure of libffi that calls it. C keeps the function pointer, so
    the closure and its value stay for the run. */
-typedef struct {
+typedef struct FxFfiClosure {
   const FxFfiCallback *cb;
   sp_RbVal fn;
+  struct FxFfiClosure *next;
 } FxFfiClosure;
+
+/* The closures made so far: the mark hook (fx_hook_mark) marks their
+   values, as a root pushed inside a call would be popped with its scope. */
+static FxFfiClosure *fx_ffi_closures;
+
+static void fx_ffi_mark(void) {
+  for (const FxFfiClosure *c = fx_ffi_closures; c; c = c->next) sp_mark_rbval(c->fn);
+}
 
 /* The closure: the C arguments become values, the value answers call,
    and the result goes back as the return. The call takes the walker lock,
@@ -635,7 +644,8 @@ static void *fx_ffi_closure(const FxFfiCallback *cb, sp_RbVal v) {
   FxFfiClosure *c = calloc(1, sizeof *c);
   c->cb = cb;
   c->fn = v;
-  _sp_gc_root_push((void **)((uintptr_t)&c->fn | (uintptr_t)1));   /* for the run */
+  c->next = fx_ffi_closures;
+  fx_ffi_closures = c;
   if (ffi_prep_closure_loc(cl, (ffi_cif *)&cb->cif, fx_ffi_closure_fn, c, code) != FFI_OK)
     sp_raise_cls("ArgumentError", sp_sprintf("ffi_callback :%s: no closure for its types", cb->name));
   return code;

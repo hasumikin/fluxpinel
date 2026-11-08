@@ -658,6 +658,7 @@ static sp_RbVal fx_invoke_b(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal
     fx_no_method_args(self, name, argc, argv, FX_MISS_METHOD);
   }
   SP_GC_SAVE();
+  fx_poll();
   sp_RbVal me = self;
   SP_GC_ROOT_RBVAL(me);
   if (m->kind == FX_M_PROC) {
@@ -719,7 +720,7 @@ static sp_RbVal fx_yield_in(const FxBlock *b, int argc, sp_RbVal *argv, int stri
   const pm_constant_id_list_t *locals;
   const pm_node_t *params, *body;
   fx_block_parts(b->node, &locals, &params, &body);
-  if (SP_UNLIKELY(SP_SAFEPOINT_POLL())) fx_safepoint();
+  fx_poll();
   FX_FRAME(bf, locals, self ? *self : h->self, h->cref);
   bf.definee = definee ? definee : h->definee;
   bf.singleton_defs = definee ? sdefs : h->singleton_defs;
@@ -1518,7 +1519,7 @@ static sp_RbVal fx_while(FxFrame *f, const pm_node_t *pred, const pm_statements_
                          int post) {
   for (int first = 1;; first = 0) {
     /* a back-edge lets another green thread run, as in AOT code */
-    if (SP_UNLIKELY(SP_SAFEPOINT_POLL())) fx_safepoint();
+    fx_poll();
     if (!(post && first)) {
       sp_RbVal c = fx_eval(f, pred);
       if (L.ctl != FX_CTL_NONE) return sp_box_nil();
