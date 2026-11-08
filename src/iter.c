@@ -307,6 +307,24 @@ static int fx_seq_collector(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
   if ((FX_IS("include?") || FX_IS("member?")) && r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_ENUMERATOR && r.v.p &&
       argc == 1)
     return fx_enum_include(r, argv[0], out);
+  /* Enumerator#count, and count(x): over its items */
+  if (FX_IS("count") && r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_ENUMERATOR && r.v.p && argc <= 1) {
+    SP_GC_ROOT_RBVAL(r);
+    sp_PolyArray *a = sp_Enumerator_to_a((sp_Enumerator *)r.v.p);
+    SP_GC_ROOT(a);
+    *out = argc == 0 ? sp_box_int(a->len) : sp_box_int(sp_poly_count_val(sp_box_poly_array(a), argv[0]));
+    return 1;
+  }
+  /* Range#to_a of a beginless Range cannot start; sum(init) of a Range
+     with no block */
+  if (fx_is_range(r) && argc == 0 && (FX_IS("to_a") || FX_IS("entries")) && ((const sp_Range *)r.v.p)->nobeg)
+    sp_raise_cls("TypeError", "can't iterate from NilClass");
+  if (r.tag == SP_TAG_OBJ && r.v.p &&
+      (r.cls_id == SP_BUILTIN_RANGE || r.cls_id == SP_BUILTIN_STR_RANGE || r.cls_id == SP_BUILTIN_FLOAT_RANGE) &&
+      argc == 1 && FX_IS("sum")) {
+    *out = sp_poly_sum_seed(r, argv[0]);
+    return 1;
+  }
   /* Enumerator#first: the first element or nil; first(n): the first n
      elements as an Array (sp_Enumerator_take) */
   if (FX_IS("first") && r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_ENUMERATOR && r.v.p && argc <= 1) {

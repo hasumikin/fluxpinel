@@ -109,6 +109,30 @@ static int fx_array_class(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
 
 /* The methods of Array with no block, and Array#fetch with one. Answers
    1 and sets *out when it handles the call. */
+/* permutation(k = size): each permutation to the block, or an Enumerator
+   over the rows of the runtime */
+static int fx_array_permutation(sp_RbVal r, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out) {
+  SP_GC_ROOT_RBVAL(r);
+  sp_int k = argc ? sp_poly_arg_int_chk(argv[0]) : sp_poly_length(r);
+  sp_PolyArray *rows = sp_PolyArray_permutation(sp_poly_to_poly_array(r), k);
+  SP_GC_ROOT(rows);
+  if (blk) {
+    for (sp_int i = 0; i < rows->len; i++) {
+      fx_y1(blk, rows->data[i]);
+      if (L.ctl != FX_CTL_NONE) return 1;
+    }
+    *out = r;
+    return 1;
+  }
+  const char *m = argc ? sp_sprintf("permutation(%lld)", (long long)k) : sp_sprintf("permutation");
+  SP_GC_ROOT_STR(m);
+  sp_Enumerator *e = sp_Enumerator_new_from_items(rows);
+  SP_GC_ROOT(e);
+  sp_enum_with_src(e, r, m);
+  *out = sp_box_obj(e, SP_BUILTIN_ENUMERATOR);
+  return 1;
+}
+
 static int fx_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                            sp_RbVal *out) {
   if (r.tag == SP_TAG_CLASS) return fx_array_class(r, name, argc, argv, blk, out);
@@ -122,6 +146,7 @@ static int fx_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
       *out = i >= 0 && i < n ? sp_poly_arr_get(r, i) : fx_y1(blk, argv[0]);
       return 1;
     }
+    if (argc <= 1 && FX_IS("permutation")) return fx_array_permutation(r, argc, argv, blk, out);
     return 0;
   }
   sp_PolyArray *w = NULL;
@@ -251,6 +276,50 @@ static int fx_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     *out = sp_poly_fetch(r, argv[0], argc == 2, argc == 2 ? argv[1] : sp_box_nil());
     return 1;
   }
+  /* a[x] = v with an index of no kind the wrappers take: the TypeError of
+     its conversion, as CRuby raises it */
+  if (argc == 2 && FX_IS("[]=") && !fx_is_integer(argv[0]) && argv[0].tag != SP_TAG_FLT && !fx_is_range(argv[0]) &&
+      !fx_is_fx_object(argv[0])) {
+    if (argv[0].tag == SP_TAG_NIL) sp_raise_cls("TypeError", "no implicit conversion from nil to integer");
+    sp_poly_arg_int_chk(argv[0]);
+    return 0;
+  }
+  /* a[f] = v with a Float index truncates it */
+  if (argc == 2 && FX_IS("[]=") && argv[0].tag == SP_TAG_FLT) {
+    sp_RbVal args[2] = { sp_box_int(sp_poly_to_int_arg(argv[0])), argv[1] };
+    *out = fx_send(r, "[]=", 2, args);
+    return 1;
+  }
+  /* slice!(i), slice!(start, len) and slice!(range): the elements taken
+     out, or nil for a start outside the Array */
+  if ((argc == 1 || argc == 2) && FX_IS("slice!") && (argc == 2 || !fx_is_fx_object(argv[0]))) {
+    sp_poly_array_recv(r, name, 1);   /* FrozenError before any change */
+    sp_int n = sp_poly_length(r), start, len, one = argc == 1 && !fx_is_range(argv[0]);
+    if (argc == 2) {
+      start = sp_poly_arg_int_chk(argv[0]);
+      len = sp_poly_arg_int_chk(argv[1]);
+    } else if (one) {
+      start = sp_poly_arg_int_chk(argv[0]);
+      len = 1;
+    } else {
+      const sp_Range *g = (const sp_Range *)argv[0].v.p;
+      start = g->nobeg ? 0 : g->first;
+      sp_int last = g->noend ? n - 1 : g->excl ? g->last - 1 : g->last;
+      if (last < 0) last += n;
+      if (start < 0) start += n;
+      len = last - start + 1;
+    }
+    if (start < 0) start += n;
+    if (start < 0 || start > n || len < 0 || (one && start >= n)) { *out = sp_box_nil(); return 1; }
+    if (len > n - start) len = n - start;
+    sp_PolyArray *taken = sp_PolyArray_new();
+    SP_GC_ROOT(taken);
+    for (sp_int i = start; i < start + len; i++) sp_PolyArray_push(taken, sp_poly_arr_get(r, i));
+    sp_poly_splice(r, start, len, sp_box_poly_array(sp_PolyArray_new()));
+    *out = one ? taken->data[0] : sp_box_poly_array(taken);
+    return 1;
+  }
+  if (argc <= 1 && FX_IS("permutation")) return fx_array_permutation(r, argc, argv, NULL, out);
   /* a[range] = v and a[start, len] = v: v converts by its to_ary, and the
      call answers v as it was */
   if (argc == 2 && FX_IS("[]=") && fx_is_range(argv[0])) {
@@ -274,7 +343,41 @@ static int fx_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     *out = sp_poly_fill(r, argv[0], argc, start, len);
     return 1;
   }
-  if (FX_IS("push") || FX_IS("append")) {
+  /* fill(v, range), and offsets given as Floats, which truncate */
+  if (argc >= 2 && argc <= 3 && FX_IS("fill") && !fx_is_fx_object(argv[1])) {
+    sp_int n = sp_poly_length(r);
+    sp_oint start, len = sp_oint_nil();
+    int frange = argc == 2 && argv[1].tag == SP_TAG_OBJ && argv[1].cls_id == SP_BUILTIN_FLOAT_RANGE;
+    if (argc == 2 && (fx_is_range(argv[1]) || frange)) {
+      /* the span of the Range over n elements, as CRuby's rb_range_beg_len
+         reads it: a negative bound counts from the end, a start before
+         the first element is RangeError, an end before the start fills
+         nothing, and a length the Array cannot hold is ArgumentError */
+      sp_int s, last;
+      if (frange) {
+        const sp_FloatRange *g = (const sp_FloatRange *)argv[1].v.p;
+        s = g->omitted & SP_FRANGE_NO_BEGIN ? 0 : (sp_int)g->first;
+        last = g->omitted & SP_FRANGE_NO_END ? n - 1 : g->excl ? (sp_int)g->last - 1 : (sp_int)g->last;
+      } else {
+        const sp_Range *g = (const sp_Range *)argv[1].v.p;
+        s = g->nobeg ? 0 : g->first;
+        last = g->noend ? n - 1 : g->excl ? g->last - 1 : g->last;
+      }
+      if (s < 0) s += n;
+      if (s < 0) sp_raise_cls("RangeError", sp_sprintf("%s out of range", sp_poly_inspect(argv[1])));
+      if (last < 0) last += n;
+      sp_int span = (sp_int)((uint64_t)last - (uint64_t)s + 1);   /* wraps as CRuby's long does */
+      if (span > INT64_MAX / 8) sp_raise_cls("ArgumentError", "argument too big");
+      start = sp_oint_of(s);
+      len = sp_oint_of(span < 0 ? 0 : span);
+    } else {
+      start = argv[1].tag == SP_TAG_NIL ? sp_oint_nil() : sp_oint_of(sp_poly_to_int_arg(argv[1]));
+      if (argc == 3) len = argv[2].tag == SP_TAG_NIL ? sp_oint_nil() : sp_oint_of(sp_poly_to_int_arg(argv[2]));
+    }
+    *out = sp_poly_fill(r, argv[0], len.nil && argc == 2 ? 2 : 3, start, len);
+    return 1;
+  }
+  if (FX_IS("push") || FX_IS("append") || (FX_IS("<<") && argc == 1)) {
     w = sp_poly_array_recv(r, name, 1);
     for (int i = 0; i < argc; i++) sp_PolyArray_push(w, argv[i]);
     sp_poly_arr_writeback(r, w);

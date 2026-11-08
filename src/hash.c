@@ -172,6 +172,15 @@ static int fx_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
     if (FX_IS("compare_by_identity?")) { *out = sp_box_bool(h->ident); return 1; }
     if (FX_IS("dup") || FX_IS("clone")) { *out = fx_hash_box(fx_hash_dup(h)); return 1; }
     if (FX_IS("default")) { *out = h->default_v; return 1; }
+    if (FX_IS("default_proc")) { *out = h->dproc_self ? sp_box_obj(h->dproc_self, SP_BUILTIN_PROC) : sp_box_nil(); return 1; }
+    /* shift: the first pair, taken out; nil when empty */
+    if (FX_IS("shift")) {
+      fx_hash_mut(r, name);
+      *out = sp_poly_hash_shift(r);
+      return 1;
+    }
+    /* flatten: the pairs, one level */
+    if (FX_IS("flatten")) { *out = sp_box_poly_array(sp_poly_flatten_d(sp_box_poly_array(fx_seq_array(r)), 1, 1)); return 1; }
     if (FX_IS("invert")) {
       sp_PolyPolyHash *o = sp_PolyPolyHash_new();
       SP_GC_ROOT(o);
@@ -210,6 +219,53 @@ static int fx_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
     sp_gc_wb(m);
     m->default_v = argv[0];
     *out = argv[0];
+    return 1;
+  }
+  /* default_proc=: a Proc, or nil for none; the default value goes */
+  if (argc == 1 && !blk && FX_IS("default_proc=")) {
+    sp_RbVal p = argv[0];
+    if (p.tag != SP_TAG_NIL && !fx_is_proc(p))
+      sp_raise_cls("TypeError", sp_sprintf("wrong default_proc type %s (expected Proc)", sp_poly_class_name(p)));
+    sp_PolyPolyHash *m = fx_hash_mut(r, name);
+    sp_gc_wb(m);
+    m->dproc = p.tag == SP_TAG_NIL ? NULL : fx_hash_dproc;
+    m->dproc_self = p.tag == SP_TAG_NIL ? NULL : p.v.p;
+    m->default_v = sp_box_nil();
+    *out = p;
+    return 1;
+  }
+  /* replace(other): the entries of other, and its default */
+  if (argc == 1 && !blk && FX_IS("replace")) {
+    fx_hash_mut(r, name);
+    if (!fx_is_hash(argv[0]))
+      sp_raise_cls("TypeError", sp_sprintf("no implicit conversion of %s into Hash", sp_poly_class_name(argv[0])));
+    *out = sp_poly_hash_replace(r, argv[0], 0);
+    return 1;
+  }
+  /* flatten(depth): the pairs, depth levels deep */
+  if (argc == 1 && !blk && FX_IS("flatten")) {
+    sp_int d = sp_poly_arg_int_chk(argv[0]);
+    sp_PolyArray *pairs = fx_seq_array(r);
+    SP_GC_ROOT(pairs);
+    *out = d <= 0 ? sp_box_poly_array(pairs) : sp_box_poly_array(sp_poly_flatten_d(sp_box_poly_array(pairs), d, 1));
+    return 1;
+  }
+  /* assoc(key) and rassoc(value): the pair, or nil; find_index(pair) */
+  if (argc == 1 && !blk && (FX_IS("assoc") || FX_IS("rassoc") || FX_IS("find_index"))) {
+    sp_RbVal x = argv[0];
+    SP_GC_ROOT_RBVAL(x);
+    *out = sp_box_nil();
+    for (sp_int i = 0; i < h->len; i++) {
+      sp_RbVal k = h->keys[h->order[i]], val = h->vals[h->order[i]];
+      if (FX_IS("find_index")) {
+        sp_RbVal pair = fx_pair(k, val);
+        SP_GC_ROOT_RBVAL(pair);
+        if (sp_poly_rb_equal(pair, x)) { *out = sp_box_int(i); return 1; }
+      } else if (sp_poly_rb_equal(name[0] == 'a' ? k : val, x)) {
+        *out = fx_pair(k, val);
+        return 1;
+      }
+    }
     return 1;
   }
   if (argc == 1 && (FX_IS("==") || FX_IS("eql?"))) {
