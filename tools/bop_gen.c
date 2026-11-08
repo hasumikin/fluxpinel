@@ -44,6 +44,9 @@ int builtin_instance_method_known(const char *cls, const char *m) { (void)cls; (
 /* fresh_array_builtin_name asks str_in (src/analyze_util.c), a lookup of a
    name in a NULL-ended list; the generator does not call it either */
 int str_in(const char *s, const char *const *set) { (void)s; (void)set; abort(); }
+/* builtin_method_answers asks sp_feature_required (src/compiler.h) which
+   libraries the program requires; the generator does not call it either */
+int sp_feature_required(const char *name) { (void)name; abort(); }
 
 typedef struct {
   TyKind recv;     /* the concrete receiver kind */
