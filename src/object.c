@@ -104,6 +104,7 @@ static void fx_alias(FxClass *k, int singleton, sp_sym to, sp_sym from) {
     c->vis = fx_kernel_private(n) ? FX_VIS_PRIVATE : FX_VIS_PUBLIC;
   }
   c->name = to;
+  c->orig = m && m->orig ? m->orig : from;
   fx_define_method(k, c, singleton);
 }
 

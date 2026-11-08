@@ -315,10 +315,35 @@ static int fx_seq_collector(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
     *out = argc == 0 ? sp_box_int(a->len) : sp_box_int(sp_poly_count_val(sp_box_poly_array(a), argv[0]));
     return 1;
   }
-  /* Range#to_a of a beginless Range cannot start; sum(init) of a Range
-     with no block */
-  if (fx_is_range(r) && argc == 0 && (FX_IS("to_a") || FX_IS("entries")) && ((const sp_Range *)r.v.p)->nobeg)
-    sp_raise_cls("TypeError", "can't iterate from NilClass");
+  /* Enumerator#each_with_index with no block: the pairs */
+  if (FX_IS("each_with_index") && r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_ENUMERATOR && r.v.p && argc == 0) {
+    *out = sp_box_obj(sp_Enumerator_ewi((sp_Enumerator *)r.v.p), SP_BUILTIN_ENUMERATOR);
+    return 1;
+  }
+  /* to_set: Set.new(self), Set autoloaded */
+  if (FX_IS("to_set") && argc == 0 &&
+      (fx_is_array(r) || fx_is_hash(r) || fx_is_range(r) || (r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_ENUMERATOR && r.v.p))) {
+    SP_GC_ROOT_RBVAL(r);
+    sp_RbVal set;
+    if (!fx_const_scoped(L.object, sp_sym_intern("Set"), &set)) return 0;
+    *out = fx_send(set, "new", 1, &r);
+    return 1;
+  }
+  /* Range#to_a of a beginless Range cannot start, and of an endless one
+     cannot end; drop(n) of a Range goes through its Array; sum(init) of
+     a Range with no block */
+  if (fx_is_range(r) && (((argc == 0 && (FX_IS("to_a") || FX_IS("entries"))) || (argc == 1 && FX_IS("drop"))))) {
+    const sp_Range *g = (const sp_Range *)r.v.p;
+    if (g->nobeg) sp_raise_cls("TypeError", "can't iterate from NilClass");
+    if (g->noend) sp_raise_cls("RangeError", "cannot convert endless range to an array");
+    if (argc == 1) {
+      SP_GC_ROOT_RBVAL(r);
+      sp_RbVal a = sp_box_poly_array(fx_seq_array(r));
+      SP_GC_ROOT_RBVAL(a);
+      *out = fx_send(a, name, argc, argv);
+      return 1;
+    }
+  }
   if (r.tag == SP_TAG_OBJ && r.v.p &&
       (r.cls_id == SP_BUILTIN_RANGE || r.cls_id == SP_BUILTIN_STR_RANGE || r.cls_id == SP_BUILTIN_FLOAT_RANGE) &&
       argc == 1 && FX_IS("sum")) {
@@ -1753,6 +1778,11 @@ static int fx_method_value_core(sp_RbVal r, const char *name, int argc, sp_RbVal
   if (FX_IS("arity")) { *out = sp_box_int(fx_method_value_arity(mv)); return 1; }
   if (FX_IS("parameters")) { *out = fx_method_value_params(mv); return 1; }
   if (FX_IS("name")) { *out = sp_box_sym(mv->name); return 1; }
+  /* original_name: the name an alias copies, else the name */
+  if (FX_IS("original_name")) {
+    *out = sp_box_sym(mv->m && mv->m->orig ? mv->m->orig : mv->m ? mv->m->name : mv->name);
+    return 1;
+  }
   if (FX_IS("receiver")) { *out = mv->recv; return 1; }
   if (FX_IS("owner")) { *out = fx_class_box(fx_method_value_owner(mv)); return 1; }
   if (FX_IS("source_location")) {

@@ -140,6 +140,62 @@ static sp_RbVal fx_str_encode(sp_RbVal r, const char *name, int argc, sp_RbVal *
                                       invalid, undef, replace));
 }
 
+/* split on runs of whitespace, as CRuby's awk mode: the leading
+   whitespace goes, a positive limit keeps the rest in the last field, and
+   a negative one keeps the empty field after trailing whitespace */
+static sp_StrArray *fx_str_split_ws(const char *s, sp_int limit) {
+  SP_GC_ROOT_STR(s);
+  sp_StrArray *a = sp_StrArray_new();
+  SP_GC_ROOT(a);
+  sp_int len = (sp_int)sp_str_byte_len(s), i = 0;
+  /* a limit of 1 is the String as it is */
+  if (limit == 1) {
+    if (len) sp_StrArray_push(a, s);
+    return a;
+  }
+  while (i < len && isspace((unsigned char)s[i])) i++;
+  while (i < len) {
+    if (limit > 0 && a->len == limit - 1) {
+      sp_StrArray_push(a, sp_str_from_bytes(s + i, (size_t)(len - i)));
+      return a;
+    }
+    sp_int j = i;
+    while (j < len && !isspace((unsigned char)s[j])) j++;
+    sp_StrArray_push(a, sp_str_from_bytes(s + i, (size_t)(j - i)));
+    i = j;
+    while (i < len && isspace((unsigned char)s[i])) i++;
+    if (i == len && j < len && limit < 0) sp_StrArray_push(a, sp_str_from_bytes("", 0));
+  }
+  return a;
+}
+
+/* upcase, downcase, capitalize and swapcase with options, checked as
+   CRuby's check_case_options: :ascii alone, :turkic with :lithuanian,
+   :fold for downcase only. :ascii takes the ASCII helpers, :turkic the
+   Turkic ones (capitalize has none), any other option the plain method. */
+static int fx_str_case_opts(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  int up = FX_IS("upcase"), down = FX_IS("downcase"), cap = FX_IS("capitalize"), swap = FX_IS("swapcase");
+  if (!(up || down || cap || swap) || argc < 1 || argc > 2) return 0;
+  int ascii = 0, turkic = 0, fold = 0, lith = 0;
+  for (int i = 0; i < argc; i++) {
+    const char *o = argv[i].tag == SP_TAG_SYM ? sp_sym_to_s((sp_sym)argv[i].v.i) : "";
+    if (!strcmp(o, "ascii")) ascii = 1;
+    else if (!strcmp(o, "turkic")) turkic = 1;
+    else if (!strcmp(o, "lithuanian")) lith = 1;
+    else if (!strcmp(o, "fold")) fold = 1;
+    else sp_raise_cls("ArgumentError", "invalid option");
+  }
+  if (argc == 2 && (ascii || fold)) sp_raise_cls("ArgumentError", "too many options");
+  if (fold && !down) sp_raise_cls("ArgumentError", "option :fold only allowed for downcasing");
+  (void)lith;
+  const char *(*fn)(const char *) = NULL;
+  if (ascii) fn = up ? sp_str_upcase_ascii : down ? sp_str_downcase_ascii : cap ? sp_str_capitalize_ascii : sp_str_swapcase_ascii;
+  else if (turkic && !cap) fn = up ? sp_str_upcase_turkic : down ? sp_str_downcase_turkic : sp_str_swapcase_turkic;
+  else if (!cap) fn = up ? sp_str_upcase : down ? sp_str_downcase : sp_str_swapcase;
+  *out = fn ? sp_poly_case_conv(r, fn, name) : fx_send(r, name, 0, NULL);
+  return 1;
+}
+
 /* The methods of String with no block. Answers 1 and sets *out when it
    handles the call. */
 static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
@@ -149,6 +205,78 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
   SP_GC_ROOT_RBVAL(r);
   if (fx_str_bang(r, name, argc, argv, out)) return 1;
   if (FX_IS("encode")) { *out = fx_str_encode(r, name, argc, argv); return 1; }
+  /* encode!: the String takes the bytes of its encode */
+  if (FX_IS("encode!")) {
+    fx_str_mut(r, name);
+    sp_RbVal t = fx_str_encode(r, name, argc, argv);
+    SP_GC_ROOT_RBVAL(t);
+    sp_poly_str_become(r, sp_poly_to_s(t));
+    *out = r;
+    return 1;
+  }
+  if (fx_str_case_opts(r, name, argc, argv, out)) return 1;
+  /* each_line(sep, chomp:) with no block: an Enumerator over the lines */
+  if (FX_IS("each_line") && argc >= 1 && argc <= 2) {
+    int chomp = 0, n = argc;
+    if (fx_is_hash(argv[n - 1]) && argv[n - 1].v.p == L.kwhash) {
+      sp_RbVal k = sp_box_sym(sp_sym_intern("chomp"));
+      chomp = sp_poly_truthy(sp_PolyPolyHash_get(sp_poly_as_poly_poly_hash(argv[n - 1]), k));
+      n--;
+    }
+    if (n > 1) return 0;
+    const char *s = sp_poly_recv_s(r, name);
+    SP_GC_ROOT_STR(s);
+    sp_StrArray *lines;
+    if (n == 1 && argv[0].tag == SP_TAG_NIL) {
+      lines = sp_StrArray_new();
+      sp_StrArray_push(lines, s);
+    } else if (n == 1) {
+      const char *sep = sp_poly_arg_str_chk(argv[0]);
+      SP_GC_ROOT_STR(sep);
+      lines = chomp ? sp_str_lines_sep_chomp(s, sep) : sp_str_lines_sep(s, sep);
+    } else {
+      lines = chomp ? sp_str_lines_chomp(s) : sp_str_lines(s);
+    }
+    SP_GC_ROOT(lines);
+    /* the label names the arguments: each_line("c", chomp: true) */
+    const char *m = "";
+    SP_GC_ROOT_STR(m);
+    for (int i = 0; i < argc; i++) {
+      const char *x = sp_poly_inspect(argv[i]);
+      SP_GC_ROOT_STR(x);
+      if (i == argc - 1 && n < argc) x = sp_str_from_bytes(x + 1, sp_str_byte_len(x) - 2);   /* the braces off a keyword Hash */
+      m = sp_sprintf("%s%s%s", m, i ? ", " : "", x);
+    }
+    m = sp_sprintf("each_line(%s)", m);
+    sp_Enumerator *e = sp_Enumerator_new_from(sp_box_str_array(lines));
+    SP_GC_ROOT(e);
+    sp_enum_with_src(e, r, m);
+    *out = sp_box_obj(e, SP_BUILTIN_ENUMERATOR);
+    return 1;
+  }
+  /* unpack(fmt, offset:) and unpack1(fmt, offset:): from the byte offset */
+  if ((FX_IS("unpack") || FX_IS("unpack1")) && argc == 2 && fx_is_hash(argv[1]) && argv[1].v.p == L.kwhash) {
+    const char *s = sp_poly_recv_s(r, name);
+    SP_GC_ROOT_STR(s);
+    sp_RbVal k = sp_box_sym(sp_sym_intern("offset"));
+    sp_int off = sp_poly_arg_int_chk(sp_PolyPolyHash_get(sp_poly_as_poly_poly_hash(argv[1]), k));
+    if (off < 0 || off > (sp_int)sp_str_byte_len(s)) sp_raise_cls("ArgumentError", "offset outside of string");
+    sp_PolyArray *p = sp_str_unpack_off(s, sp_poly_arg_str_chk(argv[0]), off);
+    *out = name[6] ? sp_PolyArray_get(p, 0) : sp_box_poly_array(p);
+    return 1;
+  }
+  /* split with no pattern, nil or " ": on runs of whitespace, with a limit */
+  if (FX_IS("split") && argc <= 2 && (argc == 0 || argv[0].tag == SP_TAG_NIL || (fx_is_string(argv[0]) && !strcmp(sp_poly_recv_s(argv[0], name), " "))) &&
+      (argc < 2 || argv[1].tag == SP_TAG_INT)) {
+    const char *s = sp_poly_recv_s(r, name);
+    SP_GC_ROOT_STR(s);
+    *out = sp_box_nullable_obj(fx_str_split_ws(s, argc == 2 ? argv[1].v.i : 0), SP_BUILTIN_STR_ARRAY);
+    return 1;
+  }
+  /* scan and split with a pattern of no kind: TypeError, as CRuby words it */
+  if ((FX_IS("scan") || FX_IS("split")) && argc >= 1 && argc <= 2 && !fx_is_string(argv[0]) && argv[0].tag != SP_TAG_NIL &&
+      !(argv[0].tag == SP_TAG_OBJ && argv[0].cls_id == SP_BUILTIN_REGEX))
+    sp_raise_cls("TypeError", sp_sprintf("wrong argument type %s (expected Regexp)", sp_poly_class_name(argv[0])));
   if (argc == 0) {
     /* dup of a String of the runtime: a new handle, which keeps the
        encoding and can change */
@@ -251,13 +379,6 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     if (fx_is_string(a) && FX_IS("chomp")) {
       *out = sp_box_str_new(sp_str_chomp_sep(sp_poly_recv_s(r, name), sp_poly_recv_s(a, name)));
       return 1;
-    }
-    if (a.tag == SP_TAG_SYM && !strcmp(sp_sym_to_s((sp_sym)a.v.i), "ascii")) {
-      const char *(*fn)(const char *) = FX_IS("upcase") ? sp_str_upcase_ascii
-                                        : FX_IS("downcase") ? sp_str_downcase_ascii
-                                        : FX_IS("capitalize") ? sp_str_capitalize_ascii
-                                        : FX_IS("swapcase") ? sp_str_swapcase_ascii : NULL;
-      if (fn) { *out = sp_poly_case_conv(r, fn, name); return 1; }
     }
     /* the frozen flag of the handle, without a read of its bytes, which
        would make a run of appends quadratic */

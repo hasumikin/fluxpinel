@@ -275,6 +275,16 @@ static int fx_exc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
   if (argc == 0 && FX_IS("to_s")) { *out = sp_box_str_new(sp_str_dup(sp_exc_message(e))); return 1; }
   if (argc == 0 && FX_IS("cause")) { *out = e->cause ? fx_exc_box(e->cause) : sp_box_nil(); return 1; }
   if (argc == 0 && FX_IS("exception")) { *out = r; return 1; }
+  /* exception(msg): the exception itself for itself, else a clone with
+     the message, as CRuby's exc_exception */
+  if (argc == 1 && FX_IS("exception")) {
+    if (argv[0].tag == SP_TAG_OBJ && argv[0].v.p == (void *)e) { *out = r; return 1; }
+    sp_RbVal c = fx_send(r, "clone", 0, NULL);
+    SP_GC_ROOT_RBVAL(c);
+    fx_exc_set_msg((sp_Exception *)c.v.p, argv[0]);
+    *out = c;
+    return 1;
+  }
   if (argc == 0 && FX_IS("result")) { *out = sp_exc_result(e); return 1; }
   /* LoadError#path: the feature of a require that loaded nothing, else nil */
   if (argc == 0 && FX_IS("path")) { *out = sp_exc_path_acc(e); return 1; }

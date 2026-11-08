@@ -109,12 +109,20 @@ static int fx_array_class(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
 
 /* The methods of Array with no block, and Array#fetch with one. Answers
    1 and sets *out when it handles the call. */
-/* permutation(k = size): each permutation to the block, or an Enumerator
-   over the rows of the runtime */
-static int fx_array_permutation(sp_RbVal r, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out) {
+/* permutation(k = size), repeated_combination(k) and
+   repeated_permutation(k): each row to the block, or an Enumerator over
+   the rows of the runtime */
+static int fx_array_permutation(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                                sp_RbVal *out) {
   SP_GC_ROOT_RBVAL(r);
+  int perm = FX_IS("permutation");
+  if (!perm && argc != 1) return 0;
   sp_int k = argc ? sp_poly_arg_int_chk(argv[0]) : sp_poly_length(r);
-  sp_PolyArray *rows = sp_PolyArray_permutation(sp_poly_to_poly_array(r), k);
+  sp_PolyArray *src = sp_poly_to_poly_array(r);
+  SP_GC_ROOT(src);
+  sp_PolyArray *rows = perm ? sp_PolyArray_permutation(src, k)
+                     : FX_IS("repeated_combination") ? sp_PolyArray_repeated_combination(src, k)
+                     : sp_PolyArray_repeated_permutation(src, k);
   SP_GC_ROOT(rows);
   if (blk) {
     for (sp_int i = 0; i < rows->len; i++) {
@@ -124,7 +132,7 @@ static int fx_array_permutation(sp_RbVal r, int argc, sp_RbVal *argv, const FxBl
     *out = r;
     return 1;
   }
-  const char *m = argc ? sp_sprintf("permutation(%lld)", (long long)k) : sp_sprintf("permutation");
+  const char *m = argc ? sp_sprintf("%s(%lld)", name, (long long)k) : sp_sprintf("%s", name);
   SP_GC_ROOT_STR(m);
   sp_Enumerator *e = sp_Enumerator_new_from_items(rows);
   SP_GC_ROOT(e);
@@ -146,7 +154,8 @@ static int fx_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
       *out = i >= 0 && i < n ? sp_poly_arr_get(r, i) : fx_y1(blk, argv[0]);
       return 1;
     }
-    if (argc <= 1 && FX_IS("permutation")) return fx_array_permutation(r, argc, argv, blk, out);
+    if (argc <= 1 && (FX_IS("permutation") || FX_IS("repeated_combination") || FX_IS("repeated_permutation")))
+      return fx_array_permutation(r, name, argc, argv, blk, out);
     return 0;
   }
   sp_PolyArray *w = NULL;
@@ -319,7 +328,16 @@ static int fx_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     *out = one ? taken->data[0] : sp_box_poly_array(taken);
     return 1;
   }
-  if (argc <= 1 && FX_IS("permutation")) return fx_array_permutation(r, argc, argv, NULL, out);
+  if (argc <= 1 && (FX_IS("permutation") || FX_IS("repeated_combination") || FX_IS("repeated_permutation")))
+    return fx_array_permutation(r, name, argc, argv, NULL, out);
+  /* pack(fmt, buffer: s): the bytes go after those of s */
+  if (argc == 2 && FX_IS("pack") && fx_is_hash(argv[1]) && argv[1].v.p == L.kwhash) {
+    sp_RbVal k = sp_box_sym(sp_sym_intern("buffer"));
+    sp_RbVal buf = sp_PolyPolyHash_get(sp_poly_as_poly_poly_hash(argv[1]), k);
+    SP_GC_ROOT_RBVAL(buf);
+    *out = sp_poly_pack_buffer(r, argv[0], buf);
+    return 1;
+  }
   /* a[range] = v and a[start, len] = v: v converts by its to_ary, and the
      call answers v as it was */
   if (argc == 2 && FX_IS("[]=") && fx_is_range(argv[0])) {

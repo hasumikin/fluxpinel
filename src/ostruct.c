@@ -108,7 +108,7 @@ static int fx_ostruct_core(sp_RbVal r, const char *name, int argc, sp_RbVal *arg
   if (argc >= 1 && FX_IS("dig")) {
     sp_RbVal v = sp_OpenStruct_get(o, fx_ostruct_key(argv[0]));
     SP_GC_ROOT_RBVAL(v);
-    *out = argc == 1 || v.tag == SP_TAG_NIL ? v : fx_send(v, "dig", argc - 1, argv + 1);
+    *out = fx_dig_rest(v, argc - 1, argv + 1);
     return 1;
   }
   return 0;

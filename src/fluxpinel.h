@@ -48,6 +48,8 @@ typedef struct {
   void *proc;                 /* FX_M_PROC: the FxProc of define_method; L.procs roots it */
   sp_sym builtin;             /* FX_M_BUILTIN: the builtin method that the entry calls
                                  (an alias of one); 0 for the method of its own name */
+  sp_sym orig;                /* an alias: the name of the method it copies
+                                 (Method#original_name); 0 for a method of its own name */
 } FxMethod;
 
 typedef struct {
@@ -517,6 +519,9 @@ static int fx_sock_class(const FxClass *k, const char *name, int argc, sp_RbVal 
 static int fx_sock_core(sp_File *f, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int fx_addrinfo_core(sp_RbVal r, const char *name, int argc, sp_RbVal *out);
 static void fx_sock_init(void);
+
+/* builtin.c */
+static sp_RbVal fx_dig_rest(sp_RbVal v, int argc, sp_RbVal *argv);
 
 /* random.c */
 static int fx_random_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);

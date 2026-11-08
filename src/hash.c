@@ -289,7 +289,7 @@ static int fx_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
   }
   if (argc >= 1 && FX_IS("dig")) {
     v = sp_PolyPolyHash_get(h, argv[0]);
-    *out = argc == 1 || v.tag == SP_TAG_NIL ? v : fx_send(v, "dig", argc - 1, argv + 1);
+    *out = fx_dig_rest(v, argc - 1, argv + 1);
     return 1;
   }
   if (FX_IS("values_at")) {

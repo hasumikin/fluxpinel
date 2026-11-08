@@ -507,8 +507,9 @@ static int fx_int_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
    of a boxed number, and the error of a coerce for a value that is not a
    real number. */
 static int fx_float_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
-  if (r.tag != SP_TAG_FLT || argc != 1 || !(FX_IS("fdiv") || FX_IS("remainder"))) return 0;
+  if (r.tag != SP_TAG_FLT || argc != 1 || !(FX_IS("fdiv") || FX_IS("remainder") || FX_IS("coerce"))) return 0;
   sp_RbVal a = argv[0];
+  if (FX_IS("coerce")) { *out = sp_poly_coerce(r, a); return 1; }
   if (!fx_is_integer(a) && a.tag != SP_TAG_FLT && !sp_poly_is_rat_kind(a)) *out = sp_poly_binop_bad(name, r, a);
   else if (FX_IS("fdiv")) *out = sp_box_float(sp_poly_fdiv(r, a));
   else *out = sp_poly_remainder(r, a);
@@ -643,6 +644,8 @@ static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_Rb
     if (!strcmp(name, "==")) { *out = sp_poly_eq_value(r, a, 0); return 1; }
     if (!strcmp(name, "!=")) { *out = sp_poly_eq_value(r, a, 1); return 1; }
     if (!strcmp(name, "eql?")) { *out = sp_box_bool(sp_poly_eql(r, a)); return 1; }
+    /* nil =~ x is nil */
+    if (r.tag == SP_TAG_NIL && !strcmp(name, "=~")) { *out = sp_box_nil(); return 1; }
     if (!strcmp(name, "<") || !strcmp(name, "<=") || !strcmp(name, ">") || !strcmp(name, ">=")) {
       *out = sp_poly_relop_v(name, r, a);
       return 1;
@@ -1182,6 +1185,32 @@ static sp_RbVal fx_kernel_rational(int argc, sp_RbVal *argv, int raise) {
 }
 
 /* Kernel methods. Answers 1 and sets *out when it handles the call. */
+/* Kernel#String(v): a String as it is, else to_str, else to_s; an object
+   that has neither (a BasicObject) is TypeError, as CRuby's */
+static sp_RbVal fx_kernel_String(sp_RbVal v) {
+  if (fx_is_string(v)) return v;
+  if (fx_is_fx_object(v)) {
+    FxClass *k = fx_lookup_class(v);
+    if (fx_find_method(k, sp_sym_intern("to_str"))) return fx_send(v, "to_str", 0, NULL);
+    if (!fx_is_a(v, L.object) && !fx_find_method(k, sp_sym_intern("to_s")))
+      sp_raise_cls("TypeError", sp_sprintf("can't convert %s into String", fx_class_of(v)->name));
+  }
+  return fx_send(v, "to_s", 0, NULL);
+}
+
+/* dig into v with the rest of the keys: a value that has no dig (an
+   Integer, a String) raises TypeError, as CRuby's rb_obj_dig does */
+static sp_RbVal fx_dig_rest(sp_RbVal v, int argc, sp_RbVal *argv) {
+  if (argc == 0 || v.tag == SP_TAG_NIL) return v;
+  int plain = v.tag == SP_TAG_INT || v.tag == SP_TAG_FLT || v.tag == SP_TAG_STR || v.tag == SP_TAG_SYM ||
+              v.tag == SP_TAG_BOOL || v.tag == SP_TAG_BIGINT || sp_poly_is_strbuf(v);
+  if (!plain && fx_is_fx_object(v) && !fx_record_of(fx_class_of(v)) &&
+      !fx_find_method(fx_lookup_class(v), sp_sym_intern("dig")))
+    plain = 1;
+  if (plain) sp_raise_cls("TypeError", sp_sprintf("%s does not have #dig method", sp_poly_class_name(v)));
+  return fx_send(v, "dig", argc, argv);
+}
+
 static int fx_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (fx_random_kernel(name, argc, argv, out)) return 1;
   if (argc == 0 && !strcmp(name, "global_variables")) {
@@ -1240,6 +1269,17 @@ static int fx_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) 
     *out = sp_box_float(sp_poly_Float(argv[0]));
     return 1;
   }
+  /* Float(v, exception: false): nil for a value that does not convert */
+  if (!strcmp(name, "Float") && argc == 2 && fx_is_hash(argv[1]) && argv[1].v.p == L.kwhash) {
+    sp_ofloat f = sp_poly_Float_ex(argv[0], fx_kw_exception(argv[1]));
+    *out = f.nil ? sp_box_nil() : sp_box_float(f.v);
+    return 1;
+  }
+  /* Array(v), Hash(v) and String(v), as the helpers of the runtime and
+     CRuby convert them */
+  if (!strcmp(name, "Array") && argc == 1) { *out = sp_box_poly_array(sp_kernel_array(argv[0])); return 1; }
+  if (!strcmp(name, "Hash") && argc == 1) { *out = sp_kernel_hash(argv[0]); return 1; }
+  if (!strcmp(name, "String") && argc == 1) { *out = fx_kernel_String(argv[0]); return 1; }
   /* Rational(a), Rational(a, b) and exception: false */
   if (!strcmp(name, "Rational") && argc >= 1 && argc <= 3) {
     int raise = 1;
