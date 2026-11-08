@@ -523,6 +523,14 @@ static void fx_sock_init(void);
 /* builtin.c */
 static sp_RbVal fx_dig_rest(sp_RbVal v, int argc, sp_RbVal *argv);
 
+/* load.c: a source run under a frame, with the self and the cref of ctx */
+static sp_RbVal fx_eval_in(FxFrame *under, const FxFrame *ctx, const char *src, const char *path, int line,
+                           FxFrame **kept);
+
+/* iter.c: the blocks of C of a curried Proc and of a composed one */
+static sp_RbVal fx_curry_step(void *ctx, int argc, sp_RbVal *argv);
+static sp_RbVal fx_compose_step(void *ctx, int argc, sp_RbVal *argv);
+
 /* random.c */
 static int fx_random_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int fx_random_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);

@@ -201,9 +201,14 @@ static int fx_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
       *out = h->len ? fx_pair(h->keys[h->order[0]], h->vals[h->order[0]]) : sp_box_nil();
       return 1;
     }
-    if (FX_IS("sort") || FX_IS("min") || FX_IS("max")) {
+    if (FX_IS("sort") || FX_IS("min") || FX_IS("max") || FX_IS("minmax")) {
       sp_RbVal s = fx_sorted(fx_seq_array(r), NULL, NULL);
+      SP_GC_ROOT_RBVAL(s);
       sp_int n = sp_poly_length(s);
+      if (FX_IS("minmax")) {
+        *out = fx_pair(n ? sp_poly_arr_get(s, 0) : sp_box_nil(), n ? sp_poly_arr_get(s, n - 1) : sp_box_nil());
+        return 1;
+      }
       *out = name[0] == 's' ? s : n == 0 ? sp_box_nil() : sp_poly_arr_get(s, name[1] == 'i' ? 0 : n - 1);
       return 1;
     }

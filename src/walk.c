@@ -790,6 +790,23 @@ static int fx_eval_block(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
   FxClass *k = fx_class_value(r);
   if (!(inst || (mod && k))) return 0;
   int exec = strstr(name, "_exec") != NULL;
+  /* class_eval(src, file, line): the source runs with the class as self
+     and as the class of a def, and sees no local of the caller */
+  if (!exec && mod && argc >= 1 && argc <= 3 && !blk) {
+    const char *src = sp_poly_arg_str_chk(argv[0]);
+    SP_GC_ROOT_STR(src);
+    const char *path = argc >= 2 && argv[1].tag != SP_TAG_NIL ? sp_poly_arg_str_chk(argv[1]) : "(eval)";
+    SP_GC_ROOT_STR(path);
+    int line = argc == 3 && argv[2].tag != SP_TAG_NIL ? (int)sp_poly_arg_int_chk(argv[2]) : 1;
+    FxFrame ctx;
+    memset(&ctx, 0, sizeof ctx);
+    ctx.self = r;
+    ctx.cref = k->attached ? k->attached : k;
+    ctx.definee = ctx.cref;
+    ctx.vis = FX_VIS_PUBLIC;
+    *out = fx_eval_in(NULL, &ctx, src, path, line, NULL);
+    return 1;
+  }
   if (!exec && argc > 0) fx_gap(sp_sprintf("%s of a String", name));
   if (!blk && exec) sp_raise_cls("LocalJumpError", "no block given");
   if (!blk) sp_raise_cls("ArgumentError", "wrong number of arguments (given 0, expected 1..3)");
@@ -816,7 +833,7 @@ static void fx_proc_scan(void *p) {
   const FxBlock *b = &((FxProc *)p)->b;
   if (b->home && b->home->heap) sp_gc_mark(b->home);
   /* the Proc of a Method keeps the Method */
-  if (b->cfn == fx_method_value_step) sp_gc_mark(b->ctx);
+  if (b->cfn == fx_method_value_step || b->cfn == fx_curry_step || b->cfn == fx_compose_step) sp_gc_mark(b->ctx);
 }
 
 /* A Proc value for a block. A block that a Proc carries answers that Proc.
@@ -1345,7 +1362,7 @@ static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *a
   if (fx_is_fx_object(self) && self.v.p == L.main.v.p) {
     if (!strcmp(name, "define_method")) return fx_define_proc_method(L.object, 0, FX_VIS_PUBLIC, argc, argv, blk);
     if ((!strcmp(name, "private") || !strcmp(name, "public") || !strcmp(name, "autoload") ||
-         !strcmp(name, "autoload?")) &&
+         !strcmp(name, "autoload?") || !strcmp(name, "include")) &&
         fx_class_core(f, fx_class_box(L.object), name, argc, argv, blk, &out))
       return out;
   }
@@ -1354,6 +1371,8 @@ static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *a
   if (argc >= 1 && !blk && !strcmp(name, "eval")) return fx_eval_string(f, argc, argv);
   /* to_enum and enum_for of self (`return to_enum(:each) unless block_given?`) */
   if (!strcmp(name, "to_enum") || !strcmp(name, "enum_for")) return fx_to_enum(self, argc, argv);
+  /* class_eval "src" and its kin in a class body */
+  if (fx_eval_block(self, name, argc, argv, blk, &out)) return out;
   if (blk) return fx_send_b(self, name, argc, argv, blk);
   if (fx_exc_kernel(name, argc, argv, &out)) return out;
   if (fx_fiber_kernel(name, argc, argv, &out)) return out;
@@ -1497,6 +1516,18 @@ static sp_RbVal fx_super_call(FxFrame *f, const pm_node_t *n, const pm_arguments
   /* a function of Kernel (warn, puts, ...): the super of a method of a
      module that Kernel or Object prepends, as prism's polyfill of warn */
   if (!blk && fx_kernel(name, argc, argv, &out)) return out;
+  /* initialize_copy and its kin of Object do nothing: a super from the
+     program's answers the object */
+  if (fx_is_fx_object(f->self) && argc == 1 &&
+      (!strcmp(name, "initialize_copy") || !strcmp(name, "initialize_dup") || !strcmp(name, "initialize_clone")))
+    return f->self;
+  /* the hooks of Class and Module do nothing by default: a super from the
+     hook of the program answers nil */
+  if (f->self.tag == SP_TAG_CLASS && argc == 1 &&
+      (!strcmp(name, "inherited") || !strcmp(name, "included") || !strcmp(name, "extended") ||
+       !strcmp(name, "prepended") || !strcmp(name, "method_added") || !strcmp(name, "singleton_method_added") ||
+       !strcmp(name, "const_added")))
+    return sp_box_nil();
   fx_trace_missing("super#", name, argc);
   sp_raise_cls("NoMethodError", sp_sprintf("super: no superclass method '%s'", name));
 }

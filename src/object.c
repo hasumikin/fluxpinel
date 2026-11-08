@@ -1800,6 +1800,25 @@ static int fx_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       return 1;
     }
     if (!strcmp(name, "itself")) { *out = r; return 1; }
+    /* dup and clone of an object of the program: a new instance with the
+       ivars, and initialize_copy of the program when it defines one; clone
+       keeps the frozen flag */
+    if ((!strcmp(name, "dup") || !strcmp(name, "clone")) && fx_is_fx_object(r) && !fx_is_native_obj(r) &&
+        !fx_bsub_tail(r) && !fx_record_of(fx_class_of(r)) && fx_is_a(r, L.object)) {
+      FxObject *o = (FxObject *)r.v.p;
+      FxClass *c = fx_class_by_id(o->cls_id);
+      sp_RbVal cp = fx_new_object(c);
+      SP_GC_ROOT_RBVAL(cp);
+      if (o->iv) {
+        sp_PolyArray *iv = sp_PolyArray_dup(o->iv);
+        sp_gc_wb(cp.v.p);
+        ((FxObject *)cp.v.p)->iv = iv;
+      }
+      if (fx_find_method(fx_lookup_class(r), sp_sym_intern("initialize_copy"))) fx_send(cp, "initialize_copy", 1, &r);
+      if (name[0] == 'c' && sp_gc_is_frozen(r.v.p)) sp_gc_freeze(cp.v.p);
+      *out = cp;
+      return 1;
+    }
     /* the ids of CRuby for an Integer, nil, true and false; the identity
        of any other value */
     if (!strcmp(name, "object_id") || !strcmp(name, "__id__")) {
@@ -2248,8 +2267,9 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
       *out = fx_exc_new(k, argc, argv, blk);
       return 1;
     }
-    /* a builtin class other than Object makes its own instances */
-    if (k->cls_id < 0 && k != L.object) return 0;
+    /* a builtin class other than Object and BasicObject makes its own
+       instances */
+    if (k->cls_id < 0 && k != L.object && strcmp(k->name, "BasicObject")) return 0;
     /* the constructor of a class of the kernel is not an entry */
     if (fx_kernel_cls(k->cls_id)) fx_gap(sp_sprintf("%s.%s of a class of the kernel", k->name, name));
     /* an instance of a subclass of Array or Hash is its Array or Hash */
@@ -2289,6 +2309,18 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     *out = k->super ? fx_class_box(k->super) : sp_box_nil();
     return 1;
   }
+  /* subclasses: the classes of the program whose superclass is k, the
+     latest first, as CRuby lists them */
+  if (argc == 0 && !strcmp(name, "subclasses") && !k->is_module) {
+    sp_PolyArray *a = sp_PolyArray_new();
+    SP_GC_ROOT(a);
+    for (int i = L.nclasses - 1; i >= 0; i--) {
+      const FxClass *c = L.classes[i];
+      if (c->super == k && !c->is_module && !c->attached) sp_PolyArray_push(a, fx_class_box((FxClass *)c));
+    }
+    *out = sp_box_poly_array(a);
+    return 1;
+  }
   if (argc == 0 && !strcmp(name, "ancestors")) {
     const FxClass *anc[128];
     int n = fx_ancestors(k, anc, 128);
@@ -2310,8 +2342,14 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     *out = sp_box_bool(in);
     return 1;
   }
-  if (!strcmp(name, "attr_accessor") || !strcmp(name, "attr_reader") || !strcmp(name, "attr_writer")) {
-    int reader = name[5] != 'w', writer = name[5] != 'r';
+  if (!strcmp(name, "attr_accessor") || !strcmp(name, "attr_reader") || !strcmp(name, "attr_writer") ||
+      !strcmp(name, "attr")) {
+    int reader = name[5] != 'w', writer = name[5] != 'r' && name[4] != 0;
+    /* attr(name, true) is a reader and a writer; attr(*names) readers */
+    if (name[4] == 0 && argc == 2 && argv[1].tag == SP_TAG_BOOL) {
+      writer = argv[1].v.b;
+      argc = 1;
+    }
     fx_attr(k, reader, writer, meta || (f && f->singleton_defs == 1), fx_scope_vis(f), argc, argv);
     /* the names of the methods: [:x, :x=] for attr_accessor :x */
     sp_PolyArray *a = sp_PolyArray_new();

@@ -315,6 +315,14 @@ static int fx_seq_collector(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
     *out = argc == 0 ? sp_box_int(a->len) : sp_box_int(sp_poly_count_val(sp_box_poly_array(a), argv[0]));
     return 1;
   }
+  /* Enumerator#to_h: of its items */
+  if (FX_IS("to_h") && r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_ENUMERATOR && r.v.p && argc == 0) {
+    SP_GC_ROOT_RBVAL(r);
+    sp_RbVal a = sp_box_poly_array(sp_Enumerator_to_a((sp_Enumerator *)r.v.p));
+    SP_GC_ROOT_RBVAL(a);
+    *out = fx_send(a, "to_h", 0, NULL);
+    return 1;
+  }
   /* Enumerator#each_with_index with no block: the pairs */
   if (FX_IS("each_with_index") && r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_ENUMERATOR && r.v.p && argc == 0) {
     *out = sp_box_obj(sp_Enumerator_ewi((sp_Enumerator *)r.v.p), SP_BUILTIN_ENUMERATOR);
@@ -1385,6 +1393,7 @@ static int fx_params_arity(const pm_parameters_node_t *ps, int lambda);
 
 static int fx_proc_arity(const FxBlock *b) {
   if (b->cfn == fx_method_value_step) return fx_method_value_arity((const FxMethodValue *)b->ctx);
+  if (b->cfn == fx_curry_step || b->cfn == fx_compose_step) return -1;
   if (!b->node) return -2;   /* &:sym, as CRuby answers for a lambda from a Symbol */
   const pm_constant_id_list_t *locals;
   const pm_node_t *params, *body;
@@ -1413,6 +1422,90 @@ static int fx_params_arity(const pm_parameters_node_t *ps, int lambda) {
   return opt ? -(min + 1) : min;
 }
 
+/* A curried Proc: the arguments so far, and the Proc that runs when their
+   count reaches the arity (Proc#curry) */
+typedef struct {
+  sp_RbVal fn;
+  sp_PolyArray *args;
+  sp_int arity;
+} FxCurry;
+
+static void fx_curry_scan(void *p) {
+  FxCurry *c = (FxCurry *)p;
+  sp_mark_rbval(c->fn);
+  if (c->args) sp_gc_mark(c->args);
+}
+
+static sp_RbVal fx_curry_proc(sp_RbVal fn, sp_PolyArray *args, sp_int arity, int lambda) {
+  SP_GC_ROOT_RBVAL(fn);
+  SP_GC_ROOT(args);
+  FxCurry *c = (FxCurry *)sp_gc_alloc(sizeof *c, NULL, fx_curry_scan);
+  SP_GC_ROOT(c);   /* the Proc's allocation collects */
+  c->fn = fn;
+  c->args = args;
+  c->arity = arity;
+  FxBlock cb = { .cfn = fx_curry_step, .ctx = c, .lambda = lambda };
+  return fx_block_proc(&cb);
+}
+
+static sp_RbVal fx_curry_step(void *ctx, int argc, sp_RbVal *argv) {
+  FxCurry *c = (FxCurry *)ctx;
+  SP_GC_ROOT(c);
+  sp_PolyArray *a = sp_PolyArray_dup(c->args);
+  SP_GC_ROOT(a);
+  for (int i = 0; i < argc; i++) sp_PolyArray_push(a, argv[i]);
+  if (a->len >= c->arity) return fx_send(c->fn, "call", (int)a->len, a->data);
+  return fx_curry_proc(c->fn, a, c->arity, fx_is_proc(c->fn) && ((FxProc *)c->fn.v.p)->b.lambda);
+}
+
+/* f >> g and f << g: the two Procs (or Methods) in a row */
+typedef struct {
+  sp_RbVal first, second;
+} FxCompose;
+
+static void fx_compose_scan(void *p) {
+  FxCompose *c = (FxCompose *)p;
+  sp_mark_rbval(c->first);
+  sp_mark_rbval(c->second);
+}
+
+static sp_RbVal fx_compose_step(void *ctx, int argc, sp_RbVal *argv) {
+  FxCompose *c = (FxCompose *)ctx;
+  SP_GC_ROOT(c);
+  sp_RbVal v = fx_send(c->first, "call", argc, argv);
+  SP_GC_ROOT_RBVAL(v);
+  return fx_send(c->second, "call", 1, &v);
+}
+
+/* r >> g or r << g, for a Proc or a Method r: a lambda when r is one */
+static sp_RbVal fx_compose(sp_RbVal r, const char *name, sp_RbVal g, int lambda) {
+  SP_GC_ROOT_RBVAL(r);
+  SP_GC_ROOT_RBVAL(g);
+  if (!fx_is_proc(g) && !fx_is_method_value(g) && !sp_poly_truthy(fx_respond_to(g, sp_box_sym(sp_sym_intern("call")), sp_box_bool(1))))
+    sp_raise_cls("TypeError", "callable object is expected");
+  FxCompose *c = (FxCompose *)sp_gc_alloc(sizeof *c, NULL, fx_compose_scan);
+  SP_GC_ROOT(c);   /* the Proc's allocation collects */
+  int fwd = name[0] == '>';
+  c->first = fwd ? r : g;
+  c->second = fwd ? g : r;
+  FxBlock cb = { .cfn = fx_compose_step, .ctx = c, .lambda = lambda };
+  return fx_block_proc(&cb);
+}
+
+/* Proc#curry and curry(n): a lambda takes n only as its arity; the arity
+   of a Proc with optional arguments is its required count */
+static sp_RbVal fx_curry(sp_RbVal r, int argc, sp_RbVal *argv) {
+  FxProc *p = (FxProc *)r.v.p;
+  sp_int ar = fx_proc_arity(&p->b), req = ar < 0 ? -ar - 1 : ar, n = req;
+  if (argc == 1) {
+    n = sp_poly_arg_int_chk(argv[0]);
+    if (p->b.lambda && (ar >= 0 ? n != ar : n < req))
+      sp_raise_cls("ArgumentError", sp_sprintf("wrong number of arguments (given %lld, expected %lld%s)", (long long)n,
+                                               (long long)req, ar >= 0 ? "" : "+"));
+  }
+  return fx_curry_proc(r, sp_PolyArray_new(), n, p->b.lambda);
+}
+
 static int fx_proc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   FxProc *p = (FxProc *)r.v.p;
   if (FX_IS("call") || FX_IS("()") || FX_IS("yield") || FX_IS("[]") || FX_IS("===")) {
@@ -1420,6 +1513,8 @@ static int fx_proc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
     *out = fx_yield_x(&p->b, argc, argv, 1);
     return 1;
   }
+  if (FX_IS("curry") && argc <= 1) { *out = fx_curry(r, argc, argv); return 1; }
+  if ((FX_IS(">>") || FX_IS("<<")) && argc == 1) { *out = fx_compose(r, name, argv[0], p->b.lambda); return 1; }
   if (argc == 0 && FX_IS("to_proc")) { *out = r; return 1; }
   if (argc == 0 && FX_IS("lambda?")) { *out = sp_box_bool(p->b.lambda); return 1; }
   if (argc == 0 && FX_IS("arity")) { *out = sp_box_int(fx_proc_arity(&p->b)); return 1; }
@@ -1767,6 +1862,14 @@ static int fx_method_value_core(sp_RbVal r, const char *name, int argc, sp_RbVal
     *out = sp_box_bool(o && o->m == mv->m && o->name == mv->name && o->recv.tag == mv->recv.tag &&
                        o->recv.cls_id == mv->recv.cls_id && o->recv.v.i == mv->recv.v.i &&
                        o->bm.unbound == mv->bm.unbound && fx_method_value_owner(o) == fx_method_value_owner(mv));
+    return 1;
+  }
+  /* curry, >> and << of a Method: those of its Proc */
+  if (!blk && ((FX_IS("curry") && argc <= 1) || ((FX_IS(">>") || FX_IS("<<")) && argc == 1))) {
+    SP_GC_ROOT_RBVAL(r);
+    sp_RbVal pr = sp_box_obj(fx_method_value_block(r)->proc, SP_BUILTIN_PROC);
+    SP_GC_ROOT_RBVAL(pr);
+    *out = fx_send(pr, name, argc, argv);
     return 1;
   }
   if (blk || argc) return 0;

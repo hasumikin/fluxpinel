@@ -1360,7 +1360,8 @@ static int fx_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) 
     else FX_UNLOCKED_ROOT(*out = sp_File_putc(sp_io_stdout(), argv[0]), SP_GC_ROOT_RBVAL(*out));
     return 1;
   }
-  if (!strcmp(name, "p")) {
+  /* pp prints as p does: Fluxpinel does not wrap a wide value */
+  if (!strcmp(name, "p") || !strcmp(name, "pp")) {
     if (fx_gvar_stdout(&so)) {
       SP_GC_ROOT_RBVAL(so);
       for (int i = 0; i < argc; i++) fx_p_to(so, argv[i]);
