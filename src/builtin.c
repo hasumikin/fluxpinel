@@ -52,6 +52,7 @@ static int fx_kind_of(sp_RbVal v, const char **family, const char **variant) {
     case SP_BUILTIN_ADDRINFO: fam = var = "addrinfo"; break;
     case SP_BUILTIN_SOCKOPT: fam = var = "sockopt"; break;
     case SP_BUILTIN_TMS: fam = var = "tms"; break;
+    case SP_BUILTIN_PROCESS_STATUS: fam = var = "process_status"; break;
     case SP_BUILTIN_TIME: fam = var = "time"; kind = FX_TY_TIME; break;
     case SP_BUILTIN_RATIONAL: fam = var = "rational"; kind = FX_TY_RATIONAL; break;
     case SP_BUILTIN_COMPLEX: fam = var = "complex"; kind = FX_TY_COMPLEX; break;
@@ -981,6 +982,7 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
   if (!blk && fx_time_core(recv, name, argc, argv, out)) return 1;
   if (!blk && fx_random_core(recv, name, argc, argv, out)) return 1;
   if (!blk && fx_addrinfo_core(recv, name, argc, out)) return 1;
+  if (!blk && fx_process_status_core(recv, name, argc, out)) return 1;
   if (fx_ostruct_core(recv, name, argc, argv, blk, out)) return 1;
   if (!blk && fx_ostruct_member(recv, name, argc, argv, out)) return 1;
   /* to_enum and enum_for of any value; a block (the size) is not read */
@@ -1078,6 +1080,12 @@ static sp_RbVal fx_send_v(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
   }
   /* an undef of the name hides the builtin method too */
   if (fx_undef_hides(recv, fx_name_sym(name))) fx_no_method(recv, name, FX_MISS_METHOD);
+  /* an instance of a subclass of BasicObject has no builtin method of
+     Kernel or Object: method_missing, or a NoMethodError */
+  if (fx_basic_only(recv, name)) {
+    if (fx_method_missing(recv, name, argc, argv, blk, FX_MISS_METHOD, &out)) return out;
+    fx_no_method_args(recv, name, argc, argv, FX_MISS_METHOD);
+  }
   if (fx_builtin_call(recv, name, argc, argv, blk, &out)) return out;
   if (blk && argc >= 1 && (!strcmp(name, "send") || !strcmp(name, "__send__") || !strcmp(name, "public_send")))
     return fx_send_v(recv, fx_name_arg(argv[0]), argc - 1, argv + 1, blk, name[0] == 'p' ? 2 : 0, NULL);
@@ -1213,6 +1221,7 @@ static sp_RbVal fx_dig_rest(sp_RbVal v, int argc, sp_RbVal *argv) {
 
 static int fx_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (fx_random_kernel(name, argc, argv, out)) return 1;
+  if (fx_process_kernel(name, argc, argv, out)) return 1;
   if (argc == 0 && !strcmp(name, "global_variables")) {
     *out = fx_global_names();
     return 1;

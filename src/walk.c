@@ -1366,6 +1366,12 @@ static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *a
         fx_class_core(f, fx_class_box(L.object), name, argc, argv, blk, &out))
       return out;
   }
+  /* an instance of a subclass of BasicObject has no builtin method of
+     Kernel or Object: method_missing, or a NoMethodError */
+  if (fx_basic_only(self, name)) {
+    if (fx_method_missing(self, name, argc, argv, blk, why, &out)) return out;
+    fx_no_method_args(self, name, argc, argv, why);
+  }
   if (fx_kernel_block(f, name, argc, argv, blk, &out)) return out;
   /* Kernel#eval needs the frame of the call for its locals */
   if (argc >= 1 && !blk && !strcmp(name, "eval")) return fx_eval_string(f, argc, argv);
@@ -1514,8 +1520,9 @@ static sp_RbVal fx_super_call(FxFrame *f, const pm_node_t *n, const pm_arguments
     fx_gap(sp_sprintf("super with a block to the builtin %s", name));
   }
   /* a function of Kernel (warn, puts, ...): the super of a method of a
-     module that Kernel or Object prepends, as prism's polyfill of warn */
-  if (!blk && fx_kernel(name, argc, argv, &out)) return out;
+     module that Kernel or Object prepends, as prism's polyfill of warn; a
+     BasicObject has no Kernel */
+  if (!blk && !fx_basic_only(f->self, name) && fx_kernel(name, argc, argv, &out)) return out;
   /* initialize_copy and its kin of Object do nothing: a super from the
      program's answers the object */
   if (fx_is_fx_object(f->self) && argc == 1 &&
@@ -2938,11 +2945,8 @@ static int fx_defined_all(FxFrame *f, const pm_node_list_t *list) {
    and those of BasicObject, but not those of Kernel. */
 static int fx_defined_basic(sp_RbVal self, sp_RbVal name, int priv, int *hit) {
   if (fx_is_a(self, L.object)) return 0;
-  static const char *const basic[] = { "!", "!=", "==", "equal?", "instance_eval", "instance_exec", "__send__",
-                                       "__id__", NULL };
   const FxMethod *m = fx_find_method(fx_lookup_class(self), (sp_sym)name.v.i);
-  *hit = m && (priv || m->vis == FX_VIS_PUBLIC);
-  for (int i = 0; !*hit && basic[i]; i++) *hit = !strcmp(sp_sym_to_s((sp_sym)name.v.i), basic[i]);
+  *hit = (m && (priv || m->vis == FX_VIS_PUBLIC)) || !fx_basic_only(self, sp_sym_to_s((sp_sym)name.v.i));
   return 1;
 }
 
@@ -3154,6 +3158,24 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
   }
   case PM_INTERPOLATED_STRING_NODE:
     return fx_interpolate(f, &((const pm_interpolated_string_node_t *)n)->parts);
+  /* a backtick literal is a call of the method ` of self with the command,
+     frozen when it is a plain literal, as in CRuby: a method of the program
+     by that name answers it, else Kernel's runs the command */
+  case PM_X_STRING_NODE: {
+    SP_GC_SAVE();
+    const pm_string_t *s = &((const pm_x_string_node_t *)n)->unescaped;
+    sp_RbVal cmd = fx_new_string(pm_string_source(s), pm_string_length(s));
+    SP_GC_ROOT_RBVAL(cmd);
+    cmd = fx_send(cmd, "freeze", 0, NULL);
+    return fx_call_self(f, "`", 1, &cmd, NULL);
+  }
+  case PM_INTERPOLATED_X_STRING_NODE: {
+    SP_GC_SAVE();
+    sp_RbVal cmd = fx_interpolate(f, &((const pm_interpolated_x_string_node_t *)n)->parts);
+    if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+    SP_GC_ROOT_RBVAL(cmd);
+    return fx_call_self(f, "`", 1, &cmd, NULL);
+  }
   case PM_INTERPOLATED_SYMBOL_NODE: {
     sp_RbVal s = fx_interpolate(f, &((const pm_interpolated_symbol_node_t *)n)->parts);
     if (L.ctl != FX_CTL_NONE) return sp_box_nil();

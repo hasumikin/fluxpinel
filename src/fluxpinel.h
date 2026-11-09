@@ -507,6 +507,8 @@ static sp_RbVal fx_ffi_invoke(const struct FxFfi *x, sp_RbVal self, int argc, sp
 static void fx_process_consts(FxClass *c);
 static int fx_process_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int fx_process_responds(sp_RbVal r, const char *name);
+static int fx_process_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int fx_process_status_core(sp_RbVal r, const char *name, int argc, sp_RbVal *out);
 
 /* file.c */
 static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
@@ -624,6 +626,7 @@ static int fx_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
 static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
                            const FxBlock *blk, sp_RbVal *out);
 static int fx_is_fx_object(sp_RbVal v);
+static int fx_basic_only(sp_RbVal r, const char *name);
 static int fx_unknown_builtin(const char *name);
 static void fx_autoload_set(FxClass *c, sp_sym name, const char *path);
 /* An instance of a class of the program under Array or Hash: its Array or

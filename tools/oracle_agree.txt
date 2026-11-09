@@ -401,6 +401,10 @@ autoload_expand_path
 autoload_hash_path
 autoload_literal_path
 back_ref
+backtick_long_output_thread_gc
+backtick_program_cannot_run
+backtick_user_method
+backtick_user_method_ie
 bang_boxed_local_answer_kept
 bang_exception_object
 bang_methods_bind_like_calls
@@ -416,6 +420,7 @@ bare_call_subclass_reader_over_inherited_def
 bare_call_toplevel_def_subclass_override
 bare_const_alias_reopen
 bare_const_lookup_reach
+bare_exec_spawn_own_scoped
 bare_gets_defers_to_own_gets
 bare_module_body_cmethod_call
 bare_new_container_element_read
@@ -438,8 +443,10 @@ base_method_spliced_into_subclass_yielding_call
 basic_object_class_match
 basic_object_reopen_super_skips_object
 basic_object_super_skips_object
+basicobject_blank_slate
 basicobject_dup_rescued
 basicobject_new
+basicobject_send_missing
 basicobject_toplevel_include_class_method
 begin_arg_past_64_arguments
 begin_else_value
@@ -919,6 +926,7 @@ builtin_splice_hash_in_literal
 builtin_splice_heredoc_opening_line
 builtin_splice_line_numbers
 builtin_splice_longer_module_name
+builtin_splice_module_in_comment
 builtin_value_kinds_skip_program_method
 builtin_value_methods
 builtins_comparable
@@ -991,6 +999,7 @@ bundle_hash_b2
 bundle_int_a
 bundle_int_array
 bundle_integer
+bundle_io_sys
 bundle_misc_a
 bundle_misc_b
 bundle_misc_c_10
@@ -1277,6 +1286,7 @@ class_ivar_not_inherited
 class_ivar_reader_override_local
 class_ivar_save_restore
 class_ivar_set_through_constant
+class_level_bool_ivar_nil
 class_level_ivar_string
 class_level_ivar_string_alias
 class_lt_builtin_parent
@@ -1539,6 +1549,7 @@ compact_path_builtin_parent_const_reads
 compact_path_builtin_parent_reopen
 compact_path_class_new_parent
 compact_path_object_parent
+comparable_basic_object
 comparable_between_user_type
 comparable_bigint_cmp_eq
 comparable_descendant_only_impl
@@ -2439,6 +2450,7 @@ fiber_transfer_result
 fiber_transfer_root
 fiber_wide_router
 field_from_unpassed_nil_param
+fifo_open_does_not_pin_worker
 file_basename_extname_rooted
 file_basename_gc
 file_close_without_dev_null
@@ -2453,6 +2465,7 @@ file_io_foreach_break_result
 file_join_poly_component
 file_join_splat_unknown_length
 file_mtime
+file_null_constant
 file_open_block_next
 file_open_param_captured_by_proc
 file_open_poly_mode
@@ -3144,6 +3157,7 @@ included_hook_return_in_inner_method
 included_hook_self_is_module
 included_hook_string_class_eval
 included_hook_super
+included_hook_text_defines_backtick
 included_hook_text_noarg_display
 included_hook_text_rescue_block
 included_hook_writes_base_attr
@@ -3478,6 +3492,7 @@ io_lines_chomp_paragraph
 io_nil_inspect
 io_nul_bytes
 io_pipe
+io_pipe_close_on_exec
 io_pipe_sync_write
 io_poly_print_puts
 io_popen_comment_beside_eval
@@ -3996,6 +4011,7 @@ kernel_conversion_arguments
 kernel_conversion_protocols
 kernel_conversions
 kernel_dir
+kernel_exec
 kernel_fail_alias
 kernel_float_integer_strict
 kernel_float_strict
@@ -4017,6 +4033,7 @@ kernel_reopen_private_by_name
 kernel_reopen_public_receiver
 kernel_require_qualified
 kernel_select
+kernel_spawn_bare
 kernel_underscore_id
 keyword_arg_empty_hash_filled
 keyword_computed_key
@@ -5072,6 +5089,8 @@ pattern_value_raising_arm
 percent_literal_command_arg_heredoc_text
 pin_compares_by_value
 pipe_ends_captured
+pipe_from_child_read_while_allocating
+pipe_read_end_given_to_child
 pipe_read_partial_while_allocating
 pm_deconstruct_keys_rest_param
 pointer_type_miscompiles
@@ -5166,6 +5185,7 @@ poly_builtin_arm_block_user_method
 poly_builtin_arm_container_read
 poly_builtin_default_args
 poly_builtin_default_reentry
+poly_builtin_reader_beside_nil_reader
 poly_builtin_vs_unreached_class
 poly_byteslice_range
 poly_call_block_self
@@ -5811,7 +5831,19 @@ process_clock_constants
 process_clock_gettime_unit
 process_clock_unit_validation
 process_cputime_clocks
+process_detach
+process_last_status
 process_pid
+process_spawn
+process_spawn_command_line
+process_spawn_env_hash
+process_spawn_exec_failure_reaped
+process_spawn_failure_names_path
+process_spawn_file_redirect
+process_spawn_group_redirect
+process_spawn_splat_and_pair
+process_status_equality
+process_waitpid2_sets_status
 product_block_splat
 program_name_assign
 program_name_guard
@@ -6725,6 +6757,7 @@ socket_const_defined
 socket_constants
 socket_getaddrinfo_family_socktype
 socket_getsockname
+socket_given_to_child
 socket_handle_kind
 socket_large_read_n
 socket_large_write_slow_reader
@@ -6743,6 +6776,7 @@ socket_tcp_basic
 socket_tcp_thread
 socket_two_readers_one_buffer
 socket_unpack_sockaddr_un_edges
+socket_write_parked_across_spawn
 sort_block_nil_answer
 sort_block_nil_compare
 sort_block_poly_receiver
@@ -6774,6 +6808,10 @@ sp_net_poll_persistent
 sp_net_write_partial
 spaceship_incomparable_nil
 spaceship_nil_guard_poly_compare
+spawn_child_pipe_blocking
+spawn_inherits_no_runtime_descriptors
+spawn_missing_program_names_it
+spawn_parent_pipe_write_parks
 specialized_caller_keeps_private_source
 splat_boxed_scalar_into_builtin
 splat_builtin_predicate_family
@@ -7558,6 +7596,11 @@ symbol_to_proc_call
 symbol_to_proc_unary_op
 symbol_upcase_interpolation
 synchronize_block_argument
+system_argument_list
+system_as_block_tail
+system_options
+system_program_argv0_pair
+system_splat_kernel_receiver
 systemcallerror_errno_namespaced_subclass
 systemcallerror_hierarchy
 table_empty_row_literal
@@ -7572,6 +7615,7 @@ tail_iter_call_receiver
 tail_iter_receiver_more
 tail_iter_receiver_poly_return
 tail_ivar_write_nullable_number
+tail_system_p_value
 take_while_boxed_predicate
 take_while_param_widened_slot
 tap_block_param_cell
@@ -7769,9 +7813,18 @@ to_enum_with_size_block
 to_h_on_boxed_hash
 to_h_with_block
 to_path_boxed_shared_string
+tools_alloc_diff
 tools_bisect_search
+tools_c_costs
+tools_c_costs_live
+tools_cident_abandoned
+tools_cident_cache
+tools_cident_concurrent
 tools_diff_classify
 tools_diff_normalize
+tools_repr_diff
+tools_repr_dump
+tools_share_verify
 top_level_call_before_def_raises
 toplevel_alias
 toplevel_begin_ensure
@@ -7808,6 +7861,7 @@ toplevel_scan_tag
 toplevel_self_main
 transform_keys_symproc
 transform_values_block_argument
+trap_before_first_thread
 trap_raise_rescued
 truncate_module_method
 tuple_elem_local
@@ -7968,6 +8022,7 @@ void_value_hash_store_nil
 void_value_if_writer_arm
 void_value_in_value_position
 volatile_strip_skips_coerced_arg
+waitpid_thread_drains_pipe
 warn_category
 warn_double_splat
 warn_kernel

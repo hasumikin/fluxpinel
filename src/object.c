@@ -886,6 +886,20 @@ static int fx_is_a(sp_RbVal v, const FxClass *k) {
   return 0;
 }
 
+/* Whether the builtin methods do not reach a call of name on r: an
+   instance of a class under BasicObject that is not under Object has the
+   methods of BasicObject alone, not those of Kernel and Object, as the
+   builtin tree has them. Such a call is a NoMethodError (or goes to
+   method_missing), where a method of the program does not answer it. */
+static int fx_basic_only(sp_RbVal r, const char *name) {
+  static const char *const basic[] = { "!", "!=", "==", "equal?", "instance_eval", "instance_exec", "__send__",
+                                       "__id__", "initialize", "method_missing", "singleton_method_added",
+                                       "singleton_method_removed", "singleton_method_undefined", NULL };
+  if (!fx_is_fx_object(r) || fx_is_a(r, L.object)) return 0;
+  for (int i = 0; basic[i]; i++) if (!strcmp(name, basic[i])) return 0;
+  return 1;
+}
+
 /* ---- constants ---- */
 
 static FxConst *fx_const_own(const FxClass *c, sp_sym name) {
@@ -1804,7 +1818,7 @@ static int fx_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
        ivars, and initialize_copy of the program when it defines one; clone
        keeps the frozen flag */
     if ((!strcmp(name, "dup") || !strcmp(name, "clone")) && fx_is_fx_object(r) && !fx_is_native_obj(r) &&
-        !fx_bsub_tail(r) && !fx_record_of(fx_class_of(r)) && fx_is_a(r, L.object)) {
+        !fx_bsub_tail(r) && !fx_record_of(fx_class_of(r))) {
       FxObject *o = (FxObject *)r.v.p;
       FxClass *c = fx_class_by_id(o->cls_id);
       sp_RbVal cp = fx_new_object(c);
