@@ -714,6 +714,8 @@ boxed_complex_finite
 boxed_container_read_at
 boxed_dig_receiver_checked
 boxed_dig_splat_keys
+boxed_dir_inspect
+boxed_dir_io_names
 boxed_dispatch_opaque_named_method_param
 boxed_dispatch_self_class_arg
 boxed_dispatch_shared_private_helper_sibling_widen
@@ -1920,13 +1922,20 @@ dig_recv_hold_rest
 dig_splat_receiver_order
 dig_with_splat_keys
 dir_block_forms_answer_nil
+dir_chdir_forwarded_block
+dir_chdir_nonlocal_exit
+dir_dup_uninitialized
 dir_entries_children
 dir_exist
+dir_for_fd_and_enumerable
+dir_glob_base
 dir_glob_keyword_options
 dir_glob_patterns
 dir_glob_recursive
 dir_glob_splat_patterns
+dir_handle_objects
 dir_methods
+dir_path_copy_identity
 dispatch_arm_arity_error
 dispatch_arm_default_reads_receiver
 dispatch_arm_fills_rest
@@ -2006,6 +2015,7 @@ each_cons_map_types
 each_cons_slice_chain_nil_elem
 each_cons_with_index_map_no_double_gets
 each_elem_into_mutated_param
+each_entry_returns_receiver
 each_entry_reverse_each
 each_index_forwarded_proc
 each_line_splat_separator
@@ -2776,6 +2786,7 @@ gvar_read_through_alias_before_write
 gvar_read_through_enum_helper_before_write
 gvar_write_value
 handle_argument_held_before_nil_test
+handle_nil_equality
 handle_shape_k12_masgn_poly_into_index
 handle_shape_m09_cvar_target
 handle_shape_r02_poly_chain
@@ -3647,6 +3658,8 @@ issue_2963
 issue_2964
 issue_2965
 issue_2966
+issue_2967
+issue_2968
 issue_2969
 issue_2970
 issue_2971
@@ -3868,6 +3881,7 @@ issue_3240
 issue_3241
 issue_3243
 issue_3249
+issue_3250
 issue_3251
 issue_3253
 issue_3254
@@ -4728,6 +4742,7 @@ nil_free_method_version
 nil_guard_narrows_int_or_nil
 nil_guard_param_narrow
 nil_guard_post_test_loop
+nil_handle_eq_class
 nil_hash_param_boxed_as_nil
 nil_hashdefault_complex_followups
 nil_into_number_and_or_write
@@ -5223,6 +5238,9 @@ poly_cover_user_answer
 poly_default_reads_param
 poly_delete_dispatch
 poly_delete_upcase_chain
+poly_dir_count_include
+poly_dir_each
+poly_dir_position_controls
 poly_dispatch_arg_gc_root
 poly_dispatch_arg_prelude_order
 poly_dispatch_args_forwarded_block_proc_form
@@ -5916,6 +5934,8 @@ puts_shared_member_reader
 qualified_class_ruby_name
 qualified_missing_constant_value
 quantifier_splat_args
+queue_boxed_close
+queue_boxed_close_user_class
 queue_boxed_receiver
 queue_handoffs_under_own_lock
 queue_ivar_pop_nb

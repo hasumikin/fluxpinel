@@ -428,22 +428,161 @@ static int fx_dir_glob(const char *name, int argc, sp_RbVal *argv, const FxBlock
   return 1;
 }
 
+/* A Dir handle as a value: nil for none. */
+static sp_RbVal fx_dir_box(sp_Dir *d) { return sp_box_nullable_obj((void *)d, SP_BUILTIN_DIR); }
+
+/* Dir.open with a block: the block takes the Dir, which closes when the
+   block ends, also by a raise or a jump. Answers the value of the block. */
+static sp_RbVal fx_dir_with(sp_Dir *d, const FxBlock *blk) {
+  SP_GC_SAVE();
+  SP_GC_ROOT(d);
+  sp_RbVal v = sp_box_nil(), dir = fx_dir_box(d);
+  SP_GC_ROOT_RBVAL(v);
+  SP_GC_ROOT_RBVAL(dir);
+  const int depth = fx_fs()->depth;
+  FX_TRY_PUSH();
+  if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
+    v = fx_y1(blk, dir);
+    sp_exc_top--;
+  } else {
+    FX_TRY_LANDED(depth);
+    if (d->dp) sp_Dir_close(d);
+    if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
+    fx_reraise(fx_caught());
+  }
+  if (d->dp) sp_Dir_close(d);
+  return v;
+}
+
+/* Dir.chdir(path) with a block: the block runs in the directory, which
+   takes the path as its argument, and the working directory comes back
+   when the block ends, also by a raise or a jump. Answers the value of the
+   block. */
+static sp_RbVal fx_dir_chdir_with(const char *path, const FxBlock *blk) {
+  SP_GC_SAVE();
+  const char *back = sp_dir_pwd();
+  SP_GC_ROOT_STR(back);
+  sp_RbVal v = sp_box_nil(), arg = sp_box_str_new(sp_str_dup(path));
+  SP_GC_ROOT_RBVAL(v);
+  SP_GC_ROOT_RBVAL(arg);
+  sp_dir_chdir0(path);
+  const int depth = fx_fs()->depth;
+  FX_TRY_PUSH();
+  if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
+    v = fx_y1(blk, arg);
+    sp_exc_top--;
+  } else {
+    FX_TRY_LANDED(depth);
+    sp_dir_chdir(back);
+    if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
+    fx_reraise(fx_caught());
+  }
+  sp_dir_chdir(back);
+  return v;
+}
+
+/* The methods of a Dir handle, as the runtime has them: read, the lists,
+   the position, the path, close, dup, and each with a block; the methods
+   of Enumerable go over the entries. */
+static int fx_dir_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out) {
+  if (r.tag != SP_TAG_OBJ || r.cls_id != SP_BUILTIN_DIR || !r.v.p) return 0;
+  sp_Dir *d = (sp_Dir *)r.v.p;
+  SP_GC_ROOT(d);
+  int each = FX_IS("each") || FX_IS("each_entry") || FX_IS("each_child");
+  if (blk && each && argc == 0) {
+    const char *s = NULL;
+    SP_GC_ROOT_STR(s);
+    int children = name[5] == 'c';
+    /* from the first entry, wherever a read left the stream, as CRuby's
+       each rewinds first */
+    sp_Dir_rewind(d);
+    while ((s = sp_Dir_read(d)) != NULL) {
+      if (children && (!strcmp(s, ".") || !strcmp(s, ".."))) continue;
+      fx_y1(blk, sp_box_str_new(s));
+      if (L.ctl != FX_CTL_NONE) break;
+    }
+    *out = r;
+    return 1;
+  }
+  if (!blk && argc == 0) {
+    if (FX_IS("read")) {
+      const char *s = sp_Dir_read(d);
+      *out = s ? sp_box_str_new(s) : sp_box_nil();
+      return 1;
+    }
+    /* a new String each time, as CRuby answers it; nil for a Dir of for_fd */
+    if (FX_IS("path") || FX_IS("to_path")) {
+      const char *s = sp_Dir_path_copy(d);
+      *out = s ? sp_box_str_new(s) : sp_box_nil();
+      return 1;
+    }
+    if (FX_IS("inspect")) {
+      const char *p = sp_Dir_path(d);
+      *out = sp_box_str_new(sp_sprintf("#<Dir:%s>", p ? p : ""));
+      return 1;
+    }
+    if (FX_IS("to_s")) { *out = sp_box_str_new(sp_Dir_to_s(d)); return 1; }
+    if (FX_IS("close")) { *out = sp_Dir_close(d); return 1; }
+    if (FX_IS("rewind")) { sp_Dir_rewind(d); *out = r; return 1; }
+    if (FX_IS("tell") || FX_IS("pos")) { *out = sp_box_int(sp_Dir_tell(d)); return 1; }
+    if (FX_IS("fileno")) { *out = sp_box_int(sp_Dir_fileno(d)); return 1; }
+    if (FX_IS("children") || FX_IS("entries")) {
+      *out = sp_box_nullable_obj((void *)sp_Dir_entries_h(d, name[0] == 'c'), SP_BUILTIN_STR_ARRAY);
+      return 1;
+    }
+    if (FX_IS("dup") || FX_IS("clone")) { *out = fx_dir_box(sp_dir_dup_handle(d)); return 1; }
+    if (each) {
+      sp_RbVal items = sp_box_nullable_obj((void *)sp_Dir_entries_h(d, name[5] == 'c'), SP_BUILTIN_STR_ARRAY);
+      SP_GC_ROOT_RBVAL(items);
+      *out = sp_box_obj(sp_Enumerator_new_from_items(sp_poly_to_poly_array(items)), SP_BUILTIN_ENUMERATOR);
+      return 1;
+    }
+  }
+  if (!blk && argc == 1 && FX_IS("seek")) { sp_Dir_seek(d, sp_poly_arg_int_chk(argv[0])); *out = r; return 1; }
+  if (!blk && argc == 1 && FX_IS("pos=")) { sp_Dir_seek(d, sp_poly_arg_int_chk(argv[0])); *out = argv[0]; return 1; }
+  /* count, include?, map, sort and the other methods of Enumerable: over
+     the entries, from the start, as the runtime's count and include? read
+     them */
+  if (fx_enumerable_name(name)) {
+    sp_RbVal items = sp_box_nullable_obj((void *)sp_Dir_entries_h(d, 0), SP_BUILTIN_STR_ARRAY);
+    SP_GC_ROOT_RBVAL(items);
+    *out = fx_send_b(items, name, argc, argv, blk);
+    return 1;
+  }
+  return 0;
+}
+
 /* The class methods of Dir on paths, through the runtime: the lists
    (children, entries, glob), the tests (exist?, empty?) and mkdir, rmdir
-   and chdir without a block. each_child and foreach yield the names, or
-   answer an Enumerator over them. */
+   and chdir; new, open and for_fd answer a handle. each_child and foreach
+   yield the names, or answer an Enumerator over them. */
 static int fx_dir_class(const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out) {
   if (FX_IS("glob") || FX_IS("[]")) return fx_dir_glob(name, argc, argv, blk, out);
   if (argc == 0 && !blk) {
     if (FX_IS("pwd") || FX_IS("getwd")) { *out = sp_box_str_new(sp_dir_pwd()); return 1; }
     if (FX_IS("home")) { *out = sp_box_str_new(sp_dir_home()); return 1; }
+    /* Dir.chdir with no path: the home directory */
+    if (FX_IS("chdir")) { *out = sp_box_int(sp_dir_chdir(sp_dir_home())); return 1; }
     return 0;
+  }
+  if (argc == 1 && !blk && (FX_IS("for_fd") || FX_IS("fchdir"))) {
+    sp_int fd = sp_poly_arg_int_chk(argv[0]);
+    *out = name[1] == 'o' ? fx_dir_box(sp_Dir_for_fd(fd)) : sp_box_int(sp_Dir_fchdir(fd));
+    return 1;
   }
   if (argc < 1 || argc > 2 || (argc == 2 && !FX_IS("mkdir"))) return 0;
   int each = FX_IS("each_child") || FX_IS("foreach");
-  if (blk && !each) return 0;
+  if (blk && !each && !FX_IS("open") && !FX_IS("chdir")) return 0;
   const char *path = sp_poly_arg_path(argv[0]);
   SP_GC_ROOT_STR(path);
+  /* Dir.new and Dir.open: a handle; open with a block closes it after */
+  if (FX_IS("new") || FX_IS("open")) {
+    sp_Dir *d = sp_Dir_new(path);
+    SP_GC_ROOT(d);
+    *out = blk ? fx_dir_with(d, blk) : fx_dir_box(d);
+    return 1;
+  }
+  if (FX_IS("chdir") && blk) { *out = fx_dir_chdir_with(path, blk); return 1; }
   if (FX_IS("exist?")) { *out = sp_box_bool(sp_file_directory(path)); return 1; }
   if (FX_IS("empty?")) { *out = sp_box_bool(sp_dir_empty(path)); return 1; }
   if (FX_IS("home")) { *out = sp_box_str_new(sp_dir_home_user(path)); return 1; }

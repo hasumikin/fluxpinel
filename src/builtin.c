@@ -979,6 +979,7 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
   if (fx_fiber_core(recv, name, argc, argv, blk, out)) return 1;
   if (fx_io_console(recv, name, argc, argv, blk, out)) return 1;
   if (!blk && fx_io_core(recv, name, argc, argv, out)) return 1;
+  if (fx_dir_core(recv, name, argc, argv, blk, out)) return 1;
   if (!blk && fx_time_core(recv, name, argc, argv, out)) return 1;
   if (!blk && fx_random_core(recv, name, argc, argv, out)) return 1;
   if (!blk && fx_addrinfo_core(recv, name, argc, out)) return 1;
@@ -1018,8 +1019,8 @@ static sp_RbVal fx_send_b(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
    the modules ahead of Object: Kernel, Comparable and Enumerable. A miss
    of such a name is a gap of Fluxpinel, which a top-level def must not
    take. */
-static int fx_builtin_module_name(sp_RbVal r, const char *name) {
-  static const char *const comparable[] = { "between?", "clamp", "<", "<=", ">", ">=", "==", NULL };
+/* Whether name is a method of Enumerable in CRuby. */
+static int fx_enumerable_name(const char *name) {
   static const char *const enumerable[] = {
     "all?", "any?", "chain", "chunk", "chunk_while", "collect", "collect_concat", "compact", "count", "cycle",
     "detect", "drop", "drop_while", "each_cons", "each_entry", "each_slice", "each_with_index",
@@ -1029,12 +1030,16 @@ static int fx_builtin_module_name(sp_RbVal r, const char *name) {
     "slice_after", "slice_before", "slice_when", "sort", "sort_by", "sum", "take", "take_while", "tally", "to_a",
     "to_h", "to_set", "uniq", "zip", NULL
   };
+  for (int i = 0; enumerable[i]; i++) if (!strcmp(name, enumerable[i])) return 1;
+  return 0;
+}
+
+static int fx_builtin_module_name(sp_RbVal r, const char *name) {
+  static const char *const comparable[] = { "between?", "clamp", "<", "<=", ">", ">=", "==", NULL };
   if (fx_object_method_name(name)) return 1;
-  const char *const *lists[2] = { comparable, enumerable };
-  const char *mods[2] = { "Comparable", "Enumerable" };
-  for (int l = 0; l < 2; l++)
-    for (int i = 0; lists[l][i]; i++)
-      if (!strcmp(name, lists[l][i])) return fx_is_a(r, fx_builtin(mods[l]));
+  for (int i = 0; comparable[i]; i++)
+    if (!strcmp(name, comparable[i])) return fx_is_a(r, fx_builtin("Comparable"));
+  if (fx_enumerable_name(name)) return fx_is_a(r, fx_builtin("Enumerable"));
   return 0;
 }
 

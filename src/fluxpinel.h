@@ -514,6 +514,7 @@ static int fx_process_status_core(sp_RbVal r, const char *name, int argc, sp_RbV
 static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                          sp_RbVal *out);
 static int fx_file_responds(sp_RbVal r, const char *name);
+static int fx_dir_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out);
 
 /* socket.c */
 static int fx_sock_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
