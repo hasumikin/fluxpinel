@@ -41,6 +41,15 @@ jobs:
       - name: Install the ffi gem
         run: gem install ffi --no-document
 
+      # --irb loads prism through its ffi backend (lib/prism/ffi.rb), which
+      # needs the gem's build/libprism.so. The default gem of CRuby has only
+      # the C extension and no lib directory of its own, so tools/gem_dirs.rb
+      # cannot name it: install the gem and build its shared library.
+      - name: Install the prism gem and build its shared library
+        run: |
+          gem install prism --no-document
+          make -C "$(ruby -e 'puts Gem::Specification.find_by_name("prism").full_gem_path')" shared
+
       # The build of spinel takes most of the time. The cache keeps it for
       # one pin, so only a change of SPINEL_COMMIT builds spinel again.
       - name: Restore spinel

@@ -38,6 +38,8 @@ failed = CLI_CASES.reject do |c|
   end
   puts "#{why ? 'NG' : 'ok'} fluxpinel #{args.join(' ')}#{c[:stdin] ? ' < stdin' : ''}"
   puts "   #{why}" if why
+  # the stderr of a failed case: a require that failed names what is missing
+  puts "   stderr #{err.inspect}" if why && !err.empty?
   !why
 end
 puts "#{CLI_CASES.size - failed.size}/#{CLI_CASES.size} passed"
