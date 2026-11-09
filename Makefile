@@ -247,16 +247,20 @@ include roundhouse/roundhouse.mk
 # in promote mode on both sides. In raise mode, spinel's analysis still
 # promotes an Integer where it sees growth (10 ** 30), and a walker with no
 # analysis cannot make the same choice.
+# ORACLE_TIMEOUT is the seconds a test may run: the timeout is for a test
+# that never ends, and the GC tests of spinel that measure a collector
+# (gc_locality_build, gc_str_major_interval) take 5 to 7 seconds alone.
+ORACLE_TIMEOUT = 30
 oracle:
 	$(MAKE) BUILD=$(BUILD)/promote INT_OVERFLOW=PROMOTE $(BUILD)/promote/fluxpinel
-	ruby tools/oracle.rb --spinel $(SPINEL) --fluxpinel $(BUILD)/promote/fluxpinel \
+	ruby tools/oracle.rb --spinel $(SPINEL) --fluxpinel $(BUILD)/promote/fluxpinel --timeout $(ORACLE_TIMEOUT) \
 	  --int-overflow promote --out $(BUILD)/oracle --write-agree tools/oracle_agree.txt
 
 # The tests that the last oracle found right, under Fluxpinel only. It
 # finds in seconds a change of spinel that breaks Fluxpinel.
 regress:
 	$(MAKE) BUILD=$(BUILD)/promote INT_OVERFLOW=PROMOTE $(BUILD)/promote/fluxpinel
-	ruby tools/oracle.rb --spinel $(SPINEL) --fluxpinel $(BUILD)/promote/fluxpinel \
+	ruby tools/oracle.rb --spinel $(SPINEL) --fluxpinel $(BUILD)/promote/fluxpinel --timeout $(ORACLE_TIMEOUT) \
 	  --int-overflow promote --out $(BUILD)/regress --regress tools/oracle_agree.txt
 
 # The gem oracle: the entry files of the packages of spinel and the files of

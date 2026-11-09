@@ -25,7 +25,7 @@
 #
 #   fx_unsupported  the walker has no case for a node (exit status 2)
 #   fx_missing      a builtin method is missing (FX_TRACE_MISSING)
-#   fx_crash        a signal or a timeout
+#   fx_crash        a signal or a timeout (--timeout SEC, 10 by default)
 #
 # tools/oracle_known.tsv lists the known defects. A listed test that still
 # differs is counted as known, not in its class above. A listed test that
@@ -52,6 +52,7 @@ OptionParser.new do |o|
   o.on("--fluxpinel BIN") { |v| opts[:fluxpinel] = File.expand_path(v) }
   o.on("--out DIR") { |v| opts[:out] = File.expand_path(v) }
   o.on("--jobs N", Integer) { |v| opts[:jobs] = v }
+  o.on("--timeout SEC", Integer) { |v| opts[:timeout] = v }
   o.on("--write-agree FILE") { |v| opts[:write_agree] = File.expand_path(v) }
   o.on("--regress FILE") { |v| opts[:regress] = File.expand_path(v) }
 end.parse!
