@@ -28,6 +28,16 @@ static const char *fx_str_mut(sp_RbVal r, const char *name) {
   return s;
 }
 
+/* The bytes of scrub!(repl) on s: s itself when nothing was invalid, else
+   the scrubbed copy, which the caller stores (the runtime emits scrub! as
+   the other String bangs and keeps no function for it). */
+static const char *fx_str_scrub_bang(const char *s, const char *repl) {
+  SP_GC_ROOT_STR(s);
+  SP_GC_ROOT_STR(repl);
+  const char *r = sp_str_scrub(s, repl);
+  return r == s || sp_str_eq(r, s) ? s : r;
+}
+
 /* The bang methods that answer the plain form of the name. */
 static const char *const fx_str_bangs[] = {
   "upcase!", "downcase!", "capitalize!", "swapcase!", "strip!", "lstrip!", "rstrip!", "chomp!", "chop!",
@@ -93,7 +103,21 @@ static int fx_all_strings(int argc, sp_RbVal *argv) {
    encoding of the copy. capacity: has no visible effect. */
 static int fx_string_class(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   FxClass *k = fx_class_value(r);
-  if (!k || k->cls_id >= 0 || strcmp(k->name, "String") || !FX_IS("new")) return 0;
+  if (!k || k->cls_id >= 0 || strcmp(k->name, "String")) return 0;
+  /* String.try_convert(v): a String as it is, an object's to_str (nil
+     stays nil, another kind is TypeError), nil for anything else */
+  if (FX_IS("try_convert") && argc == 1) {
+    sp_RbVal v = argv[0];
+    if (fx_is_string(v)) { *out = v; return 1; }
+    *out = sp_box_nil();
+    if (!fx_is_fx_object(v) || !fx_find_method(fx_lookup_class(v), sp_sym_intern("to_str"))) return 1;
+    SP_GC_ROOT_RBVAL(v);
+    sp_RbVal s = fx_send(v, "to_str", 0, NULL);
+    if (s.tag == SP_TAG_NIL || fx_is_string(s)) { *out = s; return 1; }
+    sp_raise_cls("TypeError", sp_sprintf("can't convert %s to String (%s#to_str gives %s)", fx_class_of(v)->name,
+                                         fx_class_of(v)->name, sp_poly_class_name(s)));
+  }
+  if (!FX_IS("new")) return 0;
   sp_RbVal enc = sp_box_nil();
   SP_GC_ROOT_RBVAL(enc);
   if (argc > 0 && fx_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash) {
@@ -317,7 +341,7 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     }
     if (FX_IS("scrub!")) {
       const char *s = fx_str_mut(r, name);
-      const char *t = sp_str_scrub_bang(s, NULL);
+      const char *t = fx_str_scrub_bang(s, NULL);
       if (!sp_poly_str_is_own(r, t)) sp_poly_str_become(r, t);
       *out = r;
       return 1;
@@ -344,7 +368,7 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       SP_GC_ROOT_STR(rep);
       if (FX_IS("scrub")) { *out = sp_box_str_new(sp_str_scrub(sp_poly_recv_s(r, name), rep)); return 1; }
       const char *s = fx_str_mut(r, name);
-      const char *t = sp_str_scrub_bang(s, rep);
+      const char *t = fx_str_scrub_bang(s, rep);
       if (!sp_poly_str_is_own(r, t)) sp_poly_str_become(r, t);
       *out = r;
       return 1;

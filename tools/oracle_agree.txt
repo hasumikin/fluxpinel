@@ -1,5 +1,5 @@
 # The spinel tests that Fluxpinel answers right, for make regress.
-# make oracle writes this file. spinel: 41492f494e95
+# make oracle writes this file. spinel: 5cce6eb0366c
 absolute_class_reopen_inside_module
 abstract_raise_override_return
 addrinfo_family_predicates
@@ -11,8 +11,11 @@ alias_chain_over_builtin
 alias_counterpart_own_class
 alias_date_compare_without_coercion
 alias_deconstruct_boxed
+alias_extended_module_redefined
 alias_in_builtin_reopen
 alias_in_included_and_extended_module
+alias_inherited_after_accessor_alias
+alias_inherited_later_redefined
 alias_inherited_method
 alias_inherited_method_self_dispatch
 alias_inherited_method_visibility
@@ -26,6 +29,11 @@ alias_object_builtin_value
 alias_of_accessor_int64
 alias_of_alias_only_last_called
 alias_of_inherited_method
+alias_of_maybe_writer
+alias_of_maybe_writer_fallback
+alias_of_maybe_writer_native
+alias_of_send_program_send
+alias_over_inherited_accessor_subclass
 alias_param_narrowed_from_callers
 alias_reader_bool_and_ostruct
 alias_reader_is_no_writer
@@ -36,6 +44,7 @@ alias_resettled_in_subclass
 alias_respond_to_builtin
 alias_sibling_redefined
 alias_singleton_between_subclass_include
+alias_singleton_over_inherited_reader
 alias_then_accessor_same_name
 alias_then_subclass_include
 alias_to_reader_call
@@ -263,6 +272,9 @@ array_product
 array_product_boxed_operand
 array_product_flatten_combination_wave10
 array_product_multi_arg
+array_product_to_ary_operands
+array_push_grow_out_of_line
+array_push_len_once
 array_push_lift_root
 array_push_lift_splat
 array_push_multi_arg
@@ -422,6 +434,7 @@ bare_begin_no_handler
 bare_call_class_before_toplevel
 bare_call_prefers_self_over_toplevel
 bare_call_subclass_reader_over_inherited_def
+bare_call_toplevel_def_in_block
 bare_call_toplevel_def_subclass_override
 bare_const_alias_reopen
 bare_const_lookup_reach
@@ -601,6 +614,7 @@ block_given_inline_call_site
 block_given_tail_typed_per_call
 block_given_with_stored_block
 block_index_shared_string_nil_arg
+block_jump_nil_deep
 block_kept_through_or
 block_keyword_binding_gaps
 block_keyword_param_shadow
@@ -646,6 +660,7 @@ block_param_shadow
 block_param_shadow_destructured
 block_param_sibling_collision
 block_param_table_rows
+block_param_typed_and_boxed_yield
 block_param_types_binding_plan
 block_param_value_read_when_stored
 block_param_walk_name_collision
@@ -668,6 +683,7 @@ block_tail_rescue_modifier
 block_value_cond_boxed
 block_yield_keyword_param
 block_yield_optional_param
+blockcall_tail_if_string_boxed
 blockless_cycle_enumerator
 bm_instance_eval
 body_local_invented_name_spelling
@@ -701,6 +717,7 @@ box_random_argf
 box_rescue_modifier_tail
 box_unbox_local_assign_cond
 boxed_arg_int_parameter
+boxed_arity_nomethod_names_receiver
 boxed_array_fetch_index
 boxed_array_index_symbol
 boxed_array_methods
@@ -733,6 +750,7 @@ boxed_each_line_block
 boxed_each_with_index_items
 boxed_encoding_symbol_name
 boxed_endless_float_step
+boxed_enum_random_argf_to_s
 boxed_enumerable_entries
 boxed_eq_user_answer
 boxed_file_gets_args
@@ -756,6 +774,7 @@ boxed_kill_user_and_thread
 boxed_local_container_unaffected
 boxed_map_bang_dispatch_write_barrier
 boxed_map_bang_write_barrier
+boxed_map_live_length
 boxed_match_user_method
 boxed_matchdata_readers
 boxed_matchdata_string
@@ -878,6 +897,7 @@ builder_param_class_value_reflection
 builder_reopen_colliding_leaf
 builder_unless_defined_next_under_rescue
 builder_unless_defined_reopen
+builtin_ancestor_name_beats_object_def
 builtin_answer_kinds
 builtin_array_method_capture
 builtin_block_beside_user_yield
@@ -886,6 +906,7 @@ builtin_class_const_call_keeps_marking
 builtin_class_const_call_skips_class_method
 builtin_class_mixin_call
 builtin_class_singleton_override
+builtin_class_value_id
 builtin_cls_id_distinct
 builtin_const_path_beside_nested_namesake
 builtin_forwarded_yield_proc_form
@@ -899,17 +920,20 @@ builtin_iter_scalar_yield_shapes
 builtin_iter_step_frame
 builtin_iter_step_frame_more
 builtin_kwarg_user_clone
+builtin_lib_method_reopen_after_call
 builtin_mixin_module_implicit_self
 builtin_module_kind
 builtin_numeric_operator_reaches_coerce
 builtin_override_before_object_def
 builtin_recv_call_reaches_no_program_method
+builtin_reopen_after_call_at_top_level
 builtin_reopen_alias_yield
 builtin_reopen_array_hash_overrides
 builtin_reopen_array_hash_poly
 builtin_reopen_bignum_receiver
 builtin_reopen_blank_shapes
 builtin_reopen_const_read_late_write
+builtin_reopen_enum_alias_own
 builtin_reopen_hash_time_methods
 builtin_reopen_implicit_self
 builtin_reopen_implicit_to_s
@@ -1183,6 +1207,7 @@ case_when_string_range
 case_when_string_range_nil_bound
 case_when_subclass_in_inherited_method
 case_when_typed_eq_identity
+case_when_undefined_constant
 case_when_user_equality
 case_when_value_constant
 case_when_value_type_classes
@@ -1236,6 +1261,7 @@ class_body_macro_state
 class_body_method_defined_namespaced_string
 class_body_new_const_path_block
 class_body_private_instance_methods
+class_body_public_instance_methods
 class_body_self_call_private_attr
 class_body_self_call_private_or_namespaced
 class_body_self_inherited_class_method
@@ -1267,6 +1293,7 @@ class_eval_text_call_before_def_raises
 class_eval_text_hook_call_before_def_raises
 class_eval_text_own_local
 class_eval_text_source_line
+class_eval_value_bare_call
 class_eval_value_form
 class_exec_def_body
 class_facts_row_of_table
@@ -1338,6 +1365,7 @@ class_module_case_equality
 class_module_redeclaration
 class_name_collision_across_modules
 class_name_compact_path_builtin
+class_name_double_underscore
 class_name_in_cmeth
 class_named_like_builtin_module
 class_named_like_builtin_module_path
@@ -1397,6 +1425,7 @@ class_table_loop_status_classes
 class_table_loop_values
 class_value_attr_or_write
 class_value_builtin_and_nested
+class_value_builtin_arm_conversion_raises
 class_value_builtin_new
 class_value_call_nullable_int
 class_value_chained_cmethod
@@ -1409,6 +1438,7 @@ class_value_cmethod_splat
 class_value_const_from_method
 class_value_dispatch_args
 class_value_dispatch_arity
+class_value_dispatch_keywords
 class_value_dispatch_mixed_arity
 class_value_dispatch_unreferenced_subclass
 class_value_forwarding_cmethod_builtin_name
@@ -1464,6 +1494,7 @@ class_value_new_yielding_init_variants
 class_value_object_id
 class_value_or_write_slots
 class_value_ordering_user_operator
+class_value_own_at
 class_value_own_name_via_class
 class_value_reopened_builtin_new
 class_value_respond_to
@@ -1472,6 +1503,7 @@ class_value_setter_answers_argument
 class_value_singleton_accessor
 class_value_subclasses
 class_value_unified
+class_value_unnamed_beside_called_module
 class_value_yielding_cmethod_no_block
 class_value_yielding_cmethod_splat
 class_var_builtin_new
@@ -1518,6 +1550,7 @@ cmethod_ivar_op_assign_expr
 cmethod_lambda_self_subclass
 cmethod_override_without_super_leaves_ancestor_out
 cmethod_self_and_default
+cmethod_self_call_block_beats_instance_method
 cmethod_self_call_nullable_boxed
 cmethod_self_receiver
 cmethod_send_subclass_class_ivar
@@ -1562,6 +1595,7 @@ compact_path_object_parent
 comparable_basic_object
 comparable_between_user_type
 comparable_bigint_cmp_eq
+comparable_copy_kernel_name
 comparable_descendant_only_impl
 comparable_eq_boxed
 comparable_equality_lookup
@@ -1572,10 +1606,19 @@ comparable_prepend_reflection
 comparable_rational_operand
 comparable_reopen_bare_call
 comparable_reopen_string_symbol
+comparable_reopen_time
+compare_by_identity_boxed_mixed_keys
 compare_by_identity_boxed_struct_keys
 compare_by_identity_hash_value_keys
+compare_by_identity_key_from_hash_each
+compare_by_identity_key_from_hash_keys
+compare_by_identity_key_from_own_deconstruct_keys
+compare_by_identity_key_from_store_answer
 compare_by_identity_predicate
 compare_by_identity_reader_and_raise_arm_keys
+compare_by_identity_string_key
+compare_by_identity_symbol_key_may_hold_string
+compare_by_identity_symbol_key_other_store
 compare_by_identity_symbol_keyed_hash
 compare_by_identity_user_method
 compile_time_define_method_direct
@@ -1602,6 +1645,7 @@ complex_rational_interop
 complex_rect_arg_polar
 complex_string_number_syntax
 complex_string_zero_denominator
+complex_to_s_negative_zero
 compound_write_conversions
 computed_ivar_get_direct
 computed_ivar_get_poly
@@ -1614,6 +1658,8 @@ computed_require_load_error_long
 computed_send_at_arm_class_index
 computed_send_builtin_receiver
 computed_send_past_1024_program_names
+computed_send_program_object_methods
+computed_send_toplevel_def_builtin_receiver
 computed_undef_beside_string_class_eval
 concat_boxed_source
 concat_chain_operand_gc_root
@@ -1639,6 +1685,7 @@ conditional_def_runtime_arm
 conditional_define_method_forms
 conditional_defs_differ_in_param_kind
 conditional_empty_hash_or_array
+conditional_reopen_entry_beside_class_method
 conditional_require_inline
 conditional_require_line
 conditional_require_native_package
@@ -1722,6 +1769,7 @@ const_receiver_tail_value
 const_recv_yield_inline
 const_reopened_class_value
 const_rows_reached_by_another_name
+const_set_in_singleton_method_sets_class_const
 const_set_receiver_scope
 const_singleton_lexical_class_value
 const_singleton_owner
@@ -1921,6 +1969,7 @@ defined_ruby_constants
 defined_scoped_constant
 defined_visibility_call_in_class_body
 defined_yield_no_block
+definition_value_as_block_tail
 deprecate_constant_class_body
 destructure_splat_underflow
 destructure_typed_ptr_array_return
@@ -1991,6 +2040,7 @@ double_splat_keyword_check
 double_splat_keyword_not_positional
 double_splat_kwargs
 drop_while_stops_asking
+dsend_class_value_new_recv
 dsend_recv_unsettled_join
 dup_in_base_method_subclass
 dup_in_proc_declares_pool
@@ -2024,6 +2074,7 @@ dynamic_send_skips_initialize
 dynamic_send_splat
 dynamic_send_symbol_constants
 dynamic_send_variadic_args
+each_array_header_cache
 each_break_no_setjmp
 each_char_with_index_break_value
 each_codepoint_with_index_boxed
@@ -2069,6 +2120,7 @@ element_string_handed_on_to_appender
 else_runs_ensure
 elsif_condition_args_wait_for_their_branch
 elsif_isa_chain
+elsif_ladder_flat_deep
 embedded_nul_method_partition
 embedded_nul_promoted_handle
 empty_array_arg_typed_by_pushes
@@ -2113,6 +2165,7 @@ empty_hash_nonscalar_key
 empty_hash_param_default
 empty_hash_poly_keys
 empty_hash_receiver_call
+empty_hash_seeded_return
 empty_hash_takes_return_type
 empty_hash_yield_wrapper_seed
 empty_int_array_min_max
@@ -2265,7 +2318,9 @@ exc_frame_break_next_pops
 exc_frame_depth_bounded
 exc_frame_early_return_pops
 exc_is_a_constant_path
+exc_rescued_is_a_narrowed_read
 exc_stack_window_cleared
+exc_text_dispatch_temp_root
 exception_accessor_dispatch_alias
 exception_accessor_dispatch_class
 exception_accessor_dispatch_metadata
@@ -2378,6 +2433,7 @@ extend_copy_respond_to_before_own_def
 extend_copy_singleton_alias
 extend_copy_subclass_reads_parent
 extend_copy_super_after_read
+extend_forwarding_def_params
 extend_in_reopened_class
 extend_keeps_private
 extend_module
@@ -2403,6 +2459,7 @@ external_enumerator_user_object
 external_singleton_def
 extrema_by_single_walk
 face_probe_dropped_arm_keeps_loop_state
+face_raise_args_enum_held
 fail_diverges_like_raise
 fallback_block_argument
 fallback_block_gets_the_missing_key
@@ -2504,6 +2561,7 @@ file_read_negative_length
 file_read_nil_length
 file_read_offset
 file_read_to_eof
+file_read_utf8_options
 file_readlines_long_line
 file_readlines_missing_raises
 file_reopen_closed
@@ -2574,6 +2632,8 @@ float_rationalize_abs_epsilon
 float_rationalize_invalid_epsilon
 float_rationalize_simplest
 float_remainder_zero_divisor
+float_reopen_nil_only_call
+float_reopen_numeric_row_names
 float_round_digits_cruby
 float_round_half
 float_round_half_mode
@@ -2691,6 +2751,7 @@ fresh_return_cycle_param_exit
 fresh_return_cycle_param_exit_reversed
 frozen_array_error_inspect
 frozen_boxed_hash_delete_clear_store
+frozen_const_table_row_store
 frozen_empty_hash_copy_store
 frozen_exception_no_implicit_cause
 frozen_global_into_appender
@@ -2918,6 +2979,7 @@ hash_map_block
 hash_map_next_string_bytes_slot
 hash_merge_bang
 hash_merge_bang_boxed_argument
+hash_merge_bang_boxed_frozen_identity
 hash_merge_bang_symbol_keyed_argument
 hash_merge_block_rest
 hash_merge_block_rest_general
@@ -3172,6 +3234,7 @@ include_module_held_by_local
 include_nested_module
 include_reopened_module_keywords
 include_reopened_modules_keywords_many
+include_reopening_third_module_super_chain
 include_root_builtin_after_call
 include_root_path_ancestors
 include_several_modules_order
@@ -3239,6 +3302,7 @@ inherited_hook_by_qualified_name
 inherited_hook_deep_chain
 inherited_hook_nested_class_qualified_name
 inherited_initialize_default_arg
+inherited_initialize_default_reads_self
 inherited_ivar_late_widen_layout
 inherited_kwarg_nil_default_string_ivar
 inherited_method_kwarg_block_self
@@ -3482,7 +3546,10 @@ integer_pow_negative_unit_huge_exponent
 integer_pow_zero_negative_literal
 integer_powmod_large_residues
 integer_rational_complex_ops
+integer_reopen_after_call_at_top_level
 integer_reopen_class_method_and_kwarg
+integer_reopen_keyword_param_block
+integer_reopen_rest_keyrest_block
 integer_reopen_splat_block_param
 integer_round_large_precision
 integer_shift_float_and_coerce
@@ -3499,6 +3566,7 @@ interp_single_buffer
 interp_statements_run_in_place
 interp_symbol
 interp_value_obj_default_to_s
+interpolate_handles
 interpolate_range
 interpolated_inspect_under_subclass_overrides
 interpolation_multistmt
@@ -3541,6 +3609,7 @@ io_puts_compound_arg
 io_puts_nul_boxed
 io_puts_print_binary
 io_pwrite_binary_seek_errno
+io_read_directory
 io_read_n_is_binary
 io_read_short_read_rooted
 io_reader_forwards
@@ -4071,7 +4140,9 @@ kernel_integer_float_strict_nil
 kernel_integer_negative_radix
 kernel_integer_true_message
 kernel_integer_with_base
+kernel_printf_beside_own_format
 kernel_puts_nul
+kernel_puts_reassigned_stdout
 kernel_rational_strict
 kernel_rational_string_zerodenom
 kernel_reopen_bare_call_self
@@ -4080,6 +4151,8 @@ kernel_reopen_methods
 kernel_reopen_private_by_name
 kernel_reopen_public_receiver
 kernel_require_qualified
+kernel_rows_internal
+kernel_rows_internal_share
 kernel_select
 kernel_spawn_bare
 kernel_underscore_id
@@ -4141,6 +4214,20 @@ kwsplat_forward_poly_receiver
 kwsplat_into_poly_kwrest_dispatch
 kwsplat_literal
 kwsplat_poly_hash_into_kwrest
+kwsplat_split_block_placement
+kwsplat_split_class_body_route
+kwsplat_split_defined
+kwsplat_split_graph_library
+kwsplat_split_hold_receiver
+kwsplat_split_last_statement
+kwsplat_split_literals
+kwsplat_split_order
+kwsplat_split_push
+kwsplat_split_safe_nav
+kwsplat_split_self
+kwsplat_split_send
+kwsplat_split_sum
+kwsplat_split_value
 kwsplat_to_positional
 kwsplat_yield_inline_bind
 lambda_arrow_string_return
@@ -4194,6 +4281,7 @@ load_word_called
 load_word_in_text
 loaded_features
 local_empty_array_push_promotion_propagates
+local_named_sb_shim_collision
 local_op_assign_reads_slot_first
 local_or_write_first_assign
 local_read_before_widen
@@ -4258,6 +4346,7 @@ map_block_string_new_join
 map_each_cons_typed
 map_obj_array_poly_field
 map_poly_next_value
+map_presized_result
 map_recv_emitted_once
 map_result_widened_by_composition
 map_shadowed_param_poly_arg
@@ -4280,6 +4369,7 @@ marshal_restore_and_value
 marshal_roundtrip
 marshal_symlink_float
 marshal_unset_ivar
+masgn_array_kind_mixed_local
 masgn_array_literal_untracked_local
 masgn_attr_const_array
 masgn_boxed_attr_nil_receiver_calls
@@ -4288,7 +4378,9 @@ masgn_boxed_attr_struct_order
 masgn_boxed_ivar_into_rbs_array
 masgn_boxed_ivar_targets
 masgn_boxed_ivar_typed_slot
+masgn_class_setter_order
 masgn_class_setter_target
+masgn_class_setter_value_and_order
 masgn_class_value
 masgn_classvar_target
 masgn_const_array_unless_index
@@ -4363,6 +4455,7 @@ matchdata_gsub_named_backref
 matchdata_in_container
 matchdata_index_bounds
 matchdata_index_eq
+matchdata_index_out_of_matches
 matchdata_index_range
 matchdata_match_by_name
 matchdata_methods
@@ -4437,6 +4530,8 @@ method_defined_guard_body
 method_defined_on_constant_path
 method_defined_own_guard_folds
 method_defined_runtime_name_plain_class
+method_defined_struct_member_private_section
+method_defined_struct_splat_members
 method_dispatch_poly_array
 method_in_container
 method_inspect_keywords
@@ -4452,6 +4547,7 @@ method_name_class_helper
 method_name_symbol
 method_named_like_runtime_helper
 method_obj_bare_resolves_like_call
+method_obj_block_param_nil_arg
 method_obj_boxed_receiver_own_method
 method_obj_call_object_result
 method_obj_of_toplevel_yielding_method
@@ -4464,6 +4560,7 @@ method_object_nil_receiver_reopen
 method_out_of_container
 method_override_called
 method_override_receiverless
+method_override_super_chain
 method_owner_accessor_conditional_reopen
 method_owner_module
 method_owner_receiver
@@ -4603,6 +4700,7 @@ module_method_dispatchers_link
 module_method_via_class_value
 module_nested_reopen_yield
 module_new_without_block
+module_own_reflection_cmethods
 module_private_attr_reader
 module_relative_constant_path
 module_reopen_after_include_ivar
@@ -4619,6 +4717,14 @@ module_store_fetch_block_call_forms_poly_value
 module_store_fetch_block_call_poly_value
 module_store_fetch_early_return_poly_value
 module_store_fetch_yield_poly_value
+module_super_forward_chain_ends
+module_super_forward_defs_ahead_of_builtin
+module_super_forward_include_positions
+module_super_forward_include_sites
+module_super_forward_reached_forwarder
+module_super_forward_required_include
+module_super_forward_unlisted_defs
+module_through_module_isa
 module_version_block_window
 module_version_conditional_include
 module_version_conditional_include_again
@@ -4789,6 +4895,7 @@ nil_match_op_variable
 nil_method_beside_object_method
 nil_method_lookup_name_error
 nil_method_on_nilable_scalar
+nil_method_on_nilable_scalar_splat_block
 nil_method_scalar_join
 nil_narrowing
 nil_narrowing_builtin_names
@@ -4896,6 +5003,7 @@ numeric_edges_wave10
 numeric_i_boxed
 numeric_iter_boxed_recv_value
 numeric_method_displaced_by_user
+numeric_reopen_poly_receiver
 numeric_reopen_self_any_number
 numeric_step_by_kw_edges
 numeric_step_zero
@@ -4903,21 +5011,26 @@ numeric_tower_methods
 numeric_tower_remainder
 oasgn_singleton_writer_value
 obj_array_and_or_left
+obj_array_call_result_recv
 obj_array_enum_through_if
+obj_array_ivar_shared_row
 obj_array_literal_arg
 obj_array_map_element_root
 obj_array_nested_block
 obj_array_param_accumulator
 obj_array_param_pushes_two_classes
+obj_array_push_splat
 obj_array_range_index_read
 obj_array_removals
 obj_array_return_through_forward_def
+obj_array_self_reader_push
 obj_array_self_ref_walk
 obj_array_sort_typed
 obj_array_walk_method_tail
 obj_class_cmethod_descendant_yields
 obj_class_dispatch
 obj_class_poly_yielding_cmethod
+object_alias_before_main_def
 object_array_constant
 object_array_constant_array_new
 object_array_constant_path_array_new
@@ -4947,6 +5060,7 @@ object_id_nil_true
 object_id_symbol_distinct
 object_identity_eq
 object_identity_predicates
+object_include_constants
 object_local_boxed_write
 object_lowered_yield_block_arg
 object_method_builtin_hash_dispatch
@@ -4982,6 +5096,7 @@ object_reopen_private_builtin_reopen_owner
 object_reopen_private_exception_owner
 object_reopen_private_explicit_receiver
 object_reopen_time_file_receiver
+object_reopen_vis_main_def
 object_reopen_yield_no_block
 object_scoped_ruby_constants
 object_space_finalizer
@@ -5039,11 +5154,14 @@ or_write_scalar_nil
 ordered_recv_splice_writeback
 ordered_string_recv_byte_face_writeback
 orphan_method_same_name_refusal
+ostruct_boxed_builtin_beside_user_reader
+ostruct_boxed_class_queries
 ostruct_case_when
 ostruct_dup_clone
 ostruct_frozen_error_names_receiver
 ostruct_nil_slot_inspect
 ostruct_nil_union_to_h
+ostruct_poly_nil_number_reader
 ostruct_poly_user_name_clash
 ostruct_size_beside_class
 ostruct_string_key_inspect
@@ -5443,6 +5561,7 @@ poly_is_a
 poly_is_a_included_module
 poly_is_a_reopened_builtin_with_user_is_a
 poly_is_a_reopened_module_class_value
+poly_isa_builtin_subclass_beside_own_isa
 poly_iter_non_enumerable_object
 poly_iter_to_a_params
 poly_ivar_bitwise_op_write_user_class
@@ -5498,6 +5617,7 @@ poly_numeric_op_assign_div_mod
 poly_numeric_predicates_shadowed
 poly_numeric_query_methods
 poly_object_default_render
+poly_object_lacks_array_names
 poly_object_methods_list
 poly_op_arm_class_without_instance
 poly_op_assign_user_op_return
@@ -5875,6 +5995,7 @@ proc_return_nested_ensure
 proc_return_nested_lifted_blocks
 proc_return_rescue_modifier_escape
 proc_return_scopes
+proc_returned_by_cmethod_copy_params_boxed
 proc_returns_class
 proc_safe_nav_call
 proc_string_handed_to_reading_method
@@ -5901,6 +6022,7 @@ process_spawn_splat_and_pair
 process_status_equality
 process_waitpid2_sets_status
 product_block_splat
+product_block_typed_params
 program_name_assign
 program_name_guard
 promote_arith_typed_operand
@@ -5935,6 +6057,7 @@ promote_xorshift_mask
 promote_yield_operator_diverging_block_types
 protected_call_in_module_block
 ptr_array
+ptr_array_header_cache
 ptr_array_nil_elem_alias
 ptr_array_nil_elem_call
 ptr_array_nil_elem_read_begin
@@ -5962,6 +6085,7 @@ push_widens_through_boxed_and_sequence
 putc_boxed_nil
 puts_array_call_once
 puts_class_value
+puts_fresh_array_rooted
 puts_hash_and_ostruct
 puts_in_case_value_arm
 puts_nested_inspect_container
@@ -6016,6 +6140,7 @@ rand_range_argument
 random_bignum_seed
 random_empty_float_range
 random_float_seed
+random_inspect
 random_methods
 random_rand_argument
 random_reopen_block_parameter
@@ -6084,6 +6209,7 @@ range_step_endless
 range_step_endless_block
 range_step_float
 range_step_negative
+range_step_no_argument_prepended
 range_step_paren_empty_stride
 range_string_cover
 range_sum_empty_float_seed
@@ -6136,6 +6262,7 @@ reader_override_nil_dispatch
 reader_override_struct_member
 reader_override_through_self
 reader_read_only_no_copy
+reader_replaced_in_parent_reopen
 reader_shadows_inherited_def
 reader_subclass_alias
 receiver_before_arguments
@@ -6309,6 +6436,7 @@ reopened_builtin_class_method_missing
 reopened_builtin_key_without_own_method
 reopened_builtin_kwrest_keys
 reopened_builtin_optional_block
+reopened_builtin_self_class
 reopened_iter_with_block_and_args
 reopened_module_superclass_method
 reopened_operator_op_assign
@@ -6346,6 +6474,7 @@ reraise_nested_rescue
 rescue
 rescue_arms_share_a_name
 rescue_attr_with_sibling_exc_subclass
+rescue_base_subclass_only_method
 rescue_bind_in_fiber_body
 rescue_bind_in_lambda_proc_body
 rescue_binding_captured_local
@@ -6478,6 +6607,7 @@ ruby_version_value
 runtime_args_rooted
 runtime_condition_def_class_new
 runtime_condition_def_lists_other_receivers
+runtime_condition_def_module_included_twice
 runtime_condition_def_over_accessor
 runtime_condition_def_override
 runtime_condition_single_def
@@ -6488,6 +6618,7 @@ safe_nav_array_returning
 safe_nav_block_calls
 safe_nav_block_family
 safe_nav_block_param_shapes
+safe_nav_block_tail_value
 safe_nav_blockless_enumerator
 safe_nav_boxed_recv_own_method
 safe_nav_builtin_pointer
@@ -6578,6 +6709,7 @@ sclass_attr_body_masgn_ivar
 sclass_const_visibility
 sclass_def_default_self
 scope_callers_alias_chain
+scoped_constant_on_class_value_mutator
 scrub_bang_alias
 scrub_bang_retained_append
 seal_collect_route_and_flow
@@ -6610,6 +6742,7 @@ self_new_with_args
 self_operator_subclass_dispatch
 self_recursive_block_given_forward
 self_referential_ivar_reader
+self_singleton_def_superclass_receiver
 self_writer_in_class_method
 send_arm_nullable_number
 send_beside_program_send
@@ -6627,6 +6760,7 @@ send_forwards_block_proc
 send_implicit_self_runtime_name
 send_kwsplat_untyped_conditional_arm
 send_literal_and_user
+send_literal_name_before_def
 send_local_literal_names
 send_local_literal_names_begin
 send_local_literal_names_case
@@ -6636,6 +6770,7 @@ send_local_literal_names_rescue_modifier
 send_local_literal_names_sequence
 send_method_raising_body
 send_missing_method_raises_at_run_time
+send_mixin_by_literal_name
 send_name_from_built_name_table
 send_name_from_container
 send_name_from_container_local
@@ -6659,6 +6794,7 @@ send_traceable_name
 send_user_defined_scoped
 send_yielding_block_forward
 set_algebra_operand_enum
+set_array_own_to_a
 set_backtrace_boxed_array
 set_basic
 set_block_autosplat
@@ -6895,6 +7031,7 @@ splat_into_p_puts_print
 splat_into_unlisted_builtin
 splat_length_probe_is_the_builtins
 splat_map_lambda_into_rest
+splat_matchdata_call_arg
 splat_nil_scalar_into_rest
 splat_nil_scalar_rest
 splat_param_with_block
@@ -6951,6 +7088,7 @@ stored_block_call_returns_value
 stored_block_param_fresh_yields
 str_append_accumulator
 str_append_ascii_int
+str_append_value_keeps_nul
 str_array_delete_boxed_needle
 str_array_include_nil_arg
 str_array_ivar_widen_frozen
@@ -7404,6 +7542,7 @@ string_split_local_each_retry
 string_split_local_shift_after_each
 string_split_map_bang_read_before
 string_split_map_bang_retry
+string_split_regexp_nul
 string_split_result_iterator_append
 string_split_select_mutation
 string_squeeze_empty_set
@@ -7430,6 +7569,7 @@ string_to_r_forms
 string_to_s_receiver_rebind
 string_to_s_store_boxed_local
 string_to_s_store_shares
+string_try_convert_user_to_str
 string_unary_minus_poly
 string_unary_plus
 string_unary_plus_frozen_receiver
@@ -7524,6 +7664,7 @@ struct_member_size_reader
 struct_minmax
 struct_new_class_value_args
 struct_new_splat_constant
+struct_new_splat_mapped_names
 struct_new_splat_members
 struct_qualified_name_members
 struct_reopen_without_record_class
@@ -7661,6 +7802,7 @@ symbol_reopen_string_names
 symbol_string_methods
 symbol_to_proc_call
 symbol_to_proc_unary_op
+symbol_to_s_new_string
 symbol_upcase_interpolation
 synchronize_block_argument
 system_argument_list
@@ -7678,6 +7820,7 @@ table_row_copy_push
 table_row_join_keeps_kind
 table_row_to_mutating_param
 table_walk_row_each_proc
+table_walk_row_store_other_kind
 tail_iter_call_receiver
 tail_iter_receiver_more
 tail_iter_receiver_poly_return
@@ -7692,6 +7835,7 @@ tap_then_forwarded_callable
 tap_then_tail_value
 tap_void_receiver
 tcp_connect_concurrent
+tcp_server_port_in_use
 template_self_call_shared_string
 ternary_lazy_arms
 then_block_always_breaks
@@ -7826,6 +7970,7 @@ time_numeric_string_args
 time_object_method_type
 time_operand_type_errors
 time_operator_assignment
+time_optional_nil_param
 time_parse
 time_parse_free_forms
 time_parse_long_fraction
@@ -7846,6 +7991,7 @@ time_strftime_boxed_receiver_and_format
 time_strftime_directives
 time_strftime_epoch_zone
 time_strftime_long_format
+time_strftime_threads
 time_strftime_z_minimal
 time_strptime
 time_subsec_offset_family
@@ -7988,6 +8134,7 @@ union_class_value_reflection
 uniq_bang_block_result
 uniq_block
 uniq_user_eql_hash
+unix_server_accept_class
 unix_socket_large_write_slow_reader
 unix_socket_pair
 unix_socket_read_partial_while_allocating
@@ -8102,6 +8249,7 @@ warn_render
 warn_through_stderr_object_write
 warn_unresolved_call_context
 wb_after_allocation
+wb_store_in_store_value
 when_fresh_pattern_recv_root
 when_int_float_range
 when_method_class
@@ -8146,6 +8294,7 @@ yield_hash_enum_mixed_sites
 yield_hash_find_index_mixed_sites
 yield_in_block_kept_by_later_method
 yield_in_block_lifted_by_late_poly
+yield_in_yielding_initialize_argument
 yield_inherited_self_class
 yield_inline_arg_caller_context
 yield_inline_ctor_self
@@ -8164,6 +8313,7 @@ yield_membership_single_site_poly_arg
 yield_method_block_tail_value
 yield_method_call_in_method_body
 yield_method_only_in_subclass
+yield_method_row_into_int_table
 yield_mixed_block_types
 yield_nested_block_alias
 yield_no_block_raises
