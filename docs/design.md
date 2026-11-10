@@ -541,7 +541,10 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   `attach_function` in a table on the module, and spinel defines a method
   for each at compile time. Fluxpinel answers a missed call on a module
   that extends `FFI::Library` from that table (`fx_ffi_attached`), and a
-  variable of `attach_variable` the same way.
+  variable of `attach_variable` the same way. The fiddle package keeps the
+  functions of `Fiddle::Importer#extern` in a table of its own and answers
+  `__ffi_attached?`; a missed call on a module that extends the importer
+  asks it.
 - **Limits.** `ffi_source` does nothing: Fluxpinel cannot compile the
   fragment, so a function that only the fragment defines is not found at
   its first call. `ffi_struct`, a variadic function and an `IO::Buffer`

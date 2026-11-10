@@ -580,8 +580,11 @@ static FxMethod *fx_find_hook(sp_RbVal r, const char *hook) {
    for each attach_function at compile time (analyze_desugar.c of spinel),
    and the reader and the writer of an attach_variable. Fluxpinel looks in
    the tables that the ffi package keeps on the module (@ffi_functions,
-   @ffi_variables) when the module extends FFI::Library (__ffi_call).
-   Answers 0 for no such name, 1 for a function, 2 for a variable. */
+   @ffi_variables) when the module extends FFI::Library (__ffi_call). The
+   fiddle package keeps the functions of Fiddle::Importer#extern in a
+   table of its own and answers __ffi_attached?(name) for it, so a module
+   that has that method is asked. Answers 0 for no such name, 1 for a
+   function, 2 for a variable. */
 static int fx_ffi_attached(sp_RbVal r, const char *name, sp_RbVal *key) {
   if (r.tag != SP_TAG_CLASS) return 0;
   FxClass *k = fx_class_value(r);
@@ -594,6 +597,9 @@ static int fx_ffi_attached(sp_RbVal r, const char *name, sp_RbVal *key) {
     sp_RbVal h = fx_ivar_get(r, sp_sym_intern(tables[t]));
     if (fx_is_hash(h) && sp_poly_truthy(fx_send(h, "key?", 1, key))) return t + 1;
   }
+  if (!setter && fx_find_smethod(k, sp_sym_intern("__ffi_attached?")) &&
+      sp_poly_truthy(fx_send(r, "__ffi_attached?", 1, key)))
+    return 1;
   return 0;
 }
 
