@@ -15,6 +15,7 @@
 #define FX_IS(s) (!strcmp(name, (s)))
 
 static int fx_is_kwargs(sp_RbVal v) { return fx_is_hash(v) && v.v.p == L.kwhash; }
+static int64_t fx_utime_arg(sp_RbVal v, int32_t *nsec);
 
 /* The String of a keyword argument, or NULL when the call does not give
    it. */
@@ -135,13 +136,89 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
   }
   if (FX_IS("delete") || FX_IS("unlink")) { *out = fx_file_delete(argc, argv); return 1; }
   if ((FX_IS("write") || FX_IS("binwrite")) && (argc == 2 || argc == 3)) return fx_file_write(argc, argv, out);
-  if ((FX_IS("read") || FX_IS("binread")) && argc >= 1 && argc <= 3 && !fx_is_kwargs(argv[argc - 1])) {
-    *out = fx_file_read(name[0] == 'b', argc, argv);
+  /* File.read(path[, length[, offset]], mode:, encoding:, ...): a binary
+     mode, or a BINARY encoding, reads as binread does; the other keywords
+     of the encoding do nothing (UTF-8 is the text) */
+  if ((FX_IS("read") || FX_IS("binread")) && argc >= 1 && argc <= 4) {
+    static const char *const keys[] = { "mode", "encoding", "external_encoding", "internal_encoding", "binmode",
+                                        NULL };
+    int bin = name[0] == 'b';
+    if (fx_is_kwargs(argv[argc - 1])) {
+      if (!fx_kwargs_only(argv[argc - 1], keys)) return 0;
+      sp_PolyPolyHash *h = sp_poly_as_poly_poly_hash(argv[argc - 1]);
+      sp_RbVal mode = sp_PolyPolyHash_get(h, sp_box_sym(sp_sym_intern("mode")));
+      sp_RbVal enc = sp_PolyPolyHash_get(h, sp_box_sym(sp_sym_intern("encoding")));
+      SP_GC_ROOT_RBVAL(mode);
+      SP_GC_ROOT_RBVAL(enc);
+      if (mode.tag != SP_TAG_NIL && strchr(sp_poly_arg_str_chk(mode), 'b')) bin = 1;
+      if (sp_poly_truthy(sp_PolyPolyHash_get(h, sp_box_sym(sp_sym_intern("binmode"))))) bin = 1;
+      if (enc.tag != SP_TAG_NIL) {
+        const char *e = fx_is_string(enc) ? sp_poly_arg_str_chk(enc) : sp_poly_to_s(enc);
+        if (!strncasecmp(e, "BINARY", 6) || !strncasecmp(e, "ASCII-8BIT", 10)) bin = 1;
+      }
+      argc--;
+    }
+    if (argc > 3) return 0;
+    *out = fx_file_read(bin, argc, argv);
+    return 1;
+  }
+  /* the class methods that change a file or the process, through the
+     runtime: umask, symlink and link, readlink, mkfifo, chmod and chown
+     over every path (the count), utime and lutime (a Time or seconds),
+     truncate */
+  if (FX_IS("umask") && argc <= 1) {
+    *out = sp_box_int(sp_file_umask(argc ? sp_poly_arg_int_chk(argv[0]) : 0, argc));
+    return 1;
+  }
+  if ((FX_IS("symlink") || FX_IS("link")) && argc == 2) {
+    const char *from = sp_poly_arg_path(argv[0]);
+    SP_GC_ROOT_STR(from);
+    const char *to = sp_poly_arg_path(argv[1]);
+    SP_GC_ROOT_STR(to);
+    *out = sp_box_int(name[0] == 's' ? sp_file_do_symlink(from, to) : sp_file_do_link(from, to));
+    return 1;
+  }
+  if ((FX_IS("readlink") || FX_IS("mkfifo")) && argc >= 1 && argc <= (FX_IS("mkfifo") ? 2 : 1)) {
+    const char *path = sp_poly_arg_path(argv[0]);
+    SP_GC_ROOT_STR(path);
+    if (FX_IS("readlink")) *out = sp_box_str_new(sp_file_readlink(path));
+    else *out = sp_box_int(sp_file_mkfifo(path, argc == 2 ? sp_poly_arg_int_chk(argv[1]) : 0666));
+    return 1;
+  }
+  if ((FX_IS("chmod") && argc >= 2) || (FX_IS("chown") && argc >= 3)) {
+    int np = FX_IS("chmod") ? 1 : 2;
+    sp_int a = argv[0].tag == SP_TAG_NIL ? -1 : sp_poly_arg_int_chk(argv[0]);
+    sp_int b = np == 2 && argv[1].tag != SP_TAG_NIL ? sp_poly_arg_int_chk(argv[1]) : -1;
+    for (int i = np; i < argc; i++) {
+      const char *path = sp_poly_arg_path(argv[i]);
+      SP_GC_ROOT_STR(path);
+      if (np == 1) sp_file_chmod(a, path);
+      else sp_file_chown(path, a, b);
+    }
+    *out = sp_box_int(argc - np);
+    return 1;
+  }
+  if ((FX_IS("utime") || FX_IS("lutime")) && argc >= 3) {
+    int32_t an = 0, mn = 0;
+    int64_t as = fx_utime_arg(argv[0], &an), ms = fx_utime_arg(argv[1], &mn);
+    for (int i = 2; i < argc; i++) {
+      const char *path = sp_poly_arg_path(argv[i]);
+      SP_GC_ROOT_STR(path);
+      if (name[0] == 'l') sp_file_lutime_ns(as, an, ms, mn, path);
+      else sp_file_utime_ns(as, an, ms, mn, path);
+    }
+    *out = sp_box_int(argc - 2);
+    return 1;
+  }
+  if (FX_IS("truncate") && argc == 2) {
+    const char *path = sp_poly_arg_path(argv[0]);
+    SP_GC_ROOT_STR(path);
+    *out = sp_box_int(sp_file_truncate(path, sp_poly_arg_int_chk(argv[1])));
     return 1;
   }
   static const char *const one[] = { "exist?", "directory?", "file?", "symlink?", "size", "basename", "dirname",
                                      "extname", "readable?", "writable?", "executable?", "mtime", "atime", "ctime",
-                                     "path", "stat", "lstat", NULL };
+                                     "path", "stat", "lstat", "ftype", NULL };
   int is_one = 0;
   for (int i = 0; argc == 1 && one[i]; i++)
     if (FX_IS(one[i])) is_one = 1;
@@ -152,6 +229,7 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
     if (FX_IS("directory?")) { *out = sp_box_bool(sp_file_directory(path)); return 1; }
     if (FX_IS("file?")) { *out = sp_box_bool(!sp_file_directory(path) && sp_file_exist(path)); return 1; }
     if (FX_IS("symlink?")) { *out = sp_box_bool(sp_file_symlink(path)); return 1; }
+    if (FX_IS("ftype")) { *out = sp_box_str_new(sp_file_ftype(path)); return 1; }
     if (FX_IS("size")) { *out = sp_box_int(sp_file_size(path)); return 1; }
     if (FX_IS("basename")) { *out = sp_box_str_new(sp_file_basename(path)); return 1; }
     if (FX_IS("dirname")) { *out = sp_box_str_new(sp_file_dirname(path)); return 1; }
@@ -389,17 +467,20 @@ static sp_int fx_io_copy_stream(sp_RbVal src, sp_RbVal dst) {
    With a block, each match goes to it and the answer is nil. */
 static int fx_dir_glob(const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out) {
   int kw = argc > 0 && fx_is_kwargs(argv[argc - 1]);
-  if (FX_IS("[]") ? kw || argc < 1 : argc - kw != 1) return 0;
+  /* Dir.glob(pattern, flags): the flags as a second argument */
+  int pos_flags = FX_IS("glob") && argc - kw == 2 && argv[1].tag == SP_TAG_INT;
+  if (FX_IS("[]") ? kw || argc < 1 : argc - kw != 1 + pos_flags) return 0;
   static const char *const keys[] = { "base", "flags", "sort", NULL };
-  sp_RbVal base = sp_box_nil(), flags = sp_box_nil(), sort = sp_box_nil();
-  int fg = 0, sg = 0;
+  sp_RbVal base = sp_box_nil(), flags = pos_flags ? argv[1] : sp_box_nil(), sort = sp_box_nil();
+  int fg = pos_flags, sg = 0;
+  if (pos_flags) { argv[1] = argv[argc - 1]; argc--; }
   if (kw) {
     if (!fx_kwargs_only(argv[argc - 1], keys)) return 0;
     sp_PolyPolyHash *h = sp_poly_as_poly_poly_hash(argv[argc - 1]);
     sp_RbVal kb = sp_box_sym(sp_sym_intern("base")), kf = sp_box_sym(sp_sym_intern("flags"));
     sp_RbVal ks = sp_box_sym(sp_sym_intern("sort"));
     if (sp_PolyPolyHash_has_key(h, kb)) base = sp_PolyPolyHash_get(h, kb);
-    if ((fg = sp_PolyPolyHash_has_key(h, kf))) flags = sp_PolyPolyHash_get(h, kf);
+    if (sp_PolyPolyHash_has_key(h, kf)) { fg = 1; flags = sp_PolyPolyHash_get(h, kf); }
     if ((sg = sp_PolyPolyHash_has_key(h, ks))) sort = sp_PolyPolyHash_get(h, ks);
     argc--;
   }
@@ -426,6 +507,17 @@ static int fx_dir_glob(const char *name, int argc, sp_RbVal *argv, const FxBlock
   }
   *out = sp_box_nil();
   return 1;
+}
+
+/* A time of File.utime: a Time's seconds and nanoseconds, or a number of
+   seconds (a Float or a Rational carries a fraction). */
+static int64_t fx_utime_arg(sp_RbVal v, int32_t *nsec) {
+  if (v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_TIME && v.v.p) {
+    const sp_Time *t = (const sp_Time *)v.v.p;
+    *nsec = t->tv_nsec;
+    return t->tv_sec;
+  }
+  return sp_poly_time_sec_split(v, nsec);
 }
 
 /* A Dir handle as a value: nil for none. */
@@ -570,8 +662,20 @@ static int fx_dir_class(const char *name, int argc, sp_RbVal *argv, const FxBloc
     *out = name[1] == 'o' ? fx_dir_box(sp_Dir_for_fd(fd)) : sp_box_int(sp_Dir_fchdir(fd));
     return 1;
   }
-  if (argc < 1 || argc > 2 || (argc == 2 && !FX_IS("mkdir"))) return 0;
+  /* the lists take encoding: (nil, an Encoding or a name), as the runtime
+     reads it */
+  static const char *const enc_keys[] = { "encoding", NULL };
+  sp_RbVal enc = sp_box_nil();
+  int has_enc = 0;
   int each = FX_IS("each_child") || FX_IS("foreach");
+  if (argc == 2 && (each || FX_IS("children") || FX_IS("entries")) && fx_is_kwargs(argv[1]) &&
+      fx_kwargs_only(argv[1], enc_keys)) {
+    has_enc = 1;
+    enc = sp_PolyPolyHash_get(sp_poly_as_poly_poly_hash(argv[1]), sp_box_sym(sp_sym_intern("encoding")));
+    argc--;
+  }
+  SP_GC_ROOT_RBVAL(enc);
+  if (argc < 1 || argc > 2 || (argc == 2 && !FX_IS("mkdir"))) return 0;
   if (blk && !each && !FX_IS("open") && !FX_IS("chdir")) return 0;
   const char *path = sp_poly_arg_path(argv[0]);
   SP_GC_ROOT_STR(path);
@@ -593,7 +697,9 @@ static int fx_dir_class(const char *name, int argc, sp_RbVal *argv, const FxBloc
   if (FX_IS("rmdir") || FX_IS("delete") || FX_IS("unlink")) { *out = sp_box_int(sp_dir_rmdir(path)); return 1; }
   if (FX_IS("chdir")) { *out = sp_box_int(sp_dir_chdir(path)); return 1; }
   if (!FX_IS("children") && !FX_IS("entries") && !each) return 0;
-  sp_StrArray *a = FX_IS("children") || FX_IS("each_child") ? sp_dir_children(path) : sp_dir_entries(path);
+  int children = FX_IS("children") || FX_IS("each_child");
+  sp_StrArray *a = has_enc ? sp_dir_entries_enc(path, children, enc)
+                   : children ? sp_dir_children(path) : sp_dir_entries(path);
   SP_GC_ROOT(a);
   sp_RbVal list = sp_box_nullable_obj((void *)a, SP_BUILTIN_STR_ARRAY);
   SP_GC_ROOT_RBVAL(list);
@@ -628,6 +734,10 @@ static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal 
       int fd = (int)argv[0].v.i;
       sp_File *f = sp_io_fdopen_ex(fd, mode, fd > 2);
       if (fd <= 2) f->no_autoclose = 1;   /* a close, or the collector, flushes and leaves the descriptor */
+      /* a terminal sees each write at once, as CRuby's IO flushes a write to
+         a tty and as the runtime keeps stdout: stdio would hold the bytes of
+         a line until its newline (Reline's rendering of IRB has none) */
+      if (isatty(fd)) setvbuf(f->fp, NULL, _IONBF, 0);
       *out = blk && FX_IS("open") ? fx_file_with(f, blk) : sp_box_obj(f, SP_BUILTIN_IO);
       return 1;
     }

@@ -1722,6 +1722,8 @@ static void fx_hook_mark(void) {
   for (int i = 0; i < L.nglobals; i++) sp_mark_rbval(L.globals[i].value);
   for (int i = 0; i < L.nprocs; i++) sp_gc_mark(L.procs[i]);
   if (L.bt) sp_gc_mark(L.bt);
+  sp_mark_rbval(fx_argf.file);
+  sp_mark_rbval(fx_argf.name);
   fx_ffi_mark();
 }
 

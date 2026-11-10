@@ -369,6 +369,9 @@ static void fx_global_init(void) {
     sp_PolyArray_push(argv, fx_send(s, "freeze", 0, NULL));
   }
   fx_const_set(L.object, sp_sym_intern("ARGV"), sp_box_poly_array(argv));
+  /* ARGF: the pseudo-IO over the files of ARGV (fx_argf_core); the value
+     is the marker of the runtime, whose class name and inspect it answers */
+  fx_const_set(L.object, sp_sym_intern("ARGF"), sp_box_obj(&sp_argf_obj, SP_BUILTIN_ARGF));
   /* the engine constants, frozen Strings with the values that spinel gives
      a program (emit_engine_const_str of codegen_expr.c), but the
      description of Fluxpinel itself */
@@ -687,6 +690,20 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     *out = sp_box_str_new(s);
     return 1;
   }
+  /* readpartial(n, buf) and sysread(n, buf): the bytes go into the String
+     buffer, which is the answer; at EOF the buffer is emptied before the
+     EOFError, as CRuby leaves it; a nil buffer reads as none */
+  if (!kw && argc == 2 && (FX_IS("readpartial") || FX_IS("sysread"))) {
+    if (argv[1].tag == SP_TAG_NIL) return fx_io_core(r, name, 1, argv, out);
+    sp_int n = sp_poly_arg_int_chk(argv[0]);
+    if (n < 0) sp_raise_cls("ArgumentError", sp_sprintf("negative length %lld given", (long long)n));
+    sp_str_check_mutable(sp_poly_arg_str_chk(argv[1]));
+    const char *s;
+    FX_UNLOCKED_ROOT(s = sp_File_readpartial_or_nil(io, n), SP_GC_ROOT_STR(s));
+    *out = sp_poly_str_become(argv[1], s ? s : sp_str_empty);
+    if (!s) sp_raise_cls("EOFError", "end of file reached");
+    return 1;
+  }
   if (!kw && argc == 1 && FX_IS("syswrite")) {
     const char *s = sp_poly_to_s(argv[0]);
     SP_GC_ROOT_STR(s);
@@ -742,6 +759,151 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     *out = argv[0];
     return 1;
   }
+  return 0;
+}
+
+/* ---- ARGF ---- */
+
+/* The stream ARGF reads now, or none: the next file of ARGV (the constant
+   of the program, which loses the name as CRuby's ARGF shifts it), or
+   $stdin when ARGV was empty before any file. A file that does not open
+   raises. Answers 0 at the end of every input. */
+static int fx_argf_ensure(void) {
+  if (fx_argf.file.tag != SP_TAG_NIL && !sp_File_closed_p((sp_File *)fx_argf.file.v.p)) return 1;
+  sp_RbVal av;
+  if (!fx_const_scoped(L.object, sp_sym_intern("ARGV"), &av) || !fx_is_array(av)) return 0;
+  SP_GC_ROOT_RBVAL(av);
+  if (sp_poly_length(av) == 0) {
+    if (fx_argf.started) return 0;
+    fx_argf.started = 1;
+    fx_argf.file = fx_gvar_get("$stdin");
+    fx_argf.name = sp_box_str_new(sp_str_dup("-"));
+    return 1;
+  }
+  sp_RbVal fn = fx_send(av, "shift", 0, NULL);
+  SP_GC_ROOT_RBVAL(fn);
+  fx_argf.started = 1;
+  const char *path = sp_poly_arg_str_chk(fn);
+  SP_GC_ROOT_STR(path);
+  fx_argf.name = sp_box_str_new(sp_str_dup(path));
+  if (!strcmp(path, "-")) { fx_argf.file = fx_gvar_get("$stdin"); return 1; }
+  sp_File *f;
+  FX_UNLOCKED_ROOT(f = sp_File_open(path, "r"), SP_GC_ROOT(f));
+  fx_argf.file = sp_box_obj(f, SP_BUILTIN_IO);
+  return 1;
+}
+
+/* The current file is done: closed unless it is $stdin, and ARGF moves on. */
+static void fx_argf_next(void) {
+  sp_File *f = (sp_File *)fx_argf.file.v.p;
+  if (fx_argf.file.v.p != fx_gvar_get("$stdin").v.p && !sp_File_closed_p(f)) sp_File_close(f);
+  fx_argf.file = sp_box_nil();
+}
+
+/* A line of ARGF, across its files; NULL at the end of every input. */
+static const char *fx_argf_gets(const char *sep, sp_int limit, int chomp) {
+  for (;;) {
+    if (!fx_argf_ensure()) return NULL;
+    const char *s;
+    FX_UNLOCKED_ROOT(s = sp_File_gets_sep((sp_File *)fx_argf.file.v.p, sep, limit, chomp), SP_GC_ROOT_STR(s));
+    if (s) { fx_argf.lineno++; return s; }
+    fx_argf_next();
+  }
+}
+
+/* The methods of ARGF: the lines (gets, readline, readlines, each_line),
+   read, eof?, filename and file, lineno, argv, and close and skip. */
+static int fx_argf_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out) {
+  if (r.tag != SP_TAG_OBJ || r.cls_id != SP_BUILTIN_ARGF) return 0;
+  int kw = argc > 0 && fx_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash;
+  if (!blk && (FX_IS("gets") || FX_IS("readline") || FX_IS("readlines") || FX_IS("to_a") ||
+               FX_IS("each_line") || FX_IS("each") || FX_IS("each_string"))) {
+    int chomp = 0;
+    if (kw) {
+      chomp = sp_poly_truthy(sp_PolyPolyHash_get(sp_poly_as_poly_poly_hash(argv[argc - 1]),
+                                                 sp_box_sym(sp_sym_intern("chomp"))));
+      argc--;
+    }
+    sp_PolyArray *rest = sp_PolyArray_new();
+    SP_GC_ROOT(rest);
+    for (int i = 0; i < argc; i++) sp_PolyArray_push(rest, argv[i]);
+    const char *sep;
+    sp_int limit;
+    sp_io_line_args(rest, &sep, &limit, name);
+    SP_GC_ROOT_STR(sep);
+    if (FX_IS("gets") || FX_IS("readline")) {
+      const char *s = fx_argf_gets(sep, limit, chomp);
+      if (!s && name[0] == 'r') sp_raise_cls("EOFError", "end of file reached");
+      *out = s ? sp_box_str_new(s) : sp_box_nil();
+      return 1;
+    }
+    sp_StrArray *a = sp_StrArray_new();
+    SP_GC_ROOT(a);
+    for (const char *s; (s = fx_argf_gets(sep, limit, chomp)) != NULL;) sp_StrArray_push(a, s);
+    if (FX_IS("readlines") || FX_IS("to_a")) {
+      *out = sp_box_nullable_obj((void *)a, SP_BUILTIN_STR_ARRAY);
+      return 1;
+    }
+    sp_RbVal items = sp_box_nullable_obj((void *)a, SP_BUILTIN_STR_ARRAY);
+    SP_GC_ROOT_RBVAL(items);
+    *out = sp_box_obj(sp_Enumerator_new_from_items(sp_poly_to_poly_array(items)), SP_BUILTIN_ENUMERATOR);
+    return 1;
+  }
+  if (blk && argc == 0 && (FX_IS("each_line") || FX_IS("each") || FX_IS("each_string"))) {
+    sp_PolyArray *none = sp_PolyArray_new();
+    SP_GC_ROOT(none);
+    const char *sep;
+    sp_int limit;
+    sp_io_line_args(none, &sep, &limit, name);
+    SP_GC_ROOT_STR(sep);
+    const char *s = NULL;
+    SP_GC_ROOT_STR(s);
+    while ((s = fx_argf_gets(sep, limit, 0)) != NULL) {
+      fx_y1(blk, sp_box_str_new(s));
+      if (L.ctl != FX_CTL_NONE) break;
+    }
+    *out = r;
+    return 1;
+  }
+  if (blk || kw) return 0;
+  if (FX_IS("read") && argc == 0) {
+    sp_String *acc = sp_String_new("");
+    SP_GC_ROOT(acc);
+    while (fx_argf_ensure()) {
+      const char *s;
+      FX_UNLOCKED_ROOT(s = sp_File_read((sp_File *)fx_argf.file.v.p), SP_GC_ROOT_STR(s));
+      if (s) sp_String_append(acc, s);
+      fx_argf_next();
+    }
+    *out = sp_box_str_new(sp_str_dup(sp_String_cstr(acc)));
+    return 1;
+  }
+  if ((FX_IS("eof?") || FX_IS("eof")) && argc == 0) {
+    int eof = 1;
+    if (fx_argf_ensure()) FX_UNLOCKED(eof = sp_File_eof_p((sp_File *)fx_argf.file.v.p));   /* a pipe waits */
+    *out = sp_box_bool(eof);
+    return 1;
+  }
+  if ((FX_IS("filename") || FX_IS("path")) && argc == 0) {
+    if (fx_argf.name.tag == SP_TAG_NIL) fx_argf_ensure();
+    *out = fx_argf.name.tag == SP_TAG_NIL ? sp_box_str_new(sp_str_dup("-")) : fx_argf.name;
+    return 1;
+  }
+  if (FX_IS("file") && argc == 0) {
+    fx_argf_ensure();
+    *out = fx_argf.file.tag == SP_TAG_NIL ? fx_gvar_get("$stdin") : fx_argf.file;
+    return 1;
+  }
+  if (FX_IS("lineno") && argc == 0) { *out = sp_box_int(fx_argf.lineno); return 1; }
+  if (FX_IS("lineno=") && argc == 1) { fx_argf.lineno = sp_poly_arg_int_chk(argv[0]); *out = argv[0]; return 1; }
+  if (FX_IS("argv") && argc == 0) { fx_const_scoped(L.object, sp_sym_intern("ARGV"), out); return 1; }
+  if ((FX_IS("to_s") || FX_IS("inspect")) && argc == 0) { *out = sp_box_str_new(sp_str_dup("ARGF")); return 1; }
+  if ((FX_IS("close") || FX_IS("skip")) && argc == 0) {
+    if (fx_argf.file.tag != SP_TAG_NIL) fx_argf_next();
+    *out = r;
+    return 1;
+  }
+  if (FX_IS("closed?") && argc == 0) { *out = sp_box_bool(fx_argf.file.tag == SP_TAG_NIL); return 1; }
   return 0;
 }
 

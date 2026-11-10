@@ -593,6 +593,15 @@ static sp_RbVal fx_global_names(void);   /* global.c */
 static sp_RbVal fx_gvar_eval(FxFrame *f, const pm_node_t *n);
 static int fx_gvar_stdout(sp_RbVal *out);
 static sp_RbVal fx_gvar_get(const char *name);
+/* ARGF (global.c): the stream it reads now (an IO, or nil), the name of
+   that file, whether a file was opened yet, and the lines read. The mark
+   hook of object.c keeps the two values. */
+static struct {
+  sp_RbVal file, name;
+  int started;
+  sp_int lineno;
+} fx_argf = { { .tag = SP_TAG_NIL }, { .tag = SP_TAG_NIL }, 0, 0 };
+static int fx_argf_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out);
 static sp_RbVal fx_io_select(int argc, sp_RbVal *argv);
 static void fx_gvar_set(const char *name, sp_RbVal v);
 static int fx_is_io(sp_RbVal v);

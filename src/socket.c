@@ -65,6 +65,28 @@ static int fx_sock_class(const FxClass *k, const char *name, int argc, sp_RbVal 
   const char *cn = k->name;
   int is_new = FX_IS("new") || FX_IS("open");
   sp_File *f = NULL;
+  /* Socket.pair(domain, type[, protocol]) and UNIXSocket.pair([type[,
+     protocol]]): the two ends, as the runtime makes them */
+  int is_unix = !strcmp(cn, "UNIXSocket");
+  if ((FX_IS("pair") || FX_IS("socketpair")) &&
+      (is_unix ? argc <= 2 : !strcmp(cn, "Socket") && argc >= 2 && argc <= 3)) {
+    sp_int dom = is_unix ? sp_sock_const("AF_UNIX") : sp_sock_family_arg(argv[0], 1);
+    sp_int type = is_unix ? (argc >= 1 ? sp_sock_family_arg(argv[0], 0) : sp_sock_const("SOCK_STREAM"))
+                          : sp_sock_family_arg(argv[1], 0);
+    sp_int proto = argc == (is_unix ? 2 : 3) ? sp_poly_arg_int_chk(argv[argc - 1]) : 0;
+    int fds[2];
+    sp_sock_socketpair(dom, type, proto, fds);
+    sp_File *a = sp_sock_pair_handle(fds[0], is_unix);
+    SP_GC_ROOT(a);
+    sp_File *b = sp_sock_pair_handle(fds[1], is_unix);
+    SP_GC_ROOT(b);
+    sp_PolyArray *pa = sp_PolyArray_new();
+    SP_GC_ROOT(pa);
+    sp_PolyArray_push(pa, sp_box_obj(a, SP_BUILTIN_IO));
+    sp_PolyArray_push(pa, sp_box_obj(b, SP_BUILTIN_IO));
+    *out = sp_box_poly_array(pa);
+    return 1;
+  }
   /* IPSocket.getaddress(host), on IPSocket and the classes below it: the
      first address of the name; the lookup can wait */
   if (FX_IS("getaddress") && argc == 1 && (!strcmp(cn, "IPSocket") || !strcmp(cn, "TCPSocket") || !strcmp(cn, "UDPSocket"))) {
@@ -246,6 +268,19 @@ static int fx_sock_core(sp_File *f, const char *name, int argc, sp_RbVal *argv, 
     sp_int len = sp_poly_arg_int_chk(argv[0]);
     FX_UNLOCKED_ROOT(s = sp_sock_recv(f, len), SP_GC_ROOT_STR(s));
     *out = sp_box_str_new(s);
+    return 1;
+  }
+  /* send(msg, flags) and send(msg, flags, host, port): the bytes sent;
+     ahead of Object#send, which would read the message as a method name */
+  if (FX_IS("send") && (argc == 2 || argc == 4)) {
+    const char *msg = sp_poly_arg_str_chk(argv[0]);
+    SP_GC_ROOT_STR(msg);
+    sp_int flags = sp_poly_arg_int_chk(argv[1]);
+    const char *host = argc == 4 ? sp_poly_arg_str_chk(argv[2]) : NULL;
+    SP_GC_ROOT_STR(host);
+    sp_int port = argc == 4 ? sp_poly_arg_int_chk(argv[3]) : 0, n;
+    FX_UNLOCKED(n = sp_sock_send(f, msg, (sp_int)sp_str_byte_len(msg), flags, host, port));
+    *out = sp_box_int(n);
     return 1;
   }
   if (FX_IS("do_not_reverse_lookup") && argc == 0) {

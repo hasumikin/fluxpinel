@@ -1361,6 +1361,9 @@ static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *a
      a top-level def does; define_method there is public */
   if (fx_is_fx_object(self) && self.v.p == L.main.v.p) {
     if (!strcmp(name, "define_method")) return fx_define_proc_method(L.object, 0, FX_VIS_PUBLIC, argc, argv, blk);
+    /* extend M at the top level: M among the ancestors of main's singleton
+       class, ahead of the includes of Object */
+    if (!strcmp(name, "extend") && fx_singleton_core(self, name, argc, argv, blk, &out)) return out;
     if ((!strcmp(name, "private") || !strcmp(name, "public") || !strcmp(name, "autoload") ||
          !strcmp(name, "autoload?") || !strcmp(name, "include")) &&
         fx_class_core(f, fx_class_box(L.object), name, argc, argv, blk, &out))

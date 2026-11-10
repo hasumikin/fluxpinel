@@ -63,8 +63,13 @@
 
 static int fx_irb;   /* --irb */
 
-/* The program of --irb. IRB reads its options from ARGV. */
-static const char fx_irb_src[] = "require \"irb\"\nIRB.start\n";
+/* The program of --irb. IRB reads its options from ARGV. IRB.start takes
+   the path of the irb executable of the gem whose lib directory answered
+   the require, as the executable passes its own: IRB shows its banner
+   only when the path ends with exe/irb. */
+static const char fx_irb_src[] =
+    "require \"irb\"\n"
+    "IRB.start(File.expand_path(\"../exe/irb\", $LOAD_PATH.find { |d| File.exist?(File.join(d, \"irb.rb\")) }))\n";
 
 /* Puts the directories of a list such as RUBYLIB ("a:b") in $LOAD_PATH at
    index at, or at its end when at is -1, as they are: ruby does not expand

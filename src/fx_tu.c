@@ -137,7 +137,7 @@ static const char *const fx_builtin_class_names[] = {
   "UDPSocket", "UNIXSocket", "UNIXServer", "Socket", "Thread",
   "Thread::Mutex", "Thread::Queue", "Thread::SizedQueue",
   "Thread::ConditionVariable", "Fiber", "MatchData", "Monitor", "Random",
-  "Addrinfo", "Socket::Option", "OpenStruct",
+  "Addrinfo", "Socket::Option", "OpenStruct", "ARGF.class",
 };
 #define FX_NBUILTIN_CLASSES ((int)(sizeof fx_builtin_class_names / sizeof fx_builtin_class_names[0]))
 

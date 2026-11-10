@@ -980,6 +980,7 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
   if (fx_io_console(recv, name, argc, argv, blk, out)) return 1;
   if (!blk && fx_io_core(recv, name, argc, argv, out)) return 1;
   if (fx_dir_core(recv, name, argc, argv, blk, out)) return 1;
+  if (fx_argf_core(recv, name, argc, argv, blk, out)) return 1;
   if (!blk && fx_time_core(recv, name, argc, argv, out)) return 1;
   if (!blk && fx_random_core(recv, name, argc, argv, out)) return 1;
   if (!blk && fx_addrinfo_core(recv, name, argc, out)) return 1;
