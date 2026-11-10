@@ -19,6 +19,10 @@
 #   make upgrade_spinel
 #               move the pin to the master of spinel, then build and run
 #               test, test-host and regress
+#   make check-spinel-master
+#               build and check Fluxpinel on the master of spinel in a
+#               clone of its own, the pin unmoved, and find the commit of
+#               spinel that breaks it (tools/spinel_master.rb)
 #   make roundhouse, make test-roundhouse, make upgrade_roundhouse
 #               make the blog of Roundhouse and check it, and move its pin
 #               (roundhouse/roundhouse.mk)
@@ -333,7 +337,19 @@ endif
 	@echo "upgrade_spinel: SPINEL_COMMIT is $$(cat SPINEL_COMMIT), from $(SPINEL_COMMIT)."
 	@echo "upgrade_spinel: run make oracle before the commit."
 
+# Fluxpinel on the master of spinel, with the pin unmoved: a clone of spinel
+# of its own (SPINEL_MASTER_DIR), built at master, and make all, test,
+# test-host and regress on it under build/master. One line goes to
+# SPINEL_MASTER_REPORT; a failure is bisected to the commit of spinel that
+# brought it. Run it each night (cron) to know what a pin move will meet.
+SPINEL_MASTER_DIR ?= $(CURDIR)/deps/spinel-master
+SPINEL_MASTER_REPORT ?= $(BUILD)/master/report.md
+check-spinel-master:
+	ruby tools/spinel_master.rb check --dir $(SPINEL_MASTER_DIR) --url $(SPINEL_URL) \
+	  --report $(SPINEL_MASTER_REPORT) --jobs $$(nproc)
+
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test park-audit host test-host oracle regress gem-oracle optcarrot deps upgrade_spinel clean FORCE
+.PHONY: all test park-audit host test-host oracle regress gem-oracle optcarrot deps upgrade_spinel \
+        check-spinel-master clean FORCE

@@ -136,6 +136,32 @@ make -C $SPINEL
 Before the next `make upgrade_spinel`, put your checkout on the branch
 master again: `git -C $SPINEL switch master`.
 
+### Each night
+
+The master of spinel moves by about a hundred commits a day. Run
+`make check-spinel-master` each night (a cron line or a systemd timer) to
+know what the next pin move meets, and which commit of spinel brought it.
+
+1. It clones spinel into `deps/spinel-master` the first time, with its
+   history, and fetches master into it. The pinned checkout stays as it
+   is.
+2. It builds spinel there, then Fluxpinel on it with `SPINEL_PIN=0`
+   under `build/master/fx`, from nothing.
+3. It runs `make all`, `make test`, `make test-host` and `make regress`.
+4. It appends one line to `SPINEL_MASTER_REPORT` (`build/master/report.md`
+   by default): the date, the commit of spinel, and green, or the target
+   that failed. The commit of the last green run stays in
+   `build/master/good`.
+5. When a target fails, it bisects spinel between the last green commit
+   and master with `git bisect run`, and the line names the first bad
+   commit. Each step builds spinel and Fluxpinel again, so the bisect of a
+   day of commits takes about half an hour.
+
+Read the line in the morning. A removed or renamed function of the
+runtime is a change of Fluxpinel; a table or a thunk of `--ext-class` that
+does not answer as `docs/spin.md` of spinel says is an issue of spinel.
+Move the pin on a green day.
+
 ## Follow the main of Roundhouse
 
 `ROUNDHOUSE_COMMIT` pins Roundhouse for the blog with a console. Run
