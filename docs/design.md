@@ -491,8 +491,8 @@ The walker evaluates the prism AST directly (`src/walk.c`).
 - **Run time, not compile time.** spinel reads `ffi_func` and its kin at
   compile time and emits a direct C call for each function. Fluxpinel meets the
   same declarations in a module body at run time (`src/ffi.c`):
-  - `ffi_lib` opens the library with `dlopen`: `libNAME.so`, or a
-    versioned name when only that exists.
+  - `ffi_lib` opens the library with `dlopen`: `libNAME.so`, or
+    `libNAME.dylib` on macOS, or a versioned name when only that exists.
   - `ffi_func` declares a singleton method of the module (`FX_M_FFI`).
     Its first call finds the symbol with `dlsym`, and each call goes
     through libffi with the C types that the declaration names.
@@ -541,7 +541,10 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   `attach_function` in a table on the module, and spinel defines a method
   for each at compile time. Fluxpinel answers a missed call on a module
   that extends `FFI::Library` from that table (`fx_ffi_attached`), and a
-  variable of `attach_variable` the same way.
+  variable of `attach_variable` the same way. The fiddle package keeps the
+  functions of `Fiddle::Importer#extern` in a table of its own and answers
+  `__ffi_attached?`; a missed call on a module that extends the importer
+  asks it.
 - **Limits.** `ffi_source` does nothing: Fluxpinel cannot compile the
   fragment, so a function that only the fragment defines is not found at
   its first call. `ffi_struct`, a variadic function and an `IO::Buffer`

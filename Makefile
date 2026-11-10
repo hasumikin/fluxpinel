@@ -89,7 +89,27 @@ CFLAGS = -O2 -g -std=gnu11 -ffp-contract=off -DSP_ONE_STRING -DSP_INT_OVERFLOW_M
          -DFX_LIB_DIR='"$(CURDIR)/lib"' -DFX_FFI=$(FFI) \
          -DFX_VERSION='"$(FX_VERSION)"' -DFX_SPINEL_REV='"$(FX_SPINEL_REV)"' $(FX_ENGINE_FLAGS) \
          -Isrc -I$(BUILD) -I$(SPINEL)/lib -I$(SPINEL)/lib/regexp -I$(SPINEL)/vendor/prism/include
-LIBS = $(RT_ARCHIVE) $(SPINEL)/build/libprism.a -lm -lcrypt $(RT_LIBS) $(FFI_LIBS)
+# macOS: crypt(3) is in libSystem, with no libcrypt to name, and Homebrew
+# keeps libffi and OpenSSL out of the default paths (keg-only). Their
+# directories go through CPATH and LIBRARY_PATH, as spinel's own Makefile
+# passes them, so that the compile, the link and the probe of
+# tools/bop_report.rb see them alike. Set only on a host that has them, so
+# another host's environment is untouched. The tools of the build take the
+# host from RUBY_PLATFORM (tools/bop_report.rb, tools/native_link.rb).
+HOST_OS := $(shell uname -s)
+ifeq ($(HOST_OS),Darwin)
+CRYPT_LIBS =
+empty :=
+space := $(empty) $(empty)
+BREW_PREFIXES := $(sort $(wildcard $(foreach f,libffi openssl@3 openssl,$(shell brew --prefix $(f) 2>/dev/null))))
+ifneq ($(BREW_PREFIXES),)
+export CPATH := $(subst $(space),:,$(addsuffix /include,$(BREW_PREFIXES)))$(if $(CPATH),:$(CPATH))
+export LIBRARY_PATH := $(subst $(space),:,$(addsuffix /lib,$(BREW_PREFIXES)))$(if $(LIBRARY_PATH),:$(LIBRARY_PATH))
+endif
+else
+CRYPT_LIBS = -lcrypt
+endif
+LIBS = $(RT_ARCHIVE) $(SPINEL)/build/libprism.a -lm $(CRYPT_LIBS) $(RT_LIBS) $(FFI_LIBS)
 
 all: $(BUILD)/fluxpinel
 
