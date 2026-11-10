@@ -642,6 +642,7 @@ static sp_RbVal fx_invoke_b(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal
   }
   if (m->kind == FX_M_FFI) return fx_ffi_invoke(m->ffi, self, argc, argv);
   if (m->kind == FX_M_ENTRY) return fx_entry_invoke(m->entry, argc, argv);
+  if (m->kind == FX_M_EXTM) return fx_extm_invoke(m, self, argc, argv);
   if (m->kind == FX_M_BUILTIN) {
     /* as super does: an object of the program takes the defaults of
        Object, which do not call the hooks. An alias calls the builtin

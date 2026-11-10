@@ -14,7 +14,10 @@ struct FxClass;
 /* What a method does when it is called. FX_M_BUILTIN is the builtin
    method of the name, which an entry carries for its visibility only
    (`private :first` in a reopened Array, `private_class_method :new`). */
-typedef enum { FX_M_DEF, FX_M_READER, FX_M_WRITER, FX_M_FFI, FX_M_ENTRY, FX_M_PROC, FX_M_BUILTIN, FX_M_UNDEF } FxMethodKind;
+typedef enum { FX_M_DEF, FX_M_READER, FX_M_WRITER, FX_M_FFI, FX_M_ENTRY, FX_M_EXTM, FX_M_PROC, FX_M_BUILTIN,
+               FX_M_UNDEF } FxMethodKind;
+/* FX_M_EXTM: a method of a class of the kernel, called by name through the
+   table of --ext-class (sp_ext_send, host.c) */
 /* FX_M_UNDEF: an undef of the name in this class; a lookup that reaches it
    stops with no method, so a method of a superclass stays hidden */
 
@@ -45,6 +48,7 @@ typedef struct {
   int matches;                /* whether the body can set $~: 0 not known yet, 1 no, 2 yes */
   struct FxFfi *ffi;        /* FX_M_FFI: what ffi_func and its kin declared */
   int entry;                  /* FX_M_ENTRY: the row of fx_kernel_entries (host.c) */
+  int argc;                   /* FX_M_EXTM: the arity of the row of the table */
   void *proc;                 /* FX_M_PROC: the FxProc of define_method; L.procs roots it */
   sp_sym builtin;             /* FX_M_BUILTIN: the builtin method that the entry calls
                                  (an alias of one); 0 for the method of its own name */
@@ -564,6 +568,7 @@ static int fx_encoding_class(const FxClass *k, const char *name, int argc, sp_Rb
 /* host.c */
 static void fx_host_init(void);
 static sp_RbVal fx_entry_invoke(int i, int argc, sp_RbVal *argv);
+static sp_RbVal fx_extm_invoke(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal *argv);
 
 /* load.c */
 static int fx_load_call(const pm_node_t *n, sp_RbVal self, int on_kernel, const char *name, int argc,
@@ -636,6 +641,7 @@ static int fx_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
 static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
                            const FxBlock *blk, sp_RbVal *out);
 static int fx_is_fx_object(sp_RbVal v);
+static int fx_is_kernel_object(sp_RbVal v);
 static int fx_basic_only(sp_RbVal r, const char *name);
 static int fx_unknown_builtin(const char *name);
 static void fx_autoload_set(FxClass *c, sp_sym name, const char *path);

@@ -1551,7 +1551,8 @@ static int fx_method_value_new(sp_RbVal r, sp_RbVal name, int public_only, sp_Rb
   const char *mn = fx_name_arg(name);
   sp_sym s = sp_sym_intern(mn);
   const FxMethod *m = r.tag == SP_TAG_CLASS ? fx_find_smethod(fx_class_value(r), s) : NULL;
-  if (!m && (fx_is_fx_object(r) || r.tag == SP_TAG_CLASS || fx_reopened_builtins || fx_is_exc(r))) {
+  if (!m && (fx_is_fx_object(r) || fx_is_kernel_object(r) || r.tag == SP_TAG_CLASS || fx_reopened_builtins ||
+             fx_is_exc(r))) {
     m = fx_find_method(fx_lookup_class(r), s);
     /* a top-level def does not hide a builtin method of the value */
     if (m && m->owner == L.object && !fx_is_fx_object(r) && fx_builtin_responds(r, mn)) m = NULL;
@@ -1622,6 +1623,7 @@ static int fx_method_value_arity(const FxMethodValue *mv) {
   case FX_M_READER: return 0;
   case FX_M_WRITER: return 1;
   case FX_M_PROC: return fx_proc_arity(&((FxProc *)m->proc)->b);
+  case FX_M_EXTM: return m->argc;
   default: return -1;
   }
 }

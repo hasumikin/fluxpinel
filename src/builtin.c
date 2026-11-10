@@ -1072,6 +1072,10 @@ static sp_RbVal fx_send_v(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
     FxClass *k = fx_class_value(recv);
     m = k ? fx_find_smethod(k, fx_name_sym(name)) : NULL;
     if (!m && fx_class_core(NULL, recv, name, argc, argv, blk, &out)) return out;
+  } else if (fx_is_kernel_object(recv)) {
+    /* an object of the kernel: the methods of its class are the rows of
+       the table of --ext-class (host.c), before the builtin methods */
+    m = fx_find_method(fx_lookup_class(recv), fx_name_sym(name));
   } else if (fx_reopened_builtins || fx_is_exc(recv) || fx_bsub_tail(recv) || fx_singleton_of(recv, 0)) {
     /* a reopened builtin class, an exception of a class of the program, an
        instance of a subclass of Array or Hash, or a value with a singleton

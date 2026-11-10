@@ -185,11 +185,14 @@ KERNEL_OVERFLOW = $(shell echo $(INT_OVERFLOW) | tr A-Z a-z)
 # ffi_func (-lsqlite3).
 KERNEL_FLAGS =
 HOST_LIBS =
+# The classes whose methods the kernel exports by name (host.c reads the
+# table through sp_ext_methods): all of them.
+KERNEL_EXT_CLASS = all
 
 # The variables of each step go in a file that changes only when a value
 # changes, so a new value makes the step again: kernel.args for the
 # kernel C, link.args for the link.
-KERNEL_ARGS = $(KERNEL) $(KERNEL_ENTRIES) $(KERNEL_FLAGS) $(KERNEL_OVERFLOW)
+KERNEL_ARGS = $(KERNEL) $(KERNEL_ENTRIES) $(KERNEL_FLAGS) $(KERNEL_OVERFLOW) $(KERNEL_EXT_CLASS)
 LINK_ARGS = $(KERNEL_MAIN) $(HOST_LIBS)
 
 $(HOST)/kernel.args: FORCE
@@ -210,7 +213,7 @@ $(HOST)/link.args: FORCE
 $(HOST)/kernel.c: $(KERNEL) kernel/fluxpinel.rb src/kernel_prelude.h SPINEL_COMMIT $(HOST)/kernel.args
 	mkdir -p $(HOST)
 	$(SPINEL)/spinel $(KERNEL) -c -o $@ --force --int-overflow $(KERNEL_OVERFLOW) $(KERNEL_FLAGS) \
-	  --ext-init fx_kernel_init --ext-entry $(KERNEL_ENTRIES)
+	  --ext-init fx_kernel_init --ext-entry $(KERNEL_ENTRIES) --ext-class $(KERNEL_EXT_CLASS)
 	# the defines of the kernel before spinel_rt.h, for kernel_prelude.h
 	sed '/^#include "spinel_rt.h"/q' $@ | grep '^#define' > $(HOST)/kernel_defines.h || { rm -f $@; exit 1; }
 	{ grep -o '^#line [0-9]* "[^"<]*"' $@ || true; } | cut -d'"' -f2 | sort -u | \

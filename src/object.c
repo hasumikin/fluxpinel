@@ -415,6 +415,13 @@ static int fx_is_fx_object(sp_RbVal v) {
   return v.tag == SP_TAG_OBJ && v.cls_id >= FX_CLS_BASE && v.v.p;
 }
 
+/* An object of the kernel of the host build: its class is a FxClass with
+   the id of the kernel (host.c), whose methods are the rows of the table
+   of --ext-class. */
+static int fx_is_kernel_object(sp_RbVal v) {
+  return v.tag == SP_TAG_OBJ && v.v.p && fx_kernel_cls(v.cls_id);
+}
+
 /* An instance of a native class (native_struct): a C struct of a package,
    which is no FxObject. */
 static int fx_is_native_obj(sp_RbVal v) {

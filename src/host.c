@@ -55,6 +55,33 @@ static void fx_host_init(void) {
     m->entry = i;
     fx_define_method(k, m, 1);
   }
+  /* the methods of the table of --ext-class (sp_ext_methods): each class
+     defines the rows it owns, and the ancestors of Fluxpinel reach the
+     inherited ones; an entry of the name keeps its wrapper, which converts
+     a Hash to the kind of the parameter */
+  for (int i = first; i < L.nbuiltins; i++) {
+    FxClass *k = L.builtins[i];
+    for (const sp_ext_method *row = sp_ext_methods((int)k->cls_id); row && row->name; row++) {
+      if (row->owner != (int)k->cls_id) continue;
+      sp_sym name = sp_sym_intern(row->name);
+      if (row->singleton && fx_table_get(&k->smethods, name)) continue;
+      FxMethod *m = fx_method_new(FX_M_EXTM, name, NULL, 0, k);
+      m->argc = row->argc;
+      fx_define_method(k, m, row->singleton);
+    }
+  }
+}
+
+/* A call of a method of the table: the thunk converts self and the
+   arguments (ArgumentError and TypeError are its), and the kernel runs
+   without the walker lock, as an entry does. */
+static sp_RbVal fx_extm_invoke(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal *argv) {
+  const char *name = sp_sym_to_s(m->name);
+  sp_RbVal r = sp_box_nil();
+  int found;
+  FX_UNLOCKED_ROOT(found = sp_ext_send(self, name, argc, argv, &r), SP_GC_ROOT_RBVAL(r));
+  if (!found) fx_no_method_args(self, name, argc, argv, FX_MISS_METHOD);
+  return r;
 }
 
 /* A call of an entry: the arguments go as they are, and the wrapper
@@ -134,6 +161,11 @@ static void fx_host_init(void) {}
 
 static sp_RbVal fx_entry_invoke(int i, int argc, sp_RbVal *argv) {
   (void)i, (void)argc, (void)argv;
+  return sp_box_nil();
+}
+
+static sp_RbVal fx_extm_invoke(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal *argv) {
+  (void)m, (void)self, (void)argc, (void)argv;
   return sp_box_nil();
 }
 
