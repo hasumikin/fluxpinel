@@ -26,6 +26,9 @@ static void fx_process_consts(FxClass *c) {
     { "PRIO_PROCESS", PRIO_PROCESS },
     { "PRIO_PGRP", PRIO_PGRP },
     { "PRIO_USER", PRIO_USER },
+    /* the flags of a wait (sys/wait.h, through the runtime's header) */
+    { "WNOHANG", WNOHANG },
+    { "WUNTRACED", WUNTRACED },
   };
   for (size_t i = 0; i < sizeof k / sizeof k[0]; i++)
     fx_const_set(c, sp_sym_intern(k[i].name), sp_box_int(k[i].v));
@@ -69,6 +72,26 @@ static int fx_process_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *o
     if (FX_IS("getpgrp")) { *out = sp_box_int((sp_int)getpgrp()); return 1; }
     if (FX_IS("times")) { *out = sp_box_tms(sp_process_times()); return 1; }
     if (FX_IS("groups")) { *out = sp_box_int_array(sp_process_groups()); return 1; }
+    /* a session of its own; the runtime has no function for the process
+       group calls (spinel refuses them), so they are the system calls */
+    if (FX_IS("setsid")) {
+      pid_t r = setsid();
+      if (r < 0) sp_raise_cls(sp_errno_class_name(errno), strerror(errno));
+      *out = sp_box_int((sp_int)r);
+      return 1;
+    }
+  }
+  if (FX_IS("getpgid") && argc == 1) {
+    pid_t r = getpgid((pid_t)sp_poly_arg_int_chk(argv[0]));
+    if (r < 0) sp_raise_cls(sp_errno_class_name(errno), strerror(errno));
+    *out = sp_box_int((sp_int)r);
+    return 1;
+  }
+  if (FX_IS("setpgid") && argc == 2) {
+    if (setpgid((pid_t)sp_poly_arg_int_chk(argv[0]), (pid_t)sp_poly_arg_int_chk(argv[1])) < 0)
+      sp_raise_cls(sp_errno_class_name(errno), strerror(errno));
+    *out = sp_box_int(0);
+    return 1;
   }
   /* Process.kill(sig, *pids): one send for each pid, counted */
   if (FX_IS("kill") && argc >= 2) {
@@ -276,9 +299,19 @@ static int fx_process_status_core(sp_RbVal r, const char *name, int argc, sp_RbV
 }
 
 /* The waits of Process: wait and waitpid answer the pid, wait2 and
-   waitpid2 [pid, status]; no pid waits for any child. detach answers a
-   Thread whose value is the status. */
+   waitpid2 [pid, status]; no pid waits for any child. With the flags of
+   waitpid(2) as the second argument, the runtime answers the same, or nil
+   under WNOHANG for a child still running. detach answers a Thread whose
+   value is the status. */
 static int fx_process_wait(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if ((FX_IS("wait") || FX_IS("waitpid") || FX_IS("wait2") || FX_IS("waitpid2")) && argc == 2) {
+    sp_int pid = sp_poly_arg_int_chk(argv[0]), flags = sp_poly_arg_int_chk(argv[1]);
+    int pair = FX_IS("wait2") || FX_IS("waitpid2");
+    sp_RbVal v;
+    FX_UNLOCKED_ROOT(v = sp_process_wait_flags(pid, flags, pair), SP_GC_ROOT_RBVAL(v));
+    *out = v;
+    return 1;
+  }
   if ((FX_IS("wait") || FX_IS("waitpid")) && argc <= 1) {
     sp_int pid = argc ? sp_poly_arg_int_chk(argv[0]) : -1, r;
     FX_UNLOCKED(r = sp_process_waitpid(pid));
@@ -338,7 +371,7 @@ static int fx_gc_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
 /* respond_to? on Process or GC: the functions above. */
 static int fx_process_responds(sp_RbVal r, const char *name) {
   static const char *const process[] = { "pid", "ppid", "uid", "gid", "euid", "egid", "getpgrp", "times", "groups",
-                                         "getsid", "clock_gettime", "clock_getres", "getpriority", "kill", "spawn",
+                                         "getsid", "setsid", "getpgid", "setpgid", "clock_gettime", "clock_getres", "getpriority", "kill", "spawn",
                                          "exec", "wait", "waitpid", "wait2", "waitpid2", "detach", "last_status",
                                          NULL };
   static const char *const gc[] = { "start", "compact", "stat", "total_time", NULL };
