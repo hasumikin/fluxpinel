@@ -38,5 +38,7 @@ Dir.glob("#{spinel}/packages/**/*.rb").sort.each do |rb|
   syms.concat(src.scan(/^\s*native_func\b[^"\n]*"(\w+)"/).flatten)
 end
 
-flags = objs.uniq + syms.uniq.map { |s| "-Wl,-u,#{s}" } + libs.uniq.map { |l| "-l#{l}" }
+# A Mach-O symbol carries a leading underscore that the ELF symbol does not
+underscore = RUBY_PLATFORM.include?("darwin") ? "_" : ""
+flags = objs.uniq + syms.uniq.map { |s| "-Wl,-u,#{underscore}#{s}" } + libs.uniq.map { |l| "-l#{l}" }
 puts flags.join(" ")
