@@ -95,6 +95,32 @@ comment shows up on the open page with no reload:
 Console.create("Comment", {article_id: 1, commenter: "fx", body: "live"})
 ```
 
+### IRB over telnet
+
+The host also takes `--irb-port PORT` as its first two arguments and
+opens IRB, with the line editor of Reline, to each telnet connection on
+127.0.0.1:PORT (see `--irb-port` in the [README](../README.md)).
+The kernel is compiled with `--ext-class Article,Comment`, so IRB calls
+the methods of the models by name:
+
+```sh
+cd build/roundhouse/blog
+../host/blog --irb-port 4001
+```
+
+```
+$ telnet 127.0.0.1 4001
+irb(main):001> Article.count
+=> 3
+irb(main):002> Article.find(1).title
+=> "Getting Started with Rails"
+```
+
+A method that answers an object of a class the list does not name (a
+`Relation` of `Article.all`) comes back as an object with no methods.
+`--ext-class all` is not an option here: it makes every public method of
+the blog a root, and spinel then refuses `runtime/logger_spinel.rb`.
+
 ## Check
 
 `make test-roundhouse` runs `test/roundhouse/test.rb` on the host build.

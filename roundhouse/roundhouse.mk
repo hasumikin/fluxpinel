@@ -24,6 +24,11 @@ RH_RAILS = $(RH_BLOG_DIR)-rails
 RH_HOST_DIR = $(BUILD)/roundhouse/host
 RH_HOST ?= $(RH_HOST_DIR)/blog
 RH_ENTRIES = Main.start,Console.count,Console.find,Console.create
+# The classes whose methods IRB calls by name through the table of
+# --ext-class: the models. `all` roots every public method of the blog,
+# and spinel then refuses runtime/logger_spinel.rb (a Proc read from a
+# slot that holds other values appends to a String).
+RH_EXT_CLASS = Article,Comment
 # The interpreter itself, not a shim of a version manager. A shim of rbenv
 # picks the Ruby from the directory of the script, and deps/roundhouse
 # names a Ruby of its own.
@@ -60,7 +65,7 @@ $(RH_BLOG_DIR)/.fx-stamp: $(RH_RAILS)/.fx-stamp roundhouse/apply.rb roundhouse/c
 roundhouse: $(RH_BLOG_DIR)/.fx-stamp
 	$(MAKE) host HOST=$(RH_HOST_DIR) HOST_NAME=blog KERNEL=$(RH_BLOG_DIR)/main.rb KERNEL_MAIN=Main.start \
 	  KERNEL_ENTRIES=$(RH_ENTRIES) KERNEL_FLAGS="-I $(RH_BLOG_DIR) --rbs $(RH_BLOG_DIR)" \
-	  HOST_LIBS="-lsqlite3 -ljemalloc"
+	  KERNEL_EXT_CLASS=$(RH_EXT_CLASS) HOST_LIBS="-lsqlite3 -ljemalloc"
 
 test-roundhouse:
 	ruby test/roundhouse/test.rb $(RH_BLOG) $(RH_HOST)

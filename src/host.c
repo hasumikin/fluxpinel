@@ -31,9 +31,23 @@ static FxClass *fx_host_module(const char *mod) {
   return NULL;
 }
 
+/* Whether the kernel's class of the name is a builtin class the walker
+   has of its own, which the kernel reopened (Time, Set): the walker's
+   class answers the name, as a reopened builtin of a program does, and
+   the kernel's entry would hide it (fx_builtin makes a builtin class at
+   its first use, so the first class of the name in L.builtins wins). */
+static int fx_host_builtin_name(const char *name) {
+  /* the autoloads of Object (fx_global_init, which runs after this) */
+  static const char *const autoloads[] = { "Set", "RbConfig", "Gem", "ThreadGroup", "ObjectSpace", "MonitorMixin" };
+  for (size_t i = 0; i < sizeof autoloads / sizeof autoloads[0]; i++)
+    if (!strcmp(name, autoloads[i])) return 1;
+  return fx_builtin_id(name) != 0 || sp_exc_parent_of_name(name) != NULL;
+}
+
 static void fx_host_init(void) {
   int first = L.nbuiltins;
   for (sp_int id = 0; id < FX_CLS_BASE && *fx_host_class_name(id); id++) {
+    if (fx_host_builtin_name(fx_host_class_name(id))) continue;
     sp_Class c = { id, NULL };
     int is_module = fx_kernel_hooks.class_is_module && fx_kernel_hooks.class_is_module(c);
     FxClass *k = fx_class_alloc(id, strdup(fx_host_class_name(id)), is_module, NULL, NULL);
@@ -57,12 +71,14 @@ static void fx_host_init(void) {
   }
   /* the methods of the table of --ext-class (sp_ext_methods): each class
      defines the rows it owns, and the ancestors of Fluxpinel reach the
-     inherited ones; an entry of the name keeps its wrapper, which converts
-     a Hash to the kind of the parameter */
+     inherited ones, except a row of an ancestor that has no table of its
+     own (a class the flag does not name), which the class defines itself;
+     an entry of the name keeps its wrapper, which converts a Hash to the
+     kind of the parameter */
   for (int i = first; i < L.nbuiltins; i++) {
     FxClass *k = L.builtins[i];
     for (const sp_ext_method *row = sp_ext_methods((int)k->cls_id); row && row->name; row++) {
-      if (row->owner != (int)k->cls_id) continue;
+      if (row->owner != (int)k->cls_id && sp_ext_methods(row->owner)) continue;
       sp_sym name = sp_sym_intern(row->name);
       if (row->singleton && fx_table_get(&k->smethods, name)) continue;
       FxMethod *m = fx_method_new(FX_M_EXTM, name, NULL, 0, k);
