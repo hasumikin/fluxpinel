@@ -232,7 +232,9 @@ can change while it runs.
 Fluxpinel needs git, a C compiler, libffi and Ruby for the build tools.
 `make test` also needs the ffi gem under CRuby (`gem install ffi`).
 `make deps` fetches spinel at the commit in `SPINEL_COMMIT` into
-`deps/spinel`, and builds it there.
+`deps/spinel`, and builds it there. On macOS, install libffi and OpenSSL
+with Homebrew (`brew install libffi openssl`); the Makefile finds them
+there.
 
 ```sh
 make deps

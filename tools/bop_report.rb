@@ -68,8 +68,11 @@ File.write(main_c, <<~C)
   int main(void) { int n = 0; for (int i = 0; i < fx_bop_count; i++) n += fx_bop_table[i].fn != 0; return n == 0; }
 C
 offs = compile_fail.map { |id| "-DFX_BOP_OFF_#{id}" }
+# crypt(3) is in libSystem on macOS, with no libcrypt to name (the Makefile
+# leaves it out there too)
+crypt_libs = RUBY_PLATFORM.include?("darwin") ? [] : ["-lcrypt"]
 log, ok = run("cc", *CFLAGS, "-I#{dir}", *offs, "-o", File.join(dir, "link_test"), unit, main_c,
-              RT_ARCHIVE, "-lm", "-lcrypt", *RT_LIBS)
+              RT_ARCHIVE, "-lm", *crypt_libs, *RT_LIBS)
 File.write(File.join(dir, "link.log"), log)
 link_fail = log.scan(/in function `fx_bop_(\d+)'/).map { |(id)| id.to_i }.uniq
 abort "link failed for another reason; see #{dir}/link.log" if !ok && link_fail.empty?

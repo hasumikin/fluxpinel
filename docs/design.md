@@ -491,8 +491,8 @@ The walker evaluates the prism AST directly (`src/walk.c`).
 - **Run time, not compile time.** spinel reads `ffi_func` and its kin at
   compile time and emits a direct C call for each function. Fluxpinel meets the
   same declarations in a module body at run time (`src/ffi.c`):
-  - `ffi_lib` opens the library with `dlopen`: `libNAME.so`, or a
-    versioned name when only that exists.
+  - `ffi_lib` opens the library with `dlopen`: `libNAME.so`, or
+    `libNAME.dylib` on macOS, or a versioned name when only that exists.
   - `ffi_func` declares a singleton method of the module (`FX_M_FFI`).
     Its first call finds the symbol with `dlsym`, and each call goes
     through libffi with the C types that the declaration names.
