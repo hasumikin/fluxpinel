@@ -47,6 +47,17 @@ int str_in(const char *s, const char *const *set) { (void)s; (void)set; abort();
 /* builtin_method_answers asks sp_feature_required (src/compiler.h) which
    libraries the program requires; the generator does not call it either */
 int sp_feature_required(const char *name) { (void)name; abort(); }
+/* bop_find asks sp_feature_enabled (src/spinel_parse.c) whether the program
+   has a library's row; the generator walks bop_rows and never calls bop_find */
+int sp_feature_enabled(const char *name) { (void)name; abort(); }
+/* builtin_kw_positional and builtin_name_kwless ask these arity lookups
+   (src/codegen_call.c); the generator does not call them either */
+int builtin_method_arity(const char *cls, const char *m, int *out) { (void)cls; (void)m; (void)out; abort(); }
+int builtin_method_fixed_any(const char *m) { (void)m; abort(); }
+int builtin_class_arity_spec(const char *cls, const char *m, int *min, int *max,
+                             const char **lo_exp, const char **hi_exp) {
+  (void)cls; (void)m; (void)min; (void)max; (void)lo_exp; (void)hi_exp; abort();
+}
 
 typedef struct {
   TyKind recv;     /* the concrete receiver kind */
@@ -216,6 +227,7 @@ typedef struct {
   const char *recv, *name, *variant;
   int argc_min, argc_max;
   unsigned long long arg0, arg1;
+  const char *feature;   /* the library whose require gives the row (io/console), or NULL */
 } Wrapper;
 #define MAX_WRAPPERS 4096
 static Wrapper wrappers[MAX_WRAPPERS];
@@ -340,7 +352,8 @@ int main(int argc, char **argv) {
         else fprintf(out, "  return %s;\n}\n#endif\n", boxed.p);
         fprintf(man, "%d\t%zu\t%s\t%s\t%s\tgen\t\n", id, i, rname, op->name, vname);
         if (id >= MAX_WRAPPERS) { fprintf(stderr, "bop_gen: more than %d wrappers\n", MAX_WRAPPERS); return 1; }
-        wrappers[id] = (Wrapper){ rname, op->name, vname, op->argc_min, op->argc_max, g_arg_kinds[0], g_arg_kinds[1] };
+        wrappers[id] = (Wrapper){ rname, op->name, vname, op->argc_min, op->argc_max, g_arg_kinds[0], g_arg_kinds[1],
+                                  op->feature };
         id++;
       }
       free(body.p); free(boxed.p); free(recv.p);
@@ -348,16 +361,20 @@ int main(int argc, char **argv) {
   }
   /* arg0 / arg1: the kinds the first and second argument may have, one bit
      per TyKind (BOP_K), or 0 for any kind */
+  /* feature: the library whose require gives the row (io/console), or NULL
+     for a row of the core; the row answers after the require only */
   fputs("\ntypedef sp_RbVal (*fx_bop_fn)(sp_RbVal, sp_RbVal *);\n"
         "typedef struct { const char *recv, *name, *variant; int argc_min, argc_max;\n"
-        "                 unsigned long long arg0, arg1; fx_bop_fn fn; } FxBop;\n",
+        "                 unsigned long long arg0, arg1; const char *feature; fx_bop_fn fn; } FxBop;\n",
         out);
   fprintf(out, "const int fx_bop_count = %d;\nconst FxBop fx_bop_table[] = {\n", id);
   for (int k = 0; k < id; k++) {
     const Wrapper *w = &wrappers[k];
-    fprintf(out, "  { \"%s\", \"%s\", \"%s\", %d, %d, %#llxULL, %#llxULL,\n"
-                 "#ifndef FX_BOP_OFF_%d\n    fx_bop_%d },\n#else\n    0 },\n#endif\n",
-            w->recv, w->name, w->variant, w->argc_min, w->argc_max, w->arg0, w->arg1, k, k);
+    fprintf(out, "  { \"%s\", \"%s\", \"%s\", %d, %d, %#llxULL, %#llxULL, ",
+            w->recv, w->name, w->variant, w->argc_min, w->argc_max, w->arg0, w->arg1);
+    if (w->feature) fprintf(out, "\"%s\",\n", w->feature);
+    else fputs("0,\n", out);
+    fprintf(out, "#ifndef FX_BOP_OFF_%d\n    fx_bop_%d },\n#else\n    0 },\n#endif\n", k, k);
   }
   fputs("};\n", out);
   fclose(out);

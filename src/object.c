@@ -67,6 +67,22 @@ static int fx_ostruct_loaded;
 /* 1 after a require of io/console: IO#winsize and its kin answer */
 static int fx_console_loaded;
 
+/* The features of the runtime the program required (io/console, ...): a
+   row of the generated table that a feature gives answers after its
+   require only, as spinel's bop_row_fits reads sp_feature_enabled. */
+static const char *fx_features[16];
+static int fx_nfeatures;
+
+static void fx_feature_add(const char *name) {
+  for (int i = 0; i < fx_nfeatures; i++) if (!strcmp(fx_features[i], name)) return;
+  if (fx_nfeatures < (int)(sizeof fx_features / sizeof fx_features[0])) fx_features[fx_nfeatures++] = strdup(name);
+}
+
+static int fx_feature_required(const char *name) {
+  for (int i = 0; i < fx_nfeatures; i++) if (!strcmp(fx_features[i], name)) return 1;
+  return 0;
+}
+
 static void fx_define_method(FxClass *c, FxMethod *m, int singleton) {
   if (!singleton && fx_always_private(m->name)) m->vis = FX_VIS_PRIVATE;
   fx_table_put(singleton ? &c->smethods : &c->methods, m);

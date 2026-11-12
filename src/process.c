@@ -46,7 +46,7 @@ static sp_int fx_clock_id(sp_RbVal v) {
    an integer unit, a Float for a float unit and for none. */
 static sp_RbVal fx_clock(const char *name, int argc, sp_RbVal *argv) {
   sp_int id = fx_clock_id(argv[0]);
-  int64_t ns = FX_IS("clock_getres") ? sp_process_clock_res_ns(id) : sp_process_clock_ns(id);
+  int64_t ns = FX_IS("clock_getres") ? sp_process_clock_res_ns(id) : sp_process_clock_units(id, 1);
   const char *unit = argc >= 2 && argv[1].tag == SP_TAG_SYM ? sp_sym_to_s((sp_sym)argv[1].v.i) : "float_second";
   if (!strcmp(unit, "nanosecond")) return sp_box_int(ns);
   if (!strcmp(unit, "microsecond")) return sp_box_int(ns / 1000);

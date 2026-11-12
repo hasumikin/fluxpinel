@@ -140,7 +140,10 @@ outside the table. Fluxpinel writes these methods by hand:
    `sp_poly_*` function, for example `sp_poly_add` for `+`.
 4. the `sp_poly_*` helpers that answer one method as a whole, for example
    `sp_poly_floor` for `floor`. A table maps the method name to the helper.
-5. the generated wrappers.
+5. the generated wrappers. A row of a library (`io/console`) answers after
+   its `require` only, as the rows of spinel do. When the rows of a name
+   take no count like the call's, the call is CRuby's `ArgumentError`,
+   with the counts of the rows.
 6. the methods of Object (`fx_object_core`), then `NoMethodError`.
 
 A hand-written core method follows the C that codegen emits for the same

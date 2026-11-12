@@ -116,21 +116,32 @@ static const FxBop **fx_bop_rows(const char *name, int *n) {
   return fx_bop_index + lo;
 }
 
-/* The generated wrapper for this call, or NULL. */
+/* Whether a row answers for the program: a row of a library (io/console)
+   after its require only, as spinel's bop_row_fits reads. */
+static int fx_bop_row_on(const FxBop *b) {
+  return !b->feature || fx_feature_required(b->feature);
+}
+
+/* The generated wrapper for this call, or NULL. A name whose rows for the
+   receiver take no count like this one is CRuby's ArgumentError, with the
+   counts of the rows: the walker has no other arity for the method. */
 static fx_bop_fn fx_bop_find(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv) {
   const char *fam, *var;
   fx_kind_of(recv, &fam, &var);
   if (!fam) return NULL;
-  int n;
+  int n, lo = 128, hi = -1;
   const FxBop **rows = fx_bop_rows(name, &n);
   for (int i = 0; i < n; i++) {
     const FxBop *b = rows[i];
-    if (strcmp(b->recv, fam) || strcmp(b->variant, var)) continue;
+    if (strcmp(b->recv, fam) || strcmp(b->variant, var) || !fx_bop_row_on(b)) continue;
+    if (b->argc_min < lo) lo = b->argc_min;
+    if (b->argc_max > hi) hi = b->argc_max;
     if (argc < b->argc_min || argc > b->argc_max) continue;
     if (argc > 0 && !fx_kind_fits(b->arg0, argv[0])) continue;
     if (argc > 1 && !fx_kind_fits(b->arg1, argv[1])) continue;
     return b->fn;
   }
+  if (hi >= 0 && (argc < lo || argc > hi)) fx_arity_error(argc, lo, hi >= 127 ? 0 : hi - lo, hi >= 127);
   return NULL;
 }
 
@@ -692,9 +703,10 @@ static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_Rb
    methods that Fluxpinel can call, so it answers false for a method of CRuby
    that Fluxpinel lacks. */
 static int fx_builtin_responds(sp_RbVal r, const char *name) {
-  /* io/console on an IO (global.c), once it is required */
-  if (fx_console_loaded && fx_is_io(r) && (!strcmp(name, "winsize") || !strcmp(name, "winsize=") ||
-                                           !strcmp(name, "raw") || !strcmp(name, "raw!") || !strcmp(name, "noecho")))
+  /* io/console on an IO (global.c), once it is required; winsize is a row
+     of the generated table */
+  if (fx_console_loaded && fx_is_io(r) && (!strcmp(name, "winsize=") || !strcmp(name, "raw") ||
+                                           !strcmp(name, "raw!") || !strcmp(name, "noecho")))
     return 1;
   static const char *const any[] = { "!", "nil?", "to_s", "inspect", "==", "!=", "class", "is_a?", "kind_of?",
                                      "instance_of?", "respond_to?", "send", "__send__", "public_send", "frozen?",
@@ -752,7 +764,7 @@ static int fx_builtin_responds(sp_RbVal r, const char *name) {
   int n;
   const FxBop **rows = fx_bop_rows(name, &n);
   for (int i = 0; i < n; i++)
-    if (!strcmp(rows[i]->recv, fam) && !strcmp(rows[i]->variant, var)) return 1;
+    if (!strcmp(rows[i]->recv, fam) && !strcmp(rows[i]->variant, var) && fx_bop_row_on(rows[i])) return 1;
   return 0;
 }
 
