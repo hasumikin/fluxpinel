@@ -63,12 +63,8 @@ str_range/str_range#%/1
 str_range/str_range#step/1
 string/string#end_with?/1
 string/string#gsub/2
-string/string#lines/0
-string/string#lines/1
-string/string#split/0
 string/string#sub/2
 string/string#to_str/0
-string/string#unpack/1
 symbol/symbol#[]/2
 symbol/symbol#start_with?/1
 thread/thread#join/0

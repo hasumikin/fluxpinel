@@ -289,8 +289,9 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     *out = name[6] ? sp_PolyArray_get(p, 0) : sp_box_poly_array(p);
     return 1;
   }
-  /* split with no pattern, nil or " ": on runs of whitespace, with a limit */
-  if (FX_IS("split") && argc <= 2 && (argc == 0 || argv[0].tag == SP_TAG_NIL || (fx_is_string(argv[0]) && !strcmp(sp_poly_recv_s(argv[0], name), " "))) &&
+  /* split with nil or " " as the pattern: on runs of whitespace, with a
+     limit. The table has the form with no argument. */
+  if (FX_IS("split") && argc >= 1 && argc <= 2 && (argv[0].tag == SP_TAG_NIL || (fx_is_string(argv[0]) && !strcmp(sp_poly_recv_s(argv[0], name), " "))) &&
       (argc < 2 || argv[1].tag == SP_TAG_INT)) {
     const char *s = sp_poly_recv_s(r, name);
     SP_GC_ROOT_STR(s);
@@ -320,10 +321,6 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     if (FX_IS("frozen?")) { *out = sp_box_bool(r.tag == SP_TAG_STR || sp_poly_frozen(r)); return 1; }
     if (FX_IS("object_id")) { *out = sp_box_int((sp_int)(uintptr_t)sp_poly_identity_ptr(r)); return 1; }
     if (FX_IS("to_i")) { *out = fx_str_to_i(sp_poly_recv_s(r, name), -1); return 1; }
-    if (FX_IS("lines")) {
-      *out = sp_box_nullable_obj(sp_str_lines(sp_poly_recv_s(r, name)), SP_BUILTIN_STR_ARRAY);
-      return 1;
-    }
     if (FX_IS("clear")) { fx_str_mut(r, name); *out = sp_poly_clear(r); return 1; }
     /* each_char and its kin with no block: an Enumerator, which keeps the
        name of the method for its inspect */
@@ -366,9 +363,8 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       *out = r;
       return 1;
     }
-    if (FX_IS("unpack") || FX_IS("unpack1")) {
-      sp_PolyArray *p = sp_str_unpack(sp_poly_recv_s(r, name), sp_poly_arg_str_chk(a));
-      *out = name[6] ? sp_PolyArray_get(p, 0) : sp_box_poly_array(p);
+    if (FX_IS("unpack1")) {
+      *out = sp_PolyArray_get(sp_str_unpack(sp_poly_recv_s(r, name), sp_poly_arg_str_chk(a)), 0);
       return 1;
     }
     /* a Regexp is re.c's; the helper raises TypeError for anything else
@@ -385,11 +381,6 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     if (fx_is_string(a) && (FX_IS("partition") || FX_IS("rpartition"))) {
       const char *s = sp_poly_recv_s(r, name), *x = sp_poly_recv_s(a, name);
       *out = sp_box_nullable_obj(name[0] == 'r' ? sp_str_rpartition(s, x) : sp_str_partition(s, x),
-                                 SP_BUILTIN_STR_ARRAY);
-      return 1;
-    }
-    if (fx_is_string(a) && FX_IS("lines")) {
-      *out = sp_box_nullable_obj(sp_str_lines_sep(sp_poly_recv_s(r, name), sp_poly_recv_s(a, name)),
                                  SP_BUILTIN_STR_ARRAY);
       return 1;
     }
