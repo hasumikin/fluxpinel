@@ -13,6 +13,12 @@ begin
 rescue TypeError => e
   p e.message
 end
+p "aabbcc".count("a"), "aabbcc".count("ab", "b"), "aabbcc".delete("a"), "aabbcc".squeeze("a")
+begin
+  "aabbcc".delete(nil)
+rescue TypeError => e
+  p e.message
+end
 p s.include?("ell")
 p s.start_with?("He")
 p s.succ

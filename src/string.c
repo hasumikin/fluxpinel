@@ -500,9 +500,9 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     *out = part;
     return 1;
   }
-  /* count, delete and squeeze raise TypeError for an argument that is no
-     String; the wrapper of the table reads it as one */
-  if (argc >= 1) {
+  /* count, delete and squeeze with two sets or more: the table has the
+     one-set form */
+  if (argc >= 2) {
     if (FX_IS("count")) { *out = sp_poly_str_setop_n(r, 0, argc, argv); return 1; }
     if (FX_IS("delete")) { *out = sp_poly_str_setop_n(r, 1, argc, argv); return 1; }
     if (FX_IS("squeeze")) { *out = sp_poly_str_setop_n(r, 2, argc, argv); return 1; }

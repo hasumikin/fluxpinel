@@ -285,10 +285,12 @@ int main(int argc, char **argv) {
         "#include \"fx_tu.h\"\n"
         "#define FX_BOX_INT(x) _Generic((x), sp_oint: sp_box_oint, default: sp_box_int)(x)\n"
         "#define FX_BOX_FLOAT(x) _Generic((x), sp_ofloat: sp_box_ofloat, default: sp_box_float)(x)\n"
-        "/* A String argument ($s): nil stays NULL as sp_poly_unbox_s gives it,\n"
-        "   and any other value that is not a String is the TypeError of CRuby. */\n"
+        "/* A String argument ($s) of any kind: the TypeError of CRuby for a\n"
+        "   value that is not a String, nil included. The compiler emits the\n"
+        "   same check at a $s slot; a slot that takes nil is no row of the\n"
+        "   table. */\n"
         "static const char *fx_bop_str(sp_RbVal v) {\n"
-        "  return v.tag == SP_TAG_NIL ? sp_poly_unbox_s(v) : sp_poly_arg_str_chk(v);\n"
+        "  return sp_poly_arg_str_chk(v);\n"
         "}\n",
         out);
   /* the TyKind numbers of the pinned spinel, for the argument kind masks */
