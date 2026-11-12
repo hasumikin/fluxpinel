@@ -149,6 +149,7 @@ typedef struct FxFrameStack {
   uint64_t *serial;
   FxTrace *tr;                    /* by depth, with serial */
   int depth, cap;
+  int bop_depth, bop_answered;    /* the shadow trace of fx_builtin_call */
 } FxFrameStack;
 
 /* A block that a call passes: a block literal, a lambda, `&:sym` or the

@@ -538,44 +538,14 @@ static int fx_io_console(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
   return 1;
 }
 
-/* The readers of a File::Stat. The runtime keeps a stat as a handle whose
-   mode is "stat" or "lstat" (sp_file_stat_handle), and each reader reads
-   the struct stat again. Its class is File, not File::Stat. */
-static int fx_stat_core(sp_File *f, const char *name, int argc, sp_RbVal *out) {
-  static const char *const fields[] = { "uid", "gid", "nlink", "dev", "ino", "blksize", "blocks", "rdev",
-                                        "dev_major", "dev_minor", "world_readable?", "world_writable?", NULL };
-  static const char *const preds[] = { "pipe?", "zero?", "readable?", "writable?", "executable?", "blockdev?",
-                                       "chardev?", "size?", "executable_real?", "readable_real?",
-                                       "writable_real?", NULL };
-  static const char *const types[] = { "file?", "directory?", "symlink?", "owned?", "grpowned?", "setuid?",
-                                       "setgid?", "sticky?", "socket?", NULL };
-  static const char *const times[] = { "mtime", "atime", "ctime", NULL };
-  if (argc != 0) return 0;
-  if (FX_IS("mode")) { *out = sp_box_int(sp_stat_mode(f)); return 1; }
-  if (FX_IS("size")) { *out = sp_box_oint(sp_stat_size(f)); return 1; }
-  if (FX_IS("ftype")) { *out = sp_box_str_new(sp_str_dup(sp_stat_ftype(f))); return 1; }
-  for (int i = 0; fields[i]; i++)
-    if (FX_IS(fields[i])) { *out = sp_box_oint(sp_stat_field(f, i)); return 1; }
-  for (int i = 0; preds[i]; i++) {
-    if (!FX_IS(preds[i])) continue;
-    *out = i == 7 ? sp_box_oint(sp_stat_size_q(f)) : sp_box_bool(sp_stat_pred(f, i) != 0);
-    return 1;
-  }
-  for (int i = 0; types[i]; i++)
-    if (FX_IS(types[i])) { *out = sp_box_bool(sp_stat_type_pred(f, i) != 0); return 1; }
-  for (int i = 0; times[i]; i++)
-    if (FX_IS(times[i])) { *out = sp_box_timev(sp_statv_handle_time(f, i)); return 1; }
-  return 0;
-}
-
 static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (!fx_is_io(r)) return 0;
   sp_File *io = (sp_File *)r.v.p;
-  if (io->mode && (!strcmp(io->mode, "stat") || !strcmp(io->mode, "lstat"))) return fx_stat_core(io, name, argc, out);
+  /* a File::Stat is a handle whose mode is "stat" or "lstat"; the rows of
+     the table answer its readers */
+  if (io->mode && (!strcmp(io->mode, "stat") || !strcmp(io->mode, "lstat"))) return 0;
   /* accept, addr and the other methods of a socket (socket.c) */
   if (io->is_sock && fx_sock_core(io, name, argc, argv, out)) return 1;
-  /* IO#stat and File#stat: a stat of the open handle */
-  if (argc == 0 && FX_IS("stat")) { *out = sp_box_obj(sp_io_stat_handle(io), SP_BUILTIN_IO); return 1; }
   /* external_encoding: what set_encoding chose (ext_enc), else BINARY after
      binmode, else the default external encoding for a handle that only
      reads, and nil for one that can write, as CRuby answers. The runtime
@@ -750,7 +720,6 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     *out = sp_box_nullable_obj((void *)lines, SP_BUILTIN_STR_ARRAY);
     return 1;
   }
-  if (FX_IS("sync") && argc == 0) { *out = sp_box_bool(sp_File_sync_p(io)); return 1; }
   if (FX_IS("sync=") && argc == 1) {
     sp_File_set_sync(io, sp_poly_truthy(argv[0]));
     *out = argv[0];

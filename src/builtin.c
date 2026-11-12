@@ -157,10 +157,19 @@ static fx_bop_fn fx_bop_find(sp_RbVal recv, const char *name, int argc, sp_RbVal
   return NULL;
 }
 
-/* The depth of the fx_builtin_call whose wrapper of the generated table
-   answered, or 0: the shadow trace below tells its answer from a
-   hand-written one, under the calls a hand-written method makes. */
-static int fx_bop_answered, fx_bc_depth;
+/* The wrapper of the generated table (or a core method) answered the
+   fx_builtin_call of the current depth: the shadow trace below tells its
+   answer from a hand-written one, under the calls a hand-written method
+   makes. The depth and the mark live in the frame stack of the fiber: a
+   wrapper that waits gives the walker lock up, and the other threads run
+   their own calls meanwhile. */
+static FxFrameStack *fx_bop_fs(void) {
+  return L.fs ? fx_fs() : NULL;   /* no stack yet while the walker starts */
+}
+static void fx_bop_mark(void) {
+  FxFrameStack *s = fx_bop_fs();
+  if (s) s->bop_answered = s->bop_depth;
+}
 
 /* FX_TRACE_SHADOW=1 reports each call that a method written by hand for
    its receiver (string.c, io.c, ...) answers while a row of the generated
@@ -1050,10 +1059,10 @@ static int fx_builtin_call_1(sp_RbVal recv, const char *name, int argc, sp_RbVal
   }
   /* the core methods and the helpers call one sp_poly_* function of the
      runtime, as a wrapper does: no shadow (fx_trace_shadow) */
-  if (fx_core(recv, name, argc, argv, out)) { fx_bop_answered = fx_bc_depth; return 1; }
-  if (fx_poly_helper(recv, name, argc, argv, out)) { fx_bop_answered = fx_bc_depth; return 1; }
+  if (fx_core(recv, name, argc, argv, out)) { fx_bop_mark(); return 1; }
+  if (fx_poly_helper(recv, name, argc, argv, out)) { fx_bop_mark(); return 1; }
   fx_bop_fn fn = fx_bop_find(recv, name, argc, argv);
-  if (fn) { fx_bop_answered = fx_bc_depth; *out = fn(recv, argv); return 1; }
+  if (fn) { fx_bop_mark(); *out = fn(recv, argv); return 1; }
   return fx_object_core(recv, name, argc, argv, out);
 }
 
@@ -1062,10 +1071,12 @@ static int fx_builtin_call_1(sp_RbVal recv, const char *name, int argc, sp_RbVal
    it. (A wrapper drops the block, so a call with one is no shadow.) */
 static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                              sp_RbVal *out) {
-  int depth = ++fx_bc_depth;
+  FxFrameStack *s = fx_bop_fs();
+  if (!s) return fx_builtin_call_1(recv, name, argc, argv, blk, out);
+  int depth = ++s->bop_depth;
   int r = fx_builtin_call_1(recv, name, argc, argv, blk, out);
-  if (r && !blk && fx_bop_answered != depth) fx_trace_shadow(recv, name, argc, argv);
-  fx_bc_depth = depth - 1;
+  if (r && !blk && s->bop_answered != depth) fx_trace_shadow(recv, name, argc, argv);
+  s->bop_depth = depth - 1;
   return r;
 }
 
