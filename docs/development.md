@@ -71,8 +71,9 @@ spinel, so it is fast.
   while a generated wrapper fits it (`FX_TRACE_SHADOW=1`, see
   `docs/design.md`, section 3.2.2). `tools/builtin_census.rb` then prints
   the counts of the builtin layer and fails on a shadow that
-  `tools/shadowed_known.txt` does not list. `make census` prints the
-  counts of the last run.
+  `tools/shadowed_known.txt` does not list. A listed shadow with a reason
+  stays until spinel gives what the reason names; one with no reason is a
+  method to remove. `make census` prints the counts of the last run.
 
 ### make oracle
 

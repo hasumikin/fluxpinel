@@ -214,8 +214,11 @@ The rules:
   receiver (sources 1 and 2 of section 3.2) answered while a generated
   wrapper fits it (a shadow). A core method that calls one `sp_poly_*`
   function (sources 3 and 4) is no shadow: it is the runtime of spinel too.
-  `tools/shadowed_known.txt` lists the shadows that are known: each line
-  is a method to remove, and the list only shrinks.
+  `tools/shadowed_known.txt` lists the shadows that are known, and the
+  list only shrinks. A line with no reason is a method to remove. A line
+  with a reason names what the row lacks for the walker (`$~`, the
+  identity of the receiver, a form with more arguments): the method stays
+  until spinel gives it, and the reason is the text of a spinel issue.
 - `make census` prints the counts of the layer: the hand-written methods
   (`FX_IS` sites and prelude defs) and the generated wrappers. The first
   count goes down over time; the second follows spinel.

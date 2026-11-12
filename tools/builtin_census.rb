@@ -8,14 +8,21 @@
 # hand-written method answered while a generated wrapper fits it. The
 # builtin layer of Fluxpinel stands in for what spinel lacks (docs/design.md,
 # section 3.2.2), so such a method is a second implementation and goes.
-# tools/shadowed_known.txt lists the shadows that are known: the work to do.
-# The script prints one line of counts and the shadows, and exits 1 on a
-# shadow that the list does not name. A listed shadow that the run did not
-# find is a line to remove.
+# tools/shadowed_known.txt lists the shadows that are known: a method, then
+# a tab and a reason when the method stays (what the row lacks for the
+# walker), or no reason when the method is to remove. The script prints
+# one line of counts and the shadows, and exits 1 on a shadow that the list
+# does not name. A listed shadow that the run did not find is a line to
+# remove.
 
 manifest, shadowed = ARGV
 abort "usage: builtin_census.rb MANIFEST [SHADOWED]" unless manifest
-known = File.readlines(File.join(__dir__, "shadowed_known.txt"), chomp: true).reject { |l| l.empty? || l.start_with?("#") }
+known = {}
+File.readlines(File.join(__dir__, "shadowed_known.txt"), chomp: true).each do |l|
+  next if l.empty? || l.start_with?("#")
+  m, why = l.split("\t", 2)
+  known[m] = why.to_s
+end
 
 src = File.expand_path("../src", __dir__)
 files = Dir.glob(File.join(src, "*.c"))
@@ -26,12 +33,14 @@ gen = File.readlines(manifest).count { |l| l.split("\t")[5] == "gen" }
 
 lines = shadowed && File.exist?(shadowed) ? File.readlines(shadowed, chomp: true).reject(&:empty?) : []
 found = lines.map { |l| l.split("\t").first }
-new = lines.reject { |l| known.include?(l.split("\t").first) }
+new = lines.reject { |l| known.key?(l.split("\t").first) }
+kept = found.count { |m| !known[m].to_s.empty? }
 puts "census: hand-written FX_IS #{hand} in #{hand_files} files, prelude defs #{prelude}, " \
-     "generated wrappers #{gen}, shadowed #{lines.size} (known #{lines.size - new.size}, new #{new.size})"
+     "generated wrappers #{gen}, shadowed #{lines.size} (known #{lines.size - new.size}, new #{new.size}): " \
+     "#{lines.size - new.size - kept} to remove, #{kept} kept with a reason"
 new.each do |l|
   m, n, tests = l.split("\t")
   puts "census: new shadow #{m} (#{n} tests: #{tests}): remove the hand-written method, or list it in tools/shadowed_known.txt"
 end
-(known - found).each { |m| puts "census: known shadow #{m} not found: remove its line from tools/shadowed_known.txt" } unless lines.empty?
+(known.keys - found).each { |m| puts "census: known shadow #{m} not found: remove its line from tools/shadowed_known.txt" } unless lines.empty?
 exit(new.empty? ? 0 : 1)

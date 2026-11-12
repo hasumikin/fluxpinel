@@ -1,7 +1,12 @@
 # The hand-written methods that a generated wrapper answers too, as the
-# last make regress found them (docs/design.md, section 3.2.2). Each line
-# is work to do: remove the hand-written method, run make regress, remove
-# the line. tools/builtin_census.rb fails on a shadow that is not here.
+# last make regress found them (docs/design.md, section 3.2.2). A line
+# names the method, then a tab and a reason, or no reason.
+#
+# A line with no reason is work to do: remove the hand-written method,
+# run make regress, remove the line. A line with a reason keeps the
+# method: the reason names what the row lacks for the walker, and goes
+# to spinel as an issue. tools/builtin_census.rb fails on a shadow that
+# is not here.
 ANY_ARRAY/poly_array#difference/0
 ANY_ARRAY/poly_array#dig/1
 ANY_ARRAY/poly_array#intersection/0
@@ -61,10 +66,10 @@ regex/regex#eql?/1
 regex/regex#hash/0
 str_range/str_range#%/1
 str_range/str_range#step/1
-string/string#end_with?/1
-string/string#gsub/2
-string/string#sub/2
-string/string#to_str/0
+string/string#end_with?/1	bop_rows[] has no String#start_with? with one argument; the pair stays together
+string/string#gsub/2	the row leaves $~ as it is; CRuby sets it for a String pattern too
+string/string#sub/2	the row leaves $~ as it is; CRuby sets it for a String pattern too
+string/string#to_str/0	the row answers a new String; CRuby answers the receiver itself
 symbol/symbol#[]/2
 symbol/symbol#start_with?/1
 thread/thread#join/0
