@@ -169,7 +169,10 @@ static const char *expand(Str *s, const BuiltinOp *op, const Variant *v, int *oi
     if (n < 0) return "unknown placeholder";
     switch (c) {
     case 'b': str_puts(s, arg); break;
-    case 'i': case 'o': unbox(s, TY_INT, arg); break;
+    /* an Integer argument of the walker is of any kind: the checked read
+       raises the TypeError of CRuby, where the unbox of the compiler reads
+       a String or a Symbol as a number */
+    case 'i': case 'o': str_printf(s, "sp_poly_arg_int_chk(%s)", arg); break;
     case 'f': unbox(s, TY_FLOAT, arg); break;
     case 's': str_printf(s, "fx_bop_str(%s)", arg); break;
     case 'c': str_printf(s, "sp_poly_as_complex(%s)", arg); break;
@@ -182,6 +185,7 @@ static const char *expand(Str *s, const BuiltinOp *op, const Variant *v, int *oi
       if (g_arg_kinds[n] == (BOP_K(TY_RANGE) | BOP_K(TY_FLOAT_RANGE))) g_arg_kinds[n] = BOP_K(TY_RANGE);
       TyKind k = single_kind(g_arg_kinds[n]);
       if (k == TY_UNKNOWN) return "$e of no single kind";
+      if (k == TY_INT) { str_printf(s, "sp_poly_arg_int_chk(%s)", arg); break; }
       if (!unbox(s, k, arg)) return "$e of a kind with no unbox";
       break;
     }

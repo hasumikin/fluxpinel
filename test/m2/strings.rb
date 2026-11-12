@@ -2,6 +2,17 @@ s = "Hello"
 p s.upcase, s.downcase, s.reverse
 p s.length
 p s.center(11)
+p s.center(11, "*"), s.ljust(7, "."), s.rjust(7, ".")
+begin
+  s.center("11")
+rescue TypeError => e
+  p e.message
+end
+begin
+  [1, 2, 3].first("2")
+rescue TypeError => e
+  p e.message
+end
 p s.include?("ell")
 p s.start_with?("He")
 p s.succ

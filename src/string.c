@@ -354,13 +354,6 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       return 1;
     }
     if (FX_IS("to_i")) { *out = fx_str_to_i(sp_poly_recv_s(r, name), sp_poly_arg_int_chk(a)); return 1; }
-    /* the wrapper of the table reads an argument of any kind as a String */
-    if (FX_IS("include?")) {
-      const char *s = sp_poly_recv_s(r, name);
-      SP_GC_ROOT(s);
-      *out = sp_box_bool(sp_str_include(s, sp_poly_arg_str_chk(a)));
-      return 1;
-    }
     if (FX_IS("getbyte")) { *out = sp_poly_getbyte(r, sp_poly_arg_int_chk(a)); return 1; }
     /* scrub(repl) and scrub!(repl): the invalid byte sequences replaced */
     if (FX_IS("scrub") || FX_IS("scrub!")) {
@@ -457,13 +450,6 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     if (fx_is_string(a) && b.tag == SP_TAG_INT && FX_IS("split") && strcmp(sp_poly_recv_s(a, name), " ")) {
       sp_StrArray *p = sp_str_split_limit(sp_poly_recv_s(r, name), sp_poly_recv_s(a, name), b.v.i);
       *out = sp_box_nullable_obj(p, SP_BUILTIN_STR_ARRAY);
-      return 1;
-    }
-    if (fx_is_string(b) && (FX_IS("center") || FX_IS("ljust") || FX_IS("rjust"))) {
-      const char *s = sp_poly_recv_s(r, name), *pad = sp_poly_recv_s(b, name);
-      sp_int w = sp_poly_arg_int_chk(a);
-      *out = sp_box_str_new(FX_IS("center") ? sp_str_center2(s, w, pad)
-                            : FX_IS("ljust") ? sp_str_ljust2(s, w, pad) : sp_str_rjust2(s, w, pad));
       return 1;
     }
     if (FX_IS("setbyte")) {

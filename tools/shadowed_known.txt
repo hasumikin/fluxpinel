@@ -61,16 +61,12 @@ regex/regex#eql?/1
 regex/regex#hash/0
 str_range/str_range#%/1
 str_range/str_range#step/1
-string/string#center/2
 string/string#count/1
 string/string#delete/1
 string/string#end_with?/1
 string/string#gsub/2
-string/string#include?/1
 string/string#lines/0
 string/string#lines/1
-string/string#ljust/2
-string/string#rjust/2
 string/string#split/0
 string/string#squeeze/1
 string/string#sub/2
