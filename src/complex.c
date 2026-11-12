@@ -92,20 +92,25 @@ static int fx_real_complex_op(sp_RbVal r, const char *name, sp_RbVal c, sp_RbVal
    <=, >, >=, between? and clamp are NoMethodError, as in CRuby. Answers 1
    and sets *out when it handles the call. */
 static int fx_complex_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
-  if (argc == 1 && fx_is_real(r) && fx_is_complex(argv[0])) return fx_real_complex_op(r, name, argv[0], out);
+  /* a Rational with a Complex operand: the table has + - * / and fdiv */
+  if (argc == 1 && fx_is_real(r) && fx_is_complex(argv[0]) &&
+      !(sp_poly_is_rat_kind(r) && (FX_IS("+") || FX_IS("-") || FX_IS("*") || FX_IS("/") || FX_IS("fdiv"))))
+    return fx_real_complex_op(r, name, argv[0], out);
   if (!fx_is_complex(r)) return 0;
-  if (argc == 1 && (FX_IS("==") || FX_IS("!="))) {
-    sp_RbVal v = argv[0];
-    int eq;
-    if (fx_is_real(v) || fx_is_complex(v)) eq = sp_complex_eq(*(sp_Complex *)r.v.p, sp_poly_as_complex(v));
-    /* any other value answers with its own ==, as Complex#== asks it */
-    else eq = fx_is_fx_object(v) && sp_poly_truthy(fx_send(v, "==", 1, &r));
+  /* == and != with a value that is not a number: an object of the program
+     answers with its own ==, as Complex#== asks it; any other value is
+     unequal. The table has the numbers; its row takes any boxed value and
+     reads it as a Float, which raises for a String or nil. */
+  if (argc == 1 && (FX_IS("==") || FX_IS("!=")) && !fx_is_real(argv[0]) && !fx_is_complex(argv[0])) {
+    int eq = fx_is_fx_object(argv[0]) && sp_poly_truthy(fx_send(argv[0], "==", 1, &r));
     *out = sp_box_bool(name[0] == '!' ? !eq : eq);
     return 1;
   }
-  if (argc == 1 && FX_IS("<=>")) {
+  /* <=> with a Rational, a big Integer or a value that is not a number:
+     the table has an Integer, a Float and a Complex */
+  if (argc == 1 && FX_IS("<=>") && argv[0].tag != SP_TAG_INT && argv[0].tag != SP_TAG_FLT && !fx_is_complex(argv[0])) {
     sp_RbVal v = argv[0];
-    *out = fx_is_real(v) || fx_is_complex(v) ? fx_complex_cmp(*(sp_Complex *)r.v.p, sp_poly_as_complex(v)) : sp_box_nil();
+    *out = fx_is_real(v) ? fx_complex_cmp(*(sp_Complex *)r.v.p, sp_poly_as_complex(v)) : sp_box_nil();
     return 1;
   }
   /* a Symbol operand names itself, as rb_num_coerce does */

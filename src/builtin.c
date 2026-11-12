@@ -619,8 +619,13 @@ static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_Rb
     /* String#to_s answers the String itself, so a change to it shows */
     if (!strcmp(name, "to_s")) { *out = fx_is_string(r) ? r : sp_poly_to_s_box(r); return 1; }
     if (!strcmp(name, "inspect")) { *out = sp_box_str_new(sp_str_dup(sp_poly_inspect(r))); return 1; }
-    /* the value that a Hash key hashes by; it differs from CRuby's numbers */
-    if (!strcmp(name, "hash")) { *out = sp_box_int(sp_rbval_hash_key(r)); return 1; }
+    /* the value that a Hash key hashes by; it differs from CRuby's numbers.
+       A row of the table (Regexp, MatchData) comes first. */
+    if (!strcmp(name, "hash")) {
+      fx_bop_fn fn = fx_bop_find(r, name, 0, argv);
+      *out = fn ? fn(r, argv) : sp_box_int(sp_rbval_hash_key(r));
+      return 1;
+    }
     if (!strcmp(name, "-@") && !fx_is_string(r)) { *out = sp_poly_neg(r); return 1; }
     if (!strcmp(name, "~") && fx_is_integer(r)) {
       *out = r.tag == SP_TAG_INT ? sp_box_int(~r.v.i) : sp_box_bigint(sp_bigint_not((sp_Bigint *)r.v.p));
@@ -685,6 +690,17 @@ static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_Rb
       sp_PolyArray_push((sp_PolyArray *)r.v.p, a);
       *out = r;
       return 1;
+    }
+    /* <=>, ==, != and eql? of a receiver with a row of the table (Regexp,
+       MatchData, Complex): the row, before the generic arm below */
+    if (!strcmp(name, "<=>") || !strcmp(name, "==") || !strcmp(name, "!=") || !strcmp(name, "eql?")) {
+      fx_bop_fn fn = fx_bop_find(r, name, 1, argv);
+      if (fn) { *out = fn(r, argv); return 1; }
+      /* != with no row of its own: the negation of the == row (MatchData) */
+      if (!strcmp(name, "!=") && (fn = fx_bop_find(r, "==", 1, argv))) {
+        *out = sp_box_bool(!sp_poly_truthy(fn(r, argv)));
+        return 1;
+      }
     }
     if (!strcmp(name, "<=>")) {
       sp_bool comparable = FALSE;

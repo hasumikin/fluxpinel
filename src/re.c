@@ -380,14 +380,6 @@ static int fx_re_regexp(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
     *out = sp_box_bool(sp_re_case_eq((mrb_regexp_pattern *)r.v.p, argv[0]));
     return 1;
   }
-  /* two patterns with the same source and options are equal */
-  if ((FX_IS("==") || FX_IS("eql?") || FX_IS("!=")) && argc == 1) {
-    int eq = fx_is_regexp(argv[0]) && sp_re_eq(r.v.p, argv[0].v.p);
-    *out = sp_box_bool(name[0] == '!' ? !eq : eq);
-    return 1;
-  }
-  /* the hash covers the options, as eql? does */
-  if (FX_IS("hash") && argc == 0) { *out = sp_box_int(sp_re_hash(r.v.p)); return 1; }
   return 0;
 }
 
@@ -664,14 +656,7 @@ static int fx_re_md_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     *out = a ? sp_box_poly_array(a) : sp_box_nil();
     return 1;
   }
-  /* the content decides ==, eql? and hash */
-  if ((FX_IS("==") || FX_IS("eql?") || FX_IS("!=")) && argc == 1) {
-    int eq = fx_is_md(argv[0]) && sp_MatchData_eq(m, (sp_MatchData *)argv[0].v.p);
-    *out = sp_box_bool(name[0] == '!' ? !eq : eq);
-    return 1;
-  }
-  if (FX_IS("hash") && argc == 0) { *out = sp_box_int(sp_MatchData_hash(m)); return 1; }
-  /* the subject, frozen as CRuby answers it */
+  /* the subject, frozen as CRuby answers it (the row answers a new String) */
   if (FX_IS("string") && argc == 0) { *out = sp_box_str(sp_MatchData_string(m)); return 1; }
   if (FX_IS("values_at")) {
     sp_PolyArray *a = sp_PolyArray_new();
