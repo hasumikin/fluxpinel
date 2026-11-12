@@ -269,6 +269,15 @@ regress:
 	$(MAKE) BUILD=$(BUILD)/promote INT_OVERFLOW=PROMOTE $(BUILD)/promote/fluxpinel
 	ruby tools/oracle.rb --spinel $(SPINEL) --fluxpinel $(BUILD)/promote/fluxpinel --timeout $(ORACLE_TIMEOUT) \
 	  --int-overflow promote --out $(BUILD)/regress --regress tools/oracle_agree.txt
+	ruby tools/builtin_census.rb $(BUILD)/promote/manifest.tsv $(BUILD)/regress/shadowed.txt
+
+# The counts of the builtin layer (docs/design.md, section 3.2.2): the
+# methods written by hand against the generated wrappers, and the shadows
+# the last make regress found. A hand-written method that a wrapper of the
+# generated table answers too fails here, unless tools/shadowed_known.txt
+# lists it as work to do.
+census: $(BUILD)/bop_gen_out.c
+	ruby tools/builtin_census.rb $(BUILD)/manifest.tsv $(BUILD)/regress/shadowed.txt
 
 # The gem oracle: the entry files of the packages of spinel and the files of
 # the gems that IRB needs (reline, irb, prism, rdoc, from the CRuby that runs
@@ -351,5 +360,5 @@ check-spinel-master:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test park-audit host test-host oracle regress gem-oracle optcarrot deps upgrade_spinel \
+.PHONY: all test park-audit host test-host oracle regress census gem-oracle optcarrot deps upgrade_spinel \
         check-spinel-master clean FORCE

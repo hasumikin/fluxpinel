@@ -122,27 +122,59 @@ static int fx_bop_row_on(const FxBop *b) {
   return !b->feature || fx_feature_required(b->feature);
 }
 
-/* The generated wrapper for this call, or NULL. A name whose rows for the
-   receiver take no count like this one is CRuby's ArgumentError, with the
-   counts of the rows: the walker has no other arity for the method. */
-static fx_bop_fn fx_bop_find(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv) {
+/* The row of the generated table that fits this call, or NULL. *lo and
+   *hi take the counts the rows of the name take for the receiver (*hi
+   stays -1 for no row). */
+static const FxBop *fx_bop_match(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, int *lo, int *hi) {
   const char *fam, *var;
+  *lo = 128;
+  *hi = -1;
   fx_kind_of(recv, &fam, &var);
   if (!fam) return NULL;
-  int n, lo = 128, hi = -1;
+  int n;
   const FxBop **rows = fx_bop_rows(name, &n);
   for (int i = 0; i < n; i++) {
     const FxBop *b = rows[i];
     if (strcmp(b->recv, fam) || strcmp(b->variant, var) || !fx_bop_row_on(b)) continue;
-    if (b->argc_min < lo) lo = b->argc_min;
-    if (b->argc_max > hi) hi = b->argc_max;
+    if (b->argc_min < *lo) *lo = b->argc_min;
+    if (b->argc_max > *hi) *hi = b->argc_max;
     if (argc < b->argc_min || argc > b->argc_max) continue;
     if (argc > 0 && !fx_kind_fits(b->arg0, argv[0])) continue;
     if (argc > 1 && !fx_kind_fits(b->arg1, argv[1])) continue;
-    return b->fn;
+    return b;
   }
+  return NULL;
+}
+
+/* The generated wrapper for this call, or NULL. A name whose rows for the
+   receiver take no count like this one is CRuby's ArgumentError, with the
+   counts of the rows: the walker has no other arity for the method. */
+static fx_bop_fn fx_bop_find(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv) {
+  int lo, hi;
+  const FxBop *b = fx_bop_match(recv, name, argc, argv, &lo, &hi);
+  if (b) return b->fn;
   if (hi >= 0 && (argc < lo || argc > hi)) fx_arity_error(argc, lo, hi >= 127 ? 0 : hi - lo, hi >= 127);
   return NULL;
+}
+
+/* The depth of the fx_builtin_call whose wrapper of the generated table
+   answered, or 0: the shadow trace below tells its answer from a
+   hand-written one, under the calls a hand-written method makes. */
+static int fx_bop_answered, fx_bc_depth;
+
+/* FX_TRACE_SHADOW=1 reports each call that a method written by hand for
+   its receiver (string.c, io.c, ...) answers while a row of the generated
+   table fits it too: the hand-written method is a second implementation of
+   what spinel gives, and can go. The core methods, which call one sp_poly_*
+   function, are no shadow. The oracle (tools/oracle.rb) collects the report
+   over the corpus for tools/builtin_census.rb. */
+static void fx_trace_shadow(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv) {
+  static int on = -1;
+  if (on < 0) { const char *e = getenv("FX_TRACE_SHADOW"); on = e && *e && *e != '0'; }
+  if (!on) return;
+  int lo, hi;
+  const FxBop *b = fx_bop_match(recv, name, argc, argv, &lo, &hi);
+  if (b) fprintf(stderr, "fluxpinel: shadowed builtin %s/%s#%s/%d\n", b->recv, b->variant, name, argc);
 }
 
 static int fx_is_array(sp_RbVal v) {
@@ -912,8 +944,8 @@ static int fx_fast_eqq(sp_RbVal v, sp_RbVal s, sp_RbVal *out) {
    for a call, and for super from a method of the program. A builtin
    method that takes a block is one of fx_iter; Fluxpinel stops at any other
    one, since the generated wrappers would drop the block. */
-static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
-                             sp_RbVal *out) {
+static int fx_builtin_call_1(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                               sp_RbVal *out) {
   /* IO#printf and StringIO#printf: Kernel#printf to the receiver, which
      needs a format */
   if (!blk && !strcmp(name, "printf") &&
@@ -1016,11 +1048,25 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
     if (!fx_rs_known(recv, name)) return 0;
     fx_gap(sp_sprintf("block for the builtin %s#%s", sp_poly_class_name(recv), name));
   }
-  if (fx_core(recv, name, argc, argv, out)) return 1;
-  if (fx_poly_helper(recv, name, argc, argv, out)) return 1;
+  /* the core methods and the helpers call one sp_poly_* function of the
+     runtime, as a wrapper does: no shadow (fx_trace_shadow) */
+  if (fx_core(recv, name, argc, argv, out)) { fx_bop_answered = fx_bc_depth; return 1; }
+  if (fx_poly_helper(recv, name, argc, argv, out)) { fx_bop_answered = fx_bc_depth; return 1; }
   fx_bop_fn fn = fx_bop_find(recv, name, argc, argv);
-  if (fn) { *out = fn(recv, argv); return 1; }
+  if (fn) { fx_bop_answered = fx_bc_depth; *out = fn(recv, argv); return 1; }
   return fx_object_core(recv, name, argc, argv, out);
+}
+
+/* fx_builtin_call_1, with the shadow trace: a call with no block that a
+   hand-written method answered, while a row of the generated table fits
+   it. (A wrapper drops the block, so a call with one is no shadow.) */
+static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                             sp_RbVal *out) {
+  int depth = ++fx_bc_depth;
+  int r = fx_builtin_call_1(recv, name, argc, argv, blk, out);
+  if (r && !blk && fx_bop_answered != depth) fx_trace_shadow(recv, name, argc, argv);
+  fx_bc_depth = depth - 1;
+  return r;
 }
 
 /* The same, with the block of the call. */

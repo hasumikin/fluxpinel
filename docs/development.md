@@ -67,6 +67,12 @@ spinel, so it is fast.
 - The outputs of a failed test go to `build/regress/cases/<test>/`.
 - A listed test that is no longer in the spinel corpus gives a warning
   only.
+- The run collects the shadows: a call that a hand-written method answered
+  while a generated wrapper fits it (`FX_TRACE_SHADOW=1`, see
+  `docs/design.md`, section 3.2.2). `tools/builtin_census.rb` then prints
+  the counts of the builtin layer and fails on a shadow that
+  `tools/shadowed_known.txt` does not list. `make census` prints the
+  counts of the last run.
 
 ### make oracle
 

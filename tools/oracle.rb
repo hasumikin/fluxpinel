@@ -122,6 +122,23 @@ end
 
 Result = Struct.new(:test, :klass, :detail)
 
+# The calls a hand-written method answered while a row of the generated
+# table fits them (FX_TRACE_SHADOW, src/builtin.c): "io/io#winsize/0" to
+# the tests that made the call. tools/builtin_census.rb reads the file.
+SHADOWED = Hash.new { |h, k| h[k] = [] }
+SHADOW_LOCK = Mutex.new
+def note_shadowed(name, lerr)
+  found = lerr.scan(/^fluxpinel: shadowed builtin (\S+)$/).flatten.uniq
+  return if found.empty?
+  SHADOW_LOCK.synchronize { found.each { |m| SHADOWED[m] << name } }
+end
+
+def write_shadowed(file)
+  lines = SHADOWED.sort.map { |m, tests| "#{m}\t#{tests.size}\t#{tests.sort.first(3).join(' ')}" }
+  File.write(file, lines.join("\n") + (lines.empty? ? "" : "\n"))
+  lines.size
+end
+
 def check(test, opts)
   name = File.basename(test, ".rb")
   rel = File.join("test", File.basename(test))
@@ -135,7 +152,9 @@ def check(test, opts)
   stdin =File.exist?("#{test}.stdin") ? File.binread("#{test}.stdin") : nil
   want = norm(File.binread("#{test}.expected"))
 
-  lout, lerr, lst = run([FLUXPINEL, rel], timeout: opts[:timeout], stdin: stdin, env: { "FX_TRACE_MISSING" => "1" })
+  lout, lerr, lst = run([FLUXPINEL, rel], timeout: opts[:timeout], stdin: stdin,
+                        env: { "FX_TRACE_MISSING" => "1", "FX_TRACE_SHADOW" => "1" })
+  note_shadowed(name, lerr)
   if lst == 2 && lerr =~ /^fluxpinel: .*?: unsupported (.*)$/
     return Result.new(name, :fx_unsupported, $1)
   end
@@ -222,11 +241,15 @@ results.sort_by!(&:test)
 
 # ---- regress ----
 
+shadowed_file = File.join(OUT, "shadowed.txt")
+nshadowed = write_shadowed(shadowed_file)
+
 if opts[:regress]
   bad = results.reject { |r| %i[agree known_fixed].include?(r.klass) }
   bad.each { |r| puts "regress: #{r.test}: #{r.klass} #{r.detail}" }
   puts "regress: #{results.size - bad.size} of #{results.size} tests give the CRuby answer"
   puts "regress: the outputs are under #{File.join(OUT, 'cases')}" unless bad.empty?
+  puts "regress: #{nshadowed} hand-written methods shadow a generated wrapper (#{shadowed_file})"
   exit(bad.empty? ? 0 : 1)
 end
 
@@ -257,6 +280,10 @@ top = lambda do |klass, title|
 end
 top.(:fx_unsupported, "Unsupported in the walker (top 40)")
 top.(:fx_missing, "Missing builtin methods (top 40)")
+unless SHADOWED.empty?
+  md << "\n## Hand-written methods that shadow a generated wrapper (#{SHADOWED.size})\n\n| method | tests |\n|---|---|\n"
+  SHADOWED.sort.each { |m, tests| md << "| `#{m}` | #{tests.size} |\n" }
+end
 
 %i[aot_differs fx_only shared_differs fx_differs all_differ known known_fixed fx_crash].each do |k|
   rs = by[k] || []

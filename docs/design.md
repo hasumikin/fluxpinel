@@ -192,6 +192,34 @@ Ways to reduce the risks:
 - Name the spinel row that each hand-written method follows, so that a
   change of the row shows at an update of the pin.
 
+### 3.2.2 The builtin layer stays thin
+
+Fluxpinel has two layers. The dynamic layer (the walker, its frames and
+blocks, the method tables, `eval`, `binding`, `method_missing`,
+`respond_to?`, the GC roots, the lock, the host glue) is what spinel does
+not do at run time. It stays. The builtin layer (the hand-written methods
+of section 3.2, and `src/prelude.rb`) stands in for what spinel does not
+give the walker yet: a runtime function, a row of `bop_rows[]`, or an
+entry that calls a builtin method by name. It shrinks as spinel grows.
+
+The rules:
+
+- A hand-written method needs a reason that spinel cannot remove: the
+  method calls the block of the walker, or spinel has no row and no
+  runtime function for it. A method of the second kind is a candidate for
+  a spinel pull request.
+- When a row of spinel comes to cover a hand-written method, the method
+  goes. `make regress` runs the corpus with `FX_TRACE_SHADOW=1`, and
+  `tools/builtin_census.rb` fails on a call that a method written for its
+  receiver (sources 1 and 2 of section 3.2) answered while a generated
+  wrapper fits it (a shadow). A core method that calls one `sp_poly_*`
+  function (sources 3 and 4) is no shadow: it is the runtime of spinel too.
+  `tools/shadowed_known.txt` lists the shadows that are known: each line
+  is a method to remove, and the list only shrinks.
+- `make census` prints the counts of the layer: the hand-written methods
+  (`FX_IS` sites and prelude defs) and the generated wrappers. The first
+  count goes down over time; the second follows spinel.
+
 ### 3.3 Walker
 
 The walker evaluates the prism AST directly (`src/walk.c`).
