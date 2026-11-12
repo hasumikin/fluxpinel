@@ -63,8 +63,8 @@ static sp_RbVal fx_ary_tally(sp_RbVal r) {
   return sp_box_obj(h, SP_BUILTIN_POLY_POLY_HASH);
 }
 
-/* union, intersection and difference of any number of Arrays, and | & -
-   of one. Each operand converts as CRuby converts it, or raises TypeError. */
+/* union, intersection and difference of one Array or more, and | & - of
+   one. Each operand converts as CRuby converts it, or raises TypeError. */
 static sp_RbVal fx_ary_setop(sp_RbVal r, char op, int argc, sp_RbVal *argv) {
   sp_PolyArray *acc = sp_PolyArray_dup(sp_poly_to_poly_array(r));
   SP_GC_ROOT(acc);
@@ -163,7 +163,6 @@ static int fx_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
   if (argc == 0) {
     if (FX_IS("empty?")) { *out = sp_box_bool(sp_poly_length(r) == 0); return 1; }
     if (FX_IS("count")) { *out = sp_box_int(sp_poly_length(r)); return 1; }
-    if (FX_IS("to_ary")) { *out = r; return 1; }
     /* each and each_with_index with no block: an Enumerator */
     if (FX_IS("each")) { *out = sp_box_obj(sp_Enumerator_new_from(r), SP_BUILTIN_ENUMERATOR); return 1; }
     if (FX_IS("each_with_index")) { *out = sp_box_obj(sp_Enumerator_new_ewi(r, 0), SP_BUILTIN_ENUMERATOR); return 1; }
@@ -299,15 +298,12 @@ static int fx_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     *out = fx_send(r, "[]=", 2, args);
     return 1;
   }
-  /* slice!(i), slice!(start, len) and slice!(range): the elements taken
-     out, or nil for a start outside the Array */
-  if ((argc == 1 || argc == 2) && FX_IS("slice!") && (argc == 2 || !fx_is_fx_object(argv[0]))) {
+  /* slice!(i) and slice!(range): the elements taken out, or nil for a
+     start outside the Array. The table has slice!(start, len). */
+  if (argc == 1 && FX_IS("slice!") && !fx_is_fx_object(argv[0])) {
     sp_poly_array_recv(r, name, 1);   /* FrozenError before any change */
-    sp_int n = sp_poly_length(r), start, len, one = argc == 1 && !fx_is_range(argv[0]);
-    if (argc == 2) {
-      start = sp_poly_arg_int_chk(argv[0]);
-      len = sp_poly_arg_int_chk(argv[1]);
-    } else if (one) {
+    sp_int n = sp_poly_length(r), start, len, one = !fx_is_range(argv[0]);
+    if (one) {
       start = sp_poly_arg_int_chk(argv[0]);
       len = 1;
     } else {
@@ -423,11 +419,13 @@ static int fx_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     *out = r;
     return 1;
   }
-  if (FX_IS("union")) { *out = fx_ary_setop(r, '|', argc, argv); return 1; }
-  if (FX_IS("intersection")) { *out = fx_ary_setop(r, '&', argc, argv); return 1; }
-  if (FX_IS("difference")) { *out = fx_ary_setop(r, '-', argc, argv); return 1; }
-  if (argc >= 1 && FX_IS("dig")) { *out = sp_poly_dig_n(r, argc, argv); return 1; }
-  if (FX_IS("values_at")) { *out = sp_poly_values_at_n(r, argc, argv); return 1; }
+  /* union, intersection, difference, dig and values_at with arguments:
+     the table has the form with none (dig: with one) */
+  if (argc >= 1 && FX_IS("union")) { *out = fx_ary_setop(r, '|', argc, argv); return 1; }
+  if (argc >= 1 && FX_IS("intersection")) { *out = fx_ary_setop(r, '&', argc, argv); return 1; }
+  if (argc >= 1 && FX_IS("difference")) { *out = fx_ary_setop(r, '-', argc, argv); return 1; }
+  if (argc >= 2 && FX_IS("dig")) { *out = sp_poly_dig_n(r, argc, argv); return 1; }
+  if (argc >= 1 && FX_IS("values_at")) { *out = sp_poly_values_at_n(r, argc, argv); return 1; }
   /* zip(*others): a Range or an Enumerator operand gives its first
      members, as many as the receiver has (it can be endless) */
   if (FX_IS("zip")) {

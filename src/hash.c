@@ -162,15 +162,12 @@ static int fx_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
       return 1;
     }
     if (FX_IS("to_a") || FX_IS("entries")) { *out = sp_box_poly_array(fx_seq_array(r)); return 1; }
-    if (FX_IS("to_h") || FX_IS("to_hash")) { *out = r; return 1; }
     /* compare_by_identity: the runtime finds the keys by equal? from then on */
     if (FX_IS("compare_by_identity")) {
       sp_PolyPolyHash_compare_by_identity(fx_hash_mut(r, name));
       *out = r;
       return 1;
     }
-    if (FX_IS("compare_by_identity?")) { *out = sp_box_bool(h->ident); return 1; }
-    if (FX_IS("dup") || FX_IS("clone")) { *out = fx_hash_box(fx_hash_dup(h)); return 1; }
     if (FX_IS("default")) { *out = h->default_v; return 1; }
     if (FX_IS("default_proc")) { *out = h->dproc_self ? sp_box_obj(h->dproc_self, SP_BUILTIN_PROC) : sp_box_nil(); return 1; }
     /* shift: the first pair, taken out; nil when empty */
@@ -210,12 +207,6 @@ static int fx_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
         return 1;
       }
       *out = name[0] == 's' ? s : n == 0 ? sp_box_nil() : sp_poly_arr_get(s, name[1] == 'i' ? 0 : n - 1);
-      return 1;
-    }
-    if (FX_IS("clear")) {
-      sp_PolyPolyHash *m = fx_hash_mut(r, name);
-      while (m->len) sp_PolyPolyHash_delete(m, m->keys[m->order[0]]);
-      *out = r;
       return 1;
     }
   }
@@ -304,7 +295,8 @@ static int fx_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
     *out = sp_box_poly_array(a);
     return 1;
   }
-  if (FX_IS("slice") || FX_IS("except")) {
+  /* slice with keys (the table has slice with none) and except */
+  if (FX_IS("except") || (argc >= 1 && FX_IS("slice"))) {
     sp_PolyPolyHash *o = FX_IS("slice") ? sp_PolyPolyHash_new() : fx_hash_dup(h);
     SP_GC_ROOT(o);
     for (int i = 0; i < argc; i++) {
@@ -318,9 +310,10 @@ static int fx_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
     *out = fx_hash_box(o);
     return 1;
   }
-  /* merge and update: a block picks the value of a key in both */
+  /* merge and update: a block picks the value of a key in both. The table
+     has merge with no argument and no block. */
   int bang = FX_IS("merge!") || FX_IS("update");
-  if (bang || FX_IS("merge")) {
+  if (bang || (FX_IS("merge") && (argc >= 1 || blk))) {
     sp_PolyPolyHash *o = bang ? fx_hash_mut(r, name) : fx_hash_dup(h);
     SP_GC_ROOT(o);
     for (int a = 0; a < argc; a++) {

@@ -7,25 +7,14 @@
 # method: the reason names what the row lacks for the walker, and goes
 # to spinel as an issue. tools/builtin_census.rb fails on a shadow that
 # is not here.
-ANY_ARRAY/poly_array#difference/0
-ANY_ARRAY/poly_array#dig/1
-ANY_ARRAY/poly_array#intersection/0
-ANY_ARRAY/poly_array#pack/1
-ANY_ARRAY/poly_array#slice!/2
-ANY_ARRAY/poly_array#to_ary/0
-ANY_ARRAY/poly_array#union/0
-ANY_ARRAY/poly_array#uniq!/0
-ANY_ARRAY/poly_array#values_at/0
-ANY_HASH/poly_poly_hash#clear/0
-ANY_HASH/poly_poly_hash#clone/0
-ANY_HASH/poly_poly_hash#compare_by_identity?/0
-ANY_HASH/poly_poly_hash#dup/0
-ANY_HASH/poly_poly_hash#merge/0
-ANY_HASH/poly_poly_hash#slice/0
-ANY_HASH/poly_poly_hash#to_h/0
-ANY_HASH/poly_poly_hash#to_hash/0
+ANY_ARRAY/poly_array#dup/0	the row answers a plain Array; an instance of a subclass of Array keeps its class
+ANY_HASH/poly_poly_hash#dup/0	the row answers a plain Hash; an instance of a subclass of Hash keeps its class
+addrinfo/addrinfo#inspect/0
 addrinfo/addrinfo#to_sockaddr/0
+complex/complex#!=/1
+complex/complex#<=>/1
 complex/complex#==/1
+complex/complex#fdiv/1
 condvar/condvar#broadcast/0
 condvar/condvar#signal/0
 enumerator/enumerator#first/1
@@ -35,16 +24,23 @@ matchdata/matchdata#==/1
 matchdata/matchdata#eql?/1
 matchdata/matchdata#hash/0
 matchdata/matchdata#string/0
+rational/rational#*/1
+rational/rational#+/1
 regex/regex#!=/1
 regex/regex#==/1
 regex/regex#eql?/1
 regex/regex#hash/0
 str_range/str_range#%/1
+str_range/str_range#size/0
 str_range/str_range#step/1
+string/string#concat/0
+string/string#encode/0
 string/string#end_with?/1	bop_rows[] has no String#start_with? with one argument; the pair stays together
 string/string#gsub/2	the row leaves $~ as it is; CRuby sets it for a String pattern too
+string/string#prepend/0
 string/string#sub/2	the row leaves $~ as it is; CRuby sets it for a String pattern too
 string/string#to_str/0	the row answers a new String; CRuby answers the receiver itself
 symbol/symbol#[]/2
+symbol/symbol#slice/2
 symbol/symbol#start_with?/1
 time/time#strftime/1

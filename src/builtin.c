@@ -1062,7 +1062,7 @@ static int fx_builtin_call_1(sp_RbVal recv, const char *name, int argc, sp_RbVal
   if (fx_core(recv, name, argc, argv, out)) { fx_bop_mark(); return 1; }
   if (fx_poly_helper(recv, name, argc, argv, out)) { fx_bop_mark(); return 1; }
   fx_bop_fn fn = fx_bop_find(recv, name, argc, argv);
-  if (fn) { fx_bop_mark(); *out = fn(recv, argv); return 1; }
+  if (fn) { *out = fn(recv, argv); fx_bop_mark(); return 1; }
   return fx_object_core(recv, name, argc, argv, out);
 }
 
@@ -1074,6 +1074,7 @@ static int fx_builtin_call(sp_RbVal recv, const char *name, int argc, sp_RbVal *
   FxFrameStack *s = fx_bop_fs();
   if (!s) return fx_builtin_call_1(recv, name, argc, argv, blk, out);
   int depth = ++s->bop_depth;
+  s->bop_answered = 0;   /* the mark of the call before, at the same depth, goes */
   int r = fx_builtin_call_1(recv, name, argc, argv, blk, out);
   if (r && !blk && s->bop_answered != depth) fx_trace_shadow(recv, name, argc, argv);
   s->bop_depth = depth - 1;
