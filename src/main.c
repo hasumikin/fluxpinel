@@ -180,11 +180,12 @@ static int fx_options(int argc, char **argv) {
     if (a[0] != '-' || !a[1]) break;   /* the file, or "-" for stdin */
     if (!strcmp(a, "--")) { i++; break; }
     /* the arguments after --irb are the options of IRB */
-    if (!strcmp(a, "--irb")) { fx_irb = 1; i++; break; }
+    if (!strcmp(a, "--irb")) { fx_irb = fx_gap_raises = 1; i++; break; }
     if (a[1] == '-') {
       if (!strcmp(a, "--irb-port")) {
         if (i + 1 >= argc || !fx_is_port(argv[i + 1])) fx_opt_fail("--irb-port needs a port number", "", "ArgumentError");
         fx_irb_port = argv[++i];
+        fx_gap_raises = 1;
       }
       else if (!strcmp(a, "--console")) fx_opt.console = 1;
       else if (!strcmp(a, "--help")) { fputs(fx_usage, stdout); exit(0); }
@@ -361,13 +362,14 @@ int main(int argc, char **argv) {
 #ifdef FX_KERNEL_MAIN
   L.path = argv[0];
   int skip = 0;
-  if (argc > 1 && !strcmp(argv[1], "--irb")) { fx_irb = 1; skip = 1; }
+  if (argc > 1 && !strcmp(argv[1], "--irb")) { fx_irb = fx_gap_raises = 1; skip = 1; }
   else if (argc > 1 && !strcmp(argv[1], "--irb-port")) {
     if (argc < 3 || !fx_is_port(argv[2])) {
       fprintf(stderr, "%s: --irb-port needs a port number (ArgumentError)\n", argv[0]);
       return 1;
     }
     fx_irb_port = argv[2];
+    fx_gap_raises = 1;
     skip = 2;
   }
   L.args = argv + 1 + skip;

@@ -624,6 +624,10 @@ static void fx_trace_missing(const char *owner, const char *name, int argc);
 static int fx_builtin_responds(sp_RbVal r, const char *name);
 static int fx_enum_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                         sp_RbVal *out);
+/* Not 0 in a process with a session of a user (--irb, --irb-port, a
+   Fluxpinel::Session): fx_unsupported and fx_gap raise NotImplementedError
+   there, so a line of the session does not end the program. */
+static int fx_gap_raises;
 static __attribute__((noreturn)) void fx_unsupported(const pm_node_t *n, const char *what);
 static __attribute__((noreturn)) void fx_gap(const char *what);
 static sp_sym fx_sym(pm_constant_id_t id);

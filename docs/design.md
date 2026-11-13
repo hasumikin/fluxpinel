@@ -974,6 +974,12 @@ Classes beyond the table above: `fx_only` (spinel refuses the program,
 Fluxpinel gives the CRuby answer), `fx_unsupported`, `fx_missing` and
 `fx_crash`.
 
+A syntax or a call that Fluxpinel does not have stops the program with
+status 2 (`fx_unsupported`, `fx_gap`), which the oracle reads. A process
+with a session of a user is different: `--irb`, `--irb-port` and
+`Fluxpinel::Session` make both raise `NotImplementedError`. A line of the
+session then shows the error, and the program runs on.
+
 ### 4.2 The gem oracle
 
 `make gem-oracle` runs `tools/gem_oracle.rb`. It loads each entry file of

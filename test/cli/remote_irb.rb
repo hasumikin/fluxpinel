@@ -53,6 +53,12 @@ s.write("end\r")
 wait_for.call("=> :twice\r\n")
 s.write("twice(21)\r")
 wait_for.call("=> 42\r\n")
+# a call that Fluxpinel does not have raises, and the session goes on
+s.write("1.succ { 2 }\r")
+wait_for.call("unsupported block for the builtin Integer#succ (NotImplementedError)")
+wait_for.call("irb(main):009")
+s.write("twice(4)\r")
+wait_for.call("=> 8\r\n")
 # Tab opens the completion dialog with the methods of the receiver
 s.write("[1, 2].ma\t")
 wait_for.call("map!")

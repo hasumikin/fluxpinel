@@ -71,6 +71,7 @@ static sp_RbVal fx_session_new(void) {
     pm_constant_id_list_append(&names, pm_constant_pool_insert_constant(&L.pool, (const uint8_t *)"_", 1));
   }
   FxSession *s = (FxSession *)sp_gc_alloc(sizeof *s, NULL, fx_session_scan);
+  fx_gap_raises = 1;   /* a line of the session does not end the program */
   s->cls_id = fx_session_class()->inst_id;
   s->line = 1;
   SP_GC_ROOT(s);

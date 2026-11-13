@@ -21,6 +21,9 @@ static int fx_line(const pm_node_t *n) {
 }
 
 static void fx_unsupported(const pm_node_t *n, const char *what) {
+  if (fx_gap_raises)
+    sp_raise_cls("NotImplementedError",
+                 sp_sprintf("fluxpinel: unsupported %s (%s)", what, pm_node_type_to_str(PM_NODE_TYPE(n))));
   fprintf(stderr, "fluxpinel: %s:%d: unsupported %s (%s)\n", fx_source_of(n)->path, fx_line(n), what,
           pm_node_type_to_str(PM_NODE_TYPE(n)));
   exit(2);
@@ -28,8 +31,10 @@ static void fx_unsupported(const pm_node_t *n, const char *what) {
 
 /* A semantics that Fluxpinel does not model yet, met at run time with no node
    at hand. It stops as fx_unsupported does, so the oracle counts the
-   test as a gap of Fluxpinel, not as a wrong answer. */
+   test as a gap of Fluxpinel, not as a wrong answer. With a session of a
+   user (fx_gap_raises), both raise NotImplementedError. */
 static void fx_gap(const char *what) {
+  if (fx_gap_raises) sp_raise_cls("NotImplementedError", sp_sprintf("fluxpinel: unsupported %s", what));
   fprintf(stderr, "fluxpinel: %s: unsupported %s (runtime)\n", L.path, what);
   /* a gap can come on a green thread: end at once, without the exit
      handlers of the runtime, which expect the main thread */
