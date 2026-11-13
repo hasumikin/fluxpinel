@@ -11,12 +11,11 @@ ANY_ARRAY/poly_array#dup/0	the row answers a plain Array; an instance of a subcl
 ANY_HASH/poly_poly_hash#dup/0	the row answers a plain Hash; an instance of a subclass of Hash keeps its class
 addrinfo/addrinfo#inspect/0	fx_core of Fluxpinel answers inspect of every receiver before the table; the row never runs
 addrinfo/addrinfo#to_sockaddr/0	the row answers a text String; CRuby answers a binary String
-complex/complex#==/1	the row with a number argument takes any boxed value and reads it as a Float (ArgumentError for a String); CRuby answers false, or asks an object's ==
+complex/complex#==/1	the row answers false for an object of the program; CRuby asks the == of the object
 complex/complex#fdiv/1	tools/bop_gen.c skips the row with an Integer or Float argument ($e of no single kind); the row that fits raises TypeError
 float_range/float_range#first/0	the row raises TypeError (can't iterate from Float); CRuby answers the begin
 matchdata/matchdata#string/0	the row answers a new String; CRuby answers the frozen subject itself
-str_range/str_range#%/1	the row reads the stride as an Integer, so its TypeError names Integer; CRuby names String
-str_range/str_range#step/1	the row reads the stride as an Integer, so its TypeError names Integer; CRuby names String
+str_range/str_range#%/1	fx_core of Fluxpinel answers % of every receiver before the table; the row never runs
 string/string#concat/0	the row answers a new String; CRuby answers the receiver itself
 string/string#end_with?/1	bop_rows[] has no String#start_with? with one argument; the pair stays together
 string/string#gsub/2	the row leaves $~ as it is; CRuby sets it for a String pattern too

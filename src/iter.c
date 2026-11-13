@@ -1016,14 +1016,21 @@ static int fx_range_step(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
   sp_PolyArray *acc = blk ? NULL : sp_PolyArray_new();
   SP_GC_ROOT(acc);
   if (cls == SP_BUILTIN_STR_RANGE) {
+    /* with no block: the Enumerator of the runtime, which has the error
+       of a stride that is nil, true, false, a Symbol or a Float, for a
+       Range of Strings or Symbols. The table has step; % comes here,
+       because fx_core answers % before the table. */
+    int rt_stride = n.tag == SP_TAG_INT || n.tag == SP_TAG_FLT || n.tag == SP_TAG_NIL || n.tag == SP_TAG_BOOL ||
+                    n.tag == SP_TAG_SYM;
+    if (!blk && rt_stride) {
+      if (FX_IS("step")) return 0;
+      *out = sp_box_obj(sp_srange_step_enum(r, n, name), SP_BUILTIN_ENUMERATOR);
+      return 1;
+    }
     if (n.tag != SP_TAG_INT && n.tag != SP_TAG_FLT)
       sp_raise_cls("TypeError", sp_sprintf("no implicit conversion of %s into String",
                                            n.tag == SP_TAG_NIL ? "nil" : n.tag == SP_TAG_BOOL ? (n.v.b ? "true" : "false")
                                                                                               : sp_poly_class_name(n)));
-    if (!blk) {
-      *out = sp_box_obj(sp_srange_step_enum(r, n, name), SP_BUILTIN_ENUMERATOR);
-      return 1;
-    }
     if (n.tag == SP_TAG_FLT) sp_raise_cls("TypeError", "no implicit conversion of Float into String");
     sp_StrRange g = SP_SRANGE_OF(r.v.p);
     SP_GC_ROOT_SRANGE(g);

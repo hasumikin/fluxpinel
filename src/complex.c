@@ -97,12 +97,11 @@ static int fx_complex_core(sp_RbVal r, const char *name, int argc, sp_RbVal *arg
       !(sp_poly_is_rat_kind(r) && (FX_IS("+") || FX_IS("-") || FX_IS("*") || FX_IS("/") || FX_IS("fdiv"))))
     return fx_real_complex_op(r, name, argv[0], out);
   if (!fx_is_complex(r)) return 0;
-  /* == and != with a value that is not a number: an object of the program
-     answers with its own ==, as Complex#== asks it; any other value is
-     unequal. The table has the numbers; its row takes any boxed value and
-     reads it as a Float, which raises for a String or nil. */
-  if (argc == 1 && (FX_IS("==") || FX_IS("!=")) && !fx_is_real(argv[0]) && !fx_is_complex(argv[0])) {
-    int eq = fx_is_fx_object(argv[0]) && sp_poly_truthy(fx_send(argv[0], "==", 1, &r));
+  /* == and != with an object of the program: the object answers with its
+     own ==, as Complex#== asks it. The table has the numbers, and answers
+     unequal for any other value. */
+  if (argc == 1 && (FX_IS("==") || FX_IS("!=")) && fx_is_fx_object(argv[0])) {
+    int eq = sp_poly_truthy(fx_send(argv[0], "==", 1, &r));
     *out = sp_box_bool(name[0] == '!' ? !eq : eq);
     return 1;
   }
