@@ -44,6 +44,21 @@ s.write("1 +")
 wait_for.call("1 +")
 s.write("\x03")
 wait_for.call("^C\r\n")
+# a definition of three lines: the prompt waits for the end
+s.write("def twice(x)\r")
+wait_for.call("irb(main):005* ")
+s.write("  x * 2\r")
+wait_for.call("irb(main):006* ")
+s.write("end\r")
+wait_for.call("=> :twice\r\n")
+s.write("twice(21)\r")
+wait_for.call("=> 42\r\n")
+# Tab opens the completion dialog with the methods of the receiver
+s.write("[1, 2].ma\t")
+wait_for.call("map!")
+wait_for.call("max_by")
+s.write("\x03")
+wait_for.call("max_by\n^C\r\n")
 s.write("exit\r")
 begin
   s.read

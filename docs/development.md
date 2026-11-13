@@ -21,6 +21,14 @@ SPINEL = $(HOME)/work/spinel
 checkout must be at the pin, or `make` stops. Pass `SPINEL_PIN=0` to use
 another commit for one run.
 
+`--irb-port` needs a Reline that runs on a socket. Set `GEM_DIRS_FIRST` in
+`config.mk` to the lib directory of that Reline. Without it, `make test`
+skips the case of `--irb-port` and its last line counts the skip.
+
+```make
+GEM_DIRS_FIRST = $(HOME)/work/ruby/reline/lib
+```
+
 The runtime API of spinel is internal and changes often. The pin makes each
 update of spinel an explicit step.
 

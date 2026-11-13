@@ -121,7 +121,7 @@ $(BUILD)/off.flags: $(BUILD)/bop_gen_out.c tools/bop_report.rb
 # newer gem relinks and nothing else does. GEM_DIRS_FIRST names
 # directories that come before the gems' (a checkout of Reline).
 IRB_GEMS = irb reline prism rdoc
-GEM_DIRS_FIRST =
+GEM_DIRS_FIRST ?=
 $(BUILD)/gem_dirs.h: tools/gem_dirs.rb FORCE
 	@mkdir -p $(BUILD)
 	@GEM_DIRS_FIRST="$(GEM_DIRS_FIRST)" ruby tools/gem_dirs.rb $(IRB_GEMS) > $@.tmp && { cmp -s $@.tmp $@ && rm $@.tmp || mv $@.tmp $@; }

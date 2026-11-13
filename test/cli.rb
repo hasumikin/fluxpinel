@@ -9,6 +9,9 @@
 # the same too, after "ruby:" at the start of a line reads "fluxpinel:". A
 # case with :out (a Regexp) passes when stdout matches it and the status
 # is :status (0 by default). :env adds to the environment of the command.
+# A case with :skip (a Regexp) is skipped when stdout matches it: the case
+# says that this machine does not have what it needs. The last line counts
+# the skipped cases.
 
 require "open3"
 require_relative "cli/cases"
@@ -21,10 +24,17 @@ def run(cmd, args, stdin, env = {})
   Open3.capture3(env, cmd, *args, stdin_data: stdin || "", chdir: DIR)
 end
 
+skipped = 0
 failed = CLI_CASES.reject do |c|
   args = c[:args]
   out, err, st = run(fluxpinel, args, c[:stdin], c[:env] || {})
   why = nil
+  if c[:skip]&.match?(out)
+    skipped += 1
+    puts "skip fluxpinel #{args.join(' ')}"
+    puts "   #{err.strip}" unless err.empty?
+    next true
+  end
   if c[:out]
     want = c.fetch(:status, 0)
     why = "stdout #{out.inspect} does not match #{c[:out].inspect}" unless c[:out].match?(out)
@@ -42,5 +52,5 @@ failed = CLI_CASES.reject do |c|
   puts "   stderr #{err.inspect}" if why && !err.empty?
   !why
 end
-puts "#{CLI_CASES.size - failed.size}/#{CLI_CASES.size} passed"
+puts "#{CLI_CASES.size - failed.size}/#{CLI_CASES.size} passed#{skipped > 0 ? " (#{skipped} skipped)" : ''}"
 exit(failed.empty? ? 0 : 1)
