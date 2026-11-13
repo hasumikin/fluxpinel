@@ -285,7 +285,6 @@ static int fx_exc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
     *out = c;
     return 1;
   }
-  if (argc == 0 && FX_IS("result")) { *out = sp_exc_result(e); return 1; }
   /* LoadError#path: the feature of a require that loaded nothing, else nil */
   if (argc == 0 && FX_IS("path")) { *out = sp_exc_path_acc(e); return 1; }
   /* full_message(highlight:, order:) and detailed_message(highlight:) */

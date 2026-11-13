@@ -228,7 +228,8 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
   if (blk || !fx_is_string(r)) return 0;
   SP_GC_ROOT_RBVAL(r);
   if (fx_str_bang(r, name, argc, argv, out)) return 1;
-  if (FX_IS("encode")) { *out = fx_str_encode(r, name, argc, argv); return 1; }
+  /* encode with an encoding or options: the table has encode with none */
+  if (argc >= 1 && FX_IS("encode")) { *out = fx_str_encode(r, name, argc, argv); return 1; }
   /* encode!: the String takes the bytes of its encode */
   if (FX_IS("encode!")) {
     fx_str_mut(r, name);

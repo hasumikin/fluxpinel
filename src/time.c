@@ -158,12 +158,6 @@ static int fx_time_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
     return 1;
   }
   if (argc == 0 && FX_IS("hash")) { *out = sp_box_int(sp_time_hash(t)); return 1; }
-  /* the format is a String; the wrapper reads it with no check */
-  if (argc == 1 && FX_IS("strftime")) {
-    const char *f = sp_poly_arg_str_chk(argv[0]);
-    *out = sp_box_str_new(sp_str_dup(sp_time_strftime(t, f)));
-    return 1;
-  }
   if (argc == 0 && FX_IS("to_a")) { *out = fx_time_to_a(t); return 1; }
   if (argc == 1 && FX_IS("deconstruct_keys")) {
     *out = sp_box_obj(sp_poly_deconstruct_keys(r, argv[0]), SP_BUILTIN_POLY_POLY_HASH);

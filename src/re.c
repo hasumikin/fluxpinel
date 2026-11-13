@@ -728,8 +728,9 @@ static int fx_re_call(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, co
                               FX_IS("slice") || FX_IS("start_with?"))) {
     int any = 0;
     for (int i = 0; i < argc; i++) any |= fx_is_regexp(argv[i]);
-    /* sym[i], sym[range] and sym[str] are the name's */
-    if (!any && !(FX_IS("[]") || FX_IS("slice"))) return 0;
+    /* sym[i], sym[range] and sym[str] are the name's; the table has
+       sym[start, len] */
+    if (!any && (!(FX_IS("[]") || FX_IS("slice")) || argc == 2)) return 0;
     sp_RbVal s = fx_re_str(sp_sym_to_s((sp_sym)r.v.i));
     SP_GC_ROOT_RBVAL(s);
     if (!any) { *out = fx_send(s, name, argc, argv); return 1; }

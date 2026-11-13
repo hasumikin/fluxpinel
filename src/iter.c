@@ -358,16 +358,10 @@ static int fx_seq_collector(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
     *out = sp_poly_sum_seed(r, argv[0]);
     return 1;
   }
-  /* Enumerator#first: the first element or nil; first(n): the first n
-     elements as an Array (sp_Enumerator_take) */
-  if (FX_IS("first") && r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_ENUMERATOR && r.v.p && argc <= 1) {
-    sp_int n = 1;
-    if (argc == 1) {
-      n = sp_poly_arg_int_chk(argv[0]);
-      if (n < 0) sp_raise_cls("ArgumentError", "attempt to take negative size");
-    }
-    sp_PolyArray *a = sp_Enumerator_take((sp_Enumerator *)r.v.p, n);
-    *out = argc == 1 ? sp_box_poly_array(a) : a->len ? a->data[0] : sp_box_nil();
+  /* Enumerator#first: the first element or nil. The table has first(n). */
+  if (FX_IS("first") && r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_ENUMERATOR && r.v.p && argc == 0) {
+    sp_PolyArray *a = sp_Enumerator_take((sp_Enumerator *)r.v.p, 1);
+    *out = a->len ? a->data[0] : sp_box_nil();
     return 1;
   }
   /* each, each_pair and each_with_index with no block on a Hash or a
@@ -2073,7 +2067,6 @@ static int fx_srange_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       *out = fx_pair(lo, hi);
       return 1;
     }
-    if (FX_IS("size")) { *out = sp_box_nil(); return 1; }
     if (FX_IS("count")) { *out = sp_box_int(sp_poly_length(fx_srange_to_a(g))); return 1; }
     return 0;
   }

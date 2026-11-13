@@ -462,8 +462,6 @@ static int fx_fiber_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
       }
       return 1;
     }
-    if (FX_IS("signal") && argc == 0) { sp_CondVar_signal(cv); *out = r; return 1; }
-    if (FX_IS("broadcast") && argc == 0) { sp_CondVar_broadcast(cv); *out = r; return 1; }
     return 0;
   }
   case SP_BUILTIN_ENUMERATOR:
