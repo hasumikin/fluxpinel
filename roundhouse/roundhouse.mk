@@ -25,10 +25,12 @@ RH_HOST_DIR = $(BUILD)/roundhouse/host
 RH_HOST ?= $(RH_HOST_DIR)/blog
 RH_ENTRIES = Main.start,Console.count,Console.find,Console.create
 # The classes whose methods IRB calls by name through the table of
-# --ext-class: the models. `all` roots every public method of the blog,
-# and spinel then refuses runtime/logger_spinel.rb (a Proc read from a
-# slot that holds other values appends to a String).
-RH_EXT_CLASS = Article,Comment
+# --ext-class: the models, and the classes of Active Record whose objects
+# their methods answer (a Relation of Article.all). `all` roots every
+# public method of the blog, and spinel then refuses
+# runtime/logger_spinel.rb (a Proc read from a slot that holds other
+# values appends to a String).
+RH_EXT_CLASS = Article,Comment,ActiveRecord::Base,ActiveRecord::Relation
 # The interpreter itself, not a shim of a version manager. A shim of rbenv
 # picks the Ruby from the directory of the script, and deps/roundhouse
 # names a Ruby of its own.

@@ -100,8 +100,9 @@ Console.create("Comment", {article_id: 1, commenter: "fx", body: "live"})
 The host also takes `--irb-port PORT` as its first two arguments and
 opens IRB, with the line editor of Reline, to each telnet connection on
 127.0.0.1:PORT (see `--irb-port` in the [README](../README.md)).
-The kernel is compiled with `--ext-class Article,Comment`, so IRB calls
-the methods of the models by name:
+The kernel is compiled with `--ext-class` for the models and for
+`ActiveRecord::Base` and `ActiveRecord::Relation` (`RH_EXT_CLASS`), so IRB
+calls the methods of the models and of a `Relation` by name:
 
 ```sh
 cd build/roundhouse/blog
@@ -114,10 +115,18 @@ irb(main):001> Article.count
 => 3
 irb(main):002> Article.find(1).title
 => "Getting Started with Rails"
+irb(main):003> Article.all.limit(2).to_a.size
+=> 2
 ```
 
-A method that answers an object of a class the list does not name (a
-`Relation` of `Article.all`) comes back as an object with no methods.
+The table of `--ext-class` does not hold a method with an optional, rest,
+keyword or block parameter. `where` and `order` are not there, so IRB
+raises `NoMethodError` for them. `each` and `map` of a `Relation` take a
+block, so IRB raises `NotImplementedError` for them. Use `to_a` first:
+`Article.all.to_a.map(&:title)`.
+
+A method that answers an object of a class the list does not name comes
+back as an object with no methods.
 `--ext-class all` is not an option here: it makes every public method of
 the blog a root, and spinel then refuses `runtime/logger_spinel.rb`.
 
@@ -130,6 +139,8 @@ checks these things:
 
 - `GET /articles` answers 200 with an article of the seed.
 - The console counts, finds and creates records, and keeps a local.
+- The console calls the methods of a model and of a `Relation` by name.
+- A call that Fluxpinel does not have raises, and the session goes on.
 - `exit` closes the session, and the server runs after it.
 - The page of the article shows the new comment.
 

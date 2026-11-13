@@ -83,6 +83,14 @@ Dir.mktmpdir("fx-blog") do |dir|
     eval_line(sock, 'a = Console.find("Article", 1)')
     check "the console keeps a local",
       eval_line(sock, "a.instance_variable_get(:@title)") == "=> \"Getting Started with Rails\"\n"
+    check "the console calls the models by name", eval_line(sock, "Article.find(1).title") == "=> \"Getting Started with Rails\"\n"
+    check "the console calls the methods of a Relation",
+      eval_line(sock, "Article.all.size") == "=> 3\n" && eval_line(sock, "Article.all.limit(2).to_a.size") == "=> 2\n"
+    # a method with a block is not in the table of --ext-class: the line
+    # raises, and the session and the server go on
+    check "a call that Fluxpinel does not have raises",
+      eval_line(sock, "Article.all.map(&:title)").include?("NotImplementedError") &&
+      eval_line(sock, "Article.count") == "=> 3\n"
     sock.write("exit\n")
     check "exit closes the session", sock.wait_readable(10) && sock.read == ""
     sock.close
