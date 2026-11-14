@@ -47,6 +47,9 @@ int str_in(const char *s, const char *const *set) { (void)s; (void)set; abort();
 /* builtin_method_answers asks sp_feature_required (src/compiler.h) which
    libraries the program requires; the generator does not call it either */
 int sp_feature_required(const char *name) { (void)name; abort(); }
+/* bmt_loaded asks sp_features_required_count (src/compiler.h) how many
+   libraries the program requires; the generator does not call it either */
+int sp_features_required_count(void) { abort(); }
 /* bop_find asks sp_feature_enabled (src/spinel_parse.c) whether the program
    has a library's row; the generator walks bop_rows and never calls bop_find */
 int sp_feature_enabled(const char *name) { (void)name; abort(); }
