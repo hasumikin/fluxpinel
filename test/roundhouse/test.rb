@@ -86,6 +86,9 @@ Dir.mktmpdir("fx-blog") do |dir|
     check "the console calls the models by name", eval_line(sock, "Article.find(1).title") == "=> \"Getting Started with Rails\"\n"
     check "the console calls the methods of a Relation",
       eval_line(sock, "Article.all.size") == "=> 3\n" && eval_line(sock, "Article.all.limit(2).to_a.size") == "=> 2\n"
+    check "the console calls a method with optional and rest parameters",
+      eval_line(sock, "Article.where(id: [1, 3]).order(:id).to_a.map(&:id)") == "=> [1, 3]\n" &&
+      eval_line(sock, 'Article.where("id > ?", 1).to_a.size') == "=> 2\n"
     # a method with a block is not in the table of --ext-class: the line
     # raises, and the session and the server go on
     check "a call that Fluxpinel does not have raises",

@@ -117,12 +117,13 @@ irb(main):002> Article.find(1).title
 => "Getting Started with Rails"
 irb(main):003> Article.all.limit(2).to_a.size
 => 2
+irb(main):004> Article.where(id: [1, 3]).order(:id).to_a.map(&:id)
+=> [1, 3]
 ```
 
-The table of `--ext-class` does not hold a method with an optional, rest,
-keyword or block parameter. `where` and `order` are not there, so IRB
-raises `NoMethodError` for them. `each` and `map` of a `Relation` take a
-block, so IRB raises `NotImplementedError` for them. Use `to_a` first:
+The table of `--ext-class` does not hold a method with a keyword or block
+parameter. `each` and `map` of a `Relation` take a block, so IRB raises
+`NotImplementedError` for them. Use `to_a` first:
 `Article.all.to_a.map(&:title)`.
 
 A method that answers an object of a class the list does not name comes
