@@ -14,6 +14,7 @@ addrinfo/addrinfo#to_sockaddr/0	the row answers a text String; CRuby answers a b
 complex/complex#==/1	the row answers false for an object of the program; CRuby asks the == of the object
 complex/complex#fdiv/1	tools/bop_gen.c skips the row with an Integer or Float argument ($e of no single kind); the row that fits raises TypeError
 float_range/float_range#first/0	the row raises TypeError (can't iterate from Float); CRuby answers the begin
+io/io#flock/1	the row waits inside flock(2), which stops the one OS thread of a standalone program; the hand-written call asks with LOCK_NB and sleeps
 matchdata/matchdata#string/0	the row answers a new String; CRuby answers the frozen subject itself
 str_range/str_range#%/1	fx_core of Fluxpinel answers % of every receiver before the table; the row never runs
 string/string#concat/0	the row answers a new String; CRuby answers the receiver itself

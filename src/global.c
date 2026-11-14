@@ -559,6 +559,23 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     return 1;
   }
   if (argc == 0 && FX_IS("internal_encoding")) { *out = sp_box_nil(); return 1; }
+#ifndef FX_KERNEL
+  /* flock that waits: one OS thread runs every thread of a standalone
+     program (Thread.new in fiber.c), so a wait inside flock(2) stops them
+     all, and the thread that holds the lock among them. The call asks
+     with LOCK_NB and sleeps between two asks, so the other threads run. */
+  if (argc == 1 && FX_IS("flock") && fx_is_integer(argv[0])) {
+    sp_int op = sp_poly_arg_int_chk(argv[0]);
+    if (!(op & LOCK_NB) && (op & (LOCK_SH | LOCK_EX))) {
+      for (;;) {
+        sp_RbVal v;
+        FX_UNLOCKED(v = sp_File_flock(io, op | LOCK_NB));
+        if (sp_poly_truthy(v)) { *out = v; return 1; }
+        FX_UNLOCKED(sp_sleep(0.001));
+      }
+    }
+  }
+#endif
   /* io/console, once it is required: winsize= (winsize is a row of the
      generated table), from the terminal (Errno::ENOTTY for a pipe or a
      file, as CRuby raises) */
