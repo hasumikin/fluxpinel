@@ -253,6 +253,9 @@ static void fx_safepoint(void) {
 static void fx_poll(void) {
   if (SP_UNLIKELY(SP_SAFEPOINT_POLL())) fx_safepoint();
   if (SP_UNLIKELY(SP_ATOMIC_LOAD(&sp_fin_pending_flag, __ATOMIC_RELAXED))) FX_UNLOCKED(sp_fin_run_pending());
+  /* a signal that came outside a wait of the runtime: the Proc of its trap
+     runs here, and SIGINT or SIGTERM with no trap raises here (main.c) */
+  if (SP_UNLIKELY(SP_ATOMIC_LOAD(&sp_sig_pending_flag, __ATOMIC_RELAXED))) FX_UNLOCKED(sp_sig_run_pending());
 }
 
 /* ---- init ---- */

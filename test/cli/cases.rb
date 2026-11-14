@@ -66,6 +66,9 @@ CLI_CASES = [
   { args: ["-e", "puts RUBY_DESCRIPTION"], out: /#{DESCRIPTION}\z/ },
   { args: ["-e", "p RUBY_RELEASE_DATE, RUBY_REVISION.size, RUBY_COPYRIGHT.start_with?('ruby - Copyright')"],
     out: /\A"\d{4}-\d\d-\d\d"\n40\ntrue\n\z/ },
+  # SIGINT and SIGTERM with no trap, which the standalone command raises
+  # (the host build leaves the signals to its host)
+  { args: ["signal_default.rb"] },
   # a wrong command line
   { args: ["nofile.rb"], err: true },
   { args: ["-Z"], err: true },

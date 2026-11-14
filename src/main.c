@@ -321,6 +321,14 @@ static void fx_body(void) {
 #endif
   /* the threaded runtime needs its root fiber before any fiber runs */
   fx_sched_start();
+#ifndef FX_KERNEL
+  /* SIGINT and SIGTERM with no trap raise Interrupt and SignalException,
+     as CRuby's default does, in a wait of the runtime or at the next poll
+     of the walker (fx_poll). The host build keeps the default of the
+     system: its kernel has more than one OS thread, and the raise of the
+     runtime is for a program with one. */
+  sp_sig_install_defaults();
+#endif
   fx_fs_init();
   /* main holds the walker lock until the program ends (fx_tu.c) */
   fx_lock_init();
