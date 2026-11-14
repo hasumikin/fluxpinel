@@ -74,3 +74,36 @@ end
 puts plain.call.scan(/=> .*?\r\n/).map(&:chomp)
 puts plain.call.scan(/abort then interrupt!|\^C\r\n/).map(&:chomp).uniq
 puts "bye"
+
+# A client that closes the connection with no exit ends its session with no
+# message of the listener, and the next client gets a session.
+require "stringio"
+log = $stderr = StringIO.new
+s = TCPSocket.new("127.0.0.1", port)
+seen = "".b
+deadline = Time.now + 10
+s.write("1 + 1\r")
+wait_for.call("=> 2\r\n")
+s.close
+seen = "".b
+deadline = Time.now + 10
+# the listener says "busy" until the session of the closed connection ends
+loop do
+  s = TCPSocket.new("127.0.0.1", port)
+  s.wait_readable(5)
+  seen = s.readpartial(4096)
+  break unless seen.start_with?("busy")
+  raise "timeout: the listener stays busy" if Time.now > deadline
+  s.close
+  sleep 0.1
+end
+s.write("2 + 3\r")
+wait_for.call("=> 5\r\n")
+s.write("exit\r")
+begin
+  s.read
+rescue SystemCallError
+  # the server closed first
+end
+$stderr = STDERR
+puts "closed: #{log.string.inspect}"

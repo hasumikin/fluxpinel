@@ -174,6 +174,9 @@ module Fluxpinel
             begin
               @busy = true
               serve(sock)
+            rescue Errno::EPIPE, Errno::ECONNRESET, IOError
+              # the client closed the connection with no exit: IRB wrote to
+              # the closed socket on its way out
             rescue StandardError, ScriptError => e
               warn "fluxpinel: remote irb: #{e.class}: #{e.message}"
             ensure

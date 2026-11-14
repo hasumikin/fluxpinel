@@ -54,7 +54,7 @@ CLI_CASES = [
   # The case needs a Reline that runs on a socket (GEM_DIRS_FIRST of the
   # Makefile names its lib directory).
   { args: ["--irb-port", "0", "remote_irb.rb"], env: { "HOME" => Dir.tmpdir },
-    out: /\A=> 2\n=> "abc"\n=> :twice\n=> 42\n=> 8\nabort then interrupt!\n\^C\nbye\n\z/, skip: /\Askip\n\z/ },
+    out: /\A=> 2\n=> "abc"\n=> :twice\n=> 42\n=> 8\nabort then interrupt!\n\^C\nbye\nclosed: ""\n\z/, skip: /\Askip\n\z/ },
   { args: ["--irb-port", "x", "remote_irb.rb"], out: /\A\z/, status: 1 },
   # a thread with its own $stdout and $stderr (the slots of src/global.c)
   { args: ["-rstringio", "-e", "o = StringIO.new; t = Thread.new { Thread.current[:fluxpinel_stdout] = o; Thread.current[:fluxpinel_stderr] = o; puts 1; $stdout.print 2; warn 3; $stderr << 4; p $stdout.equal?(o) }; t.join; puts 5; $stdout.puts 6; p o.string"],
