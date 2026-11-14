@@ -519,6 +519,16 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   and so does Fluxpinel. Thus `require "set"` answers false. `RbConfig`
   and `Gem` are such constants too, from `builtins/*.rb` of spinel, which
   its parser splices when a program names them.
+- **Enumerator::Lazy.** `Enumerator::Lazy` is such a constant of
+  Enumerator, from `lib/fluxpinel/lazy.rb` of Fluxpinel. spinel compiles
+  a chain of lazy calls to one loop and has no Lazy object in its runtime,
+  so the class is Ruby code of Fluxpinel. `lazy` of a builtin collection
+  or of an Enumerable object makes `Enumerator::Lazy.new(self)`
+  (`src/iter.c`). The class is a subclass of the builtin Enumerator. It
+  writes every method it answers, so its instances need no builtin part
+  (`src/object.c`). Its helper methods have names that start with
+  `__fx_`, and `instance_methods` shows them, which is a difference from
+  CRuby.
 
 ### 3.3.7 FFI
 

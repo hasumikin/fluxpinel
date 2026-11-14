@@ -2326,7 +2326,11 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     }
     /* an instance of a subclass of Exception, Struct ... needs the
        builtin part, which a FxObject does not have */
-    for (const FxClass *s = k->super; s; s = s->super)
+    /* Enumerator::Lazy of lib/fluxpinel/lazy.rb and its subclasses write
+       every method they answer in Ruby, and need no builtin part */
+    int lazy = 0;
+    for (const FxClass *s = k; s && !lazy; s = s->super) lazy = !strcmp(s->name, "Enumerator::Lazy");
+    for (const FxClass *s = k->super; s && !lazy; s = s->super)
       if (s->cls_id < 0 && s != L.object && strcmp(s->name, "BasicObject"))
         fx_gap(sp_sprintf("instance of a subclass of %s", s->name));
     sp_RbVal obj = fx_new_object(k);

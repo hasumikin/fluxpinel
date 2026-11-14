@@ -337,6 +337,20 @@ static int fx_seq_collector(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
     *out = fx_send(set, "new", 1, &r);
     return 1;
   }
+  /* lazy: Enumerator::Lazy.new(self), Enumerator::Lazy autoloaded
+     (lib/fluxpinel/lazy.rb). The receiver is a builtin collection, or an
+     object whose class includes Enumerable. */
+  if (FX_IS("lazy") && argc == 0 &&
+      (fx_is_array(r) || fx_is_hash(r) || fx_is_range(r) ||
+       (r.tag == SP_TAG_OBJ && r.v.p &&
+        (r.cls_id == SP_BUILTIN_ENUMERATOR || r.cls_id == SP_BUILTIN_STR_RANGE || r.cls_id == SP_BUILTIN_FLOAT_RANGE)) ||
+       (fx_is_fx_object(r) && fx_is_a(r, fx_builtin("Enumerable"))))) {
+    SP_GC_ROOT_RBVAL(r);
+    sp_RbVal lazy;
+    if (!fx_const_scoped(fx_builtin("Enumerator"), sp_sym_intern("Lazy"), &lazy)) return 0;
+    *out = fx_send(lazy, "new", 1, &r);
+    return 1;
+  }
   /* Range#to_a of a beginless Range cannot start, and of an endless one
      cannot end; drop(n) of a Range goes through its Array; sum(init) of
      a Range with no block */
@@ -1265,8 +1279,8 @@ static int fx_enum_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
   /* a method of Kernel (class, inspect, ...) is not one of Enumerable;
      select is both, and Enumerable comes first in the ancestors */
   if (fx_object_method_name(name) && !FX_IS("select")) return 0;
-  /* an Array has no lazy here, so the Array of all the values has no use,
-     and an each with no end has no such Array */
+  /* lazy makes an Enumerator::Lazy of the object (fx_seq_collector), and
+     an each with no end has no Array of all the values */
   if (FX_IS("lazy")) return 0;
   if (!fx_is_a(r, fx_builtin("Enumerable")) || !fx_find_method(fx_lookup_class(r), sp_sym_intern("each"))) return 0;
   SP_GC_ROOT_RBVAL(r);
