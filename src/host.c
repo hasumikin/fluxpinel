@@ -80,7 +80,17 @@ static void fx_host_init(void) {
     for (const sp_ext_method *row = sp_ext_methods((int)k->cls_id); row && row->name; row++) {
       if (row->owner != (int)k->cls_id && sp_ext_methods(row->owner)) continue;
       sp_sym name = sp_sym_intern(row->name);
-      if (row->singleton && fx_table_get(&k->smethods, name)) continue;
+      /* a method with optional or rest parameters has a row for each count
+         of arguments, and a negative count for "that many or more": the
+         rows of a name are one method, whose arity is -(n + 1) for the
+         fewest arguments n, as Method#arity counts optional arguments */
+      FxMethod *had = fx_table_get(row->singleton ? &k->smethods : &k->methods, name);
+      if (had && had->kind == FX_M_EXTM && had->owner == k) {
+        int a = had->argc < 0 ? -had->argc - 1 : had->argc, b = row->argc < 0 ? -row->argc - 1 : row->argc;
+        had->argc = -((a < b ? a : b) + 1);
+        continue;
+      }
+      if (row->singleton && had) continue;
       FxMethod *m = fx_method_new(FX_M_EXTM, name, NULL, 0, k);
       m->argc = row->argc;
       fx_define_method(k, m, row->singleton);

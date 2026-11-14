@@ -26,3 +26,12 @@ end
 # a singleton method of the module beside its entries
 p FxKernel.respond_to?(:make), FxKernel.singleton_methods.include?(:make)
 p c.method(:bump).arity, c.public_send(:bump, 1)
+# a method with optional and rest parameters: each count of arguments, the
+# arity of the method, and the ArgumentError of a count it does not take
+p c.step, c.step(2), c.step(2, :a, :b), c.scale(1), c.scale(1, 3)
+p c.method(:step).arity, c.method(:scale).arity
+begin
+  c.scale
+rescue ArgumentError => e
+  p e.message
+end

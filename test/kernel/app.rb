@@ -15,6 +15,12 @@ module FxKernel
     end
 
     def bump(k) = @n += k
+
+    # optional and rest parameters, which the table of --ext-class holds
+    # as a row for each count of arguments
+    def step(k = 1, *more) = @n += k + more.size
+
+    def scale(a, b = 2) = @n * a * b
   end
 
   # ivars of several kinds, which a script reads with instance_variable_get
