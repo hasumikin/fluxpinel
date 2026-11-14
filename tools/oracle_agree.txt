@@ -2706,6 +2706,7 @@ float_to_i_inline
 float_to_r
 float_to_s_fixed_1e15
 flock_nonblock_held
+flock_wait_leaves_world
 fold_captured_boxed_accumulator
 fold_hoist_root
 fold_literal_table_bignum_row
@@ -6349,6 +6350,7 @@ range_step_no_argument_prepended
 range_step_paren_empty_stride
 range_string_cover
 range_sum_empty_float_seed
+range_sum_long_range
 range_time_reopen_yield
 range_to_s_inspect
 rational_arithmetic
@@ -7057,6 +7059,8 @@ shared_string_into_typed_array
 shared_string_read_back_conversions
 shellwords_split_replaced_later
 shift_op_assign_checked
+signal_default_interrupt
+signal_default_unreached_thread
 signal_trap_stub
 singleton_accessor_class_ivar
 singleton_accessor_through_inherited_cmethod
@@ -8265,7 +8269,11 @@ toplevel_self_main
 transform_keys_symproc
 transform_values_block_argument
 trap_before_first_thread
+trap_no_reentry
+trap_raise_pending
 trap_raise_rescued
+trap_runs_outside_signal_handler
+trap_throw_pending
 truncate_module_method
 tuple_elem_local
 tuple_inspect
