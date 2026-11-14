@@ -203,15 +203,17 @@ module Fluxpinel
       # and Ctrl-C interrupts the session as SIGINT does in irb: the line
       # editor drops the line at the prompt (Reline.line_editor.interrupt),
       # or the evaluation stops (IRB.irb_abort, an Abort in the thread of
-      # the session).
+      # the session). In no other state does Ctrl-C have an effect.
       def read_keys(sock, telnet, queue, session)
         telnet.on_interrupt = lambda do
           irb = session[:irb]
           next unless irb
-          if irb.instance_variable_get(:@signal_status) == :IN_INPUT
-            Reline.line_editor.interrupt
-          else
-            IRB.irb_abort(irb)
+          # as IRB::Irb#signal_handle: between the input and the evaluation
+          # (:IN_IRB) nothing rescues an Abort, and Ctrl-C does nothing
+          case irb.instance_variable_get(:@signal_status)
+          when :IN_INPUT then Reline.line_editor.interrupt
+          when :IN_EVAL then IRB.irb_abort(irb)
+          when :IN_LOAD then IRB.irb_abort(irb, IRB::LoadAbort)
           end
         end
         Thread.new do

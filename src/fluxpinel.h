@@ -347,6 +347,16 @@ typedef struct {
 
 static Fluxpinel L;
 
+/* fx_tu.c: FX_UNLOCKED keeps the call state of this thread over a wait */
+static void fx_park_save(FxPark *p) {
+  p->kwhash = L.kwhash;
+  p->vcall = L.vcall;
+}
+static void fx_park_restore(const FxPark *p) {
+  L.kwhash = p->kwhash;
+  L.vcall = p->vcall;
+}
+
 static __attribute__((noreturn)) void fx_side_broken(uint32_t id);
 
 /* The record of the node n in the side table. */

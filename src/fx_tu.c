@@ -218,13 +218,27 @@ static void fx_lock_set_depth(int n) { (void)n; }
 static void fx_lock_init(void) {}
 #endif
 
+/* The state of a call in progress that the walker keeps in globals: the
+   keyword Hash and the bare-name flag that a caller leaves for its callee
+   (fluxpinel.h). Another thread of the walker writes them while this one
+   waits, so a wait saves them and puts them back. */
+typedef struct {
+  const void *kwhash;
+  int vcall;
+} FxPark;
+static void fx_park_save(FxPark *p);
+static void fx_park_restore(const FxPark *p);
+
 /* A wait in the runtime, with the lock given up for its time. */
 #define FX_UNLOCKED(stmt)                                                              \
   do {                                                                                 \
     int _fx_n = fx_lock_depth();                                                       \
+    FxPark _fx_park;                                                                   \
+    fx_park_save(&_fx_park);                                                           \
     fx_lock_set_depth(0);                                                              \
     stmt;                                                                              \
     fx_lock_set_depth(_fx_n);                                                          \
+    fx_park_restore(&_fx_park);                                                        \
   } while (0)
 
 /* The same, for a wait whose result is a value of the heap (a String, a
@@ -234,10 +248,13 @@ static void fx_lock_init(void) {}
 #define FX_UNLOCKED_ROOT(stmt, root)                                                   \
   do {                                                                                 \
     int _fx_n = fx_lock_depth();                                                       \
+    FxPark _fx_park;                                                                   \
+    fx_park_save(&_fx_park);                                                           \
     fx_lock_set_depth(0);                                                              \
     stmt;                                                                              \
     root;                                                                              \
     fx_lock_set_depth(_fx_n);                                                          \
+    fx_park_restore(&_fx_park);                                                        \
   } while (0)
 
 /* A safepoint poll of the walker: a collection or a preemption parks the
