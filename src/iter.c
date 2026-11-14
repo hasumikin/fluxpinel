@@ -1265,6 +1265,9 @@ static int fx_enum_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
   /* a method of Kernel (class, inspect, ...) is not one of Enumerable;
      select is both, and Enumerable comes first in the ancestors */
   if (fx_object_method_name(name) && !FX_IS("select")) return 0;
+  /* an Array has no lazy here, so the Array of all the values has no use,
+     and an each with no end has no such Array */
+  if (FX_IS("lazy")) return 0;
   if (!fx_is_a(r, fx_builtin("Enumerable")) || !fx_find_method(fx_lookup_class(r), sp_sym_intern("each"))) return 0;
   SP_GC_ROOT_RBVAL(r);
   FxEnumWalk w = { .mode = FX_EN_COLLECT, .limit = -1, .arg = sp_box_nil(), .found = sp_box_nil() };
