@@ -214,6 +214,7 @@ array_ivar_unset_nil_receiver_raises
 array_join_elem_conversion
 array_join_nested
 array_join_poly_separator
+array_lazy_each_block
 array_literal_empty_elem
 array_literal_minmax_inline
 array_literal_minmax_splat
@@ -249,6 +250,7 @@ array_nil_bit_after_shift_and_backtrack
 array_nil_elem_in_proved_loop
 array_nil_elem_through_answered_receiver
 array_nil_elem_through_splatted_yield
+array_nil_flag
 array_nil_flag_intersect_offset
 array_object_id
 array_op_assign_concat
@@ -763,6 +765,7 @@ boxed_each_line_block
 boxed_each_with_index_items
 boxed_encoding_symbol_name
 boxed_endless_float_step
+boxed_endless_range_step
 boxed_enum_random_argf_to_s
 boxed_enumerable_entries
 boxed_enumerator_array_only_names
@@ -987,6 +990,8 @@ builtin_value_methods
 builtins_comparable
 builtins_count
 builtins_each_with_index
+builtins_filter_map
+builtins_flat_map
 builtins_grep
 builtins_integer_bit_length
 builtins_integer_digits
@@ -1879,6 +1884,7 @@ curry_through_parameter
 curry_yield_case_eq
 custom_enum_inject_sym_var
 custom_enumerable_bare_yield
+custom_enumerable_wave10
 cvar_default_from_module
 cvar_dup_of_const_get_reached_array
 cvar_empty_container
@@ -1898,7 +1904,9 @@ cvar_value_type_object
 cvar_write_boxed_value_typed_slot
 cvb_split_identity_test_is_builtin
 cycle_block_value_position
+cycle_boxed_receiver_endless
 cycle_boxed_receiver_reader_owner
+cycle_endless_enumerator
 cycle_slice_delete_at_join_recv_hold
 data_bare_new_in_factory
 data_ctor_nil_member_call_arg
@@ -2235,8 +2243,10 @@ encoding_constant_names
 encoding_find_runtime_name
 encoding_inspect_binary
 encoding_list
+endless_enumerator_walks
 endless_method
 endless_method_rescue
+endless_range_step_enum
 ensure_after_rescue_raise
 ensure_dropped_exception_no_cause
 ensure_in_proc_body_keeps_loop_ensure
@@ -2257,6 +2267,7 @@ enum_answer_order_ancestors
 enum_answer_order_qualified
 enum_by_nil_element
 enum_call_on_late_typed_array
+enum_chain_splat_sliceb_wave6
 enum_ctor_receiver_root
 enum_each_block_reads_outer
 enum_each_with_index_values
@@ -2291,6 +2302,7 @@ enum_renamed_reader_poly
 enum_reopen_builtin_own_method_mixed
 enum_reverse_each_answer
 enum_sum_count_first_no_collection
+enum_terminal_chunk_zip_lazy
 enum_user_each_runs_once
 enum_window_of_window
 enumerable_def_nomethod_name
@@ -2299,6 +2311,7 @@ enumerable_find_ifnone
 enumerable_forwarded_block_builtin
 enumerable_forwarded_block_yields
 enumerable_grep_sum_entry
+enumerable_infinite_each
 enumerable_multi_value_yield
 enumerable_never_yields
 enumerable_reduce_proc_arg
@@ -2316,12 +2329,15 @@ enumerator_block_driving
 enumerator_boxed_endless_walk
 enumerator_dup_frozen
 enumerator_each_two_params_scalar_step
+enumerator_endless_regroup
 enumerator_external
 enumerator_feed_result
 enumerator_generator_capture
 enumerator_generator_each
+enumerator_generator_lazy
 enumerator_generator_user_each
 enumerator_in_container
+enumerator_lazy
 enumerator_new
 enumerator_new_yielder_shadowed
 enumerator_next_user_element
@@ -3524,6 +3540,7 @@ int_array_bracket_assign_expr
 int_array_concat_one
 int_array_foreign_values
 int_array_full_queue
+int_array_nil_cr2
 int_array_nil_elements
 int_array_rotate_window
 int_array_search_poly_needle
@@ -3569,6 +3586,7 @@ int_min_nullable_slot_holds
 int_min_param_return
 int_min_plain_locals
 int_min_range_begin
+int_min_range_iteration
 int_min_sign_mask
 int_named_division_boxed_divisor
 int_nil_boxing_at_poly_boundary
@@ -3800,6 +3818,7 @@ issue_2928
 issue_2929
 issue_2930
 issue_2931
+issue_2932
 issue_2933
 issue_2934
 issue_2935
@@ -3851,6 +3870,8 @@ issue_2989
 issue_2990
 issue_2991
 issue_2992
+issue_2994
+issue_2996
 issue_3001
 issue_3002
 issue_3003
@@ -3858,6 +3879,7 @@ issue_3004
 issue_3007
 issue_3008
 issue_3009
+issue_3012
 issue_3013
 issue_3014
 issue_3015
@@ -3947,6 +3969,8 @@ issue_3120
 issue_3121
 issue_3124
 issue_3125
+issue_3127
+issue_3128
 issue_3129
 issue_3130
 issue_3132
@@ -3984,6 +4008,7 @@ issue_3167
 issue_3168
 issue_3169
 issue_3170
+issue_3171
 issue_3172
 issue_3173
 issue_3174
@@ -4084,13 +4109,17 @@ issue_3309_lambda_param_reassign
 issue_3310_lambda_loop_tail
 issue_3311_time_poly_compare
 issue_3312_transpose_reduce
+issue_3313_lazy_each_cons
 issue_3315_int_enum_with_index_block
 issue_3316_tail_index_assign_value
 issue_3317_reader_concat_splat
+issue_3318_lazy_each_cons_chain
 issue_3319_comparable_mixed_sort
 issue_3320_defined_anchored_const
 issue_3321_dir_reopen
 issue_3322_regex_escaped_quote_scan
+issue_3323_lazy_var_each_cons
+issue_3324_lazy_var_each_cons_relazy
 issue_3325_poly_str_shl_store
 issue_3326_seeded_strarray_clear
 issue_3327_strbuf_push_typed_array
@@ -4341,6 +4370,22 @@ late_mixin_after_inert_statements
 late_reached_method_param_boxed
 late_ret_through_local_chain
 late_widened_method_local
+lazy_blockless_take_drop
+lazy_boxed_source
+lazy_chain_forced_after_chain_on
+lazy_crosses_variable_and_method
+lazy_drop_while_each_slice
+lazy_endless_take_while
+lazy_first_no_stage
+lazy_method_block_local
+lazy_nested_chain
+lazy_range_local
+lazy_range_method
+lazy_size
+lazy_stage_block_param_boxed
+lazy_stage_gathered_params
+lazy_to_a_beside_user_to_a
+lazy_unfused_terminal
 leading_optional_params
 leading_splat_scalar_massign
 lgamma_infinity
@@ -5114,6 +5159,7 @@ numeric_method_displaced_by_user
 numeric_reopen_poly_receiver
 numeric_reopen_self_any_number
 numeric_step_by_kw_edges
+numeric_step_by_only
 numeric_step_zero
 numeric_tower_methods
 numeric_tower_remainder
@@ -5335,6 +5381,7 @@ paren_string_operand_order
 paren_string_store_element_handle
 paren_write_value_nil_false_globals
 parentheses_hash_fallback
+parentheses_lazy_size
 parentheses_rescue_values
 parentheses_struct_nil_target
 parity_poly_user_class
@@ -6796,6 +6843,7 @@ safe_nav_step_skips_args_on_nil
 safe_nav_string_bang_arg_runs
 safe_nav_string_mutator_statement
 safe_nav_string_mutator_user_override
+safe_nav_tap_then_nil
 safe_nav_typed_receiver
 safe_nav_void_method
 safe_navigation_returns_nil
@@ -7104,6 +7152,7 @@ singleton_parent_object_poly_dispatch
 singleton_untraced_name_clash
 singleton_untraced_receiver
 size_boxed_in_lifted_block
+size_nil_by_receiver
 size_nil_receivers
 sized_poly_array_nil_n
 sleep_poly_arg
@@ -7217,6 +7266,7 @@ splat_then_positional_args
 splat_trailing_positional_keywords
 splat_typed_scalar_into_builtin
 splat_value_positions
+splice_gap_marking
 split_local_shift_strip_each
 split_nil_poly_receiver
 split_nil_sideeffect
@@ -7249,6 +7299,7 @@ step_boxed_operands
 step_kwargs_integer_reopen
 step_kwargs_own_method
 step_nil_limit_boxed_recv
+step_noarg_boxed_recv
 step_prelude_order
 step_remaining_forms
 step_stmt_receiver_before_begin_arg
@@ -7563,6 +7614,7 @@ string_inline_yield_sequence_tail
 string_inspect_invalid_utf8
 string_inspect_nonprint_unicode
 string_iter_answers_ivar_receiver
+string_iter_boxed_enumerator
 string_iter_nil_receiver_raises
 string_ivar_alias_lent_arg
 string_ivar_alias_lent_call
@@ -7643,6 +7695,8 @@ string_range_accessors
 string_range_dependent_default_roots
 string_range_each_inspect
 string_range_endless_beginless
+string_range_endless_iterate
+string_range_endless_local_for_step
 string_range_fresh_ends
 string_range_include_walk
 string_range_member_shared_arg
