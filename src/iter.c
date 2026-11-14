@@ -2256,7 +2256,12 @@ static int fx_range_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     if (FX_IS("to_a") || FX_IS("entries")) { *out = sp_box_poly_array(fx_seq_array(r)); return 1; }
     if (FX_IS("size") || FX_IS("count")) { *out = sp_box_int(size); return 1; }
     if (FX_IS("last")) { *out = g->fe ? sp_box_float(g->fend) : sp_box_int(g->last); return 1; }
-    if (FX_IS("sum")) { *out = sp_poly_sum(sp_box_poly_array(fx_seq_array(r))); return 1; }
+    /* the runtime has the sum of a Range of Integers with no Array of its
+       elements, which a long Range has no memory for */
+    if (FX_IS("sum")) {
+      *out = r.cls_id == SP_BUILTIN_RANGE && !g->fe ? sp_poly_sum(r) : sp_poly_sum(sp_box_poly_array(fx_seq_array(r)));
+      return 1;
+    }
     return 0;
   }
   /* cover?(range): the other Range lies inside this one */
