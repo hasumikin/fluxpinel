@@ -351,10 +351,12 @@ static Fluxpinel L;
 static void fx_park_save(FxPark *p) {
   p->kwhash = L.kwhash;
   p->vcall = L.vcall;
+  p->mm_why = L.mm_why;
 }
 static void fx_park_restore(const FxPark *p) {
   L.kwhash = p->kwhash;
   L.vcall = p->vcall;
+  L.mm_why = p->mm_why;
 }
 
 static __attribute__((noreturn)) void fx_side_broken(uint32_t id);

@@ -219,12 +219,14 @@ static void fx_lock_init(void) {}
 #endif
 
 /* The state of a call in progress that the walker keeps in globals: the
-   keyword Hash and the bare-name flag that a caller leaves for its callee
+   keyword Hash and the bare-name flag that a caller leaves for its callee,
+   and the reason of the miss that a method_missing hook runs for
    (fluxpinel.h). Another thread of the walker writes them while this one
    waits, so a wait saves them and puts them back. */
 typedef struct {
   const void *kwhash;
   int vcall;
+  int mm_why;
 } FxPark;
 static void fx_park_save(FxPark *p);
 static void fx_park_restore(const FxPark *p);
