@@ -49,9 +49,17 @@ rows = File.readlines(File.join(dir, "manifest.tsv"), chomp: true).map do |l|
 end
 find = wrapper_at_line(File.readlines(gen))
 
-# The generated file expects fx_tu.c in front of it (one TU).
+# The generated file expects fx_tu.c in front of it (one TU). fx_tu.c
+# declares fx_park_save and fx_park_restore, and fluxpinel.h defines them
+# beside the state of the walker. The unit has no walker, so it defines
+# them empty.
 unit = File.join(dir, "gen_unit.c")
-File.write(unit, "#include \"fx_tu.c\"\n#include \"bop_gen_out.c\"\n")
+File.write(unit, <<~C)
+  #include "fx_tu.c"
+  static void fx_park_save(FxPark *p) { (void)p; }
+  static void fx_park_restore(const FxPark *p) { (void)p; }
+  #include "bop_gen_out.c"
+C
 
 # 1. compile errors
 log, = run("cc", *CFLAGS, "-I#{dir}", "-c", unit, "-o", File.join(dir, "gen.o"))
