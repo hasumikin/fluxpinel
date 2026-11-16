@@ -66,9 +66,11 @@ static int fx_irb;   /* --irb */
 /* The program of --irb. IRB reads its options from ARGV. IRB.start takes
    the path of the irb executable of the gem whose lib directory answered
    the require, as the executable passes its own: IRB shows its banner
-   only when the path ends with exe/irb. */
+   only when the path ends with exe/irb. lib/fluxpinel/irb_ri_guard.rb
+   keeps the completion dialog alive with no ri driver. */
 static const char fx_irb_src[] =
     "require \"irb\"\n"
+    "require \"fluxpinel/irb_ri_guard\"\n"
     "IRB.start(File.expand_path(\"../exe/irb\", $LOAD_PATH.find { |d| File.exist?(File.join(d, \"irb.rb\")) }))\n";
 
 /* Puts the directories of a list such as RUBYLIB ("a:b") in $LOAD_PATH at

@@ -15,6 +15,7 @@
 
 require "socket"
 require "irb"
+require "fluxpinel/irb_ri_guard"
 
 module Fluxpinel
   module RemoteIRB
@@ -134,15 +135,6 @@ module Fluxpinel
       end
 
       def winsize = (@telnet.rows ? [@telnet.rows, @telnet.columns] : [24, 80])
-
-      # IRB rescues the LoadError of `require 'rdoc'` only; rdoc 8.1
-      # requires rbs when the ri driver starts, which Fluxpinel cannot
-      # load. With no driver the completion dialog comes with no document.
-      def rdoc_ri_driver
-        super
-      rescue LoadError
-        @rdoc_ri_driver = nil
-      end
     end
 
     @server = nil

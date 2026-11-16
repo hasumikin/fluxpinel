@@ -44,6 +44,11 @@ CLI_CASES = [
     env: { "HOME" => Dir.tmpdir, "RUBYLIB" => "lib" }, out: /^2\n.*^\["irb", \[\]\]\n.*^true\n.*^"hi"\n+\z/m },
   { args: ["-rgreet", "-Ilib", "--irb", "-f", "--nocolorize", "--noprompt"], stdin: "Greet.hi\n",
     env: { "HOME" => Dir.tmpdir }, out: /^"hi"\n+\z/ },
+  # the ri driver of the completion dialog: rdoc 8.1 requires rbs there,
+  # which does not load, and the input method answers nil for the driver
+  { args: ["--irb", "-f", "--nocolorize", "--noprompt"],
+    stdin: "IRB::RelineInputMethod.new(IRB::RegexpCompletor.new).rdoc_ri_driver.nil?\n",
+    env: { "HOME" => Dir.tmpdir }, out: /^true\n+\z/ },
   # a syntax and a call that Fluxpinel does not have raise in a session,
   # and stop a program
   { args: ["--irb", "-f", "--nocolorize", "--noprompt"], stdin: "undef :\"a\#{1}\"\n1.succ { 2 }\n1 + 1\n",
