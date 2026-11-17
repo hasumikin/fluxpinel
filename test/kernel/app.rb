@@ -79,7 +79,7 @@ module FxKernel
 
   # w has no type: spinel refuses the write of @sizes when a typed entry
   # and the `new` of the table of --ext-class, which has no type, both
-  # make a Shape (matz/spinel#12056)
+  # make a Shape (matz/spinel#12075)
   #: (String, untyped) -> Shape
   def self.shape(name, w) = Shape.new(name, w)
 

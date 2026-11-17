@@ -1032,7 +1032,7 @@ same program runs there for the answer of a test.
   the classes in that case (`KERNEL_EXT_CLASS`, see `docs/roundhouse.md`).
 - spinel can refuse a kernel in which a typed entry and the `new` of the
   table, which has no type, make an object of one class
-  (matz/spinel#12056). An entry with an `untyped` parameter avoids it.
+  (matz/spinel#12075). An entry with an `untyped` parameter avoids it.
 - The kernel names only its own classes in `sp_class_to_s`.
   `kernel_prelude.h` works around this.
 - A script does not replace a method that AOT code calls directly
