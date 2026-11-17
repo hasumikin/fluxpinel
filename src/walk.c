@@ -2861,7 +2861,7 @@ static sp_RbVal fx_catch(int argc, sp_RbVal *argv, const FxBlock *blk) {
   SP_GC_ROOT_RBVAL(tag);
   sp_RbVal v = sp_box_nil();
   SP_GC_ROOT_RBVAL(v);
-  const int depth = fx_fs()->depth;
+  const int depth = fx_fs()->depth, lockmark = fx_lock_depth();
   void *const cause = sp_inflight_cause;
   const int rescue_sp = sp_rescue_sp;
   sp_catch_check_depth();
@@ -2876,10 +2876,14 @@ static sp_RbVal fx_catch(int argc, sp_RbVal *argv, const FxBlock *blk) {
     sp_catch_top = top;
     return v;
   }
-  sp_catch_top = top;
   sp_gc_nroots = sp_catch_rootmark[top];
   sp_inflight_cause = cause;
   sp_rescue_sp = rescue_sp;
+  /* a throw from a script that the kernel ran gave the walker lock up on
+     its way (FX_LOCKED). The entry marks the value of the throw until the
+     lock is back: a lock can park and collect. */
+  fx_lock_set_depth(lockmark);
+  sp_catch_top = top;
   fx_fs()->depth = depth;
   L.ctl = FX_CTL_NONE;
   L.kwhash = NULL;

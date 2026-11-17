@@ -12,6 +12,11 @@ rescue IndexError => e
   p e.class, e.message
 end
 p FxKernel.script("FxKernel.script('6 * 7')")
+# a throw in a script that the kernel runs reaches a catch around the
+# entry, and the walker goes on after it
+p catch(:out) { FxKernel.script("throw :out, 5"); :no }
+p catch(:out) { FxKernel.script("FxKernel.script('throw :out, 6')"); :no }
+p FxKernel.script("catch(:in) { throw :in, 7 }"), FxKernel.ping(8)
 # a local of a plugin stays in the plugin
 begin
   n

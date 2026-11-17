@@ -448,7 +448,8 @@ static __attribute__((noreturn)) void fx_reraise(FxCaught c);
   L.kwhash = NULL
 
 /* An entry into the walker from the runtime or the kernel: stmt runs
-   under the walker lock, which a raise gives up on its way out. */
+   under the walker lock, which a raise gives up on its way out. So does a
+   throw or a jump of the runtime, which goes on to its target. */
 #define FX_LOCKED(stmt)                                                                \
   do {                                                                                 \
     fx_lock();                                                                         \
@@ -460,6 +461,10 @@ static __attribute__((noreturn)) void fx_reraise(FxCaught c);
       fx_unlock();                                                                     \
     } else {                                                                           \
       FX_TRY_LANDED(_fx_depth);                                                        \
+      if (sp_unwind_kind != SP_UNWIND_NONE) {                                          \
+        fx_unlock();                                                                   \
+        sp_unwind_resume();                                                            \
+      }                                                                                \
       FxCaught _fx_c = fx_caught();                                                    \
       fx_unlock();                                                                     \
       fx_reraise(_fx_c);                                                               \
