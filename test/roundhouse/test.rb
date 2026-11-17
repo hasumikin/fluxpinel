@@ -96,10 +96,16 @@ Dir.mktmpdir("fx-blog") do |dir|
       eval_line(sock, "Article.where(id: [1, 3]).map(&:id)") == "=> [1, 3]\n" &&
       eval_line(sock, "Article.all.each { |a| break a.title if a.id == 2 }") ==
         "=> \"Understanding MVC Architecture\"\n"
-    # new of a class of the kernel is not a call of Fluxpinel: the line
-    # raises, and the session and the server go on
+    # new of a model makes a record, which is not in the database before a
+    # save
+    check "the console makes a record with new",
+      eval_line(sock, 'fresh = Article.new(title: "from new"); [fresh.title, fresh.persisted?]') ==
+        "=> [\"from new\", false]\n" &&
+      eval_line(sock, "Article.count") == "=> 3\n"
+    # allocate of a class of the kernel is not a call of Fluxpinel: the
+    # line raises, and the session and the server go on
     check "a call that Fluxpinel does not have raises",
-      eval_line(sock, 'Article.new(title: "t")').include?("NotImplementedError") &&
+      eval_line(sock, "Article.allocate").include?("NotImplementedError") &&
       eval_line(sock, "Article.count") == "=> 3\n"
     sock.write("exit\n")
     check "exit closes the session", sock.wait_readable(10) && sock.read == ""

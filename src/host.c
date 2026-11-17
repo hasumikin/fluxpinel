@@ -87,15 +87,18 @@ static void fx_host_init(void) {
          of arguments, and a negative count for "that many or more": the
          rows of a name are one method, whose arity is -(n + 1) for the
          fewest arguments n, as Method#arity counts optional arguments */
+      /* `new` of a class: the rows are the counts that its initialize
+         takes, and Method#arity answers -1, as Class#new has in CRuby */
+      int is_new = row->singleton && !strcmp(row->name, "new");
       FxMethod *had = fx_table_get(row->singleton ? &k->smethods : &k->methods, name);
       if (had && had->kind == FX_M_EXTM && had->owner == k) {
         int a = had->argc < 0 ? -had->argc - 1 : had->argc, b = row->argc < 0 ? -row->argc - 1 : row->argc;
-        had->argc = -((a < b ? a : b) + 1);
+        if (!is_new) had->argc = -((a < b ? a : b) + 1);
         continue;
       }
       if (row->singleton && had) continue;
       FxMethod *m = fx_method_new(FX_M_EXTM, name, NULL, 0, k);
-      m->argc = row->argc;
+      m->argc = is_new ? -1 : row->argc;
       fx_define_method(k, m, row->singleton);
     }
   }
@@ -226,6 +229,11 @@ static sp_RbVal fx_extm_invoke_block(sp_RbVal self, const char *name, int argc, 
    without the walker lock, as an entry does. */
 static sp_RbVal fx_extm_invoke(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal *argv, const FxBlock *blk) {
   const char *name = sp_sym_to_s(m->name);
+  /* a class of the script under a class of the kernel inherits the method,
+     and the table has no row for it (`new` of such a class, a method of
+     its object) */
+  if ((self.tag == SP_TAG_OBJ || self.tag == SP_TAG_CLASS) && !fx_kernel_cls(self.cls_id))
+    fx_gap(sp_sprintf("%s of a class of the kernel, called on a class of the script", name));
   if (blk) return fx_extm_invoke_block(self, name, argc, argv, blk);
   sp_RbVal r = sp_box_nil();
   int found;

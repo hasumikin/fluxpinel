@@ -923,7 +923,12 @@ src/main.c             Fluxpinel, with FX_KERNEL=fx_kernel_init
   Each class of the kernel is a `FxClass` with the
   id of the kernel, so a constant names it and an AOT object has it as its
   class. An entry is a singleton method of its module (`FX_M_ENTRY`).
-  `new` of a class of the kernel is a gap, as the constructor is no entry.
+  `new` of a class of the kernel is a row of the table of `--ext-class`,
+  one for each count of arguments that its `initialize` takes, so a script
+  makes an object of the kernel. `Method#arity` of it is -1, as in CRuby.
+  A class with no row (see `docs/spin.md` of spinel) and `allocate` are a
+  gap, as the constructor is no entry. A class of the script under a class
+  of the kernel has no row either, so its `new` is a gap.
 - **The hooks.** The kernel sets the hooks of the runtime (`sp_obj_inspect_fn`,
   `sp_obj_cmp_hook` and their kin) to the functions that know its classes.
   Fluxpinel keeps each hook of the kernel and sets its own. The hook of Fluxpinel

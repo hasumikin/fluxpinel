@@ -2315,7 +2315,10 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     /* a builtin class other than Object and BasicObject makes its own
        instances */
     if (k->cls_id < 0 && k != L.object && strcmp(k->name, "BasicObject")) return 0;
-    /* the constructor of a class of the kernel is not an entry */
+    /* a class of the kernel with a row of `new` in the table of
+       --ext-class answered before (a singleton method of the class). A
+       class with no row, and allocate, are a gap: the constructor is no
+       entry */
     if (fx_kernel_cls(k->cls_id)) fx_gap(sp_sprintf("%s.%s of a class of the kernel", k->name, name));
     /* an instance of a subclass of Array or Hash is its Array or Hash */
     if (fx_is_array_class(k) || fx_is_hash_class(k)) {
