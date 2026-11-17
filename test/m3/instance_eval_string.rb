@@ -61,3 +61,42 @@ p 5.instance_eval("self + x")
 
 # the block form keeps working beside it
 p c.instance_eval { @v + 100 }
+
+# a send of the name at the call sees the locals of the caller too
+p c.send(:instance_eval, "@v + x"), c.__send__(:instance_eval, "x"), c.public_send("instance_eval", "x * 3")
+C.send(:class_eval, "def thrice = @v * 3")
+p c.thrice, C.send(:class_eval, "x")
+p [1, 2].map { |i| c.send(:instance_eval, "x + i") }
+
+# a send that the program defines takes the call
+class OwnSend
+  def send(a, b) = [:own, a, b]
+end
+p OwnSend.new.send(:instance_eval, "1")
+
+# the code sees the block of the method around the call
+def with_block = Object.new.instance_eval("[__method__, block_given?]")
+p with_block, (with_block { })
+def yields = Object.new.instance_eval("yield 3")
+p(yields { |v| v * 2 })
+
+# nil, true and false: a def goes to their class
+p nil.instance_eval("def from_nil = 1; from_nil"), nil.from_nil
+p true.instance_eval("def from_true = 2; from_true"), false.respond_to?(:from_true)
+begin
+  5.instance_eval("def no = 1")
+rescue TypeError => e
+  puts e.message
+end
+
+# a String with a block, and too many arguments
+begin
+  c.instance_eval("1") { 2 }
+rescue ArgumentError => e
+  puts e.message
+end
+begin
+  c.instance_eval("1", "f.rb", 1, 2)
+rescue ArgumentError => e
+  puts e.message
+end
