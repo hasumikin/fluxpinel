@@ -1264,6 +1264,11 @@ static sp_RbVal fx_send_v(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
   int plain = recv.tag == SP_TAG_INT || recv.tag == SP_TAG_FLT || recv.tag == SP_TAG_NIL || recv.tag == SP_TAG_BOOL ||
               (fx_is_fx_object(recv) && !fx_is_native_obj(recv) && !fx_record_of(fx_class_of(recv)));
   if (check && plain && fx_kernel_private(name)) return fx_denied(recv, name, argc, argv, blk, FX_MISS_PRIVATE);
+  /* a send reaches it: obj.send(:puts, "x"). A builtin class with a public
+     method of the name that Fluxpinel lacks keeps its gap. */
+  if (!check && !blk && fx_kernel_private(name) && (plain || !fx_builtin_responds(recv, name)) &&
+      fx_kernel(name, argc, argv, &out))
+    return out;
   fx_prelude_gap(name, argc, argv);
   if (fx_method_missing(recv, name, argc, argv, blk, FX_MISS_METHOD, &out)) return out;
   FxClass *rk = recv.tag == SP_TAG_CLASS ? fx_class_value(recv) : NULL;
