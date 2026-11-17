@@ -21,6 +21,41 @@ module FxKernel
     def step(k = 1, *more) = @n += k + more.size
 
     def scale(a, b = 2) = @n * a * b
+
+    # a method that yields, and one with a block parameter after an
+    # optional one: a script passes its block to them
+    def each_n
+      i = 0
+      while i < @n
+        yield i
+        i += 1
+      end
+      self
+    end
+
+    def with_n(k = 1, &blk) = blk.call(@n + k)
+
+    # a yield under an ensure clause, which a jump out of the block runs
+    def guarded
+      yield @n
+    ensure
+      @n += 100
+    end
+  end
+
+  # a block that the kernel keeps, and calls after the call that passed it
+  class Keeper
+    def self.make = new
+
+    def keep(&blk)
+      @kept = blk
+      self
+    end
+
+    def fire(n) = @kept.call(n)
+
+    # the block runs in another thread of the kernel
+    def in_thread(&blk) = Thread.new { blk.call(1) }.value
   end
 
   # ivars of several kinds, which a script reads with instance_variable_get

@@ -947,6 +947,19 @@ A raise in Fluxpinel reaches a rescue of AOT code, and the reverse, through the
 one exception stack. `kernel/fluxpinel_cruby.rb` gives the same functions under
 CRuby, so the same program runs there for the answer of a test.
 
+A script passes a block to a method of a class of the kernel that takes
+one (the rows of `block` 1 in the table of `--ext-class`). The kernel gets
+a Proc of the runtime, and the Proc yields to the block under the walker
+lock (`fx_extm_invoke_block` in `src/host.c`).
+
+- A `break` in the block, or a `return` of the method around the call,
+  leaves the frames of the kernel through a break scope of the runtime
+  (`sp_brk_push`). The `ensure` clauses of the kernel run on the way.
+- A `throw` and a raise in the block pass the kernel in the same way.
+- A block that the kernel keeps can run after the call. A `break` in it
+  then raises `LocalJumpError`, as in CRuby.
+- A method that takes no block does not use the block.
+
 ## 4. Use 2: oracle
 
 The oracle runs one program three ways and compares the output.

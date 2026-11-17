@@ -79,6 +79,9 @@ static void fx_host_init(void) {
     FxClass *k = L.builtins[i];
     for (const sp_ext_method *row = sp_ext_methods((int)k->cls_id); row && row->name; row++) {
       if (row->owner != (int)k->cls_id && sp_ext_methods(row->owner)) continue;
+      /* a method that takes a block has its rows twice, for a call with no
+         block and for a call with one: the first set gives the counts */
+      if (row->block) continue;
       sp_sym name = sp_sym_intern(row->name);
       /* a method with optional or rest parameters has a row for each count
          of arguments, and a negative count for "that many or more": the
@@ -98,11 +101,132 @@ static void fx_host_init(void) {
   }
 }
 
+/* The block of a script that a call of a method of the table passes. The
+   kernel gets a Proc of the runtime whose fn yields to the block, and this
+   record is the cap of that Proc.
+
+   A jump out of the block (a break, or a return of the method around the
+   call) must leave the frames of the kernel first. The call opens a break
+   scope of the runtime (sp_brk_push). fn keeps the jump here and breaks to
+   the scope, so the ensure clauses of the kernel run. fx_extm_invoke lands
+   and puts the jump back, and the walker goes on with it as after a block
+   of a builtin method. */
+typedef struct {
+  FxProc *proc;          /* the block of the script */
+  sp_int scope;          /* the serial of the break scope of the call */
+  FxCtl ctl;             /* the jump that left the block */
+  const void *target;
+} FxExtmBlock;
+
+static void fx_extm_block_scan(void *p) { sp_gc_mark(((FxExtmBlock *)p)->proc); }
+
+/* Whether the break scope of the call is live in the running thread. It
+   is not when the kernel kept the Proc and calls it after the call, or
+   calls it in another thread. */
+static int fx_extm_scope_live(sp_int scope) {
+  for (int i = sp_brk_top - 1; i >= 0; i--)
+    if (sp_brk_serial[i] == scope) return 1;
+  return 0;
+}
+
+/* The yield, under the walker lock. A jump that is left pending moves to
+   the record: another thread of the walker runs while this one leaves the
+   kernel. Only the thread of the call writes the record (live). Answers
+   the value of the block or of the jump, and the jump in *ctl. */
+static sp_RbVal fx_extm_block_yield(FxExtmBlock *xb, int live, int argc, sp_RbVal *argv, FxCtl *ctl) {
+  sp_RbVal r = fx_yield(&xb->proc->b, argc, argv);
+  *ctl = L.ctl;
+  if (L.ctl == FX_CTL_NONE) return r;
+  if (live) {
+    xb->ctl = L.ctl;
+    xb->target = L.ctl_target;
+  }
+  L.ctl = FX_CTL_NONE;
+  return L.ctl_val;
+}
+
+/* The fn of the Proc: the kernel calls it with no walker lock, from the
+   thread of the call or from any other. A jump breaks to the scope of the
+   call. With no live scope the jump has no call to end, and the answer is
+   LocalJumpError, as in CRuby. */
+static sp_int fx_extm_block_fn(void *cap, sp_int argc, sp_int *args) {
+  (void)args;
+  SP_GC_SAVE();
+  FxExtmBlock *xb = (FxExtmBlock *)cap;
+  SP_GC_ROOT(xb);
+  /* the channel of the arguments serves the next call of a Proc too */
+  sp_RbVal argv[SP_PROC_ARG_SLOTS];
+  int n = argc > SP_PROC_ARG_SLOTS ? SP_PROC_ARG_SLOTS : (int)argc;
+  for (int i = 0; i < n; i++) {
+    argv[i] = sp_proc_arg(i);
+    _sp_gc_root_push((void **)((uintptr_t)&argv[i] | (uintptr_t)1));
+  }
+  const int live = fx_extm_scope_live(xb->scope);
+  sp_RbVal r = sp_box_nil();
+  FxCtl ctl = FX_CTL_NONE;
+  FX_LOCKED(r = fx_extm_block_yield(xb, live, n, argv, &ctl));
+  if (ctl == FX_CTL_RETURN && !live) sp_raise_cls("LocalJumpError", "unexpected return");
+  /* the runtime raises LocalJumpError (break from proc-closure) for a
+     scope that is not live */
+  if (ctl != FX_CTL_NONE) sp_brk_throw(xb->scope, r);
+  sp_proc_ret_set(r);
+  return 0;
+}
+
+/* A call with a block: the method runs in a break scope, where a jump out
+   of the block lands. */
+static sp_RbVal fx_extm_invoke_block(sp_RbVal self, const char *name, int argc, sp_RbVal *argv,
+                                     const FxBlock *blk) {
+  SP_GC_SAVE();
+  sp_RbVal pv = fx_block_proc(blk);
+  SP_GC_ROOT_RBVAL(pv);
+  FxExtmBlock *xb = (FxExtmBlock *)sp_gc_alloc(sizeof *xb, NULL, fx_extm_block_scan);
+  xb->proc = (FxProc *)pv.v.p;
+  xb->ctl = FX_CTL_NONE;
+  SP_GC_ROOT(xb);
+  sp_RbVal b = sp_box_proc(sp_proc_new((void *)fx_extm_block_fn, xb, sp_bm_cap_scan));
+  SP_GC_ROOT_RBVAL(b);
+  sp_RbVal r = sp_box_nil();
+  SP_GC_ROOT_RBVAL(r);
+  const int depth = fx_fs()->depth, lockmark = fx_lock_depth();
+  const int exc_top = sp_exc_top, catch_top = sp_catch_top, nroots = sp_gc_nroots;
+  void *const cause = sp_inflight_cause;
+  const int rescue_sp = sp_rescue_sp;
+  xb->scope = sp_brk_push();
+  const int slot = sp_brk_top;
+  if (setjmp(sp_brk_stack[slot - 1]) == 0) {
+    int found;
+    FX_UNLOCKED(found = sp_ext_send_block(self, name, argc, argv, b, &r));
+    sp_brk_top = slot - 1;
+    if (!found) fx_no_method_args(self, name, argc, argv, FX_MISS_METHOD);
+    return r;
+  }
+  /* the landing of a jump: the state of the runtime and of the walker as
+     at the call, as the landing of a catch has it. The value of the jump
+     stays in the scope, which the GC marks, until the walker lock is back:
+     a lock can park and collect. */
+  sp_exc_top = exc_top;
+  sp_catch_top = catch_top;
+  sp_brk_top = slot;
+  sp_gc_nroots = nroots;
+  sp_inflight_cause = cause;
+  sp_rescue_sp = rescue_sp;
+  fx_lock_set_depth(lockmark);
+  fx_fs()->depth = depth;
+  L.kwhash = NULL;
+  L.ctl = xb->ctl;
+  L.ctl_target = xb->target;
+  L.ctl_val = sp_brk_val[slot - 1];
+  sp_brk_top = slot - 1;
+  return sp_box_nil();
+}
+
 /* A call of a method of the table: the thunk converts self and the
    arguments (ArgumentError and TypeError are its), and the kernel runs
    without the walker lock, as an entry does. */
-static sp_RbVal fx_extm_invoke(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal *argv) {
+static sp_RbVal fx_extm_invoke(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal *argv, const FxBlock *blk) {
   const char *name = sp_sym_to_s(m->name);
+  if (blk) return fx_extm_invoke_block(self, name, argc, argv, blk);
   sp_RbVal r = sp_box_nil();
   int found;
   FX_UNLOCKED_ROOT(found = sp_ext_send(self, name, argc, argv, &r), SP_GC_ROOT_RBVAL(r));
@@ -190,8 +314,8 @@ static sp_RbVal fx_entry_invoke(int i, int argc, sp_RbVal *argv) {
   return sp_box_nil();
 }
 
-static sp_RbVal fx_extm_invoke(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal *argv) {
-  (void)m, (void)self, (void)argc, (void)argv;
+static sp_RbVal fx_extm_invoke(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal *argv, const FxBlock *blk) {
+  (void)m, (void)self, (void)argc, (void)argv, (void)blk;
   return sp_box_nil();
 }
 

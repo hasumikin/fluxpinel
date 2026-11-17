@@ -117,14 +117,20 @@ irb(main):002> Article.find(1).title
 => "Getting Started with Rails"
 irb(main):003> Article.all.limit(2).to_a.size
 => 2
-irb(main):004> Article.where(id: [1, 3]).order(:id).to_a.map(&:id)
+irb(main):004> Article.where(id: [1, 3]).order(:id).map(&:id)
 => [1, 3]
+irb(main):005> Article.all.each { |a| break a.title if a.id == 2 }
+=> "Understanding MVC Architecture"
 ```
 
-The table of `--ext-class` does not hold a method with a keyword or block
-parameter. `each` and `map` of a `Relation` take a block, so IRB raises
-`NotImplementedError` for them. Use `to_a` first:
-`Article.all.to_a.map(&:title)`.
+A block of the session goes to a method of the kernel that takes one,
+such as `each` and `map` of a `Relation`. A `break` in the block ends the
+call.
+
+The table of `--ext-class` does not hold a method with a keyword
+parameter. `select` and `find` of a `Relation` are the query methods of
+Roundhouse, which take no block. Use `to_a` first:
+`Article.all.to_a.select { |a| a.id > 1 }`.
 
 A method that answers an object of a class the list does not name comes
 back as an object with no methods.
@@ -141,6 +147,7 @@ checks these things:
 - `GET /articles` answers 200 with an article of the seed.
 - The console counts, finds and creates records, and keeps a local.
 - The console calls the methods of a model and of a `Relation` by name.
+- The console passes a block to a method of a `Relation`.
 - A call that Fluxpinel does not have raises, and the session goes on.
 - `exit` closes the session, and the server runs after it.
 - The page of the article shows the new comment.

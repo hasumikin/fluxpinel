@@ -89,10 +89,17 @@ Dir.mktmpdir("fx-blog") do |dir|
     check "the console calls a method with optional and rest parameters",
       eval_line(sock, "Article.where(id: [1, 3]).order(:id).to_a.map(&:id)") == "=> [1, 3]\n" &&
       eval_line(sock, 'Article.where("id > ?", 1).to_a.size') == "=> 2\n"
-    # a method with a block is not in the table of --ext-class: the line
+    # the block of a line goes to a method of a Relation, and a break ends
+    # the call
+    check "the console passes a block to a method of a Relation",
+      eval_line(sock, "Article.all.map { |a| a.id * 10 }") == "=> [10, 20, 30]\n" &&
+      eval_line(sock, "Article.where(id: [1, 3]).map(&:id)") == "=> [1, 3]\n" &&
+      eval_line(sock, "Article.all.each { |a| break a.title if a.id == 2 }") ==
+        "=> \"Understanding MVC Architecture\"\n"
+    # new of a class of the kernel is not a call of Fluxpinel: the line
     # raises, and the session and the server go on
     check "a call that Fluxpinel does not have raises",
-      eval_line(sock, "Article.all.map(&:title)").include?("NotImplementedError") &&
+      eval_line(sock, 'Article.new(title: "t")').include?("NotImplementedError") &&
       eval_line(sock, "Article.count") == "=> 3\n"
     sock.write("exit\n")
     check "exit closes the session", sock.wait_readable(10) && sock.read == ""

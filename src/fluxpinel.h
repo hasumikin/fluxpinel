@@ -595,7 +595,7 @@ static int fx_encoding_class(const FxClass *k, const char *name, int argc, sp_Rb
 /* host.c */
 static void fx_host_init(void);
 static sp_RbVal fx_entry_invoke(int i, int argc, sp_RbVal *argv);
-static sp_RbVal fx_extm_invoke(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal *argv);
+static sp_RbVal fx_extm_invoke(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal *argv, const FxBlock *blk);
 
 /* load.c */
 static int fx_load_call(const pm_node_t *n, sp_RbVal self, int on_kernel, const char *name, int argc,
