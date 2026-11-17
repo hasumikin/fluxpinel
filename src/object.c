@@ -56,6 +56,16 @@ static int fx_always_private(sp_sym name) {
 /* the number of builtin classes that the program reopened with a def */
 static int fx_reopened_builtins;
 
+/* 1 after a change that can give a call of fx_fast_call (builtin.c) to a
+   method of the program: a def, an undef or a remove_method of one of its
+   names, and an include or a prepend. fx_fast_call then looks again. */
+static int fx_fast_dirty;
+static int fx_fast_name(sp_sym name);
+
+/* the number of singleton classes of an Array or a Hash: fx_fast_call
+   leaves a value that has one to the lookup of its methods */
+static int fx_fast_singletons;
+
 /* 1 after a require of a feature of the runtime (io/console, ...): it
    gives builtin classes methods that the table of responds.c lacks */
 static int fx_feature_loaded;
@@ -87,6 +97,7 @@ static void fx_define_method(FxClass *c, FxMethod *m, int singleton) {
   if (!singleton && fx_always_private(m->name)) m->vis = FX_VIS_PRIVATE;
   fx_table_put(singleton ? &c->smethods : &c->methods, m);
   if (!singleton && c->cls_id < 0 && c != L.object) fx_reopened_builtins++;
+  if (!singleton && fx_fast_name(m->name)) fx_fast_dirty = 1;
   /* the hook of the class: method_added(name) */
   if (!singleton) {
     FxMethod *hook = fx_find_smethod(c, sp_sym_intern("method_added"));
@@ -135,6 +146,7 @@ static void fx_undef(FxClass *k, int singleton, sp_sym name) {
                                          k->is_module ? "module" : "class", k->name));
   fx_table_put(singleton ? &k->smethods : &k->methods, fx_method_new(FX_M_UNDEF, name, NULL, 0, k));
   L.nundefs++;
+  if (!singleton && fx_fast_name(name)) fx_fast_dirty = 1;
 }
 
 /* remove_method: the entry of name leaves the table of k itself, and the
@@ -148,6 +160,7 @@ static void fx_remove_method(FxClass *k, int singleton, sp_sym name) {
   for (; i + 1 < t->n; i++) t->items[i] = t->items[i + 1];
   t->n--;
   fx_methods_gen++;
+  if (!singleton && fx_fast_name(name)) fx_fast_dirty = 1;
 }
 
 /* Whether an undef hides name from recv: the lookup found no method of
@@ -475,6 +488,7 @@ static FxClass *fx_singleton_of(sp_RbVal v, int create) {
   FxClass *k = fx_class_new(NULL, 0, base, base);
   k->name = strdup(sp_sprintf("#<Class:#<%s:0x%016llx>>", base->name, (unsigned long long)(uintptr_t)v.v.p));
   k->singleton = 1;
+  if (sp_poly_is_array_kind(v.cls_id) || v.cls_id == SP_BUILTIN_POLY_POLY_HASH) fx_fast_singletons++;
   if (!fx_singletons) fx_singletons = sp_PolyArray_new();
   sp_PolyArray_push(fx_singletons, v);
   sp_PolyArray_push(fx_singletons, fx_class_box(k));
@@ -2451,6 +2465,7 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
       else fx_push_class(&k->extends, &k->nextends, &k->extends_cap, m);
       /* a module in a builtin class reopens it, as a def does */
       if (name[0] != 'e' && k->cls_id < 0 && k != L.object) fx_reopened_builtins++;
+      if (name[0] != 'e') fx_fast_dirty = 1;
       /* the hook of the module: included(base), prepended(base) or
          extended(base) */
       const char *hk = name[0] == 'i' ? "included" : name[0] == 'p' ? "prepended" : "extended";

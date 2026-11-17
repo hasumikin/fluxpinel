@@ -851,6 +851,23 @@ static struct {
     length;
 } fx_ops;
 
+/* The kinds of receiver of fx_fast_call, with the names that it answers
+   for each. A bit of fx_fast_off (1 << the index of the kind) is set while
+   the program answers a name of the kind in place of the builtin method. */
+enum { FX_FAST_INT = 1, FX_FAST_FLT = 2, FX_FAST_SYM = 4, FX_FAST_ARY = 8, FX_FAST_HASH = 16, FX_FAST_KINDS = 5 };
+static const struct {
+  const char *cls;
+  const char *names[19];
+} fx_fast_kinds[FX_FAST_KINDS] = {
+  { "Integer", { "[]", "==", "===", "+", "-", "&", "|", "^", "<<", ">>", "<", "<=", ">", ">=", "!=", "*", "/", "%" } },
+  { "Float", { "+", "-", "*", "/", "<", "<=", ">", ">=" } },
+  { "Symbol", { "==", "===" } },
+  { "Array", { "size", "length", "[]", "[]=", "<<" } },
+  { "Hash", { "[]" } },
+};
+static sp_sym fx_fast_syms[FX_FAST_KINDS][19];
+static int fx_fast_off;
+
 static SP_NOINLINE SP_COLD void fx_ops_init(void) {
   fx_ops.add = sp_sym_intern("+");
   fx_ops.sub = sp_sym_intern("-");
@@ -874,7 +891,48 @@ static SP_NOINLINE SP_COLD void fx_ops_init(void) {
   fx_ops.push = sp_sym_intern("<<");
   fx_ops.size = sp_sym_intern("size");
   fx_ops.length = sp_sym_intern("length");
+  for (int k = 0; k < FX_FAST_KINDS; k++)
+    for (int i = 0; fx_fast_kinds[k].names[i]; i++) fx_fast_syms[k][i] = sp_sym_intern(fx_fast_kinds[k].names[i]);
   fx_ops.ready = 1;
+}
+
+/* Whether name is a name that fx_fast_call answers for a kind of receiver. */
+static int fx_fast_name(sp_sym name) {
+  if (SP_UNLIKELY(!fx_ops.ready)) fx_ops_init();
+  for (int k = 0; k < FX_FAST_KINDS; k++)
+    for (int i = 0; fx_fast_kinds[k].names[i]; i++)
+      if (fx_fast_syms[k][i] == name) return 1;
+  return 0;
+}
+
+/* Sets fx_fast_off from the methods of the program. A kind is off when the
+   lookup of fx_send_v gives one of its names to the program: a method that
+   the builtin method of the class does not shadow (fx_builtin_shadows), or
+   an undef. */
+static SP_NOINLINE SP_COLD void fx_fast_recheck(void) {
+  fx_fast_dirty = 0;
+  fx_fast_off = 0;
+  for (int k = 0; k < FX_FAST_KINDS; k++) {
+    const char *cls = fx_fast_kinds[k].cls;
+    const FxClass *c = fx_builtin(cls);
+    for (int i = 0; fx_fast_kinds[k].names[i]; i++) {
+      sp_sym s = fx_fast_syms[k][i];
+      const FxMethod *m = fx_find_method(c, s);
+      if (m && (m->owner == L.object ||
+                (m->owner->is_module && !fx_method_before(c, m) && fx_rs_own_of(cls, fx_fast_kinds[k].names[i]))))
+        m = NULL;
+      if (m || fx_undef_in(c, s, 0)) {
+        fx_fast_off |= 1 << k;
+        break;
+      }
+    }
+  }
+}
+
+/* Whether fx_fast_call answers for the Array or the Hash r, of the kind
+   bit: a value with a singleton class can have its own [], << or size. */
+static inline int fx_fast_obj(sp_RbVal r, int bit) {
+  return !(fx_fast_off & bit) && !(SP_UNLIKELY(fx_fast_singletons) && fx_singleton_of(r, 0));
 }
 
 /* The commonest calls, answered before the name walks the chain of
@@ -884,15 +942,16 @@ static SP_NOINLINE SP_COLD void fx_ops_init(void) {
    - Array#[] and #[]= with an Integer index, Array#<<, size and length
    - Hash#[]
    A call passes the name as a Symbol. The answers are the ones of that
-   chain. Answers 0 for any other call, and for any call once the program
-   reopens a builtin class. */
+   chain. Answers 0 for any other call, and for the calls of a kind of
+   receiver whose names the program answers (fx_fast_off). */
 static int fx_fast_call(sp_RbVal r, sp_sym s, int argc, sp_RbVal *argv, sp_RbVal *out) {
   /* an instance of a subclass of Array or Hash can have its own [], << or size */
-  if (fx_reopened_builtins || argc > 2 || fx_bsub_tail(r)) return 0;
+  if (argc > 2 || fx_bsub_tail(r)) return 0;
   if (SP_UNLIKELY(!fx_ops.ready)) fx_ops_init();
+  if (SP_UNLIKELY(fx_fast_dirty)) fx_fast_recheck();
   if (argc == 0) {
     if ((s == fx_ops.size || s == fx_ops.length) && r.tag == SP_TAG_OBJ && sp_poly_is_array_kind(r.cls_id) &&
-        r.v.p) {
+        r.v.p && fx_fast_obj(r, FX_FAST_ARY)) {
       *out = sp_box_int(sp_poly_length(r));
       return 1;
     }
@@ -900,6 +959,7 @@ static int fx_fast_call(sp_RbVal r, sp_sym s, int argc, sp_RbVal *argv, sp_RbVal
   }
   sp_RbVal a = argv[0];
   if (argc == 1 && r.tag == SP_TAG_INT && a.tag == SP_TAG_INT) {
+    if (fx_fast_off & FX_FAST_INT) return 0;
     sp_int x = r.v.i, y = a.v.i;
     if (s == fx_ops.aref) { *out = sp_box_int(sp_int_bit(x, y)); return 1; }
     if (s == fx_ops.eq || s == fx_ops.eqq) { *out = sp_box_bool(x == y); return 1; }
@@ -921,6 +981,7 @@ static int fx_fast_call(sp_RbVal r, sp_sym s, int argc, sp_RbVal *argv, sp_RbVal
     return 0;
   }
   if (argc == 1 && r.tag == SP_TAG_FLT && a.tag == SP_TAG_FLT) {
+    if (fx_fast_off & FX_FAST_FLT) return 0;
     sp_float x = r.v.f, y = a.v.f;
     if (s == fx_ops.add) { *out = sp_box_float(x + y); return 1; }
     if (s == fx_ops.sub) { *out = sp_box_float(x - y); return 1; }
@@ -933,11 +994,13 @@ static int fx_fast_call(sp_RbVal r, sp_sym s, int argc, sp_RbVal *argv, sp_RbVal
     return 0;
   }
   if (argc == 1 && r.tag == SP_TAG_SYM && a.tag == SP_TAG_SYM && (s == fx_ops.eq || s == fx_ops.eqq)) {
+    if (fx_fast_off & FX_FAST_SYM) return 0;
     *out = sp_box_bool(r.v.i == a.v.i);
     return 1;
   }
   if (r.tag != SP_TAG_OBJ || !r.v.p) return 0;
   if (sp_poly_is_array_kind(r.cls_id)) {
+    if (!fx_fast_obj(r, FX_FAST_ARY)) return 0;
     if (a.tag == SP_TAG_INT && argc == 1 && s == fx_ops.aref) { *out = sp_poly_arr_get_hash(r, a.v.i); return 1; }
     if (a.tag == SP_TAG_INT && argc == 2 && s == fx_ops.aset) {
       sp_poly_arr_set(r, a.v.i, argv[1]);
@@ -952,7 +1015,7 @@ static int fx_fast_call(sp_RbVal r, sp_sym s, int argc, sp_RbVal *argv, sp_RbVal
     }
     return 0;
   }
-  if (argc == 1 && s == fx_ops.aref && r.cls_id == SP_BUILTIN_POLY_POLY_HASH) {
+  if (argc == 1 && s == fx_ops.aref && r.cls_id == SP_BUILTIN_POLY_POLY_HASH && fx_fast_obj(r, FX_FAST_HASH)) {
     *out = sp_PolyPolyHash_get((sp_PolyPolyHash *)r.v.p, a);
     return 1;
   }

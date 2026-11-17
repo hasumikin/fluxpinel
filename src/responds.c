@@ -81,11 +81,16 @@ static void fx_rs_singleton_names(sp_PolyArray *a, const char *cls) {
   for (int i = 0; row && row->sing[i]; i++) fx_names_push(a, sp_sym_intern(row->sing[i]));
 }
 
-/* Whether the builtin class of r has the public method mn of its own, not
+/* Whether the builtin class cls has the public method mn of its own, not
    from an ancestor. */
-static int fx_rs_own(sp_RbVal r, const char *mn) {
-  const FxRespondRow *row = fx_rs_row(sp_poly_class_name(r));
+static int fx_rs_own_of(const char *cls, const char *mn) {
+  const FxRespondRow *row = fx_rs_row(cls);
   return row && fx_rs_has(row->inst, row->feat_inst, mn);
+}
+
+/* The same, for the builtin class of r. */
+static int fx_rs_own(sp_RbVal r, const char *mn) {
+  return fx_rs_own_of(sp_poly_class_name(r), mn);
 }
 
 /* Whether the builtin class or module cls itself has the public method mn:

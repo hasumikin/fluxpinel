@@ -613,7 +613,9 @@ work that each call does again on each run:
   `fx_fast_call` answers the commonest calls first, by the Symbol: the
   operators of two Integers or two Floats, `Integer#[]`, `==` and `===`
   of two Symbols, `Array#[]`, `[]=`, `<<`, `size`, `length` and `Hash#[]`.
-  A program that reopens a builtin class turns it off.
+  A program that defines one of the names for a builtin class turns the
+  calls of that class off (`fx_fast_off`). The calls of the other classes
+  stay on.
 - **Lookup.** `fx_find_method` builds the list of the ancestors
   (`fx_ancestors`) and searches each method table. The record of a call
   node keeps the last answer for an object of the program (measure 3).

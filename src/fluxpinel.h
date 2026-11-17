@@ -613,6 +613,7 @@ static sp_RbVal fx_require(const pm_node_t *n, const char *arg, int rel);
 static int fx_rs_responds(sp_RbVal r, const char *mn);
 static int fx_rs_known(sp_RbVal r, const char *mn);
 static int fx_rs_own(sp_RbVal r, const char *mn);
+static int fx_rs_own_of(const char *cls, const char *mn);
 static int fx_rs_instance(const char *cls, const char *mn);
 static int fx_rs_defined(const FxClass *k, const char *mn, int inherit);
 static void fx_rs_own_names(sp_PolyArray *a, const char *cls);
