@@ -461,7 +461,7 @@ static int fx_process_class(const FxClass *k, const char *name, int argc, sp_RbV
   if (!strcmp(k->name, "Math")) return fx_math_fn(name, argc, argv, out);
   if (!strcmp(k->name, "Marshal")) return fx_marshal_fn(name, argc, argv, out);
   /* Signal.trap(sig, handler): the block form is in fx_class_core */
-  if (!strcmp(k->name, "Signal") && FX_IS("trap") && argc == 2) {
+  if (!strcmp(k->name, "Signal") && FX_IS("trap")) {
     *out = fx_trap(argc, argv, NULL);
     return 1;
   }

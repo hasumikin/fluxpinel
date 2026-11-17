@@ -1353,7 +1353,7 @@ static sp_RbVal fx_trap(int argc, sp_RbVal *argv, const FxBlock *blk) {
     l.site = NULL;
     h = fx_block_proc(&l);
   } else if (argc == 1) {
-    h = sp_box_str("DEFAULT");
+    sp_raise_cls("ArgumentError", "tried to create Proc object without a block");
   }
   if (fx_is_proc(h) && ((sp_Proc *)h.v.p)->fn != (void *)fx_trap_fn)
     h = sp_box_proc(sp_proc_new((void *)fx_trap_fn, h.v.p, sp_bm_cap_scan));

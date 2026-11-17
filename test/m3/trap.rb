@@ -34,3 +34,10 @@ begin
 rescue ArgumentError => e
   puts e.message
 end
+
+# a signal with no handler and no block
+[-> { trap("USR1") }, -> { Signal.trap("USR1") }].each do |call|
+  call.()
+rescue ArgumentError => e
+  puts e.message
+end

@@ -48,6 +48,13 @@ rescue ArgumentError => e
   puts e.message
 end
 
+# a signal with no handler and no block
+begin
+  Kernel.trap("USR1")
+rescue ArgumentError => e
+  puts e.message
+end
+
 # exit! ends the program at once, with no at_exit hook and no flush of
 # what $stdout holds
 at_exit { puts "hook" }
