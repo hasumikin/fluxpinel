@@ -332,7 +332,7 @@ static int fx_exc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
     if (fx_is_string(a)) {
       bt = sp_StrArray_new();
       SP_GC_ROOT(bt);
-      sp_StrArray_push(bt, sp_poly_recv_s(a, name));
+      fx_strs_push(bt, sp_poly_recv_s(a, name));
     } else if (a.tag != SP_TAG_NIL) {
       bt = sp_poly_as_str_array(a);
     }

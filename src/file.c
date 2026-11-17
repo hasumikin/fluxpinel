@@ -128,7 +128,7 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
     for (const char *s;;) {
       FX_UNLOCKED_ROOT(s = sp_File_gets_sep(f, sep, limit, chomp), SP_GC_ROOT_STR(s));
       if (!s) break;
-      sp_StrArray_push(a, s);
+      fx_strs_push(a, s);
     }
     sp_File_close(f);
     *out = sp_box_nullable_obj((void *)a, SP_BUILTIN_STR_ARRAY);
@@ -498,7 +498,7 @@ static int fx_dir_glob(const char *name, int argc, sp_RbVal *argv, const FxBlock
     sp_RbVal p = pats.tag == SP_TAG_NIL ? argv[i] : sp_poly_arr_get(pats, i);
     sp_StrArray *one = sp_dir_glob_keywords(p, base, flags, fg, sort, sg);
     SP_GC_ROOT(one);
-    for (sp_int j = 0; one && j < one->len; j++) sp_StrArray_push(a, sp_StrArray_get(one, j));
+    for (sp_int j = 0; one && j < one->len; j++) fx_strs_push(a, sp_StrArray_get(one, j));
   }
   if (!blk) { *out = sp_box_nullable_obj((void *)a, SP_BUILTIN_STR_ARRAY); return 1; }
   for (sp_int i = 0; i < a->len; i++) {

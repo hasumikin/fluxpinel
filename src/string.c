@@ -174,21 +174,21 @@ static sp_StrArray *fx_str_split_ws(const char *s, sp_int limit) {
   sp_int len = (sp_int)sp_str_byte_len(s), i = 0;
   /* a limit of 1 is the String as it is */
   if (limit == 1) {
-    if (len) sp_StrArray_push(a, s);
+    if (len) fx_strs_push(a, s);
     return a;
   }
   while (i < len && isspace((unsigned char)s[i])) i++;
   while (i < len) {
     if (limit > 0 && a->len == limit - 1) {
-      sp_StrArray_push(a, sp_str_from_bytes(s + i, (size_t)(len - i)));
+      fx_strs_push(a, sp_str_from_bytes(s + i, (size_t)(len - i)));
       return a;
     }
     sp_int j = i;
     while (j < len && !isspace((unsigned char)s[j])) j++;
-    sp_StrArray_push(a, sp_str_from_bytes(s + i, (size_t)(j - i)));
+    fx_strs_push(a, sp_str_from_bytes(s + i, (size_t)(j - i)));
     i = j;
     while (i < len && isspace((unsigned char)s[i])) i++;
-    if (i == len && j < len && limit < 0) sp_StrArray_push(a, sp_str_from_bytes("", 0));
+    if (i == len && j < len && limit < 0) fx_strs_push(a, sp_str_from_bytes("", 0));
   }
   return a;
 }
@@ -254,7 +254,7 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     sp_StrArray *lines;
     if (n == 1 && argv[0].tag == SP_TAG_NIL) {
       lines = sp_StrArray_new();
-      sp_StrArray_push(lines, s);
+      fx_strs_push(lines, s);
     } else if (n == 1) {
       const char *sep = sp_poly_arg_str_chk(argv[0]);
       SP_GC_ROOT_STR(sep);

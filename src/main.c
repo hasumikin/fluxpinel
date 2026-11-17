@@ -84,8 +84,8 @@ static void fx_load_path_add(const char *list, int at) {
     size_t n = end ? (size_t)(end - p) : strlen(p);
     if (n) {
       const char *dir = sp_str_dup(sp_sprintf("%.*s", (int)n, p));
-      if (at < 0) sp_StrArray_push(lp, dir);
-      else sp_StrArray_insert(lp, at++, dir);
+      if (at < 0) fx_strs_push(lp, dir);
+      else fx_strs_insert(lp, at++, dir);
     }
     p += n + (end ? 1 : 0);
   }
@@ -256,7 +256,7 @@ static const char *fx_opt_dir(const char *dir) {
 static void fx_run_main(void) {
   SP_GC_SAVE();
   sp_StrArray *lp = sp_get_load_path();
-  for (int i = 0; i < fx_opt.ndirs; i++) sp_StrArray_insert(lp, i, sp_str_dup(fx_opt_dir(fx_opt.dirs[i])));
+  for (int i = 0; i < fx_opt.ndirs; i++) fx_strs_insert(lp, i, sp_str_dup(fx_opt_dir(fx_opt.dirs[i])));
   fx_load_path_add(getenv("RUBYLIB"), fx_opt.ndirs);
   if (fx_opt.verbose >= 0)
     fx_gvar_set("$VERBOSE", fx_opt.verbose == 0 ? sp_box_nil() : sp_box_bool(fx_opt.verbose == 2));

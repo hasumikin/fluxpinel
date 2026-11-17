@@ -735,7 +735,7 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     for (const char *s;;) {
       FX_UNLOCKED_ROOT(s = sp_File_gets_sep(io, sep, lim, chomp), SP_GC_ROOT_STR(s));
       if (!s) break;
-      sp_StrArray_push(lines, s);
+      fx_strs_push(lines, s);
     }
     *out = sp_box_nullable_obj((void *)lines, SP_BUILTIN_STR_ARRAY);
     return 1;
@@ -825,7 +825,7 @@ static int fx_argf_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
     }
     sp_StrArray *a = sp_StrArray_new();
     SP_GC_ROOT(a);
-    for (const char *s; (s = fx_argf_gets(sep, limit, chomp)) != NULL;) sp_StrArray_push(a, s);
+    for (const char *s; (s = fx_argf_gets(sep, limit, chomp)) != NULL;) fx_strs_push(a, s);
     if (FX_IS("readlines") || FX_IS("to_a")) {
       *out = sp_box_nullable_obj((void *)a, SP_BUILTIN_STR_ARRAY);
       return 1;

@@ -347,6 +347,15 @@ typedef struct {
 
 static Fluxpinel L;
 
+/* The bytes of a String into an Array of Strings. The Array of the runtime
+   takes the handle of a String, so the bytes get their handle first. */
+static inline void fx_strs_push(sp_StrArray *a, const char *s) {
+  sp_StrArray_push_e(a, sp_String_new_shared(s));
+}
+static inline void fx_strs_insert(sp_StrArray *a, sp_int i, const char *s) {
+  sp_StrArray_insert_e(a, i, sp_String_new_shared(s));
+}
+
 /* fx_tu.c: FX_UNLOCKED keeps the call state of this thread over a wait */
 static void fx_park_save(FxPark *p) {
   p->kwhash = L.kwhash;

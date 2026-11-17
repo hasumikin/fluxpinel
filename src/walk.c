@@ -252,7 +252,7 @@ static sp_StrArray *fx_bt_build(const FxFrameStack *s, int top, int skip) {
     const pm_node_t *n = t->at ? t->at : t->body;
     const char *label = fx_bt_label(t);
     SP_GC_ROOT_STR(label);
-    sp_StrArray_push(a, n ? sp_sprintf("%s:%d:in '%s'", fx_source_of(n)->path, fx_line(n), label)
+    fx_strs_push(a, n ? sp_sprintf("%s:%d:in '%s'", fx_source_of(n)->path, fx_line(n), label)
                           : sp_sprintf("%s:in '%s'", L.path, label));
   }
   return a;
@@ -647,7 +647,12 @@ static sp_RbVal fx_invoke_b(const FxMethod *m, sp_RbVal self, int argc, sp_RbVal
   }
   if (m->kind == FX_M_FFI) return fx_ffi_invoke(m->ffi, self, argc, argv);
   if (m->kind == FX_M_ENTRY) return fx_entry_invoke(m->entry, argc, argv);
-  if (m->kind == FX_M_EXTM) return fx_extm_invoke(m, self, argc, argv);
+  if (m->kind == FX_M_EXTM) {
+    /* the table holds the methods that take a block, and fx_extm_invoke
+       calls them with no block */
+    if (blk) fx_gap("block of a script for a method of the kernel");
+    return fx_extm_invoke(m, self, argc, argv);
+  }
   if (m->kind == FX_M_BUILTIN) {
     /* as super does: an object of the program takes the defaults of
        Object, which do not call the hooks. An alias calls the builtin
