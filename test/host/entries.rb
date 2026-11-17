@@ -31,3 +31,23 @@ begin
 rescue StandardError
   p :rejected
 end
+# a String parameter takes a String of each form: a literal, a String that
+# the script made, and the String that Symbol#to_s and Symbol#name answer
+p FxKernel.len("duration"), FxKernel.len("dur" + "ation"), FxKernel.len(1.to_s)
+p FxKernel.len(:duration.to_s), FxKernel.len(:duration.name)
+p FxKernel.shape(:box.to_s, 4).instance_variable_get(:@name)
+# a value of another kind for a String or an object parameter is rejected
+# at the boundary (CRuby raises NoMethodError in the body): an Integer, an
+# object of another class of the kernel, an object of the script, and nil
+# for an object
+def rejected
+  yield
+  :taken
+rescue StandardError
+  :rejected
+end
+p rejected { FxKernel.len(5) }, rejected { FxKernel.len([1]) }
+p rejected { FxKernel.grow(5) }, rejected { FxKernel.grow(c) }
+p rejected { FxKernel.grow(Object.new) }, rejected { FxKernel.grow(nil) }
+# an object of the class of the parameter passes
+p FxKernel.grow(FxKernel.shape("box", 4))

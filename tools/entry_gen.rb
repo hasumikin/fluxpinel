@@ -11,6 +11,10 @@
 # entry and boxes the result. The table fx_kernel_entries[] names them.
 # The output goes into the TU of the host build after the kernel
 # (docs/design.md, section 3.6).
+#
+# A wrapper checks an argument before the entry reads it: a value of a
+# wrong kind raises TypeError. The class id of an object parameter comes
+# from KERNEL.c beside the header, where each constructor sets it.
 
 require_relative "c_box"
 
@@ -36,8 +40,23 @@ File.foreach(header) do |line|
   protos[name] = [ret, types]
 end
 
+# The class id of each struct of the kernel: a constructor makes `self` of
+# the struct and sets its cls_id.
+#
+#   sp_Shape *self = SP_POOL_NEW(Shape, sp_Shape__gc_scan);
+#   ...
+#   self->cls_id = 4;
+CLS_ID = {}
+kernel_c = header.sub(/\.h\z/, ".c")
+if File.exist?(kernel_c)
+  File.read(kernel_c).scan(/^\s*(sp_\w+) \*self = [^\n]*\n(?:[^\n]*\n){0,3}?\s*self->cls_id = (\d+);/) do |type, id|
+    CLS_ID["#{type} *"] ||= id.to_i
+  end
+end
+
 ARG = { "sp_RbVal" => "%s", "sp_int" => "sp_poly_arg_int_chk(%s)", "sp_float" => "sp_poly_to_f(%s)",
         "sp_bool" => "sp_poly_truthy(%s)", "const char *" => "sp_poly_arg_str_chk(%s)",
+        "sp_String *" => "fx_entry_string(%s)",
         "sp_sym" => "fx_entry_sym(%s)", "sp_oint" => "fx_entry_oint_arg(%s)",
         "sp_IntArray *" => "sp_poly_as_int_array(fx_entry_array(%s))",
         "sp_FloatArray *" => "sp_poly_as_float_array(fx_entry_array(%s))",
@@ -58,6 +77,16 @@ out = +<<~C
   static sp_sym fx_entry_sym(sp_RbVal v) {
     if (v.tag != SP_TAG_SYM) sp_raise_cls("TypeError", sp_sprintf("%s is not a symbol", sp_poly_inspect(v)));
     return (sp_sym)v.v.i;
+  }
+
+  /* a String argument. A String has two forms (fx_is_string, src/builtin.c):
+     the handle passes as it is, and the literal form, which Symbol#to_s
+     answers, gets a handle of its own. nil is no String (NULL), and any
+     other value raises TypeError. */
+  static sp_String *fx_entry_string(sp_RbVal v) {
+    if (v.tag == SP_TAG_NIL) return NULL;
+    if (sp_poly_is_strbuf(v)) return (sp_String *)v.v.p;
+    return sp_String_new_shared(sp_poly_arg_str_chk(v));
   }
 
   /* an Array argument. The runtime converts it to the kind of the
@@ -104,6 +133,27 @@ out = +<<~C
   static sp_RbVal fx_entry_obj(void *p) { return p ? sp_box_obj(p, *(sp_int *)p) : sp_box_nil(); }
 
 C
+# The check of an object argument, for a kernel that has an entry with one:
+# sp_poly_unbox_cls is a function of the classes of the kernel.
+OBJECT_ARG = <<~C
+  #include "fx_tu.h"
+
+  /* an object argument: an object of the class of the parameter (cls_id),
+     or of a class under it. Any other value raises TypeError. So does nil:
+     the header does not say whether the parameter takes nil, and an entry
+     that does not would read a NULL object. The kernel knows the ancestry
+     of its own classes only (the ids below FX_CLS_BASE), so an object of
+     the script or of a builtin class does not reach it. */
+  static void *fx_entry_object(sp_RbVal v, int cls_id, const char *want) {
+    int of_kernel = v.tag == SP_TAG_OBJ && v.cls_id >= 0 && v.cls_id < FX_CLS_BASE;
+    void *p = of_kernel ? sp_poly_unbox_cls(v, cls_id, want) : NULL;
+    if (!p) sp_raise_cls("TypeError", sp_sprintf("no implicit conversion of %s into %s", sp_poly_class_name(v), want));
+    return p;
+  }
+
+C
+uses_object = false
+wrappers = +""
 rows = []
 entries.split(",").each_with_index do |e, i|
   mod, _, meth = e.rpartition(".")
@@ -119,6 +169,10 @@ entries.split(",").each_with_index do |e, i|
     conv =
       if ARG.key?(t) then format(ARG[t], a)
       elsif hash_id(t) then "(#{t})fx_entry_hash(#{a}, #{hash_id(t)})"
+      elsif CLS_ID.key?(t)
+        uses_object = true
+        %[(#{t})fx_entry_object(#{a}, #{CLS_ID[t]}, "#{t[/\Asp_(\w+)/, 1]}")]
+      # a pointer of another kind, as it is
       elsif t.end_with?("*") then "(#{t})#{a}.v.p"
       else abort "entry_gen: #{e}: no conversion to #{t}"
       end
@@ -137,9 +191,11 @@ entries.split(",").each_with_index do |e, i|
     else abort "entry_gen: #{e}: no box for #{ret}"
     end
   lines = ["(void)argv;", *decls, *body.split("\n")]
-  out << "static sp_RbVal fx_entry_#{i}(sp_RbVal *argv) {\n#{lines.map { |l| "  #{l}" }.join("\n")}\n}\n\n"
+  wrappers << "static sp_RbVal fx_entry_#{i}(sp_RbVal *argv) {\n#{lines.map { |l| "  #{l}" }.join("\n")}\n}\n\n"
   rows << %(  { "#{mod}", "#{meth}", #{types.size}, fx_entry_#{i} },)
 end
+out << OBJECT_ARG if uses_object
+out << wrappers
 out << <<~C
   static const struct {
     const char *module, *name;

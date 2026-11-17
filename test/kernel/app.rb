@@ -83,6 +83,11 @@ module FxKernel
   #: (Shape) -> Integer
   def self.grow(s) = s.grow
 
+  # A String parameter: the wrapper of the entry takes both forms of a
+  # String, and no other value
+  #: (String) -> Integer
+  def self.len(s) = s.bytesize
+
   # A Hash whose values are of any kind: a script passes a Hash of its own,
   # and the entry gets a copy of the kind of the parameter
   #: (Hash[Symbol, untyped]) -> String

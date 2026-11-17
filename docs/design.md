@@ -914,7 +914,13 @@ src/main.c             Fluxpinel, with FX_KERNEL=fx_kernel_init
   and boxes the result. An Array of the kind of the parameter (an Array of
   Integer that an entry answered) passes as it is. Any other Array passes
   as a copy of that kind. A Hash must be of the kind of the parameter, or
-  the wrapper raises `TypeError`. Each class of the kernel is a `FxClass` with the
+  the wrapper raises `TypeError`. A String of either form passes: the
+  handle as it is, and the literal form (the String of `Symbol#to_s`) as a
+  handle of its own. An object must be of the class of the parameter or of
+  a class under it; the wrapper reads the class id from the kernel, where
+  each constructor sets it. Any other value for a String or an object
+  parameter raises `TypeError`, and so does nil for an object parameter.
+  Each class of the kernel is a `FxClass` with the
   id of the kernel, so a constant names it and an AOT object has it as its
   class. An entry is a singleton method of its module (`FX_M_ENTRY`).
   `new` of a class of the kernel is a gap, as the constructor is no entry.
