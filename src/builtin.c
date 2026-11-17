@@ -1134,6 +1134,10 @@ static int fx_builtin_call_1(sp_RbVal recv, const char *name, int argc, sp_RbVal
        goes on as for a call with no block (a top-level def, else
        NoMethodError) */
     if (!fx_rs_known(recv, name)) return 0;
+    /* fork { }: a private method of Kernel, so the self of any method of
+       the program (an instance, a class, a module, a Struct), and the
+       module function Kernel.fork */
+    if (argc == 0 && !strcmp(name, "fork")) { *out = fx_fork(blk); return 1; }
     fx_gap(sp_sprintf("block for the builtin %s#%s", sp_poly_class_name(recv), name));
   }
   /* the core methods and the helpers call one sp_poly_* function of the
