@@ -91,6 +91,9 @@ of each class and the reasons of the gaps. See design.md, section 4.
 The oracle also writes `tools/oracle_agree.txt` again. Commit this file
 together with the change that moves its contents.
 
+`make oracle` runs `make regress` last, on the new list. The census then
+reads the tests that the list gained.
+
 `tools/oracle_known.tsv` lists the known defects of spinel that the oracle
 finds. The file itself tells when a line can go.
 

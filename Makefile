@@ -257,11 +257,14 @@ include roundhouse/roundhouse.mk
 # ORACLE_TIMEOUT is the seconds a test may run: the timeout is for a test
 # that never ends, and the GC tests of spinel that measure a collector
 # (gc_locality_build, gc_str_major_interval) take 5 to 7 seconds alone.
+# make regress runs last, on the list that the oracle wrote: the census
+# reads the tests that the list gained.
 ORACLE_TIMEOUT = 30
 oracle:
 	$(MAKE) BUILD=$(BUILD)/promote INT_OVERFLOW=PROMOTE $(BUILD)/promote/fluxpinel
 	ruby tools/oracle.rb --spinel $(SPINEL) --fluxpinel $(BUILD)/promote/fluxpinel --timeout $(ORACLE_TIMEOUT) \
 	  --int-overflow promote --out $(BUILD)/oracle --write-agree tools/oracle_agree.txt
+	$(MAKE) regress
 
 # The tests that the last oracle found right, under Fluxpinel only. It
 # finds in seconds a change of spinel that breaks Fluxpinel.
