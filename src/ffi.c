@@ -178,14 +178,23 @@ static void *fx_ptr_arg(sp_RbVal v) {
   fx_gap(sp_sprintf("a %s as an FFI pointer", sp_poly_class_name(v)));
 }
 
-/* ffi_lib "name": libname.so, or a versioned one when only that exists. */
+/* ffi_lib "name": the shared library of the platform, libname.so or
+   libname.dylib on macOS, or a versioned one when only that exists
+   (libname.so.9, libname.9.dylib). A name with a slash or a suffix is a
+   path, and opens as it is. */
 static void fx_ffi_open(const char *lib) {
-  if (strchr(lib, '/') || strstr(lib, ".so")) {
+  if (strchr(lib, '/') || strstr(lib, ".so") || strstr(lib, ".dylib")) {
     if (dlopen(lib, RTLD_NOW | RTLD_GLOBAL)) return;
   } else {
+#ifdef __APPLE__
+    if (dlopen(sp_sprintf("lib%s.dylib", lib), RTLD_NOW | RTLD_GLOBAL)) return;
+    for (int v = 0; v <= 9; v++)
+      if (dlopen(sp_sprintf("lib%s.%d.dylib", lib, v), RTLD_NOW | RTLD_GLOBAL)) return;
+#else
     if (dlopen(sp_sprintf("lib%s.so", lib), RTLD_NOW | RTLD_GLOBAL)) return;
     for (int v = 0; v <= 9; v++)
       if (dlopen(sp_sprintf("lib%s.so.%d", lib, v), RTLD_NOW | RTLD_GLOBAL)) return;
+#endif
   }
   sp_raise_cls("LoadError", sp_sprintf("could not open library '%s': %s", lib, dlerror()));
 }
