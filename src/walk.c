@@ -362,7 +362,15 @@ static void fx_define(FxFrame *f, const pm_def_node_t *def) {
     fx_define_method(k, sm, single);
     return;
   }
-  if (f->singleton_defs == 3) fx_unsupported((const pm_node_t *)def, "def in instance_eval of an object");
+  /* in instance_eval of an object: a method of its singleton class */
+  if (f->singleton_defs == 3) {
+    FxClass *sk = fx_singleton_of(f->self, 1);
+    if (!sk) sp_raise_cls("TypeError", "can't define singleton");
+    FxMethod *sm = fx_method_new(FX_M_DEF, name, def, 0, sk);
+    sm->lexical = f->cref;
+    fx_define_method(sk, sm, 0);
+    return;
+  }
   FxClass *k = f->definee ? f->definee : f->cref;
   FxMethod *m = fx_method_new(FX_M_DEF, name, def, 0, k);
   m->lexical = f->cref;
@@ -782,12 +790,66 @@ static sp_RbVal fx_yield_under(const FxBlock *b, sp_RbVal self, FxClass *k, int 
   return fx_yield_in(b, argc, argv, 0, &self, k, 0, NULL, NULL);
 }
 
+/* instance_eval, class_eval and module_eval of a String: the code runs
+   with r as self, under the frame of the call when it is known, where it
+   reads and writes the locals of the caller as a block would (NULL for a
+   call by send, which has no frame: then it sees none). A def in it goes
+   where the block form puts one: an instance method of the class for
+   class_eval, a singleton method of r for instance_eval, a class method
+   when r is a class. Constants are those of the class of r. Answers 0
+   for another call. */
+static int fx_eval_string_on(FxFrame *under, sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
+                             sp_RbVal *out) {
+  int inst = !strcmp(name, "instance_eval");
+  int mod = !strcmp(name, "class_eval") || !strcmp(name, "module_eval");
+  FxClass *k = fx_class_value(r);
+  if (!(inst || (mod && k)) || argc < 1 || argc > 3) return 0;
+  const char *src = sp_poly_arg_str_chk(argv[0]);
+  SP_GC_ROOT_STR(src);
+  const char *path = argc >= 2 && argv[1].tag != SP_TAG_NIL ? sp_poly_arg_str_chk(argv[1]) : "(eval)";
+  SP_GC_ROOT_STR(path);
+  int line = argc == 3 && argv[2].tag != SP_TAG_NIL ? (int)sp_poly_arg_int_chk(argv[2]) : 1;
+  FxFrame ctx;
+  memset(&ctx, 0, sizeof ctx);
+  ctx.self = r;
+  ctx.vis = FX_VIS_PUBLIC;
+  ctx.vis_scope = 1;   /* a def is public, whatever the caller's default */
+  if (mod) {
+    ctx.cref = k->attached ? k->attached : k;
+    ctx.definee = ctx.cref;
+  } else {
+    ctx.cref = k ? k : fx_class_of(r);
+    ctx.definee = ctx.cref;
+    ctx.singleton_defs = k ? 4 : 3;
+    if (k && k->attached) {
+      ctx.definee = k->attached;
+      ctx.singleton_defs = 1;
+    }
+  }
+  *out = fx_eval_in(under, &ctx, src, path, line, NULL);
+  return 1;
+}
+
+/* The same at a call node, with the frame of the call for the locals of
+   the caller, unless the program defines a method of the name on the
+   receiver. */
+static int fx_eval_string_call(FxFrame *f, sp_RbVal recv, const char *name, int argc, sp_RbVal *argv,
+                               sp_RbVal *out) {
+  if (argc < 1 || (name[0] != 'i' && name[0] != 'c' && name[0] != 'm')) return 0;
+  if (strcmp(name, "instance_eval") && strcmp(name, "class_eval") && strcmp(name, "module_eval")) return 0;
+  /* the program's own method of the name, on the class (from an extend)
+     or on the object, takes the call */
+  FxClass *k = fx_class_value(recv);
+  sp_sym sym = sp_sym_intern(name);
+  if (k ? fx_find_smethod(k, sym) != NULL : fx_find_method(fx_lookup_class(recv), sym) != NULL) return 0;
+  return fx_eval_string_on(f, recv, name, argc, argv, out);
+}
+
 /* instance_eval and instance_exec with a block: self is r. A def in the
-   block defines a singleton method of r: a class method for a class, and
-   a gap for any other object. class_eval, module_eval and their _exec
-   kin: self is the class, and a def defines an instance method. The
-   _exec forms pass their arguments, the others pass r. Answers 0 for
-   any other call. */
+   block defines a singleton method of r: a class method for a class.
+   class_eval, module_eval and their _exec kin: self is the class, and a
+   def defines an instance method. The _exec forms pass their arguments,
+   the others pass r. Answers 0 for any other call. */
 static int fx_eval_block(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                            sp_RbVal *out) {
   int inst = !strcmp(name, "instance_eval") || !strcmp(name, "instance_exec");
@@ -796,23 +858,9 @@ static int fx_eval_block(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
   FxClass *k = fx_class_value(r);
   if (!(inst || (mod && k))) return 0;
   int exec = strstr(name, "_exec") != NULL;
-  /* class_eval(src, file, line): the source runs with the class as self
-     and as the class of a def, and sees no local of the caller */
-  if (!exec && mod && argc >= 1 && argc <= 3 && !blk) {
-    const char *src = sp_poly_arg_str_chk(argv[0]);
-    SP_GC_ROOT_STR(src);
-    const char *path = argc >= 2 && argv[1].tag != SP_TAG_NIL ? sp_poly_arg_str_chk(argv[1]) : "(eval)";
-    SP_GC_ROOT_STR(path);
-    int line = argc == 3 && argv[2].tag != SP_TAG_NIL ? (int)sp_poly_arg_int_chk(argv[2]) : 1;
-    FxFrame ctx;
-    memset(&ctx, 0, sizeof ctx);
-    ctx.self = r;
-    ctx.cref = k->attached ? k->attached : k;
-    ctx.definee = ctx.cref;
-    ctx.vis = FX_VIS_PUBLIC;
-    *out = fx_eval_in(NULL, &ctx, src, path, line, NULL);
-    return 1;
-  }
+  /* a String from a call that did not come through its node (send): with
+     no locals of a caller */
+  if (!exec && !blk && argc > 0 && fx_eval_string_on(NULL, r, name, argc, argv, out)) return 1;
   if (!exec && argc > 0) fx_gap(sp_sprintf("%s of a String", name));
   if (!blk && exec) sp_raise_cls("LocalJumpError", "no block given");
   if (!blk) sp_raise_cls("ArgumentError", "wrong number of arguments (given 0, expected 1..3)");
@@ -1222,6 +1270,7 @@ static sp_RbVal fx_call(FxFrame *f, const pm_call_node_t *c) {
   if (L.nusing && cc->no_using != L.nusing &&
       fx_refined_call(cc, (const pm_node_t *)c, c->receiver ? recv : f->self, sym, argc, argv, blk, &v)) {
   } else if (c->receiver && !blk && !kw && fx_fast_call(recv, sym, argc, argv, &v)) {
+  } else if (!blk && !kw && fx_eval_string_call(f, c->receiver ? recv : f->self, name, argc, argv, &v)) {
   } else if ((!c->receiver || fx_is_kernel(recv)) && !blk &&
              fx_load_call((const pm_node_t *)c, f->self, c->receiver != NULL, name, argc, argv, &v)) {
   } else if (fx_binding_call(f, (const pm_node_t *)c, c->receiver != NULL, recv, name, argc, blk, &v)) {
