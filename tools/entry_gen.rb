@@ -196,6 +196,10 @@ entries.split(",").each_with_index do |e, i|
 end
 out << OBJECT_ARG if uses_object
 out << wrappers
+# A kernel with no entry: C has no empty array, so the table keeps one row
+# that no code reads.
+count = rows.size
+rows << "  { NULL, NULL, 0, NULL }," if rows.empty?
 out << <<~C
   static const struct {
     const char *module, *name;
@@ -204,6 +208,6 @@ out << <<~C
   } fx_kernel_entries[] = {
   #{rows.join("\n")}
   };
-  #define FX_NENTRIES ((int)(sizeof fx_kernel_entries / sizeof fx_kernel_entries[0]))
+  #define FX_NENTRIES #{count}
 C
 print out

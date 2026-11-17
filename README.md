@@ -293,9 +293,11 @@ make oracle
   flags that `spin flags` prints for a spin project. `HOST_LIBS` adds
   libraries to the link, such as `-lsqlite3`. `KERNEL_EXT_CLASS` names
   the classes whose methods a script calls by name. It is `all` by
-  default.
+  default. `KERNEL_ENTRIES` is optional: with no entry, a script calls
+  the public methods of the kernel by name.
 - `make test-host` runs the tests on that build, with `test/kernel/app.rb`
-  as the kernel.
+  as the kernel. It also builds a kernel with no entry
+  (`test/kernel/bare.rb`) and calls its methods by name.
 - `make oracle` runs the oracle on the tests of spinel and writes
   `build/oracle/report.md`.
 

@@ -192,11 +192,15 @@ park-audit: $(BUILD)/bop_gen_out.c
 # spinel emits as a library, and Fluxpinel in one TU. The runtime keeps its
 # exception stack and other state static in each TU, so the walker and the
 # kernel must share the TU to share that state. KERNEL names the program
-# and KERNEL_ENTRIES the methods that it exports.
+# and KERNEL_ENTRIES the methods that it exports as entries. The list here
+# is for the kernel of the tests. Another kernel has no entry unless
+# KERNEL_ENTRIES names some.
 KERNEL ?= test/kernel/app.rb
+ifeq ($(KERNEL),test/kernel/app.rb)
 KERNEL_ENTRIES ?= FxKernel.ping,FxKernel.add,FxKernel.make,FxKernel.bump,FxKernel.boom,FxKernel.pair,$\
                   FxKernel.greet_all,FxKernel.script,FxKernel.rescue_script,FxKernel.console,$\
                   FxKernel.shape,FxKernel.grow,FxKernel.len,FxKernel.describe,FxKernel.sessions
+endif
 HOST = $(BUILD)/host
 # The binary is $(HOST)/$(HOST_NAME). With KERNEL_MAIN (an entry such as
 # App.main), it takes no script and calls that entry with ARGV.
@@ -237,7 +241,8 @@ $(HOST)/link.args: FORCE
 $(HOST)/kernel.c: $(KERNEL) kernel/fluxpinel.rb src/kernel_prelude.h SPINEL_COMMIT $(HOST)/kernel.args
 	mkdir -p $(HOST)
 	$(SPINEL)/spinel $(KERNEL) -c -o $@ --force --int-overflow $(KERNEL_OVERFLOW) $(KERNEL_FLAGS) \
-	  --ext-init fx_kernel_init --ext-entry $(KERNEL_ENTRIES) --ext-class $(KERNEL_EXT_CLASS)
+	  --ext-init fx_kernel_init $(if $(KERNEL_ENTRIES),--ext-entry $(KERNEL_ENTRIES)) \
+	  --ext-class $(KERNEL_EXT_CLASS)
 	# the defines of the kernel before spinel_rt.h, for kernel_prelude.h
 	sed '/^#include "spinel_rt.h"/q' $@ | grep '^#define' > $(HOST)/kernel_defines.h || { rm -f $@; exit 1; }
 	{ grep -o '^#line [0-9]* "[^"<]*"' $@ || true; } | cut -d'"' -f2 | sort -u | \
@@ -246,7 +251,7 @@ $(HOST)/kernel.c: $(KERNEL) kernel/fluxpinel.rb src/kernel_prelude.h SPINEL_COMM
 
 # the wrapper of each entry (host.c)
 $(HOST)/entries.c: $(HOST)/kernel.c tools/entry_gen.rb tools/c_box.rb
-	ruby tools/entry_gen.rb $(KERNEL_ENTRIES) $(HOST)/kernel.h > $@
+	ruby tools/entry_gen.rb '$(KERNEL_ENTRIES)' $(HOST)/kernel.h > $@
 
 # the box of each kind of ivar of the kernel (src/object.c)
 $(HOST)/ivars.c: $(HOST)/kernel.c tools/ivar_gen.rb tools/c_box.rb
@@ -267,6 +272,10 @@ HOST_REQUIRES = --require kernel/fluxpinel_cruby.rb --require $(KERNEL)
 test-host: $(HOST)/fluxpinel
 	ruby test/run.rb $(HOST_REQUIRES) $(HOST)/fluxpinel $(TEST_DIRS) test/host
 	SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1 ruby test/run.rb $(HOST_REQUIRES) $(HOST)/fluxpinel $(TEST_DIRS) test/host
+	# a kernel with no entry
+	$(MAKE) host HOST=$(BUILD)/host_bare KERNEL=test/kernel/bare.rb
+	ruby test/run.rb --require kernel/fluxpinel_cruby.rb --require test/kernel/bare.rb \
+	  $(BUILD)/host_bare/fluxpinel test/host_bare
 
 include roundhouse/roundhouse.mk
 

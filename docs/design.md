@@ -912,7 +912,9 @@ an AOT object (section 5.1).
 ### 3.6.2 The entries
 
 `--ext-entry Mod.m,...` exports each method as a C function with typed
-parameters, for example `sp_App_s_add`.
+parameters, for example `sp_App_s_add`. A kernel can have no entry:
+`make host` with no `KERNEL_ENTRIES` passes no `--ext-entry`. A script
+then calls the methods of the table only (section 3.6.3).
 
 - **The parameters.** A parameter with no caller in the program is an
   `sp_RbVal`. A caller in the program narrows the parameter to its type
