@@ -170,6 +170,25 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
     *out = sp_box_int(sp_file_umask(argc ? sp_poly_arg_int_chk(argv[0]) : 0, argc));
     return 1;
   }
+  /* File.identical?(a, b): the same file by the inode, through the links;
+     File.fnmatch(pat, path, flags): the runtime matches by CRuby's rules
+     (sp_file_fnmatch); the flags are the FNM_ constants of the runtime */
+  if (FX_IS("identical?") && argc == 2) {
+    const char *a = sp_poly_arg_path(argv[0]);
+    SP_GC_ROOT_STR(a);
+    const char *b = sp_poly_arg_path(argv[1]);
+    SP_GC_ROOT_STR(b);
+    *out = sp_box_bool(sp_file_identical(a, b));
+    return 1;
+  }
+  if ((FX_IS("fnmatch") || FX_IS("fnmatch?")) && (argc == 2 || argc == 3)) {
+    const char *pat = sp_poly_arg_str_chk(argv[0]);
+    SP_GC_ROOT_STR(pat);
+    const char *path = sp_poly_arg_path(argv[1]);
+    SP_GC_ROOT_STR(path);
+    *out = sp_box_bool(sp_file_fnmatch(pat, path, argc == 3 ? sp_poly_arg_int_chk(argv[2]) : 0));
+    return 1;
+  }
   if ((FX_IS("symlink") || FX_IS("link")) && argc == 2) {
     const char *from = sp_poly_arg_path(argv[0]);
     SP_GC_ROOT_STR(from);
