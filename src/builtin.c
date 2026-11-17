@@ -1318,6 +1318,14 @@ static sp_RbVal fx_dig_rest(sp_RbVal v, int argc, sp_RbVal *argv) {
 static int fx_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (fx_random_kernel(name, argc, argv, out)) return 1;
   if (fx_process_kernel(name, argc, argv, out)) return 1;
+  /* Kernel.exit, exit!, abort, raise and throw, and Kernel.trap with a
+     handler: the module functions of the names (the block form of trap is
+     in fx_class_core) */
+  if (fx_exc_kernel(name, argc, argv, out)) return 1;
+  if (!strcmp(name, "trap")) {
+    *out = fx_trap(argc, argv, NULL);
+    return 1;
+  }
   if (argc == 0 && !strcmp(name, "global_variables")) {
     *out = fx_global_names();
     return 1;

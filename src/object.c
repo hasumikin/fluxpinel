@@ -2263,8 +2263,9 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   if (fx_struct_class(f, k, name, argc, argv, blk, out)) return 1;
   /* Module#refine with its block */
   if (fx_refine(f, k, name, argc, argv, blk, out)) return 1;
-  /* Signal.trap(sig) { } */
-  if (blk && k->cls_id < 0 && k->is_module && !strcmp(k->name, "Signal") && !strcmp(name, "trap")) {
+  /* Signal.trap(sig) { } and Kernel.trap(sig) { } */
+  if (blk && k->cls_id < 0 && k->is_module && (!strcmp(k->name, "Signal") || !strcmp(k->name, "Kernel")) &&
+      !strcmp(name, "trap")) {
     *out = fx_trap(argc, argv, blk);
     return 1;
   }
