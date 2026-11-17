@@ -855,8 +855,9 @@ code can hold any of the 12 forms. The walker reads all 12 forms.
 
 ### 3.6 Boundary to AOT code
 
-Spinel emits a program as a library with `--ext-init NAME` and
-`--ext-entry Mod.m,...` (with `-c`). The output has two parts:
+Spinel emits a program as a library with `--ext-init NAME`,
+`--ext-entry Mod.m,...` and `--ext-class C,...` (with `-c`). The output
+has two parts:
 
 - The C file is the **kernel**. It holds the global state of the runtime
   (`ARGV`, the signal state), the symbol table and the class names of the
@@ -875,6 +876,8 @@ build (`make host`) puts the kernel and Fluxpinel into one TU:
 ```
 src/kernel_prelude.h   spinel_rt.h, with sp_class_to_s renamed
 build/host/kernel.c    the kernel (spinel -c --ext-init fx_kernel_init)
+build/host/entries.c   the wrappers of the entries (tools/entry_gen.rb)
+build/host/ivars.c     the boxes of the ivars (tools/ivar_gen.rb)
 src/main.c             Fluxpinel, with FX_KERNEL=fx_kernel_init
 ```
 
@@ -894,8 +897,22 @@ src/main.c             Fluxpinel, with FX_KERNEL=fx_kernel_init
   `kernel_defines.h`, and `kernel_prelude.h` includes that file, so both
   sides see one `spinel_rt.h`.
 
-- **The entries.** Each export is a C function, for example
-  `sp_App_s_add`. A parameter with no caller in the program is an
+A script reaches the kernel in two ways: the entries, and the methods of
+the classes. Both are flags of spinel, with no change to it.
+
+### 3.6.1 The classes and the objects
+
+Each class of the kernel is a `FxClass` with the id of the kernel
+(`fx_host_init` in `src/host.c`). A constant of the script names the
+class, and an AOT object has it as its class. A script reads the ivars of
+an AOT object (section 5.1).
+
+### 3.6.2 The entries
+
+`--ext-entry Mod.m,...` exports each method as a C function with typed
+parameters, for example `sp_App_s_add`.
+
+- **The parameters.** A parameter with no caller in the program is an
   `sp_RbVal`. A caller in the program narrows the parameter to its type
   (`sp_int`). An `untyped` parameter in RBS keeps the `sp_RbVal` slot.
   An entry that only a script calls types its parameters with inline RBS
@@ -905,30 +922,76 @@ src/main.c             Fluxpinel, with FX_KERNEL=fx_kernel_init
   `sp_float`, `sp_sym`, `const char *`, an Array, or a pointer to an
   object of the program. An object starts with its `cls_id`, so the host
   boxes it as an `sp_RbVal`.
-- **Exceptions.** `NAME_try(fn, ctx, &cls, &msg)` runs `fn` under a rescue
-  handler. It answers 0, or 1 and the class name and message of a raise.
-  In the host build, a raise of the kernel reaches the rescue of a script
-  directly.
-- **In Fluxpinel.** `tools/entry_gen.rb` reads the header and writes a wrapper
-  for each entry: it converts each argument to the C type of its parameter
-  and boxes the result. An Array of the kind of the parameter (an Array of
-  Integer that an entry answered) passes as it is. Any other Array passes
-  as a copy of that kind. A Hash must be of the kind of the parameter, or
-  the wrapper raises `TypeError`. A String of either form passes: the
-  handle as it is, and the literal form (the String of `Symbol#to_s`) as a
-  handle of its own. An object must be of the class of the parameter or of
-  a class under it; the wrapper reads the class id from the kernel, where
-  each constructor sets it. Any other value for a String or an object
-  parameter raises `TypeError`, and so does nil for an object parameter.
-  Each class of the kernel is a `FxClass` with the
-  id of the kernel, so a constant names it and an AOT object has it as its
-  class. An entry is a singleton method of its module (`FX_M_ENTRY`).
-  `new` of a class of the kernel is a row of the table of `--ext-class`,
-  one for each count of arguments that its `initialize` takes, so a script
-  makes an object of the kernel. `Method#arity` of it is -1, as in CRuby.
-  A class with no row (see `docs/spin.md` of spinel) and `allocate` are a
-  gap, as the constructor is no entry. A class of the script under a class
-  of the kernel has no row either, so its `new` is a gap.
+- **The wrappers.** `tools/entry_gen.rb` reads the header and writes a
+  wrapper for each entry (`entries.c`). The wrapper converts each argument
+  to the C type of its parameter and boxes the result. An entry is a
+  singleton method of its module (`FX_M_ENTRY`).
+- **The checks of a wrapper.** A value of a wrong kind raises `TypeError`
+  before the entry reads it.
+  - An Array of the kind of the parameter (an Array of Integer that an
+    entry answered) passes as it is. Any other Array passes as a copy of
+    that kind.
+  - A Hash must be of the kind of the parameter. A Hash parameter whose
+    values are of any kind takes a copy of any Hash.
+  - A String of either form passes: the handle as it is, and the literal
+    form (the String of `Symbol#to_s`) as a handle of its own.
+  - An object must be of the class of the parameter or of a class under
+    it. The wrapper reads the class id from the kernel, where each
+    constructor sets it. nil does not pass: the header does not say
+    whether the parameter takes nil.
+
+### 3.6.3 The methods of the classes
+
+`--ext-class C,...` (or `all`) exports the public methods of the classes
+by name. `make host` passes `KERNEL_EXT_CLASS`, which is `all` by default.
+
+- **The table.** spinel writes a table for each class
+  (`sp_ext_methods`): a row for each method of a `def` or a `def self.`,
+  for an inherited one too, and for each `attr_*` reader and writer.
+  `docs/spin.md` of spinel has the rules. These rows matter to a script:
+  - A method with optional or rest parameters has a row for each count
+    of arguments.
+  - A method that takes a block has its rows twice: with the block and
+    with none.
+  - `new` has a row for each count of arguments that the `initialize` of
+    the class takes.
+- **The methods in Fluxpinel.** At its start, Fluxpinel makes each row a
+  method of the `FxClass` of its class (`FX_M_EXTM`). A class defines the
+  rows that it owns, and its ancestors give the inherited ones. The rows
+  of one name are one method, whose arity is the one that `Method#arity`
+  counts. An entry of the same name keeps its wrapper.
+- **A call.** A call goes to `sp_ext_send` of the kernel
+  (`fx_extm_invoke`). The thunk of the row converts the receiver and the
+  arguments. It raises `ArgumentError` for a count that no row takes, and
+  `TypeError` for a value of a wrong kind.
+- **`new`.** `new` of a class of the kernel is a singleton method of the
+  table, so a script makes an object of the kernel. `Method#arity` of it
+  is -1, as `Class#new` has in CRuby. A class with no row of `new`
+  (`docs/spin.md` of spinel names them) and `allocate` are a gap. A class
+  of the script under a class of the kernel inherits the methods and has
+  no row, so a call of one is a gap too.
+- **A block.** A script passes a block to a method that takes one (the
+  rows of `block` 1). The kernel gets a Proc of the runtime, and the Proc
+  yields to the block under the walker lock (`fx_extm_invoke_block`).
+  - A `break` in the block, or a `return` of the method around the call,
+    leaves the frames of the kernel through a break scope of the runtime
+    (`sp_brk_push`). The `ensure` clauses of the kernel run on the way.
+  - A `throw` and a raise in the block pass the kernel in the same way.
+  - A block that the kernel keeps can run after the call. A `break` in
+    it then raises `LocalJumpError`, as in CRuby.
+  - A method that takes no block does not use the block.
+
+### 3.6.4 The state that both sides share
+
+- **Exceptions.** A raise of the kernel reaches a rescue of a script, and
+  the reverse, through the one exception stack. A `throw` reaches its
+  `catch` across the frames of the other side too. (For a host in a TU of
+  its own, the header has `NAME_try(fn, ctx, &cls, &msg)`, which runs `fn`
+  under a rescue handler. Fluxpinel does not use it.)
+- **The walker lock.** The kernel runs without the walker lock: a call of
+  an entry or of a method of the table gives the lock up, and a call of
+  the kernel into Fluxpinel takes it (section 3.3.5). The kernel thus
+  calls Fluxpinel from any of its threads.
 - **The hooks.** The kernel sets the hooks of the runtime (`sp_obj_inspect_fn`,
   `sp_obj_cmp_hook` and their kin) to the functions that know its classes.
   Fluxpinel keeps each hook of the kernel and sets its own. The hook of Fluxpinel
@@ -936,14 +999,8 @@ src/main.c             Fluxpinel, with FX_KERNEL=fx_kernel_init
   of the kernel for a class of the kernel (`0 <= cls_id < FX_CLS_BASE`).
   With no kernel, the kept hooks are NULL, so one source serves both
   builds.
-- **Limits of the exports.** Fluxpinel works around them, and the spinel
-  maintainer gets them as issues after a demo:
-  - An entry that answers a String and has no caller in the program
-    answers `NULL`.
-  - Only the singleton methods of a module export. A method of an instance
-    does not.
-  - The kernel names only its own classes in `sp_class_to_s`.
-    `kernel_prelude.h` works around this.
+
+### 3.6.5 From the kernel to a script
 
 The other direction is AOT to walker. A `native_func` of spinel binds a
 method of a module to a C function by its name, and an `:any` argument or
@@ -956,23 +1013,26 @@ functions (`src/host.c`), and a kernel does `require_relative` of it:
 - `Fluxpinel.eval(src)` does the same for a String.
 - `Fluxpinel.call(obj, name, args)` calls a method of a value of Fluxpinel. The poly
   dispatch of AOT code does not know the classes of Fluxpinel.
+- `Fluxpinel.session` and `Fluxpinel.feed(session, line)` run a console
+  session (section 5.1).
 
-A raise in Fluxpinel reaches a rescue of AOT code, and the reverse, through the
-one exception stack. `kernel/fluxpinel_cruby.rb` gives the same functions under
-CRuby, so the same program runs there for the answer of a test.
+`kernel/fluxpinel_cruby.rb` gives the same functions under CRuby, so the
+same program runs there for the answer of a test.
 
-A script passes a block to a method of a class of the kernel that takes
-one (the rows of `block` 1 in the table of `--ext-class`). The kernel gets
-a Proc of the runtime, and the Proc yields to the block under the walker
-lock (`fx_extm_invoke_block` in `src/host.c`).
+### 3.6.6 Limits of the exports
 
-- A `break` in the block, or a `return` of the method around the call,
-  leaves the frames of the kernel through a break scope of the runtime
-  (`sp_brk_push`). The `ensure` clauses of the kernel run on the way.
-- A `throw` and a raise in the block pass the kernel in the same way.
-- A block that the kernel keeps can run after the call. A `break` in it
-  then raises `LocalJumpError`, as in CRuby.
-- A method that takes no block does not use the block.
+- A method with a keyword parameter has no row in the table, so a script
+  does not call it by name.
+- `--ext-class all` makes each public method a root of the program.
+  spinel can then refuse a program that it compiles with no flag. Name
+  the classes in that case (`KERNEL_EXT_CLASS`, see `docs/roundhouse.md`).
+- spinel can refuse a kernel in which a typed entry and the `new` of the
+  table, which has no type, make an object of one class
+  (matz/spinel#12056). An entry with an `untyped` parameter avoids it.
+- The kernel names only its own classes in `sp_class_to_s`.
+  `kernel_prelude.h` works around this.
+- A script does not replace a method that AOT code calls directly
+  (section 5.1).
 
 ## 4. Use 2: oracle
 
@@ -1072,7 +1132,7 @@ the one before it.
 
 | Form | Direction | Change to spinel |
 |---|---|---|
-| Scripts and the console | AOT calls Fluxpinel; Fluxpinel calls the entries | none |
+| Scripts and the console | AOT calls Fluxpinel; Fluxpinel calls the entries and the methods of the classes | none |
 | eval | AOT calls Fluxpinel with a String | none with no binding; a change for a binding |
 | Dynamic dispatch | AOT hands an unresolved call to Fluxpinel | a change to the analysis |
 
@@ -1092,7 +1152,9 @@ Requirements for all forms:
 
 The AOT program loads a Ruby file with `Fluxpinel.load` (section 3.6). The
 script calls the entries of the program and gets AOT objects as values.
-The program calls a method of the script with `Fluxpinel.call`.
+It calls the methods of those objects by name, passes a block to them, and
+makes an object with `new` (section 3.6.3). The program calls a method of
+the script with `Fluxpinel.call`.
 
 The console is a session of the walker (`src/console.c`). The AOT program
 owns the socket, and gives each line to the session.
@@ -1117,6 +1179,9 @@ owns the socket, and gives each line to the session.
 - `fluxpinel --console` runs a session on stdin. `kernel/fluxpinel_cruby.rb`
   gives the same session under CRuby, and `test/console.rb` compares the
   two.
+- `--irb` and `--irb-port PORT` run IRB of the gems of CRuby in place of
+  this console: on the terminal, or on each telnet connection to the
+  running program (`lib/fluxpinel/remote_irb.rb`, and the README).
 
 - **Object layout.** A script reads the ivars of an AOT object with
   `instance_variable_get` and `instance_variables`.
@@ -1281,9 +1346,6 @@ These facts apply to spinel commit `ffac8340d`.
 
 ## 8. Open questions
 
-- Which entries does a host get? An export names each method. A program
-  that loads scripts wants a wide surface. Candidates are a list in the
-  build, or a mark on a method in the source.
 - Can a generator map the `sp_poly_*` helpers to method names, as
   `tools/bop_gen.c` does for `bop_rows[]`? Codegen names the helper that it
   emits for each method, so the map exists in the codegen source.

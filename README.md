@@ -16,6 +16,12 @@ The runtime of spinel runs inside it.
   change a plugin, and you do not compile again.
 - **Two-way calls.** Compiled code calls the script, and the script calls
   compiled code. A value crosses as it is, with no copy and no conversion.
+- **The compiled classes, by name.** A script calls the methods of a
+  compiled object, passes a block to them, and makes an object with
+  `new`.
+- **A console in the running program.** `--irb-port` opens IRB on a telnet
+  connection to the running program. A line of the session uses the live
+  objects and calls the compiled methods.
 - **One heap.** The script uses the live objects of the program. One
   garbage collector sees all of them.
 - **The same semantics.** Both sides use one runtime. Where Fluxpinel calls
@@ -90,8 +96,8 @@ module Logq
 end
 ```
 
-On a log of one million lines, logq runs `errors.rb` in about 0.8 seconds.
-The same files take about 2.2 seconds in CRuby 4.0.9, and about 2.1
+On a log of one million lines, logq runs `errors.rb` in about 1.0 second.
+The same files take about 2.3 seconds in CRuby 4.0.9, and about 2.2
 seconds with YJIT or ZJIT. Spinel alone does not
 call `method_missing`, and it refuses `define_method` with a name that the
 program makes at run time.
@@ -115,8 +121,12 @@ and Fluxpinel into one C translation unit (TU):
 - The kernel declares the API of Fluxpinel in `kernel/fluxpinel.rb`.
 - Spinel exports the entries that you name (`--ext-entry`). A script calls
   them as module methods.
+- Spinel exports the public methods of the classes by name
+  (`--ext-class`). A script calls a method of a compiled object, with a
+  block too, and `new` of a compiled class.
 - An exception crosses the boundary in both directions. A `rescue` on one
-  side catches a raise on the other side.
+  side catches a raise on the other side. A `break` and a `throw` in a
+  block of the script leave the compiled method that called the block.
 
 See [docs/design.md](docs/design.md), section 3.6, for the details.
 
@@ -128,18 +138,21 @@ Fluxpinel can:
   `Fluxpinel.call`)
 - evaluate a String at the top level (`Fluxpinel.eval`)
 - call the exported entries of the kernel, and use its objects and classes
+- call the public methods of a compiled object by name, pass a block to
+  them, and make an object with `new`
+- open IRB in the running program, on the terminal or on a telnet
+  connection (`--irb`, `--irb-port`)
 
 Fluxpinel cannot yet:
 
-- call a method of an instance of a compiled class: only the module
-  methods that you name export
 - see the locals of a compiled method (`eval` with a binding)
 - take a call that the compiled code cannot resolve (dynamic dispatch)
+- call a compiled method that has a keyword parameter by name
 - replace a method that compiled code calls directly
 - run as fast as CRuby: the interpreter is for the glue of a program, not
   for its hot paths
 
-The two gaps in the list need a change to spinel. See
+The first two gaps in the list need a change to spinel. See
 [docs/design.md](docs/design.md), section 5.
 
 ## An oracle for spinel
@@ -179,7 +192,7 @@ build/promote/fluxpinel -v
 - [optcarrot](https://github.com/mame/optcarrot), an NES emulator and a
   common benchmark of Ruby, runs. `make optcarrot` runs it under CRuby and
   Fluxpinel, and compares the checksums. On 180 frames, Fluxpinel runs at
-  about 9 fps, and CRuby 4.0.9 at about 55 fps.
+  about 10 fps, and CRuby 4.0.9 at about 55 fps.
 
 The command line takes a part of the options of `ruby`:
 
@@ -212,6 +225,7 @@ the program keep theirs: a thread with a value in `Thread.current[:fluxpinel_std
 or `[:fluxpinel_stderr]` writes `$stdout` and `$stderr` there. This needs a
 Reline that runs on a socket (`Reline.io_gate=` and `Reline::Telnet`); name its lib directory
 with `-I`, `RUBYLIB` or `make GEM_DIRS_FIRST=DIR`.
+
 `RUBY_ENGINE` is `"spinel"`, and `RUBY_VERSION` is the version that spinel
 gives. Thus a branch on `RUBY_ENGINE == "spinel"` goes the same way in
 Fluxpinel and in AOT code. `RUBY_DESCRIPTION` is the line that `-v`
@@ -277,7 +291,9 @@ make oracle
   smallest one, and [examples/logq](examples/logq).
   `KERNEL_FLAGS` passes more flags to spinel for the kernel, such as the
   flags that `spin flags` prints for a spin project. `HOST_LIBS` adds
-  libraries to the link, such as `-lsqlite3`.
+  libraries to the link, such as `-lsqlite3`. `KERNEL_EXT_CLASS` names
+  the classes whose methods a script calls by name. It is `all` by
+  default.
 - `make test-host` runs the tests on that build, with `test/kernel/app.rb`
   as the kernel.
 - `make oracle` runs the oracle on the tests of spinel and writes
