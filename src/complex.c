@@ -92,9 +92,11 @@ static int fx_real_complex_op(sp_RbVal r, const char *name, sp_RbVal c, sp_RbVal
    <=, >, >=, between? and clamp are NoMethodError, as in CRuby. Answers 1
    and sets *out when it handles the call. */
 static int fx_complex_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
-  /* a Rational with a Complex operand: the table has + - * / and fdiv */
+  /* a Rational with a Complex operand: the table has + - * / fdiv, and
+     == != and === */
   if (argc == 1 && fx_is_real(r) && fx_is_complex(argv[0]) &&
-      !(sp_poly_is_rat_kind(r) && (FX_IS("+") || FX_IS("-") || FX_IS("*") || FX_IS("/") || FX_IS("fdiv"))))
+      !(sp_poly_is_rat_kind(r) && (FX_IS("+") || FX_IS("-") || FX_IS("*") || FX_IS("/") || FX_IS("fdiv") ||
+                                   FX_IS("==") || FX_IS("!=") || FX_IS("==="))))
     return fx_real_complex_op(r, name, argv[0], out);
   if (!fx_is_complex(r)) return 0;
   /* == and != with an object of the program: the object answers with its
