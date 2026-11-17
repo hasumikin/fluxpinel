@@ -95,6 +95,12 @@ so the case makes sure of the kind.
     method at each call. A denied method takes the general path.
   - When the class has no such method, the call takes the general path.
     The global cache of `fx_find_method` serves that path.
+- **The refinements.** After a `using` in any file, a call asks whether
+  a refinement is active at its node (`fx_refined_call`). The answer
+  needs the file of the node, which is a search of all the files. The
+  record keeps the answer "none is active", with the count of `using`
+  calls (`L.nusing`) of that time. The next `using` makes the record
+  stale.
 
 ### 3.2 Instance variables (`FxIvarCache`)
 

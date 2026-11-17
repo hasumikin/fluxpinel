@@ -1154,15 +1154,24 @@ static int fx_using_call(FxFrame *f, const pm_node_t *n, int has_recv, const cha
 
 /* A call at the node n under an active refinement: the newest active
    refinement of a class of recv that has the method answers it. A send,
-   respond_to? or method with a Symbol asks for that name. */
-static int fx_refined_call(const pm_node_t *n, sp_RbVal recv, sp_sym sym, int argc, sp_RbVal *argv,
-                           const FxBlock *blk, sp_RbVal *out) {
+   respond_to? or method with a Symbol asks for that name. The record cc of
+   the call keeps the answer that no refinement is active at n, until the
+   next using. */
+static int fx_refined_call(FxCallCache *cc, const pm_node_t *n, sp_RbVal recv, sp_sym sym, int argc,
+                           sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out) {
   const FxSource *s = fx_source_of(n);
   const char *name = sp_sym_to_s(sym);
   int dyn = argc >= 1 && argv[0].tag == SP_TAG_SYM &&
             (!strcmp(name, "send") || !strcmp(name, "__send__") || !strcmp(name, "public_send") ||
              !strcmp(name, "respond_to?") || !strcmp(name, "method"));
   sp_sym look = dyn ? (sp_sym)argv[0].v.i : sym;
+  int active = 0;
+  for (int i = s->nusing - 1; i >= 0 && !active; i--)
+    active = n->location.start >= s->using[i].from && n->location.start < s->using[i].to;
+  if (!active) {
+    cc->no_using = L.nusing;
+    return 0;
+  }
   for (int i = s->nusing - 1; i >= 0; i--) {
     if (n->location.start < s->using[i].from || n->location.start >= s->using[i].to) continue;
     FxClass *r = s->using[i].r;
@@ -1210,7 +1219,8 @@ static sp_RbVal fx_call(FxFrame *f, const pm_call_node_t *c) {
   sp_RbVal v;
   /* require_relative and __dir__ answer from the file of the call, unless
      the program defines its own */
-  if (L.nusing && fx_refined_call((const pm_node_t *)c, c->receiver ? recv : f->self, sym, argc, argv, blk, &v)) {
+  if (L.nusing && cc->no_using != L.nusing &&
+      fx_refined_call(cc, (const pm_node_t *)c, c->receiver ? recv : f->self, sym, argc, argv, blk, &v)) {
   } else if (c->receiver && !blk && !kw && fx_fast_call(recv, sym, argc, argv, &v)) {
   } else if ((!c->receiver || fx_is_kernel(recv)) && !blk &&
              fx_load_call((const pm_node_t *)c, f->self, c->receiver != NULL, name, argc, argv, &v)) {

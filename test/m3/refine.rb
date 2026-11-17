@@ -82,3 +82,16 @@ begin
 rescue RuntimeError => e
   puts e.message
 end
+
+# a using that runs after a call at a later place ran once
+module Tagged
+  refine(Symbol) { def tag = "tag #{self}" }
+end
+2.times do |i|
+  using Tagged if i == 1
+  begin
+    p :a.tag
+  rescue NoMethodError
+    p :none
+  end
+end

@@ -279,6 +279,9 @@ typedef struct {
   uint8_t fwd;      /* fx_has_forwarding of the arguments */
   int cls_id;       /* the class id of the last object of the program that
                        the call took as its receiver or self */
+  int no_using;     /* L.nusing when no refinement was active at the call:
+                       the call skips the refinements while L.nusing is
+                       the same; 0 never hits */
   unsigned gen;     /* fx_methods_gen of the lookup; 0 never hits */
   FxMethod *m;      /* the method of cls_id, or NULL */
 } FxCallCache;
