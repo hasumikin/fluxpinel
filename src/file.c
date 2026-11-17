@@ -98,6 +98,14 @@ static sp_RbVal fx_file_delete(int argc, sp_RbVal *argv) {
   return sp_box_int(argc);
 }
 
+/* An argument of File.identical?: a path, or an open IO, which CRuby
+   takes by its descriptor. The path /dev/fd/N names the file of the
+   descriptor N. */
+static const char *fx_identical_arg(sp_RbVal v) {
+  if (!fx_is_io(v)) return sp_poly_arg_path(v);
+  return sp_sprintf("/dev/fd/%d", (int)sp_poly_arg_int_chk(fx_send(v, "fileno", 0, NULL)));
+}
+
 static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (FX_IS("join")) { *out = sp_box_str_new(sp_file_join_vals(argv, argc)); return 1; }
   /* File.readlines(path[, sep[, limit]], chomp:): the lines as IO#readlines
@@ -173,15 +181,17 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
   /* File.identical?(a, b): the same file by the inode, through the links;
      File.fnmatch(pat, path, flags): the runtime matches by CRuby's rules
      (sp_file_fnmatch); the flags are the FNM_ constants of the runtime */
-  if (FX_IS("identical?") && argc == 2) {
-    const char *a = sp_poly_arg_path(argv[0]);
+  if (FX_IS("identical?")) {
+    if (argc != 2) fx_arity_error(argc, 2, 0, 0);
+    const char *a = fx_identical_arg(argv[0]);
     SP_GC_ROOT_STR(a);
-    const char *b = sp_poly_arg_path(argv[1]);
+    const char *b = fx_identical_arg(argv[1]);
     SP_GC_ROOT_STR(b);
     *out = sp_box_bool(sp_file_identical(a, b));
     return 1;
   }
-  if ((FX_IS("fnmatch") || FX_IS("fnmatch?")) && (argc == 2 || argc == 3)) {
+  if (FX_IS("fnmatch") || FX_IS("fnmatch?")) {
+    if (argc < 2 || argc > 3) fx_arity_error(argc, 2, 1, 0);
     const char *pat = sp_poly_arg_str_chk(argv[0]);
     SP_GC_ROOT_STR(pat);
     const char *path = sp_poly_arg_path(argv[1]);

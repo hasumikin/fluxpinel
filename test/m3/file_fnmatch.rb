@@ -21,3 +21,18 @@ p File.fnmatch("\\*", "*"), File.fnmatch("\\*", "*", File::FNM_NOESCAPE), File.f
 p File.fnmatch("{a,b}.rb", "b.rb"), File.fnmatch("{a,b}.rb", "b.rb", File::FNM_EXTGLOB)
 p File.fnmatch?("[a-c]?", "b1", File::FNM_PATHNAME | File::FNM_DOTMATCH), File.fnmatch("a*", "a/b", File::FNM_PATHNAME)
 p((File.fnmatch("*", "a", "x") rescue $!.class))
+
+# a wrong count of arguments
+[-> { File.fnmatch("*") }, -> { File.fnmatch("*", "a", 0, 1) }, -> { File.identical?("a") }].each do |call|
+  call.()
+rescue ArgumentError => e
+  puts e.message
+end
+
+# an open File stands for its file
+File.open(__FILE__) do |f|
+  p File.identical?(f, __FILE__), File.identical?(__FILE__, f), File.identical?(f, f), File.identical?(f, __dir__)
+end
+closed = File.open(__FILE__)
+closed.close
+p((File.identical?(closed, __FILE__) rescue $!.class))
