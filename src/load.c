@@ -170,6 +170,7 @@ static void fx_frame_context(FxFrame *top, const FxFrame *ctx) {
   top->definee = ctx->definee;
   top->singleton_defs = ctx->singleton_defs;
   top->vis = ctx->vis;
+  top->vis_scope = ctx->vis_scope;   /* a scope of its own (a String of instance_eval), or the caller's */
   top->method = ctx->method;
   top->block = ctx->block;
 }
