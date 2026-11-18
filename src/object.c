@@ -2285,6 +2285,11 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   }
   /* ffi_func and its kin in a module body */
   if (!blk && fx_ffi_class(k, name, argc, argv, out)) return 1;
+  /* Process.fork { } */
+  if (blk && argc == 0 && k->cls_id < 0 && k->is_module && !strcmp(k->name, "Process") && !strcmp(name, "fork")) {
+    *out = fx_fork(blk);
+    return 1;
+  }
   /* the module functions of Process and GC */
   if (!blk && fx_process_class(k, name, argc, argv, out)) return 1;
   /* the class methods of File on paths */

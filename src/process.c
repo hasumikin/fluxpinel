@@ -11,6 +11,7 @@
    builds the same array from the options Hash. */
 
 #include "fluxpinel.h"
+#include <fcntl.h>
 
 #define FX_IS(s) (!strcmp(name, (s)))
 
@@ -70,6 +71,7 @@ static int fx_process_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *o
     if (FX_IS("euid")) { *out = sp_box_int((sp_int)geteuid()); return 1; }
     if (FX_IS("egid")) { *out = sp_box_int((sp_int)getegid()); return 1; }
     if (FX_IS("getpgrp")) { *out = sp_box_int((sp_int)getpgrp()); return 1; }
+    if (FX_IS("fork")) { *out = fx_fork(NULL); return 1; }
     if (FX_IS("times")) { *out = sp_box_tms(sp_process_times()); return 1; }
     if (FX_IS("groups")) { *out = sp_box_int_array(sp_process_groups()); return 1; }
     /* a session of its own; the runtime has no function for the process
@@ -264,7 +266,62 @@ static sp_RbVal fx_detach_step(void *ctx, int argc, sp_RbVal *argv) {
 
 /* The functions of Kernel that control processes: spawn, system, exec and
    the backtick, which a backtick literal calls by name. */
+/* The end of a forked child, as the end of the main program: the at_exit
+   hooks, which read the status, then the scheduler, then exit(3). */
+static __attribute__((noreturn)) void fx_child_exit(int status) {
+  int rc = sp_at_exit_run(status);
+  fx_lock_set_depth(0);
+  fx_sched_end();
+  exit(rc);
+}
+
+/* Kernel#fork and Process.fork. The child runs the block and ends as the
+   main program ends. A raise that leaves the block ends the child with the
+   report of an uncaught exception and status 1, or with a SystemExit's
+   status, and never reaches the frames of the parent that the child
+   copied, as CRuby keeps it in the child (rb_protect in rb_fork_ruby).
+   Without a block, the pid in the parent and nil in the child. What
+   $stdout and $stderr hold is written before the fork, so it goes out
+   once. The fork is the runtime's, which leaves the child a sound
+   scheduler; the walker lock is given up for it, as for a wait. */
+extern int sp_sched_fork(void);   /* lib/sp_sched.c of spinel */
+static sp_RbVal fx_fork(const FxBlock *blk) {
+  SP_GC_SAVE();
+  fx_send(fx_gvar_get("$stdout"), "flush", 0, NULL);
+  fx_send(fx_gvar_get("$stderr"), "flush", 0, NULL);
+  fflush(NULL);
+  int pid;
+  FX_UNLOCKED(pid = sp_sched_fork());
+  if (pid < 0) sp_raise_cls(sp_errno_class_name(errno), strerror(errno));
+  if (pid > 0) return sp_box_int((sp_int)pid);
+  if (!blk) return sp_box_nil();
+  int st = 0;
+  FX_TRY_PUSH();
+  if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
+    fx_yield(blk, 0, NULL);
+    sp_exc_top--;
+  } else {
+    FX_TRY_LANDED(0);
+    FxCaught c = fx_caught();
+    const char *cls = c.cls ? c.cls : "RuntimeError";
+    sp_Exception *e = fx_caught_obj(c);
+    SP_GC_ROOT(e);
+    if (sp_exc_cls_matches(cls, "SystemExit")) {
+      st = sp_exc_exit_status(e);
+    } else {
+      sp_exc_print_uncaught(cls, c.msg, e->backtrace);
+      st = 1;
+    }
+    /* the hooks read it as `$!`, as after an uncaught raise of the main program */
+    sp_at_exit_errinfo = sp_exc_ending_obj(cls, c.msg, e, sp_pending_cause);
+    sp_pending_cause = NULL;
+  }
+  L.ctl = FX_CTL_NONE;
+  fx_child_exit(st);
+}
+
 static int fx_process_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (FX_IS("fork") && argc == 0) { *out = fx_fork(NULL); return 1; }
   if (FX_IS("spawn")) { *out = sp_box_int(fx_spawn(argc, argv)); return 1; }
   if (FX_IS("system")) { *out = fx_system(argc, argv); return 1; }
   if (FX_IS("`") && argc == 1) {
@@ -279,7 +336,26 @@ static int fx_process_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVa
     sp_PolyArray *args = sp_PolyArray_new();
     SP_GC_ROOT(args);
     for (int i = 1; i < argc; i++) sp_PolyArray_push(args, argv[i]);
-    sp_process_exec(argv[0], sp_box_poly_array(args));
+    /* a pipe of the runtime is O_NONBLOCK; the program that replaces this
+       one expects blocking stdio, which the child of spawn gets the same
+       way (sp_process.c of spinel). An exec that fails raises, and the
+       program goes on with the flags it had: a read of a blocking pipe
+       would stop every thread of the scheduler. */
+    int fl[3];
+    for (int fd = 0; fd <= 2; fd++) {
+      fl[fd] = fcntl(fd, F_GETFL);
+      if (fl[fd] >= 0 && (fl[fd] & O_NONBLOCK)) fcntl(fd, F_SETFL, fl[fd] & ~O_NONBLOCK);
+    }
+    FX_TRY_PUSH();
+    if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
+      sp_process_exec(argv[0], sp_box_poly_array(args));
+      sp_exc_top--;
+    } else {
+      FX_TRY_LANDED(0);
+      for (int fd = 0; fd <= 2; fd++)
+        if (fl[fd] >= 0 && (fl[fd] & O_NONBLOCK)) fcntl(fd, F_SETFL, fl[fd]);
+      fx_reraise(fx_caught());
+    }
     *out = sp_box_nil();
     return 1;
   }
@@ -372,7 +448,7 @@ static int fx_gc_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
 static int fx_process_responds(sp_RbVal r, const char *name) {
   static const char *const process[] = { "pid", "ppid", "uid", "gid", "euid", "egid", "getpgrp", "times", "groups",
                                          "getsid", "setsid", "getpgid", "setpgid", "clock_gettime", "clock_getres", "getpriority", "kill", "spawn",
-                                         "exec", "wait", "waitpid", "wait2", "waitpid2", "detach", "last_status",
+                                         "exec", "fork", "wait", "waitpid", "wait2", "waitpid2", "detach", "last_status",
                                          NULL };
   static const char *const gc[] = { "start", "compact", "stat", "total_time", NULL };
   FxClass *k = fx_class_value(r);

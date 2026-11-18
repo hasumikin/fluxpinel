@@ -531,6 +531,7 @@ static int fx_fiber_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
 static int fx_fiber_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static sp_RbVal fx_to_enum(sp_RbVal recv, int argc, sp_RbVal *argv);
 static void fx_sched_end(void);
+static sp_RbVal fx_fork(const FxBlock *blk);   /* process.c: Kernel#fork and Process.fork */
 
 /* ffi.c */
 static int fx_ffi_class(FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
