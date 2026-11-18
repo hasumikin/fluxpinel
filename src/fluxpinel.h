@@ -725,6 +725,7 @@ static int fx_binding_core(sp_RbVal r, const char *name, int argc, sp_RbVal *arg
                              sp_RbVal *out);
 static int fx_binding_responds(const char *name);
 static sp_RbVal fx_trap(int argc, sp_RbVal *argv, const FxBlock *blk);   /* walk.c */
+static int fx_kernel_block(FxFrame *f, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out);
 /* refinements (walk.c) */
 static int fx_refine(FxFrame *f, FxClass *k, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                      sp_RbVal *out);

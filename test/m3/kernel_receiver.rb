@@ -48,6 +48,15 @@ rescue ArgumentError => e
   puts e.message
 end
 
+# the module functions that take the block of the call
+pr = ::Kernel.proc { |x| x }
+p pr.call(3), pr.lambda?, Kernel.lambda { |x| x * 2 }.call(4), Kernel.lambda { }.lambda?
+n = 0
+Kernel.loop { n += 1; break if n == 3 }
+p n, Kernel.catch(:t) { Kernel.throw :t, 9 }, Kernel.catch { |tag| throw tag, 7 }
+def early = Kernel.proc { |v| return v }.call(5)
+p early
+
 # a signal with no handler and no block
 begin
   Kernel.trap("USR1")

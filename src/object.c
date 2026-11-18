@@ -2289,6 +2289,15 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     *out = fx_trap(argc, argv, blk);
     return 1;
   }
+  /* The module functions of Kernel that take the block of the call, on
+     Kernel as the receiver: Kernel.proc { }, Kernel.lambda { },
+     Kernel.loop { }, Kernel.catch { } and Kernel.at_exit { }. None of
+     them reads the frame of the call. */
+  if (blk && k->cls_id < 0 && k->is_module && !strcmp(k->name, "Kernel") &&
+      (!strcmp(name, "proc") || !strcmp(name, "lambda") || !strcmp(name, "loop") || !strcmp(name, "catch") ||
+       !strcmp(name, "at_exit")) &&
+      fx_kernel_block(f, name, argc, argv, blk, out))
+    return 1;
   /* ffi_func and its kin in a module body */
   if (!blk && fx_ffi_class(k, name, argc, argv, out)) return 1;
   /* Process.fork { } */

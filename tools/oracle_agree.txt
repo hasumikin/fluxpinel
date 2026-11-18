@@ -1,5 +1,5 @@
 # The spinel tests that Fluxpinel answers right, for make regress.
-# make oracle writes this file. spinel: 303f7b901ebb
+# make oracle writes this file. spinel: 519bbea5cdec
 absolute_class_reopen_inside_module
 abstract_raise_override_return
 accessor_def_history_both_sides
@@ -585,6 +585,8 @@ binary_string_regexp_char_offsets
 binary_string_results_more_methods
 bind_call_attr_accessor
 bind_call_class_value
+bind_call_class_value_capture_point
+bind_call_static_method_boxed_object
 bind_call_struct_member
 bind_call_struct_member_override
 binding_lvget
@@ -616,6 +618,7 @@ block_arg_poly_symbol_case_in
 block_arg_poly_symbol_rescue_modifier
 block_arg_poly_symbol_unless
 block_arg_poly_value
+block_arg_poly_value_type_error
 block_autosplat
 block_autosplat_collectors
 block_autosplat_minmax_group
@@ -777,6 +780,10 @@ boxed_array_index_symbol
 boxed_array_methods
 boxed_array_named_set_ops
 boxed_array_source_logic_arms
+boxed_attr_op_assign_reader_first
+boxed_attr_op_assign_reader_missing
+boxed_attr_op_assign_shapes
+boxed_attr_op_assign_writer_declared_later
 boxed_bignum_integer_class
 boxed_block_call_beside_class_method
 boxed_block_sub_user_method
@@ -3553,6 +3560,7 @@ initialize_override_param_inference
 initialize_yield
 inject_block_beside_program_inject
 inject_block_fewer_params
+inject_empty_seed_typed
 inject_seed_keeps_its_class
 inject_symbol_op
 inject_symbol_root
@@ -3567,6 +3575,7 @@ inline_ensure_return_preserves_rescue
 inline_forward_proc_value_under_block
 inline_long_renamed_names
 inline_nested_yield_ivar_self
+inline_rbs_nil_param
 inline_rbs_signatures
 inline_recv_hold_more
 inline_recv_hold_r2
@@ -3673,6 +3682,8 @@ instance_exec_new_block_receiver
 instance_exec_next
 instance_exec_next_break_nil
 instance_exec_nil_value
+instance_exec_non_proc_block_arg_once
+instance_exec_non_proc_block_arg_type_error
 instance_exec_nonlocal_return
 instance_exec_numbered
 instance_exec_override
@@ -3692,6 +3703,7 @@ instance_exec_stored_block_private_cmethod
 instance_exec_stored_block_self_class_in_method
 instance_exec_stored_proc_ivar_index_store
 instance_exec_stored_proc_receiverless_and_ivars
+instance_exec_to_proc_object_builtin_recv
 instance_exec_toplevel_method
 instance_exec_trampoline
 instance_exec_trampoline_receiverless
@@ -4432,6 +4444,7 @@ kernel_integer_negative_radix
 kernel_integer_true_message
 kernel_integer_with_base
 kernel_printf_beside_own_format
+kernel_proc_lambda_class_fact
 kernel_puts_nul
 kernel_puts_reassigned_stdout
 kernel_rational_strict
@@ -4442,6 +4455,7 @@ kernel_reopen_in_engine_branch
 kernel_reopen_methods
 kernel_reopen_private_by_name
 kernel_reopen_public_receiver
+kernel_reopened_proc_lambda_class_fact
 kernel_require_qualified
 kernel_respond_to_missing_blank_slate
 kernel_rows_internal
@@ -4556,6 +4570,7 @@ late_include_method_object
 late_include_super_block
 late_included_initialize_shadow_super
 late_mixin_after_inert_statements
+late_param_rebind_subclass_ivar_slot
 late_reached_method_param_boxed
 late_ret_through_local_chain
 late_widened_method_local
@@ -4653,6 +4668,7 @@ main_chain_undef_stops_capture
 main_extend_include_order
 main_extend_undef_stops
 main_implicit_self_itself
+main_object_dup_before_reopen
 main_object_one_entry
 main_self_paths
 main_send_toplevel_method
@@ -4812,6 +4828,7 @@ math_fn_nil_typeerror
 math_log1p_domain
 math_poly_arg_unbox
 max_by_count_tie_order
+max_by_n_cut_sign
 may_version_branch_reach
 mega
 members_alias_reader_boxed
@@ -4976,6 +4993,7 @@ misc
 missing_positional_arg_warns
 missing_require_names_the_library
 mixin
+mixin_after_call_ahead_of_class
 mixin_after_dynamic_send_arm
 mixin_cell_kernel_reopening_def
 mixin_class_under_condition
@@ -5382,6 +5400,7 @@ numeric_edges_wave10
 numeric_i_boxed
 numeric_iter_boxed_recv_value
 numeric_method_displaced_by_user
+numeric_op_uncoercible_object
 numeric_reopen_poly_receiver
 numeric_reopen_self_any_number
 numeric_step_by_kw_edges
@@ -5585,6 +5604,8 @@ pack_unpack_move
 pack_utf8
 param_body_array_hash_inference
 param_body_hash_inference
+param_chain_boxed_after_integer
+param_chain_boxed_after_integer_stored
 param_container_foreign_writes
 param_default_assigns_local_read_by_body
 param_default_hash_poly_keys
@@ -6274,6 +6295,7 @@ prepend_module_redefinition_compile
 prepend_over_parent_attr_in_subclass
 prepend_reach_send
 prepend_reflection_consumers
+prepend_runtime_callbacks
 prepend_several_ancestors
 prepend_shadow_name_literal
 prepend_shadow_names
@@ -6573,6 +6595,7 @@ raise_non_exception_typeerror
 raise_only_method_more_positions
 raise_only_method_value
 raise_only_method_value_overridden
+raise_operands_rooted
 raise_own_method_value
 raise_receiver_typed_local
 raise_reraise_in_def
@@ -7126,6 +7149,7 @@ safe_nav_class_value_hoisted_arg
 safe_nav_hash_face_boxed
 safe_nav_int_into_nullable_slot
 safe_nav_iter_stmt
+safe_nav_lazy_chain_force
 safe_nav_nil_class_value
 safe_nav_no_c_nil_result
 safe_nav_null_pointer_param
@@ -7212,6 +7236,7 @@ sched_workers_one_main_runs_threads
 sclass_attr_body_masgn_ivar
 sclass_const_visibility
 sclass_def_default_self
+sclass_mixin_hooks
 scope_callers_alias_chain
 scoped_constant_on_class_value_mutator
 scrub_bang_alias
@@ -7930,6 +7955,7 @@ string_index_write_boxed
 string_inline_yield_sequence_tail
 string_inspect_invalid_utf8
 string_inspect_nonprint_unicode
+string_inspect_utf8_precise
 string_iter_answers_ivar_receiver
 string_iter_boxed_enumerator
 string_iter_nil_receiver_raises
@@ -8813,10 +8839,12 @@ user_respond_to_dispatched
 user_round_arity_poly_numeric
 user_self_new_forwarding
 user_send_beside_own_send_block_arg
+user_send_split_first_arg_send
 user_send_split_nested_send
 user_tap_then_literal_block
 user_then_blockless
 user_to_hash_splat
+user_to_proc_block_arg
 user_to_set_not_rewritten
 user_value_object_freeze
 value_class_self_call_in_initialize

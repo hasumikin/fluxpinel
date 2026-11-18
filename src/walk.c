@@ -951,7 +951,21 @@ static const FxBlock *fx_make_block(FxFrame *f, const pm_node_t *bn, FxBlock *li
   }
   if (fx_is_proc(v)) return &((FxProc *)v.v.p)->b;
   if (fx_is_method_value(v)) return fx_method_value_block(v);
-  fx_unsupported(bn, "block argument that is not a Proc or a Symbol");
+  /* any other value: the Proc that its to_proc answers, as CRuby asks
+     for it. A to_proc of the program is called; a value with none is a
+     TypeError, as is a to_proc that answers no Proc. A builtin value with
+     a to_proc of CRuby (a Hash) is a gap. */
+  if (fx_find_method(fx_lookup_class(v), fx_name_sym("to_proc"))) {
+    sp_RbVal pv = fx_send(v, "to_proc", 0, NULL);
+    if (L.ctl != FX_CTL_NONE) return NULL;
+    if (!fx_is_proc(pv))
+      sp_raise_cls("TypeError", sp_sprintf("can't convert %s to Proc (%s#to_proc gives %s)", fx_class_of(v)->name,
+                                           fx_class_of(v)->name, fx_class_of(pv)->name));
+    *holder = pv;
+    return &((FxProc *)pv.v.p)->b;
+  }
+  if (fx_rs_responds(v, "to_proc")) fx_unsupported(bn, "block argument that is not a Proc or a Symbol");
+  sp_raise_cls("TypeError", sp_sprintf("no implicit conversion of %s into Proc", fx_class_of(v)->name));
 }
 
 /* ---- calls ---- */
