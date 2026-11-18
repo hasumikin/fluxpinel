@@ -281,7 +281,7 @@ static void fx_run_source_top(const FxSource *s, int main) {
   FX_TRY_LANDED(depth);
   if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
   FxCaught c = fx_caught();
-  c.obj = fx_caught_obj(c);
+  fx_caught_obj(&c);
   sp_bt_enabled = 1;
   fx_reraise(c);
 }

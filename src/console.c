@@ -171,7 +171,7 @@ static const char *fx_session_run(FxSession *s, char *buf, size_t len, int line)
     FxCaught c = fx_caught();
     if (sp_exc_cls_matches(c.cls, "SystemExit")) {
       s->closed = 1;
-      s->status = (int)sp_exc_exit_status(fx_caught_obj(c));
+      s->status = (int)sp_exc_exit_status(fx_caught_obj(&c));
     } else {
       out = sp_sprintf("%s (%s)\n" FX_PROMPT, c.msg ? c.msg : "", c.cls);
     }

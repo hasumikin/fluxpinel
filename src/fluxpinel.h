@@ -424,7 +424,7 @@ typedef struct {
   void *obj;
 } FxCaught;
 static FxCaught fx_caught(void);
-static sp_Exception *fx_caught_obj(FxCaught c);
+static sp_Exception *fx_caught_obj(FxCaught *c);
 static void fx_run_main_source(const FxSource *s);   /* load.c */
 static __attribute__((noreturn)) void fx_reraise(FxCaught c);
 

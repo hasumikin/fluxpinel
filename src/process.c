@@ -234,7 +234,7 @@ static sp_RbVal fx_system(int argc, sp_RbVal *argv) {
     FX_TRY_LANDED(depth);
     if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
     FxCaught c = fx_caught();
-    sp_RbVal e = fx_exc_box(fx_caught_obj(c)), k = fx_class_box(fx_builtin("SystemCallError"));
+    sp_RbVal e = fx_exc_box(fx_caught_obj(&c)), k = fx_class_box(fx_builtin("SystemCallError"));
     SP_GC_ROOT_RBVAL(e);
     if (raise_on || !fx_send(e, "is_a?", 1, &k).v.i) fx_reraise(c);
     return sp_box_nil();
@@ -336,7 +336,7 @@ static sp_RbVal fx_fork(const FxBlock *blk) {
     FX_TRY_LANDED(0);
     FxCaught c = fx_caught();
     const char *cls = c.cls ? c.cls : "RuntimeError";
-    sp_Exception *e = fx_caught_obj(c);
+    sp_Exception *e = fx_caught_obj(&c);
     SP_GC_ROOT(e);
     if (sp_exc_cls_matches(cls, "SystemExit")) {
       st = sp_exc_exit_status(e);

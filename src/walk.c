@@ -2775,8 +2775,18 @@ static FxCaught fx_caught(void) {
 /* The object of a caught exception, made now when the runtime raised by
    name. It takes as its cause the exception that a rescue handled when
    the raise happened (sp_pending_cause), as the code of spinel does. */
-static sp_Exception *fx_caught_obj(FxCaught c) {
-  sp_Exception *e = c.obj ? (sp_Exception *)c.obj : sp_exc_new_for_catch(c.cls, c.msg);
+static sp_Exception *fx_caught_obj(FxCaught *c) {
+  int made = !c->obj;
+  sp_Exception *e = made ? sp_exc_new_for_catch(c->cls, c->msg) : (sp_Exception *)c->obj;
+  /* The caught message is in the handler stack of the runtime only, in the
+     slot that the next handler takes: nothing else holds it. The object
+     keeps a message of its own, a copy for a raise by name. *c reads the
+     message of the object from here on, so a re-raise after code that can
+     collect (an ensure clause, the classes of a rescue clause) gives a live
+     String, as sp_exc_ensure_obj of the runtime does. The caller roots the
+     object. */
+  if (c->msg && !sp_exc_msg_empty_given(c->msg) && e->msg) c->msg = e->msg;
+  c->obj = e;
   /* the backtrace that the landing read (fx_bt_land) for a raise by name */
   if (!e->backtrace && L.bt) sp_Exception_set_backtrace(e, L.bt);
   L.bt = NULL;
@@ -2832,7 +2842,7 @@ static int fx_rescue_takes(FxFrame *f, const pm_rescue_node_t *r, const char *cl
 /* The rescue clauses for a caught exception: the first that takes it
    runs, else the exception goes on. Sets *retry for a retry. */
 static sp_RbVal fx_rescue_run(FxFrame *f, const pm_rescue_node_t *r, FxCaught c, int *retry) {
-  sp_Exception *e = fx_caught_obj(c);
+  sp_Exception *e = fx_caught_obj(&c);
   SP_GC_ROOT(e);
   sp_RbVal ev = fx_exc_box(e);
   SP_GC_ROOT_RBVAL(ev);
@@ -2848,7 +2858,6 @@ static sp_RbVal fx_rescue_run(FxFrame *f, const pm_rescue_node_t *r, FxCaught c,
     }
     return v;
   }
-  c.obj = e;
   fx_reraise(c);
 }
 
@@ -2903,8 +2912,7 @@ static sp_RbVal fx_begin(FxFrame *f, const pm_begin_node_t *b) {
       sp_unwind_resume();
     }
     c = fx_caught();
-    exc = fx_caught_obj(c);
-    c.obj = exc;
+    exc = fx_caught_obj(&c);
   }
   /* the jump that passes through the ensure clause */
   FxCtl ctl = L.ctl;
@@ -2942,7 +2950,7 @@ static sp_RbVal fx_loop(const FxBlock *blk) {
   if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
   FxCaught c = fx_caught();
   if (!sp_exc_cls_matches(c.cls, "StopIteration")) fx_reraise(c);
-  return sp_exc_result(fx_caught_obj(c));
+  return sp_exc_result(fx_caught_obj(&c));
 }
 
 /* Kernel#catch: the block under a catch entry, as the code that spinel
@@ -3002,7 +3010,7 @@ static sp_RbVal fx_rescue_modifier(FxFrame *f, const pm_rescue_modifier_node_t *
   FxCaught c = fx_caught();
   if (!sp_exc_is_standard_error(c.cls) || !strcmp(c.cls, "FiberKillSignal")) fx_reraise(c);
   /* $! is the exception while the fallback runs */
-  sp_Exception *e = fx_caught_obj(c);
+  sp_Exception *e = fx_caught_obj(&c);
   SP_GC_ROOT(e);
   sp_rescue_push(e);
   v = fx_eval(f, n->rescue_expression);
