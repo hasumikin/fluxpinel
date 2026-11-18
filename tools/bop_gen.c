@@ -203,6 +203,8 @@ static const char *expand(Str *s, const BuiltinOp *op, const Variant *v, int *oi
 static TyKind result_kind(const BuiltinOp *op, const Variant *v) {
   if (op->result == BOPR_SELF) return v->recv;
   if (op->result == BOPR_ELEM) return v->elem;
+  /* an Integer, nil on a miss: the template leaves an sp_oint ($< ... $>) */
+  if (op->result == BOPR_ARRAY_INDEX) return TY_INT;
   if ((int)op->result < 0) return TY_UNKNOWN;
   return op->result;
 }
