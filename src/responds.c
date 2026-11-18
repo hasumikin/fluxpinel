@@ -157,6 +157,25 @@ static int fx_rs_responds(sp_RbVal r, const char *mn) {
   return b && fx_rs_instance(b->name, mn);
 }
 
+/* Whether the table tells that CRuby gives r no public method mn. It cannot
+   tell for a class with no row, and for a value or a class that an extend
+   or a singleton class can give more methods. */
+static int fx_rs_lacks(sp_RbVal r, const char *mn) {
+  const FxClass *b;
+  if (r.tag == SP_TAG_CLASS) {
+    FxClass *k = fx_class_value(r);
+    if (!k || k->nextends) return 0;
+    b = k->is_module && k->cls_id >= FX_CLS_BASE ? NULL : fx_rs_builtin_of(k);
+  } else if (fx_is_fx_object(r)) {
+    b = fx_rs_builtin_of(fx_class_of(r));
+  } else {
+    if (!fx_rs_row(sp_poly_class_name(r))) return 0;
+    b = NULL;
+  }
+  if ((b && !fx_rs_row(b->name)) || fx_singleton_of(r, 0)) return 0;
+  return !fx_rs_responds(r, mn);
+}
+
 /* Whether CRuby can have the method mn on r: a public builtin method, a
    private method of Kernel, or any method after a require of a feature
    or of a value whose class has no row (the table cannot tell). A miss of

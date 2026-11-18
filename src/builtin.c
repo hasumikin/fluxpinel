@@ -1134,9 +1134,10 @@ static int fx_builtin_call_1(sp_RbVal recv, const char *name, int argc, sp_RbVal
        goes on as for a call with no block (a top-level def, else
        NoMethodError) */
     if (!fx_rs_known(recv, name)) return 0;
-    /* fork { }: a private method of Kernel, so the self of any method of
-       the program (an instance, a class, a module, a Struct), and the
-       module function Kernel.fork */
+    /* a private method of Kernel that the receiver has no public method
+       for: the caller knows whether the call can reach it (fx_send_v) */
+    if (fx_kernel_private(name) && fx_rs_lacks(recv, name)) return 0;
+    /* the module function Kernel.fork */
     if (argc == 0 && !strcmp(name, "fork")) { *out = fx_fork(blk); return 1; }
     fx_gap(sp_sprintf("block for the builtin %s#%s", sp_poly_class_name(recv), name));
   }
@@ -1263,16 +1264,21 @@ static sp_RbVal fx_send_v(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
     return fx_invoke_b(m, recv, argc, argv, blk);
   }
   /* a private method of Kernel, on a receiver whose class has no public
-     builtin of the name; on any other one, the miss is a gap of Fluxpinel
-     (File.open, Array#select) */
+     builtin of the name in CRuby (fx_rs_lacks); on any other one, the miss
+     is a gap of Fluxpinel (File.open, Array#select) */
   int plain = recv.tag == SP_TAG_INT || recv.tag == SP_TAG_FLT || recv.tag == SP_TAG_NIL || recv.tag == SP_TAG_BOOL ||
               (fx_is_fx_object(recv) && !fx_is_native_obj(recv) && !fx_record_of(fx_class_of(recv)));
-  if (check && plain && fx_kernel_private(name)) return fx_denied(recv, name, argc, argv, blk, FX_MISS_PRIVATE);
+  int priv = fx_kernel_private(name) && (plain || fx_rs_lacks(recv, name));
+  if (check && priv) return fx_denied(recv, name, argc, argv, blk, FX_MISS_PRIVATE);
+  /* fork { }: the self of any method of the program (an instance, a
+     class, a module, a Struct) reaches it, and a send does */
+  if (blk && priv && argc == 0 && !strcmp(name, "fork")) return fx_fork(blk);
   /* a send reaches it: obj.send(:puts, "x"). A builtin class with a public
      method of the name that Fluxpinel lacks keeps its gap. */
   if (!check && !blk && fx_kernel_private(name) && (plain || !fx_builtin_responds(recv, name)) &&
       fx_kernel(name, argc, argv, &out))
     return out;
+  if (blk && priv) fx_gap(sp_sprintf("block for the builtin %s#%s", sp_poly_class_name(recv), name));
   fx_prelude_gap(name, argc, argv);
   if (fx_method_missing(recv, name, argc, argv, blk, FX_MISS_METHOD, &out)) return out;
   FxClass *rk = recv.tag == SP_TAG_CLASS ? fx_class_value(recv) : NULL;

@@ -664,11 +664,14 @@ static int fx_ffi_attached_call(sp_RbVal r, const char *name, int argc, sp_RbVal
    receiver, with the block of the call. Answers 0 when the program
    defines no method_missing for the receiver. why (FX_MISS_*) is the
    reason of the miss, for the error of a super from the hook
-   (L.mm_why). */
+   (L.mm_why). A miss of a name of Object is a gap of Fluxpinel, which the
+   hook does not take; a call that the visibility of the method refuses is
+   a miss in CRuby too, for any name. */
 static int fx_method_missing(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                                int why, sp_RbVal *out) {
   if (fx_ffi_attached_call(r, name, argc, argv, blk, out)) return 1;
-  FxMethod *m = fx_object_method_name(name) ? NULL : fx_find_hook(r, "method_missing");
+  int refused = why == FX_MISS_PRIVATE || why == FX_MISS_PROTECTED;
+  FxMethod *m = !refused && fx_object_method_name(name) ? NULL : fx_find_hook(r, "method_missing");
   if (!m) return 0;
   SP_GC_SAVE();
   sp_PolyArray *a = sp_PolyArray_new();
