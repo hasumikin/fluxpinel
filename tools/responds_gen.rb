@@ -65,3 +65,6 @@ end
 puts "static const FxRespondRow fx_rs_rows[] = {"
 puts rows
 puts "};"
+# The names of the classes of Errno. CRuby has the same names on each
+# system: a name that the system gives no number is Errno::NOERROR.
+puts c_list("fx_rs_errno_names", Errno.constants)

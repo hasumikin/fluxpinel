@@ -157,6 +157,9 @@ static FX_ANC_FN int fx_rs_responds(sp_RbVal r, const char *mn) {
   return b && fx_rs_instance(b->name, mn);
 }
 
+/* Whether CRuby has the class Errno::name, on any system. */
+static int fx_rs_errno_name(const char *name) { return fx_rs_in(fx_rs_errno_names, name); }
+
 /* Whether the table tells that CRuby gives r no public method mn. It cannot
    tell for a class with no row, and for a value or a class that an extend
    or a singleton class can give more methods. */

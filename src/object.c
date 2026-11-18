@@ -324,14 +324,17 @@ static FxClass *fx_builtin(const char *name) {
   /* the runtime takes any name under Errno; a class of Errno is one that
      has a number, as CRuby defines them (Errno::ENOENT::Errno) */
   sp_int errnum = strncmp(name, "Errno::", 7) ? -1 : sp_errno_num(name);
-  if (errnum == 0) return NULL;
+  /* a name that CRuby has and the system gives no number (EDEADLOCK on
+     macOS) is Errno::NOERROR, the class of the number 0 */
+  if (errnum == 0 && strcmp(name, "Errno::NOERROR"))
+    return fx_rs_errno_name(name + 7) ? fx_builtin("Errno::NOERROR") : NULL;
   /* two names of one number are one class (EWOULDBLOCK is EAGAIN) */
   if (errnum > 0 && strcmp(sp_errno_class_name((int)errnum), name)) return fx_builtin(sp_errno_class_name((int)errnum));
   if (exc_parent) {
     FxClass *c = fx_class_alloc(FX_EXC_CLS_BASE - L.nbuiltins, strdup(name), 0, NULL, NULL);
     fx_push_class(&L.builtins, &L.nbuiltins, &L.builtins_cap, c);
     c->super = fx_builtin(exc_parent);
-    if (errnum > 0) fx_const_set(c, sp_sym_intern("Errno"), sp_box_int(errnum));
+    if (errnum >= 0) fx_const_set(c, sp_sym_intern("Errno"), sp_box_int(errnum));
     /* a nonblocking error of IO includes its wait module: IO::EAGAINWaitReadable
        is an Errno::EAGAIN that is an IO::WaitReadable (global.c makes the two
        modules) */
