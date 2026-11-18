@@ -29,8 +29,8 @@
 
 require "etc"
 require "fileutils"
-require "open3"
 require "optparse"
+require_relative "run_limited"
 
 opts = { jobs: Etc.nprocessors, timeout: 10, gems: %w[reline irb prism rdoc] }
 OptionParser.new do |o|
@@ -85,9 +85,8 @@ def norm(s) = s.b.gsub(/\r$/, "").gsub(/0x[0-9a-f]+/, "0x..")
 
 # Answers [stderr, status]; status is 124 on a timeout, 128 + n on a signal.
 def run(cmd, timeout:, env: {})
-  _, err, st = Open3.capture3(env, "timeout", "-k", "2", timeout.to_s, *cmd,
-                              chdir: OUT, stdin_data: "", binmode: true)
-  [norm(err), st.exitstatus || 128 + st.termsig.to_i]
+  _, err, st = RunLimited.capture3(env, cmd, limit: timeout, chdir: OUT, binmode: true)
+  [norm(err), st]
 end
 
 Result = Struct.new(:item, :klass, :detail)

@@ -10,7 +10,7 @@
 # differ or Fluxpinel fails.
 
 require "optparse"
-require "open3"
+require_relative "run_limited"
 
 opt = { frames: 180, timeout: 1800 }
 OptionParser.new do |o|
@@ -23,12 +23,12 @@ abort "optcarrot.rb: give --dir and --fluxpinel" unless opt[:dir] && opt[:fluxpi
 
 ARGS = ["bin/optcarrot", "-b", "--frames", opt[:frames].to_s, "examples/Lan_Master.nes"]
 
-# The stdout, the stderr, the status and the seconds of one side.
-# timeout(1) stops a side that runs longer than limit.
+# The stdout, the stderr, the status and the seconds of one side. A side
+# that runs longer than limit stops, with the status 124.
 def run(cmd, dir, limit)
   t = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-  out, err, st = Open3.capture3("timeout", limit.to_s, *cmd, chdir: dir)
-  err += "timeout after #{limit} s\n" if st.exitstatus == 124
+  out, err, st = RunLimited.capture3({}, cmd, limit: limit, chdir: dir)
+  err += "timeout after #{limit} s\n" if st == RunLimited::TIMED_OUT
   [out, err, st, Process.clock_gettime(Process::CLOCK_MONOTONIC) - t]
 end
 
@@ -38,14 +38,14 @@ def field(out, name) = out[/^#{name}: (\S+)$/, 1]
 def fps(out) = field(out, "fps")&.to_f&.round(1) || "-"
 
 ruby = run([RbConfig.ruby, *ARGS], opt[:dir], opt[:timeout])
-abort "optcarrot.rb: CRuby fails\n#{ruby[1]}" unless ruby[2]&.success?
+abort "optcarrot.rb: CRuby fails\n#{ruby[1]}" unless ruby[2] == 0
 fx = run([opt[:fluxpinel], *ARGS], opt[:dir], opt[:timeout])
 
 want = field(ruby[0], "checksum")
 got = field(fx[0], "checksum")
 printf("CRuby:     fps %-8s checksum %s (%.1f s)\n", fps(ruby[0]), want, ruby[3])
 printf("Fluxpinel: fps %-8s checksum %s (%.1f s)\n", fps(fx[0]), got || "-", fx[3])
-if fx[2]&.success? && got == want
+if fx[2] == 0 && got == want
   puts "optcarrot: OK"
 else
   $stderr.puts fx[1].lines.last(10).join

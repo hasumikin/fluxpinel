@@ -42,8 +42,8 @@
 
 require "etc"
 require "fileutils"
-require "open3"
 require "optparse"
+require_relative "run_limited"
 
 opts = { jobs: Etc.nprocessors, timeout: 10, compile_timeout: 120, mode: "promote" }
 OptionParser.new do |o|
@@ -109,9 +109,9 @@ def norm(s) = s.b.gsub(/\r$/, "")
 # Runs cmd in the spinel tree, as spinel's own test run does. Answers
 # [stdout, stderr, status]; status is 124 on a timeout, 128 + n on signal n.
 def run(cmd, timeout:, stdin: nil, env: {})
-  out, err, st = Open3.capture3(env, "timeout", "-k", "2", timeout.to_s, *cmd,
-                                chdir: SPINEL_DIR, stdin_data: stdin || "", binmode: true)
-  [norm(out), err, st.exitstatus || 128 + st.termsig.to_i]
+  out, err, st = RunLimited.capture3(env, cmd, limit: timeout, chdir: SPINEL_DIR,
+                                     stdin_data: stdin || "", binmode: true)
+  [norm(out), err, st]
 end
 
 def first_diff(want, got)
