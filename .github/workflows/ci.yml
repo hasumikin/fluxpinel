@@ -88,6 +88,34 @@ jobs:
       - name: Build
         run: make -j$(getconf _NPROCESSORS_ONLN)
 
+      # TEMPORARY (the branch debug-io-reopen only): test/m3/io_reopen.rb
+      # under GC stress ran 265 s on Linux and was ended by a signal. Run
+      # it alone, and when it does not end in 40 s, show the processes and
+      # the C backtrace of each one.
+      - name: Debug io_reopen under GC stress
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y gdb > /dev/null 2>&1 || true
+          for i in 1 2 3; do
+            SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1 build/fluxpinel test/m3/io_reopen.rb > dbg_out.txt 2> dbg_err.txt &
+            pid=$!
+            for s in $(seq 1 40); do kill -0 $pid 2>/dev/null || break; sleep 1; done
+            if kill -0 $pid 2>/dev/null; then
+              echo "== run $i: still running after 40 s (pid $pid)"
+              kids=$(pgrep -P $pid || true)
+              ps -o pid,ppid,stat,etime,rss,nlwp,args -p $pid $kids || true
+              for p in $pid $kids; do
+                echo "-- backtrace of $p"
+                sudo gdb -p $p -batch -ex 'thread apply all bt 15' 2>&1 | grep -v '^\[New LWP\|^warning\|^$' | tail -80 || true
+              done
+              kill -9 $kids $pid 2>/dev/null || true
+              wait $pid 2>/dev/null || true
+            else
+              wait $pid; echo "== run $i: ended with status $?"
+            fi
+            echo "-- stdout lines: $(wc -l < dbg_out.txt); stderr tail:"; tail -5 dbg_err.txt
+          done
+
       - name: make test
         run: make test
 
