@@ -267,18 +267,50 @@ static sp_RbVal fx_detach_step(void *ctx, int argc, sp_RbVal *argv) {
 /* The functions of Kernel that control processes: spawn, system, exec and
    the backtick, which a backtick literal calls by name. */
 /* The end of a forked child, as the end of the main program: the at_exit
-   hooks, which read the status, then the scheduler, then exit(3). */
-static __attribute__((noreturn)) void fx_child_exit(int status) {
+   hooks, which read the status, then the scheduler, then exit(3), or the
+   signal of a SignalException nothing rescued: the child dies of it, as
+   CRuby's does (rb_ec_cleanup raises it again), so the parent reads
+   signaled? and termsig, as a shell does for a killed job. */
+static __attribute__((noreturn)) void fx_child_exit(int status, int sig) {
   int rc = sp_at_exit_run(status);
   fx_lock_set_depth(0);
   fx_sched_end();
+  if (sig) {
+    fflush(NULL);
+    signal(sig, SIG_DFL);
+    raise(sig);
+  }
   exit(rc);
+}
+
+/* The signal of a SignalException, or 0 when none can be read: the number
+   the runtime put beside it (a SIGINT or SIGTERM delivered, Interrupt.new),
+   else the message the program gave to raise, a name with or without the
+   SIG or a number (`raise SignalException, 15`). Fluxpinel checks the name
+   only here, so this raises nothing: a raise on the landing side would reach
+   the frames of the parent that the child copied. A child with no signal
+   to die of ends as with any other exception. */
+static int fx_signal_of(sp_Exception *e, const char *cls, const char *msg) {
+  if (e && e->xkey.tag == SP_TAG_INT) return (int)e->xkey.v.i;
+  if (!strcmp(cls, "Interrupt")) return SIGINT;
+  if (!msg || !msg[0]) return 0;
+  char *end;
+  long no = strtol(msg, &end, 10);
+  if (end != msg && !*end) return no > 0 && no < NSIG && sp_signal_signame((sp_int)no) ? (int)no : 0;
+  const char *nm = !strncmp(msg, "SIG", 3) ? msg + 3 : msg;
+  for (int i = 1; i < NSIG; i++) {
+    const char *s = sp_signal_signame(i);
+    if (s && !strcmp(s, nm)) return i;
+  }
+  return 0;
 }
 
 /* Kernel#fork and Process.fork. The child runs the block and ends as the
    main program ends. A raise that leaves the block ends the child with the
-   report of an uncaught exception and status 1, or with a SystemExit's
-   status, and never reaches the frames of the parent that the child
+   report of an uncaught exception and status 1, with a SystemExit's
+   status, or by the signal of a SignalException (reported only for an
+   Interrupt, as CRuby reports it), and never reaches the frames of the
+   parent that the child
    copied, as CRuby keeps it in the child (rb_protect in rb_fork_ruby).
    Without a block, the pid in the parent and nil in the child. What
    $stdout and $stderr hold is written before the fork, so it goes out
@@ -295,7 +327,7 @@ static sp_RbVal fx_fork(const FxBlock *blk) {
   if (pid < 0) sp_raise_cls(sp_errno_class_name(errno), strerror(errno));
   if (pid > 0) return sp_box_int((sp_int)pid);
   if (!blk) return sp_box_nil();
-  int st = 0;
+  int st = 0, sig = 0;
   FX_TRY_PUSH();
   if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
     fx_yield(blk, 0, NULL);
@@ -308,6 +340,10 @@ static sp_RbVal fx_fork(const FxBlock *blk) {
     SP_GC_ROOT(e);
     if (sp_exc_cls_matches(cls, "SystemExit")) {
       st = sp_exc_exit_status(e);
+    } else if (sp_exc_cls_matches(cls, "SignalException")) {
+      sig = fx_signal_of(e, cls, c.msg);
+      if (!sig || strcmp(cls, "SignalException")) sp_exc_print_uncaught(cls, c.msg, e->backtrace);
+      st = 1;
     } else {
       sp_exc_print_uncaught(cls, c.msg, e->backtrace);
       st = 1;
@@ -317,7 +353,7 @@ static sp_RbVal fx_fork(const FxBlock *blk) {
     sp_pending_cause = NULL;
   }
   L.ctl = FX_CTL_NONE;
-  fx_child_exit(st);
+  fx_child_exit(st, sig);
 }
 
 static int fx_process_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {

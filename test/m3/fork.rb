@@ -118,6 +118,54 @@ r.close
 w.close
 p $?.signaled?
 
+# a child that dies of a signal: the status says so, as a shell reports a
+# killed job; only an Interrupt is reported, as CRuby reports it, and the
+# at_exit hooks and the buffered output come first
+def child_stderr
+  r, w = IO.pipe
+  pid = fork do
+    r.close
+    $stderr.reopen(w)
+    yield
+  end
+  w.close
+  err = r.read
+  r.close
+  Process.wait(pid)
+  [$?.signaled?, $?.termsig, $?.exitstatus, err]
+end
+r, w = IO.pipe
+pid = fork { r.close; $stderr.reopen(w); sleep 5 }
+w.close
+sleep 0.3
+Process.kill("TERM", pid)
+Process.wait(pid)
+p [$?.signaled?, $?.termsig, $?.exitstatus, r.read]
+r.close
+p child_stderr { raise SignalException, "SIGTERM" }
+p child_stderr { raise SignalException, "HUP" }
+p child_stderr { raise Interrupt }.then { |sig, no, st, err| [sig, no, st, err.include?("Interrupt")] }
+p child_stderr { at_exit { puts "the hook runs before the signal"; $stdout.flush }; raise SignalException, "SIGTERM" }
+p child_stderr { puts "unflushed"; raise SignalException, "SIGTERM" }
+
+# a number for the signal, and a name that is no signal: the child ends as
+# with any other exception, and never runs the code of the parent
+p child_stderr { raise SignalException, 15 }
+main = Process.pid
+r, w = IO.pipe
+pid = begin
+  fork { r.close; $stderr.reopen(w); raise SignalException, "bogus" }
+rescue ArgumentError => e
+  puts "rescued #{e.class} in #{Process.pid == main ? "the parent" : "THE CHILD"}"
+  nil
+end
+w.close
+err = r.read
+r.close
+Process.wait(pid) if pid
+puts "after the fork in #{Process.pid == main ? "the parent" : "THE CHILD"}"
+p [$?.signaled?, $?.exitstatus, err.empty?]
+
 # the at_exit hooks of the parent run in the child
 at_exit { puts "at_exit in #{Process.pid == $main_pid ? "the parent" : "a child"}" }
 $main_pid = Process.pid
