@@ -52,8 +52,9 @@ before a change of the pin and after a large change of the walker.
 
 `.github/workflows/ci.yml` has three jobs.
 
-- `check` runs on a push and a pull request to master. It runs
-  `make test`, `make test-host` and `make regress` on the pinned spinel.
+- `check` runs on a push and a pull request to master, on Linux and on
+  macOS. It runs `make test`, `make test-host` and `make regress` on the
+  pinned spinel.
 - `spinel-master` runs each week and on a manual start. It runs the same
   checks on the master of spinel with `SPINEL_PIN=0`. A failure tells that
   a change of spinel breaks Fluxpinel before the pin moves.

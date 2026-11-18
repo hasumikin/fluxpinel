@@ -22,10 +22,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The checks of development.md on the pinned spinel.
+  # The checks of development.md on the pinned spinel, on Linux and on
+  # macOS. A failure on one system does not stop the run on the other.
   check:
     if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
 
@@ -34,8 +39,14 @@ jobs:
         with:
           ruby-version: "4.0"
 
-      - name: Install libffi
+      - name: Install libffi (Linux)
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libffi-dev
+
+      # The Makefile finds the kegs of Homebrew.
+      - name: Install libffi and OpenSSL (macOS)
+        if: runner.os == 'macOS'
+        run: brew install libffi openssl
 
       # test/m3/ffi_gem.rb compares with the ffi gem under CRuby.
       - name: Install the ffi gem
@@ -62,8 +73,10 @@ jobs:
           path: deps/spinel
           key: spinel-${{ runner.os }}-${{ hashFiles('SPINEL_COMMIT') }}
 
+      # getconf gives the count of processors on both systems; macOS has
+      # no nproc.
       - name: Fetch and build spinel
-        run: make -j$(nproc) deps
+        run: make -j$(getconf _NPROCESSORS_ONLN) deps
 
       - name: Save spinel
         if: steps.spinel-cache.outputs.cache-hit != 'true'
@@ -73,7 +86,7 @@ jobs:
           key: ${{ steps.spinel-cache.outputs.cache-primary-key }}
 
       - name: Build
-        run: make -j$(nproc)
+        run: make -j$(getconf _NPROCESSORS_ONLN)
 
       - name: make test
         run: make test
@@ -88,7 +101,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: regress-cases
+          name: regress-cases-${{ matrix.os }}
           path: build/regress/cases
           if-no-files-found: ignore
 
