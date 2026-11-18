@@ -158,3 +158,16 @@ begin
 rescue Errno::ECHILD => e
   p e.class
 end
+
+# to_s and inspect of a Process::Status: the pid and how the child ended,
+# as a shell reports a job; puts reads to_s
+pid = Process.spawn("sh", "-c", "exit 3")
+Process.wait(pid)
+p $?.to_s.sub(pid.to_s, "PID"), $?.inspect.sub(pid.to_s, "PID")
+pid = Process.spawn("sleep", "5")
+Process.kill("KILL", pid)
+Process.wait(pid)
+puts $?.to_s.sub(pid.to_s, "PID"), $?.inspect.sub(pid.to_s, "PID")
+pid = fork { exit 0 }
+_, st = Process.wait2(pid)
+p st.to_s == "pid #{pid} exit 0", st.inspect.start_with?("#<Process::Status: pid "), [st.to_s, st.inspect].map(&:frozen?)

@@ -399,13 +399,25 @@ static int fx_process_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVa
 }
 
 /* Process::Status#success?, which bop_gen leaves out: nil when the child
-   did not exit, else whether its status is zero. */
+   did not exit, else whether its status is zero. to_s and inspect have rows
+   in the table of spinel ("pid 12 exit 3", "#<Process::Status: pid 12
+   SIGKILL (signal 9)>"), but fx_core answers the to_s and the inspect of
+   every value before the table, so the call is handed to the generated
+   wrapper here. */
 static int fx_process_status_core(sp_RbVal r, const char *name, int argc, sp_RbVal *out) {
   if (r.tag != SP_TAG_OBJ || r.cls_id != SP_BUILTIN_PROCESS_STATUS || !r.v.p) return 0;
   if (FX_IS("success?") && argc == 0) {
     int s = sp_process_status_success_p(((sp_ProcessStatus *)r.v.p)->status);
     *out = s < 0 ? sp_box_nil() : sp_box_bool(s);
     return 1;
+  }
+  if ((FX_IS("to_s") || FX_IS("inspect")) && argc == 0) {
+    fx_bop_fn fn = fx_bop_find(r, name, 0, NULL);
+    if (fn) {
+      *out = fn(r, NULL);
+      fx_bop_mark();
+      return 1;
+    }
   }
   return 0;
 }
