@@ -2,7 +2,9 @@
 
 p defined?(RbConfig), defined?(Gem)
 c = RbConfig::CONFIG
-p c["host_os"], c["host_cpu"], c["SOEXT"], c["EXEEXT"], c["arch"], c["MAJOR"]
+# the name of the system with no version: CRuby on macOS has "darwin23",
+# and spinel has "darwin"
+p c["host_os"][/\A[a-z]+/], c["host_cpu"], c["SOEXT"], c["EXEEXT"], c["arch"][/\A\w+-[a-z]+/], c["MAJOR"]
 p RbConfig.ruby.class
 p Gem::Version.new("1.2") < Gem::Version.new("1.10"), Gem.win_platform?
 p require("rbconfig"), require("rubygems")

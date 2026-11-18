@@ -2846,7 +2846,9 @@ static sp_RbVal fx_rescue(FxFrame *f, const pm_begin_node_t *b) {
   sp_RbVal v = sp_box_nil();
   SP_GC_ROOT_RBVAL(v);
   const int depth = fx_fs()->depth;
-retry:
+  /* the empty statement: FX_TRY_PUSH starts with a declaration, which a
+     label cannot stand before */
+retry:;
   FX_TRY_PUSH();
   if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
     v = fx_eval_stmts(f, b->statements);

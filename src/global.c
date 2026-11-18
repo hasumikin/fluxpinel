@@ -349,15 +349,15 @@ static void fx_global_init(void) {
   fx_env = fx_new_object(L.object);
   fx_const_set(L.object, sp_sym_intern("ENV"), fx_env);
   /* spinel loads the package of Set when a program names it, with no
-     require (sp_require_preloaded of spinel_parse.c), and splices its
-     builtins/*.rb for RbConfig and Gem, which CRuby has before the program
-     (sp_splice_named_builtin) */
+     require (sp_require_preloaded of spinel_parse.c), and splices the
+     files of its builtins directory for RbConfig and Gem, which CRuby has
+     before the program (sp_splice_named_builtin) */
   fx_autoload_set(L.object, sp_sym_intern("Set"), "set");
   fx_autoload_set(L.object, sp_sym_intern("RbConfig"), FX_BUILTINS_DIR "/rbconfig.rb");
   fx_autoload_set(L.object, sp_sym_intern("Gem"), FX_BUILTINS_DIR "/gem.rb");
-  /* ThreadGroup and ObjectSpace: builtins/*.rb that spinel splices when a
-     program names them (the finalizers of ObjectSpace bind to the
-     runtime with native_func) */
+  /* ThreadGroup and ObjectSpace: files of the builtins directory that
+     spinel splices when a program names them (the finalizers of
+     ObjectSpace bind to the runtime with native_func) */
   fx_autoload_set(L.object, sp_sym_intern("ThreadGroup"), FX_BUILTINS_DIR "/thread_group.rb");
   fx_autoload_set(L.object, sp_sym_intern("ObjectSpace"), FX_BUILTINS_DIR "/object_space.rb");
   fx_autoload_set(L.object, sp_sym_intern("MonitorMixin"), FX_BUILTINS_DIR "/monitor_mixin.rb");
