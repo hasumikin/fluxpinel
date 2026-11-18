@@ -397,7 +397,7 @@ static void fx_global_init(void) {
   FxClass *io = fx_builtin("IO");
   const char *const waits[] = { "WaitReadable", "WaitWritable" };
   for (int i = 0; i < 2; i++) {
-    FxClass *m = fx_class_new(strdup(sp_sprintf("IO::%s", waits[i])), 1, NULL, io);
+    FxClass *m = fx_class_new(fx_name_dup(sp_sprintf("IO::%s", waits[i])), 1, NULL, io);
     fx_const_set(io, sp_sym_intern(waits[i]), fx_class_box(m));
   }
 }

@@ -50,7 +50,7 @@ static void fx_host_init(void) {
     if (fx_host_builtin_name(fx_host_class_name(id))) continue;
     sp_Class c = { id, NULL };
     int is_module = fx_kernel_hooks.class_is_module && fx_kernel_hooks.class_is_module(c);
-    FxClass *k = fx_class_alloc(id, strdup(fx_host_class_name(id)), is_module, NULL, NULL);
+    FxClass *k = fx_class_alloc(id, fx_name_dup(fx_host_class_name(id)), is_module, NULL, NULL);
     fx_push_class(&L.builtins, &L.nbuiltins, &L.builtins_cap, k);
   }
   /* the superclasses, once each class of the kernel has its FxClass */

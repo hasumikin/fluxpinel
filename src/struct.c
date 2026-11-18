@@ -25,7 +25,7 @@ static const FxClass *fx_record_of(const FxClass *k) {
 
 static FxClass *fx_class_anon(int is_module, FxClass *super, FxClass *lexical) {
   FxClass *k = fx_class_new(NULL, is_module, super, lexical);
-  k->name = strdup(sp_sprintf("#<%s:0x%016llx>", is_module ? "Module" : "Class", (unsigned long long)(uintptr_t)k));
+  k->name = fx_name_dup(sp_sprintf("#<%s:0x%016llx>", is_module ? "Module" : "Class", (unsigned long long)(uintptr_t)k));
   k->anon = 1;
   return k;
 }

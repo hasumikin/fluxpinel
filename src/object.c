@@ -211,6 +211,20 @@ static void fx_push_class(FxClass ***arr, int *n, int *cap, FxClass *c) {
   (*arr)[(*n)++] = c;
 }
 
+/* A copy of the class name s for the life of the program. The runtime gets
+   the name of a class (sp_class_name_fn) and reads it as a String, with
+   the marker byte before its first character. The copy has the marker of a
+   literal (0xff: no header, never freed). A strdup has a byte of the
+   allocator there, which another allocator than glibc's fills with the
+   bytes of another block. */
+static const char *fx_name_dup(const char *s) {
+  size_t n = strlen(s);
+  char *m = malloc(n + 2);
+  m[0] = (char)0xff;
+  memcpy(m + 1, s, n + 1);
+  return m + 1;
+}
+
 static FxClass *fx_class_alloc(sp_int cls_id, const char *name, int is_module,
                                    FxClass *super, FxClass *lexical) {
   FxClass *c = calloc(1, sizeof *c);
@@ -331,7 +345,7 @@ static FxClass *fx_builtin(const char *name) {
   /* two names of one number are one class (EWOULDBLOCK is EAGAIN) */
   if (errnum > 0 && strcmp(sp_errno_class_name((int)errnum), name)) return fx_builtin(sp_errno_class_name((int)errnum));
   if (exc_parent) {
-    FxClass *c = fx_class_alloc(FX_EXC_CLS_BASE - L.nbuiltins, strdup(name), 0, NULL, NULL);
+    FxClass *c = fx_class_alloc(FX_EXC_CLS_BASE - L.nbuiltins, fx_name_dup(name), 0, NULL, NULL);
     fx_push_class(&L.builtins, &L.nbuiltins, &L.builtins_cap, c);
     c->super = fx_builtin(exc_parent);
     if (errnum >= 0) fx_const_set(c, sp_sym_intern("Errno"), sp_box_int(errnum));
@@ -348,7 +362,7 @@ static FxClass *fx_builtin(const char *name) {
      and Errno, whose classes (Errno::ENOENT) the runtime names: an id of
      its own below the table too */
   if (!id && (!strcmp(name, "Process") || !strcmp(name, "GC") || !strcmp(name, "Errno") || !strcmp(name, "Marshal"))) {
-    FxClass *c = fx_class_alloc(FX_EXC_CLS_BASE - L.nbuiltins, strdup(name), 1, NULL, NULL);
+    FxClass *c = fx_class_alloc(FX_EXC_CLS_BASE - L.nbuiltins, fx_name_dup(name), 1, NULL, NULL);
     fx_push_class(&L.builtins, &L.nbuiltins, &L.builtins_cap, c);
     if (name[0] == 'P') fx_process_consts(c);
     if (name[0] == 'M') {
@@ -361,7 +375,7 @@ static FxClass *fx_builtin(const char *name) {
      and UnboundMethod, the classes of a method value (iter.c), which the
      runtime names by the unbound flag */
   if (!id && (!strcmp(name, "Encoding") || !strcmp(name, "Method") || !strcmp(name, "UnboundMethod"))) {
-    FxClass *c = fx_class_alloc(FX_EXC_CLS_BASE - L.nbuiltins, strdup(name), 0, NULL, NULL);
+    FxClass *c = fx_class_alloc(FX_EXC_CLS_BASE - L.nbuiltins, fx_name_dup(name), 0, NULL, NULL);
     fx_push_class(&L.builtins, &L.nbuiltins, &L.builtins_cap, c);
     c->super = L.object;
     return c;
@@ -489,7 +503,7 @@ static FxClass *fx_singleton_of(sp_RbVal v, int create) {
   SP_GC_ROOT_RBVAL(v);
   FxClass *base = fx_class_of(v);
   FxClass *k = fx_class_new(NULL, 0, base, base);
-  k->name = strdup(sp_sprintf("#<Class:#<%s:0x%016llx>>", base->name, (unsigned long long)(uintptr_t)v.v.p));
+  k->name = fx_name_dup(sp_sprintf("#<Class:#<%s:0x%016llx>>", base->name, (unsigned long long)(uintptr_t)v.v.p));
   k->singleton = 1;
   if (sp_poly_is_array_kind(v.cls_id) || v.cls_id == SP_BUILTIN_POLY_POLY_HASH) fx_fast_singletons++;
   if (!fx_singletons) fx_singletons = sp_PolyArray_new();
@@ -507,7 +521,7 @@ static FxClass *fx_singleton_of(sp_RbVal v, int create) {
    CRuby, else Class or Module. */
 static FxClass *fx_meta_of(FxClass *k) {
   if (k->meta) return k->meta;
-  FxClass *m = fx_class_new(strdup(sp_sprintf("#<Class:%s>", k->name)), 0, NULL, L.object);
+  FxClass *m = fx_class_new(fx_name_dup(sp_sprintf("#<Class:%s>", k->name)), 0, NULL, L.object);
   m->singleton = 1;
   m->attached = k;
   k->meta = m;
@@ -971,7 +985,7 @@ static void fx_const_set(FxClass *c, sp_sym name, sp_RbVal v) {
   FxClass *anon = fx_class_value(v);
   if (anon && anon->anon) {
     anon->anon = 0;
-    anon->name = c == L.object ? sp_sym_to_s(name) : strdup(sp_sprintf("%s::%s", c->name, sp_sym_to_s(name)));
+    anon->name = c == L.object ? sp_sym_to_s(name) : fx_name_dup(sp_sprintf("%s::%s", c->name, sp_sym_to_s(name)));
   }
   FxConst *k = fx_const_own(c, name);
   if (k) {

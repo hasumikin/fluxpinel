@@ -1193,7 +1193,7 @@ static int fx_refine(FxFrame *f, FxClass *k, const char *name, int argc, sp_RbVa
     if (k->refines[i]->refined == c) r = k->refines[i];
   if (!r) {
     r = fx_class_anon(0, c, f ? f->cref : k);
-    r->name = strdup(sp_sprintf("#<refinement:%s@%s>", c->name, k->name));
+    r->name = fx_name_dup(sp_sprintf("#<refinement:%s@%s>", c->name, k->name));
     r->refined = c;
     fx_push_class(&k->refines, &k->nrefines, &k->refines_cap, r);
   }
@@ -2353,7 +2353,7 @@ static sp_RbVal fx_class_def(FxFrame *f, const pm_node_t *path, const pm_node_t 
       }
     }
     const char *full = scope == L.object ? cname : sp_sprintf("%s::%s", scope->name, cname);
-    k = fx_class_new(strdup(full), is_module, super, scope);
+    k = fx_class_new(fx_name_dup(full), is_module, super, scope);
     fx_const_set(scope, name, fx_class_box(k));
     /* the hook of the superclass: inherited(subclass), before the body */
     FxMethod *hook = super ? fx_find_smethod(super, sp_sym_intern("inherited")) : NULL;

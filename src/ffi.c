@@ -248,7 +248,7 @@ static FxClass *fx_native_class(const char *path) {
     if (!c) {
       const char *full = scope == L.object ? sp_sprintf("%.*s", (int)n, p)
                                            : sp_sprintf("%s::%.*s", scope->name, (int)n, p);
-      c = fx_class_new(strdup(full), sep != NULL, sep ? NULL : L.object, scope);
+      c = fx_class_new(fx_name_dup(full), sep != NULL, sep ? NULL : L.object, scope);
       fx_const_set(scope, s, fx_class_box(c));
     }
     if (!sep) return c;
