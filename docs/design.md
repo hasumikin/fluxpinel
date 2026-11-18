@@ -1029,7 +1029,7 @@ same program runs there for the answer of a test.
   does not call it by name.
 - `--ext-class all` makes each public method a root of the program.
   spinel can then refuse a program that it compiles with no flag. Name
-  the classes in that case (`KERNEL_EXT_CLASS`, see `docs/roundhouse.md`).
+  the classes in that case (`KERNEL_EXT_CLASS`, see section 5.4.5).
 - The kernel names only its own classes in `sp_class_to_s`.
   `kernel_prelude.h` works around this.
 - A script does not replace a method that AOT code calls directly
@@ -1218,6 +1218,166 @@ the program can use `method_missing` and `define_method` with a computed
 name, and the static part of the program stays AOT code. A port of a CRuby application
 can start with the dynamic parts in Fluxpinel, and move them to AOT code one by
 one.
+
+### 5.4 The console of a compiled Rails app (Roundhouse)
+
+Roundhouse lowers a Rails app to Ruby that Spinel compiles. Fluxpinel
+adds a console to the blog of Roundhouse (`fixtures/real-blog`, a Rails 8
+scaffold of articles and comments). A client connects to the running
+server over a socket:
+
+```
+$ nc 127.0.0.1 4000
+fx> Console.count("Article")
+=> 3
+fx> a = Console.find("Article", 1)
+fx> a.instance_variable_get(:@title)
+=> "Getting Started with Rails"
+fx> c = Console.create("Comment", {article_id: 1, commenter: "fx", body: "from the console"})
+fx> Console.count("Comment")
+=> 4
+fx> exit
+```
+
+The server serves its pages all the time. `exit` closes the session only.
+
+### 5.4.1 The files
+
+| File | What it does |
+|---|---|
+| `ROUNDHOUSE_COMMIT` | holds the pin: the Roundhouse commit that Fluxpinel uses |
+| `roundhouse/roundhouse.mk` | holds the make targets of this section |
+| `roundhouse/apply.rb` | changes the Spinel output of the blog |
+| `roundhouse/console.rb` | is the console and its entries |
+| `test/roundhouse/test.rb` | runs the host build and checks it |
+
+For the update of the pin, see [development.md](development.md).
+
+### 5.4.2 Changes to the output of Roundhouse
+
+The output of Roundhouse runs the server at its top level. `apply.rb`
+changes three things:
+
+- It moves the start of the server in `main.rb` into an entry,
+  `Main.start`. Fluxpinel starts after the top level of the kernel, so the
+  host build calls this entry. With `FLUXPINEL_CONSOLE=PORT`, `Main.start`
+  also starts the console.
+- It copies `console.rb`. This file accepts the connections of the console
+  and gives each line to `Fluxpinel.feed`. It also has the entries
+  `Console.count`, `Console.find` and `Console.create`.
+- It copies `kernel/fluxpinel.rb` of Fluxpinel beside `console.rb`.
+
+Each change of `main.rb` finds an anchor line. When an anchor is not in
+`main.rb` exactly once, `apply.rb` stops and changes nothing.
+
+### 5.4.3 Build
+
+You need these tools:
+
+- Rust
+- Rails 8.1.4, Bundler, Node.js with npm
+- the SQLite CLI and headers (`libsqlite3-dev`)
+- the jemalloc headers (`libjemalloc-dev`)
+
+Run `make roundhouse` in the top directory of Fluxpinel. It does these
+steps:
+
+1. It fetches Roundhouse at the pin into `deps/roundhouse` and builds it.
+2. It makes the Rails fixture with `bin/rh fixture` of Roundhouse.
+3. It makes the Spinel output of the blog in `build/roundhouse/blog` and
+   runs `apply.rb` on it.
+4. It builds the assets of the blog: the JavaScript of Turbo and
+   Stimulus, and the Tailwind CSS. Without them, the browser does not
+   connect to Action Cable.
+5. It builds the host in `build/roundhouse/host/blog`.
+
+Each step runs again only when its input changes. A new pin starts again
+from step 1. A change of `apply.rb`, `console.rb` or `kernel/fluxpinel.rb`
+starts again from step 3.
+
+rh and Bundler use the Ruby of `.ruby-version` of Fluxpinel. Rails must be
+installed for that Ruby.
+
+### 5.4.4 Run
+
+Seed the database and run the server with the console:
+
+```sh
+cd build/roundhouse/blog
+sqlite3 storage/development.sqlite3 < db/seed.sql
+FLUXPINEL_CONSOLE=4000 ../host/blog
+```
+
+The server serves the blog on http://localhost:3000. Connect to the
+console with `nc 127.0.0.1 4000`.
+
+Open http://localhost:3000/articles/1, and type this in the console. The
+comment shows up on the open page with no reload:
+
+```ruby
+Console.create("Comment", {article_id: 1, commenter: "fx", body: "live"})
+```
+
+### 5.4.5 IRB over telnet
+
+The host also takes `--irb-port PORT` as its first two arguments and
+opens IRB, with the line editor of Reline, to each telnet connection on
+127.0.0.1:PORT (see `--irb-port` in the [README](../README.md)).
+The kernel is compiled with `--ext-class` for the models and for
+`ActiveRecord::Base` and `ActiveRecord::Relation` (`RH_EXT_CLASS`), so IRB
+calls the methods of the models and of a `Relation` by name:
+
+```sh
+cd build/roundhouse/blog
+../host/blog --irb-port 4001
+```
+
+```
+$ telnet 127.0.0.1 4001
+irb(main):001> Article.count
+=> 3
+irb(main):002> Article.find(1).title
+=> "Getting Started with Rails"
+irb(main):003> Article.all.limit(2).to_a.size
+=> 2
+irb(main):004> Article.where(id: [1, 3]).order(:id).map(&:id)
+=> [1, 3]
+irb(main):005> Article.all.each { |a| break a.title if a.id == 2 }
+=> "Understanding MVC Architecture"
+irb(main):006> Article.new(title: "from new").persisted?
+=> false
+```
+
+A block of the session goes to a method of the kernel that takes one,
+such as `each` and `map` of a `Relation`. A `break` in the block ends the
+call. `new` of a model makes a record, as the table of `--ext-class` has
+the rows of `new`.
+
+The table of `--ext-class` does not hold a method with a keyword
+parameter. `select` and `find` of a `Relation` are the query methods of
+Roundhouse, which take no block. Use `to_a` first:
+`Article.all.to_a.select { |a| a.id > 1 }`.
+
+A method that answers an object of a class the list does not name comes
+back as an object with no methods.
+`--ext-class all` is not an option here: it makes every public method of
+the blog a root, and spinel then refuses `runtime/logger_spinel.rb`.
+
+### 5.4.6 Check
+
+`make test-roundhouse` runs `test/roundhouse/test.rb` on the host build.
+The test starts the server on free ports. It uses a copy of `db/seed.sql`
+in a temporary database, so `storage/` of the blog does not change. It
+checks these things:
+
+- `GET /articles` answers 200 with an article of the seed.
+- The console counts, finds and creates records, and keeps a local.
+- The console calls the methods of a model and of a `Relation` by name.
+- The console passes a block to a method of a `Relation`.
+- The console makes a record with `new`.
+- A call that Fluxpinel does not have raises, and the session goes on.
+- `exit` closes the session, and the server runs after it.
+- The page of the article shows the new comment.
 
 ## 6. Prior art
 

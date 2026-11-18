@@ -1,4 +1,5 @@
-# The blog of Roundhouse with a console of Fluxpinel (docs/roundhouse.md).
+# The blog of Roundhouse with a console of Fluxpinel (docs/design.md,
+# section 5.4).
 # The Makefile includes this file.
 #
 #   make roundhouse

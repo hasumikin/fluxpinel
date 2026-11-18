@@ -303,7 +303,8 @@ make oracle
 
 For the checks during development and the update of the pin, see
 [docs/development.md](docs/development.md). For the console in a Rails app
-that Roundhouse compiles, see [docs/roundhouse.md](docs/roundhouse.md).
+that Roundhouse compiles, see [docs/design.md](docs/design.md), section
+5.4.
 
 ## Relation to spinel
 

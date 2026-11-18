@@ -151,8 +151,8 @@ jobs:
           path: build/regress/cases
           if-no-files-found: ignore
 
-  # The blog of Roundhouse with the console (docs/roundhouse.md), on the
-  # pinned spinel. The pinned Roundhouse runs first, so a failure there
+  # The blog of Roundhouse with the console (docs/design.md, section 5.4),
+  # on the pinned spinel. The pinned Roundhouse runs first, so a failure there
   # comes from Fluxpinel. Then the main of Roundhouse runs. The job does
   # not change ROUNDHOUSE_COMMIT in the repository.
   roundhouse:

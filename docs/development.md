@@ -183,10 +183,23 @@ Move the pin on a green day.
 
 ## Follow the main of Roundhouse
 
-`ROUNDHOUSE_COMMIT` pins Roundhouse for the blog with a console. Run
-`make roundhouse` and `make test-roundhouse` after a change of the pin of
-spinel. `make upgrade_roundhouse` moves the pin of Roundhouse. Move the pin
-of spinel first. See [roundhouse.md](roundhouse.md).
+`ROUNDHOUSE_COMMIT` pins Roundhouse for the blog with a console (see
+[design.md](design.md), section 5.4). Run `make roundhouse` and
+`make test-roundhouse` after a change of the pin of spinel.
+
+`make upgrade_roundhouse` moves the pin to the main of Roundhouse.
+
+1. It stops when `deps/roundhouse` has changes.
+2. It fetches the branch main and writes its commit to
+   `ROUNDHOUSE_COMMIT`.
+3. It runs `make roundhouse` and `make test-roundhouse`.
+
+The command does not commit. When it succeeds, commit `ROUNDHOUSE_COMMIT`.
+When it fails, the message gives the old pin.
+
+The main of Roundhouse follows the master of spinel. When spinel refuses
+the `main.rb` of a new Roundhouse, move the pin of spinel first: run
+`make upgrade_spinel`, then `make upgrade_roundhouse`.
 
 ## The host build
 
