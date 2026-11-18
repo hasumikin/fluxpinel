@@ -1108,6 +1108,38 @@ static int fx_range_step(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
 
 #undef FX_STEP_PUT
 
+/* find_index(v) of an Integer Range with no block: the position of the
+   first element that equals v, or nil. An Integer answers by its distance
+   from the begin, and a Float with no fraction as that Integer. Any other
+   value is compared with each element by ==, as Enumerable does. An
+   endless Range answers only a value that it has: for a value that it
+   does not have, CRuby walks without end, and this call is left out. */
+static int fx_range_find_index(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (!FX_IS("find_index") || argc != 1 || !fx_is_range(r)) return 0;
+  const sp_Range *g = (const sp_Range *)r.v.p;
+  if (g->nobeg || g->fe) return 0;
+  sp_RbVal v = argv[0];
+  sp_int first = g->first, last = g->excl ? g->last - 1 : g->last;
+  if (v.tag == SP_TAG_FLT && v.v.f >= -9e18 && v.v.f <= 9e18 && v.v.f == (sp_float)(sp_int)v.v.f)
+    v = sp_box_int((sp_int)v.v.f);
+  if (v.tag == SP_TAG_INT) {
+    int has = v.v.i >= first && (g->noend || v.v.i <= last);
+    if (!has && g->noend) return 0;
+    *out = has ? sp_box_int(v.v.i - first) : sp_box_nil();
+    return 1;
+  }
+  if (g->noend) return 0;
+  if (v.tag != SP_TAG_FLT) {
+    SP_GC_ROOT_RBVAL(v);
+    for (sp_int i = first; i <= last; i++) {
+      sp_RbVal e = sp_box_int(i);
+      if (sp_poly_truthy(fx_send(e, "==", 1, &v))) { *out = sp_box_int(i - first); return 1; }
+    }
+  }
+  *out = sp_box_nil();
+  return 1;
+}
+
 /* min, max and minmax with an argument or a block, last(n) and count with
    an argument or a block: the same call on the elements of the Range, as
    Enumerable gives it. to_a raises for a Range that cannot walk. */
@@ -1368,8 +1400,8 @@ static int fx_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const
   if (!blk)
     return fx_inject_sym(r, name, argc, argv, out) || fx_num_step(r, name, argc, argv, out) ||
            fx_seq_collector(r, name, argc, argv, out) || fx_int_iter(r, name, argc, argv, NULL, out) ||
-           fx_range_step(r, name, argc, argv, NULL, out) || fx_range_via_array(r, name, argc, argv, NULL, out) ||
-           fx_seq_pattern(r, name, argc, argv, out);
+           fx_range_step(r, name, argc, argv, NULL, out) || fx_range_find_index(r, name, argc, argv, out) ||
+           fx_range_via_array(r, name, argc, argv, NULL, out) || fx_seq_pattern(r, name, argc, argv, out);
   if (fx_range_step(r, name, argc, argv, blk, out) || fx_range_via_array(r, name, argc, argv, blk, out)) return 1;
   if (argc == 0 && FX_IS("tap")) {
     fx_y1(blk, r);

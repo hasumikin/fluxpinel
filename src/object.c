@@ -2306,10 +2306,11 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   /* The module functions of Kernel that take the block of the call, on
      Kernel as the receiver: Kernel.proc { }, Kernel.lambda { },
      Kernel.loop { }, Kernel.catch { } and Kernel.at_exit { }. None of
-     them reads the frame of the call. */
-  if (blk && k->cls_id < 0 && k->is_module && !strcmp(k->name, "Kernel") &&
-      (!strcmp(name, "proc") || !strcmp(name, "lambda") || !strcmp(name, "loop") || !strcmp(name, "catch") ||
-       !strcmp(name, "at_exit")) &&
+     them reads the frame of the call. Kernel.proc and Kernel.lambda with
+     no block go there too, for their ArgumentError. */
+  if (k->cls_id < 0 && k->is_module && !strcmp(k->name, "Kernel") &&
+      (!strcmp(name, "proc") || !strcmp(name, "lambda") ||
+       (blk && (!strcmp(name, "loop") || !strcmp(name, "catch") || !strcmp(name, "at_exit")))) &&
       fx_kernel_block(f, name, argc, argv, blk, out))
     return 1;
   /* ffi_func and its kin in a module body */
@@ -2404,6 +2405,8 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   }
   if (argc == 0 && (!strcmp(name, "name") || !strcmp(name, "to_s") || !strcmp(name, "inspect"))) {
     *out = sp_box_str_new(sp_str_dup(k->name));
+    /* Module#name answers a frozen String; to_s and inspect do not */
+    if (name[0] == 'n') *out = fx_send(*out, "freeze", 0, NULL);
     return 1;
   }
   if (argc == 0 && !strcmp(name, "superclass")) {
@@ -2672,6 +2675,8 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
       if (anc[i] == L.object) fx_builtin_const_names(a);
       /* the classes of the kernel under a class or module of the kernel */
       else if (fx_kernel_cls(anc[i]->cls_id)) fx_kernel_const_names(anc[i], a);
+      /* the classes of Errno, which fx_builtin makes at their first use */
+      if (anc[i]->cls_id < 0 && anc[i]->is_module && !strcmp(anc[i]->name, "Errno")) fx_rs_errno_names_push(a);
     }
     *out = sp_box_poly_array(a);
     return 1;

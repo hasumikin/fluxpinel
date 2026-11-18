@@ -57,6 +57,14 @@ p n, Kernel.catch(:t) { Kernel.throw :t, 9 }, Kernel.catch { |tag| throw tag, 7 
 def early = Kernel.proc { |v| return v }.call(5)
 p early
 
+# proc and lambda with no block, on Kernel and with no receiver
+def no_block
+  yield
+rescue ArgumentError => e
+  e.message
+end
+p no_block { Kernel.proc }, no_block { Kernel.lambda }, no_block { proc }, no_block { lambda }
+
 # a signal with no handler and no block
 begin
   Kernel.trap("USR1")

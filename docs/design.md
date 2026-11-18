@@ -496,7 +496,8 @@ The walker evaluates the prism AST directly (`src/walk.c`).
 - **Paths.** `require_relative` resolves from the real path of the file of
   the call, and adds `.rb`. A file with a real path that is loaded already
   answers false. `require` of a path (`./x`, `../x`, `/x`) resolves from the
-  current directory.
+  current directory. After a file runs, `$LOADED_FEATURES` has its real
+  path.
 - **Library names.** spinel resolves `require "json"` at compile time
   (`src/spinel_parse.c`). Fluxpinel resolves the name at run time in the same
   order:
@@ -1580,9 +1581,7 @@ A script does not replace a method that AOT code calls directly (section
    - `lib/fluxpinel/irb_ri_guard.rb` rescues the LoadError of the ri
      driver for IRB (ruby/irb#1272). When a release of IRB has it, the
      file goes.
-2. **`$LOADED_FEATURES`.** The list names the files that `require`
-   loaded.
-3. **The gem oracle (section 4.2).** Take the first failures of its
+2. **The gem oracle (section 4.2).** Take the first failures of its
    report, in the order of the gems that a session of IRB loads.
 
 ### 9.4 The builtin layer

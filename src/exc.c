@@ -93,7 +93,29 @@ static void fx_exc_init(sp_RbVal v, int argc, sp_RbVal *argv) {
     sp_gc_wb(e);
     e->result = sp_box_int(st);
   }
-  /* the builtin classes with more arguments (NameError, SignalException,
+  /* SignalException.new(sig) and SignalException.new(signo, message): the
+     runtime reads the signal, by its name with or without the SIG or by
+     its number, and a value that is no signal is an ArgumentError. The
+     message is the name with the SIG, or the message given. Interrupt has
+     an initialize of its own (a message, SIGINT). */
+  if (fx_exc_is(v, "SignalException") && !fx_exc_is(v, "Interrupt")) {
+    if (argc == 0 || argc > 2 || (argc == 2 && argv[0].tag != SP_TAG_INT))
+      sp_raise_cls("ArgumentError", sp_sprintf("wrong number of arguments (given %d, expected 1)", argc));
+    int no = sp_signal_resolve(argv[0]);
+    sp_Exception *se = (sp_Exception *)v.v.p;
+    sp_gc_wb(se);
+    se->xkey = sp_box_int((sp_int)no);
+    if (argc == 2) {
+      fx_exc_set_msg(se, argv[1]);
+    } else {
+      const char *nm = sp_signal_signame((sp_int)no);
+      const char *text = sp_sprintf("SIG%s", nm ? nm : "?");
+      SP_GC_ROOT_STR(text);
+      fx_exc_set_msg(se, fx_new_string((const uint8_t *)text, strlen(text)));
+    }
+    return;
+  }
+  /* the builtin classes with more arguments (NameError, StopIteration,
      ...) keep them in fields that Fluxpinel does not set yet */
   if (argc > 1) {
     static const char *const more[] = { "NameError", "KeyError", "SignalException", "StopIteration",

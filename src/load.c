@@ -362,6 +362,11 @@ static int fx_load_once(char *real, const char *extra) {
   const char *err = fx_parse(real, real, buf, len, &s);
   if (err) sp_raise_cls("SyntaxError", err);
   fx_run_source(s);
+  /* $LOADED_FEATURES names the file that a require ran. The first call
+     allocates the Array, so the Array comes before the copy of the path:
+     a collection in between would free a copy that nothing holds yet. */
+  sp_StrArray *feats = sp_get_loaded_features();
+  fx_strs_push(feats, sp_str_dup(real));
   return 1;
 }
 

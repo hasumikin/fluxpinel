@@ -351,12 +351,23 @@ typedef struct {
 static Fluxpinel L;
 
 /* The bytes of a String into an Array of Strings. The Array of the runtime
-   takes the handle of a String, so the bytes get their handle first. */
+   takes the handle of a String, so the bytes get their handle first. The
+   handle and the room in the Array are allocated here, and a collection
+   can run in each: the bytes and then the handle are roots until the
+   Array holds them. */
 static inline void fx_strs_push(sp_StrArray *a, const char *s) {
-  sp_StrArray_push_e(a, sp_String_new_shared(s));
+  SP_GC_ROOT(a);
+  SP_GC_ROOT_STR(s);
+  sp_String *h = sp_String_new_shared(s);
+  SP_GC_ROOT(h);
+  sp_StrArray_push_e(a, h);
 }
 static inline void fx_strs_insert(sp_StrArray *a, sp_int i, const char *s) {
-  sp_StrArray_insert_e(a, i, sp_String_new_shared(s));
+  SP_GC_ROOT(a);
+  SP_GC_ROOT_STR(s);
+  sp_String *h = sp_String_new_shared(s);
+  SP_GC_ROOT(h);
+  sp_StrArray_insert_e(a, i, h);
 }
 
 /* fx_tu.c: FX_UNLOCKED keeps the call state of this thread over a wait */
@@ -618,6 +629,7 @@ static int fx_rs_responds(sp_RbVal r, const char *mn);
 static int fx_rs_known(sp_RbVal r, const char *mn);
 static int fx_rs_lacks(sp_RbVal r, const char *mn);
 static int fx_rs_errno_name(const char *name);
+static void fx_rs_errno_names_push(sp_PolyArray *a);
 static int fx_rs_own(sp_RbVal r, const char *mn);
 static int fx_rs_own_of(const char *cls, const char *mn);
 static int fx_rs_instance(const char *cls, const char *mn);

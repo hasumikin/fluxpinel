@@ -15,6 +15,11 @@ p defined?(Errno::EPROCLIM), defined?(Errno::EDEADLOCK), Errno.const_defined?(:E
 # a name that CRuby does not have
 p((Errno::ENOSUCH rescue $!.class), defined?(Errno::ENOSUCH))
 
+# Errno.constants lists the names, of this system or not
+names = Errno.constants
+p names.size > 100, names.first.class, [:ENOENT, :EDEADLOCK, :EPROCLIM, :NOERROR].all? { |n| names.include?(n) }
+p names.include?(:ENOSUCH), names.uniq.size == names.size
+
 # an exception of NOERROR
 begin
   raise Errno::NOERROR

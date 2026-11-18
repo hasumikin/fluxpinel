@@ -57,6 +57,8 @@ end
 p Outer::Inner.new.value
 p Outer::Deep::NAME
 p Outer::Inner.name
+# the name is a frozen String; to_s and inspect answer a String to change
+p Outer::Inner.name.frozen?, Outer::Inner.to_s.frozen?, Outer::Inner.inspect.frozen?, (Outer.name << "x" rescue $!.class)
 
 module Helpers
   def self.twice(s)

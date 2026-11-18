@@ -107,3 +107,8 @@ begin
 rescue TypeError => e
   p e.message
 end
+
+# find_index of a value on an Integer Range
+p (1..5).find_index(3), (1..5).find_index(9), (1...5).find_index(5), (3..7).find_index(3), (1..).find_index(4)
+p (1..5).find_index(3.0), (1..5).find_index(2.5), (1..5).find_index("a"), (1..5).find_index(Rational(4, 1))
+p (1..5).find_index { |v| v == 4 }, (5..1).find_index(3)

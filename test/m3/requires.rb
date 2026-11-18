@@ -35,3 +35,9 @@ end
 
 p __FILE__.end_with?("requires.rb"), __LINE__
 p __dir__.start_with?("/"), __dir__.end_with?("/m3")
+
+# $LOADED_FEATURES names each file that a require ran, once, by its
+# absolute path; the main program is not in it
+loaded = $LOADED_FEATURES.select { |f| f.start_with?(File.join(__dir__, "requires")) }
+p loaded.map { |f| f.sub(__dir__, "<dir>") }.sort
+p $LOADED_FEATURES.include?(File.expand_path(__FILE__)), $".equal?($LOADED_FEATURES)

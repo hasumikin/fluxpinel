@@ -1409,6 +1409,9 @@ static int fx_kernel_block(FxFrame *f, const char *name, int argc, sp_RbVal *arg
     *out = fx_trap(argc, argv, blk);
     return 1;
   }
+  /* proc and lambda with no block */
+  if (!blk && argc == 0 && (!strcmp(name, "proc") || !strcmp(name, "lambda")))
+    sp_raise_cls("ArgumentError", "tried to create Proc object without a block");
   if (!blk) return 0;
   if (argc == 0 && (!strcmp(name, "proc") || !strcmp(name, "lambda"))) {
     /* a break in the Proc of a literal has no call to end */
