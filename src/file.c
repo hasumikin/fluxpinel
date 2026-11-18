@@ -11,6 +11,7 @@
    block (IO#each_line and its kin). */
 
 #include "fluxpinel.h"
+#include <sys/stat.h>
 
 #define FX_IS(s) (!strcmp(name, (s)))
 
@@ -98,12 +99,16 @@ static sp_RbVal fx_file_delete(int argc, sp_RbVal *argv) {
   return sp_box_int(argc);
 }
 
-/* An argument of File.identical?: a path, or an open IO, which CRuby
-   takes by its descriptor. The path /dev/fd/N names the file of the
-   descriptor N. */
-static const char *fx_identical_arg(sp_RbVal v) {
-  if (!fx_is_io(v)) return sp_poly_arg_path(v);
-  return sp_sprintf("/dev/fd/%d", (int)sp_poly_arg_int_chk(fx_send(v, "fileno", 0, NULL)));
+/* The stat of an argument of File.identical?: a path, or an open IO,
+   which CRuby takes by its descriptor (fstat). The path /dev/fd/N named
+   the file on Linux, but on macOS its stat carries the device of the
+   fdesc filesystem, not the file's. Answers 0 for a path that is not
+   there, as a stat of it fails. */
+static int fx_identical_stat(sp_RbVal v, struct stat *st) {
+  if (fx_is_io(v)) return fstat((int)sp_poly_arg_int_chk(fx_send(v, "fileno", 0, NULL)), st) == 0;
+  const char *path = sp_poly_arg_path(v);
+  SP_GC_ROOT_STR(path);
+  return stat(path, st) == 0;
 }
 
 static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
@@ -178,16 +183,15 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
     *out = sp_box_int(sp_file_umask(argc ? sp_poly_arg_int_chk(argv[0]) : 0, argc));
     return 1;
   }
-  /* File.identical?(a, b): the same file by the inode, through the links;
+  /* File.identical?(a, b): the same file by the device and inode, through
+     the links, as the runtime's sp_file_identical compares two paths;
      File.fnmatch(pat, path, flags): the runtime matches by CRuby's rules
      (sp_file_fnmatch); the flags are the FNM_ constants of the runtime */
   if (FX_IS("identical?")) {
     if (argc != 2) fx_arity_error(argc, 2, 0, 0);
-    const char *a = fx_identical_arg(argv[0]);
-    SP_GC_ROOT_STR(a);
-    const char *b = fx_identical_arg(argv[1]);
-    SP_GC_ROOT_STR(b);
-    *out = sp_box_bool(sp_file_identical(a, b));
+    struct stat sa, sb;
+    *out = sp_box_bool(fx_identical_stat(argv[0], &sa) && fx_identical_stat(argv[1], &sb) &&
+                       sa.st_dev == sb.st_dev && sa.st_ino == sb.st_ino);
     return 1;
   }
   if (FX_IS("fnmatch") || FX_IS("fnmatch?")) {
