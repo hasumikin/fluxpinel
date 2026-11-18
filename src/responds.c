@@ -115,7 +115,7 @@ static const FxClass *fx_rs_builtin_of(const FxClass *c) {
    of CRuby, for method_defined?: of k itself when k is builtin and not
    inherit, else of the builtin modules that k includes and of its nearest
    builtin class. -1 when the table cannot tell (k has no row). */
-static int fx_rs_defined(const FxClass *k, const char *mn, int inherit) {
+static FX_ANC_FN int fx_rs_defined(const FxClass *k, const char *mn, int inherit) {
   /* a builtin class of the runtime has a negative id; a class of the
      kernel (0 and up) or of the walker (FX_CLS_BASE and up) has methods of
      its own, which the caller looks up first, and a builtin superclass */
@@ -136,7 +136,7 @@ static int fx_rs_defined(const FxClass *k, const char *mn, int inherit) {
 
 /* Whether r has the public method mn as a builtin method of CRuby. A
    method of the program is not here: fx_respond_to looks it up first. */
-static int fx_rs_responds(sp_RbVal r, const char *mn) {
+static FX_ANC_FN int fx_rs_responds(sp_RbVal r, const char *mn) {
   if (r.tag == SP_TAG_CLASS) {
     FxClass *k = fx_class_value(r);
     if (!k) return 0;

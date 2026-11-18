@@ -166,7 +166,7 @@ static void fx_remove_method(FxClass *k, int singleton, sp_sym name) {
 /* Whether an undef hides name from recv: the lookup found no method of
    the program, and a class on the way has the undef entry, so the builtin
    method of the name must not answer either. */
-static int fx_undef_in(const FxClass *k, sp_sym name, int singleton) {
+static FX_ANC_FN int fx_undef_in(const FxClass *k, sp_sym name, int singleton) {
   if (!L.nundefs) return 0;
   if (singleton) {
     for (const FxClass *c = k; c; c = c->super) {
@@ -746,7 +746,7 @@ static void fx_builtin_names(sp_PolyArray *a, const FxClass *c, int mask) {
    class and the class of r (the others), as CRuby lists them. A class
    value lists its singleton methods, with all those of its superclasses,
    of the modules they extend, and the methods of Class or Module. */
-static sp_RbVal fx_method_names(sp_RbVal r, const char *name, int mask, int all) {
+static FX_ANC_FN sp_RbVal fx_method_names(sp_RbVal r, const char *name, int mask, int all) {
   sp_PolyArray *a = sp_PolyArray_new();
   SP_GC_ROOT(a);
   const FxClass *anc[128];
@@ -805,7 +805,7 @@ static void fx_ancestors_add(const FxClass *m, const FxClass **out, int *n, int 
    ancestors of the superclass. A module that the superclass has already
    comes at its place there, as CRuby skips it at the include. Answers the
    count. */
-static int fx_ancestors(const FxClass *c, const FxClass **out, int cap) {
+static FX_ANC_FN int fx_ancestors(const FxClass *c, const FxClass **out, int cap) {
   const FxClass *above[128];
   int na = c->super ? fx_ancestors(c->super, above, 128) : 0, n = 0;
   fx_ancestors_add(c, out, &n, cap, 0, above, na);
@@ -815,7 +815,7 @@ static int fx_ancestors(const FxClass *c, const FxClass **out, int cap) {
 
 /* Whether the method m comes before the class c in the ancestors of c: a
    method of c, or of a module that c prepends. */
-static int fx_method_before(const FxClass *c, const FxMethod *m) {
+static FX_ANC_FN int fx_method_before(const FxClass *c, const FxMethod *m) {
   if (m->owner == c) return 1;
   const FxClass *anc[128];
   int n = fx_ancestors(c, anc, 128);
@@ -836,7 +836,7 @@ static int fx_builtin_shadows(sp_RbVal recv, const FxMethod *m, const char *name
 /* The method that super calls from m, for a class method of the class c:
    along the singleton methods of c and of its superclasses, each with the
    modules that it extends. *found is 0 when m is not on that path. */
-static FxMethod *fx_find_ssuper(const FxClass *c, const FxMethod *m, int *found) {
+static FX_ANC_FN FxMethod *fx_find_ssuper(const FxClass *c, const FxMethod *m, int *found) {
   *found = 0;
   for (const FxClass *k = c; k; k = k->super) {
     FxMethod *s = fx_table_get(&k->smethods, m->name);
@@ -910,7 +910,7 @@ static FxMethod *fx_find_smethod(const FxClass *c, sp_sym name) {
 
 /* The method that super calls from m, for a receiver of class c. From a
    method of a refinement, super starts at the refined class itself. */
-static FxMethod *fx_find_super(const FxClass *c, const FxMethod *m) {
+static FX_ANC_FN FxMethod *fx_find_super(const FxClass *c, const FxMethod *m) {
   const FxClass *anc[128];
   const FxClass *from = m->owner->refined ? m->owner->refined : m->owner;
   int n = fx_ancestors(c, anc, 128), i = 0;
@@ -924,7 +924,7 @@ static FxMethod *fx_find_super(const FxClass *c, const FxMethod *m) {
   return NULL;
 }
 
-static int fx_is_a(sp_RbVal v, const FxClass *k) {
+static FX_ANC_FN int fx_is_a(sp_RbVal v, const FxClass *k) {
   const FxClass *anc[128];
   /* the singleton class of v, when it has one, for the modules it extends */
   int n = fx_ancestors(fx_lookup_class(v), anc, 128);
@@ -1049,7 +1049,7 @@ static FxConst *fx_const_find(const FxClass *c, sp_sym name, int load) {
 
 /* The class variable of c or of its ancestors, the nearest one first;
    *owner is the class that holds it. */
-static FxConst *fx_cvar_find(const FxClass *c, sp_sym name, FxClass **owner) {
+static FX_ANC_FN FxConst *fx_cvar_find(const FxClass *c, sp_sym name, FxClass **owner) {
   const FxClass *anc[128];
   int n = fx_ancestors(c, anc, 128);
   for (int i = 0; i < n; i++)
@@ -1093,7 +1093,7 @@ static void fx_cvar_set(FxClass *c, sp_sym name, sp_RbVal v) {
 }
 
 /* class_variables: the names of c, then of its ancestors (inherit) */
-static sp_RbVal fx_cvar_names(const FxClass *c, int inherit) {
+static FX_ANC_FN sp_RbVal fx_cvar_names(const FxClass *c, int inherit) {
   sp_PolyArray *a = sp_PolyArray_new();
   SP_GC_ROOT(a);
   const FxClass *anc[128];
@@ -1112,7 +1112,7 @@ static sp_RbVal fx_cvar_names(const FxClass *c, int inherit) {
 /* A constant of scope or its ancestors, then a builtin class. With top,
    the lookup goes on to Object and its ancestors. With load, an autoload
    constant loads its file; without, it counts as defined (defined?). */
-static int fx_const_in(const FxClass *scope, sp_sym name, sp_RbVal *out, int top, int load) {
+static FX_ANC_FN int fx_const_in(const FxClass *scope, sp_sym name, sp_RbVal *out, int top, int load) {
   const FxClass *anc[128];
   int n = fx_ancestors(scope, anc, 128);
   for (int i = 0; i < n && (top || anc[i] != L.object); i++) {
@@ -2020,7 +2020,7 @@ static void fx_attr(FxClass *k, int reader, int writer, int singleton, int vis, 
 
 /* Whether an ancestor of k is a builtin class or module other than
    Object, Kernel and BasicObject (Comparable, Exception, ...). */
-static int fx_builtin_ancestor(const FxClass *k) {
+static FX_ANC_FN int fx_builtin_ancestor(const FxClass *k) {
   const FxClass *anc[128];
   int n = fx_ancestors(k, anc, 128);
   for (int i = 0; i < n; i++)
@@ -2137,7 +2137,7 @@ static int fx_method_defined(FxClass *k, int mask, sp_sym name, int inherit) {
    (fx_builtin_names). With inherit, those of the ancestors too, as
    Kernel#methods lists them. A native class of a package keeps its
    methods in C, which the tables do not know. */
-static sp_RbVal fx_instance_methods(FxClass *k, int mask, int inherit) {
+static FX_ANC_FN sp_RbVal fx_instance_methods(FxClass *k, int mask, int inherit) {
   if (k->native) fx_gap(sp_sprintf("%s.instance_methods of a native class", k->name));
   sp_PolyArray *a = sp_PolyArray_new();
   SP_GC_ROOT(a);

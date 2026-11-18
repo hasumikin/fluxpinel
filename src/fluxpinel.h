@@ -624,6 +624,12 @@ static int fx_rs_defined(const FxClass *k, const char *mn, int inherit);
 static void fx_rs_own_names(sp_PolyArray *a, const char *cls);
 static void fx_rs_singleton_names(sp_PolyArray *a, const char *cls);
 static void fx_names_push(sp_PolyArray *a, sp_sym s);   /* object.c */
+/* A function with an array for the ancestors of a class (128 pointers) is
+   not inline. clang puts such an array in the frame of each caller, with
+   no limit as gcc has one: the functions of a call of the program
+   (fx_eval, fx_call, fx_send_v) then take three times the stack for each
+   level of a recursion. */
+#define FX_ANC_FN SP_NOINLINE
 static int fx_ancestors(const FxClass *c, const FxClass **out, int cap);
 static sp_RbVal fx_global_names(void);   /* global.c */
 
