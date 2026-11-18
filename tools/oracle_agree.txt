@@ -1,5 +1,5 @@
 # The spinel tests that Fluxpinel answers right, for make regress.
-# make oracle writes this file. spinel: 519bbea5cdec
+# make oracle writes this file. spinel: 15052d3fc854
 absolute_class_reopen_inside_module
 abstract_raise_override_return
 accessor_def_history_both_sides
@@ -1514,6 +1514,7 @@ class_of_object_new_boxed
 class_of_primitive
 class_ordering_unrelated_nil
 class_ordering_vs_data
+class_own_name_cmethod_any_value
 class_paren_superclass
 class_pattern_user_object
 class_phase2_name_eq
@@ -1616,6 +1617,7 @@ class_value_or_write_slots
 class_value_ordering_user_operator
 class_value_own_at
 class_value_own_include_p
+class_value_own_name_dispatch
 class_value_own_name_via_class
 class_value_reopened_builtin_new
 class_value_respond_to
@@ -1851,6 +1853,7 @@ const_class_value_name_written_leaf
 const_compound_assign
 const_computed_deferred
 const_computed_deferred_early
+const_defined_anonymous_module
 const_defined_bare_in_class_method
 const_defined_builtin_names_no_consts
 const_defined_deferred_early
@@ -2147,6 +2150,7 @@ defined_op
 defined_paren_value
 defined_ruby_constants
 defined_scoped_constant
+defined_value_path_late_const
 defined_visibility_call_in_class_body
 defined_yield_no_block
 definition_value_as_block_tail
@@ -2419,6 +2423,7 @@ enum_for_guard_value_logic
 enum_for_guard_value_logic_and
 enum_for_guard_value_rescue_mod
 enum_for_method_args
+enum_for_method_with_args
 enum_index_reduce
 enum_instance_eval_receiver
 enum_map_chain
@@ -2520,6 +2525,7 @@ exc_frame_break_next_pops
 exc_frame_depth_bounded
 exc_frame_early_return_pops
 exc_is_a_constant_path
+exc_reopen_initialize_block_param
 exc_rescued_is_a_narrowed_read
 exc_stack_window_cleared
 exc_text_dispatch_temp_root
@@ -4117,6 +4123,8 @@ issue_3069
 issue_3070
 issue_3071
 issue_3072
+issue_3073
+issue_3074
 issue_3076
 issue_3077
 issue_3078
@@ -5210,6 +5218,7 @@ nested_hash_param_store_other_key
 nested_index_write_poly_index
 nested_massign
 nested_massign_poly
+nested_module_beside_reopened_builtin
 nested_module_builtin_name
 nested_module_singleton_name
 nested_pattern_data_deconstruct
@@ -5538,12 +5547,19 @@ op_assign_unresolved_rhs
 op_assign_user_operator
 op_method_bitwise
 op_method_shift
+opassign_ivar_poly_slot_result_class
+opassign_poly_slot_class_facts
+opassign_poly_slot_holds_class
+opassign_poly_slot_kwrest_operator
+opassign_poly_slot_rest_operator
+opassign_poly_slot_result_class
 open_class
 open_class_array_builtin
 open_class_bool_builtin
 open_class_default_arg
 operand_hoist_inside_pre_line
 operand_order_builder_chain_blocks
+operand_order_default_param_writes_ivar
 operand_order_local_rebound_before
 opt_before_required_kwrest
 optional_class_keyword_argument_hold
@@ -6476,6 +6492,7 @@ process_spawn_file_redirect
 process_spawn_group_redirect
 process_spawn_splat_and_pair
 process_status_equality
+process_status_last_child
 process_wait_flags_thread
 process_wait_wnohang
 process_wait_wuntraced
@@ -6588,6 +6605,7 @@ raise_class_own_raise_method
 raise_class_value
 raise_class_value_user_initialize
 raise_class_value_user_method
+raise_computed_signal_exception
 raise_constant_exception_instance
 raise_drops_catch_entries
 raise_non_exception
@@ -6741,6 +6759,7 @@ reader_read_only_no_copy
 reader_replaced_in_parent_reopen
 reader_shadows_inherited_def
 reader_subclass_alias
+rebindable_block_kernel_global_call
 receiver_before_arguments
 receiver_evaluated_once
 record_builtin_class_method_before_def
@@ -7442,6 +7461,7 @@ shellwords_split_replaced_later
 shift_op_assign_checked
 signal_default_interrupt
 signal_default_unreached_thread
+signal_module_surface
 signal_trap_stub
 singleton_accessor_class_ivar
 singleton_accessor_through_inherited_cmethod
@@ -7477,6 +7497,7 @@ singleton_def_on_variable
 singleton_dsm_local
 singleton_extend_chain_object_poly_dispatch
 singleton_extend_timing
+singleton_made_past_raise_modifier
 singleton_method_object
 singleton_methods_accessor_after_list
 singleton_methods_accessor_after_list_literal_iter
@@ -8691,6 +8712,8 @@ toplevel_ivar_or_write_value
 toplevel_ivar_write_tail_value
 toplevel_kwrest_block_param
 toplevel_method_runtime_name
+toplevel_mixin_hook
+toplevel_mixin_hook_required
 toplevel_mixin_hooks_fire
 toplevel_name_collides_with_runtime
 toplevel_proc_return
