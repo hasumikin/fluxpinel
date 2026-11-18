@@ -1436,10 +1436,14 @@ These facts apply to spinel commit `ffac8340d`.
   same frame.
 - A host binary of the runtime alone is about 1.4 MB of text (x86_64,
   `-O2`). Most of it is `static inline` code from `spinel_rt.h`.
+  `poc/m0` is such a host: it links only `libspinel_rt`, makes boxed
+  values, calls `sp_poly_*` operations, rescues an exception and runs the
+  GC. Run it with `make -C poc/m0 run`.
 - `bop_rows[]` has 2035 rows: 958 `BOPE_TEMPLATE`, 183 with a special
   emitter and 894 `BOPE_NONE`.
 - The 958 template rows give 1204 wrappers (row times receiver variant).
-  `poc/m1` measures them:
+  `poc/m1` generates the wrappers, compiles and links them, and measures
+  them (`make -C poc/m1`):
 
   | result | wrappers | cause |
   |---|---|---|
@@ -1513,59 +1517,112 @@ These facts apply to spinel commit `ffac8340d`.
 
 ## 9. Plan
 
-1. **M0: runtime alone.** `poc/m0` links only `libspinel_rt`. It makes
-   boxed values, calls `sp_poly_*` operations, rescues an exception and
-   runs the GC. Run it with `make -C poc/m0 run`.
-2. **M1: template survey.** `poc/m1` generates the wrappers, compiles and
-   links them, and reports the coverage. A smoke test calls a sample.
-   Run it with `make -C poc/m1`.
-3. **M2: minimal walker.** `build/fluxpinel FILE.rb` evaluates literals,
-   locals, `def`, calls, `if`/`unless`, `while`/`until`, `return`, `break`
-   and `next` on Integer, Float, String, Symbol and Array. `make test` runs
-   `test/m2` under CRuby and Fluxpinel, in a plain run and in the GC stress run.
-4. **M3: oracle harness.** `make oracle` runs the spinel corpus under
-   CRuby, Fluxpinel and AOT in promote mode, and reports the classes of
-   section 4 and the blockers of Fluxpinel.
-5. **M3+: coverage.** Take the blockers in the order of the oracle report.
-   Each step runs the oracle again. From M4 on, coverage is not a step of
-   its own: take first the blockers that a demo meets, and then the
-   blockers of the oracle report.
-   - Classes, modules and constants (section 3.4): `test/m3`.
-   - Blocks, Proc and Integer Range (section 3.3.1): `test/m3`.
-   - Hash and keyword arguments (section 3.5): `test/m3`.
-   - Exceptions: `raise`, `begin`/`rescue`/`else`/`ensure`, `retry` and
-     the `rescue` modifier (section 3.3.2): `test/m3`.
-   - Regexp, MatchData and the match globals (section 3.3.3): `test/m3`.
-   - Global variables and the standard streams (section 3.3.4): `test/m3`.
-   - Struct, Data and anonymous classes (section 3.4.1): `test/m3`.
-   - Fiber, Thread and Enumerator.new on the threaded runtime (section
-     3.3.5): `test/m3`.
-   - `require_relative`, `require` of a path, `__FILE__`, `__LINE__` and
-     `__dir__` (section 3.3.6): `test/m3`.
-   - The FFI at run time through libffi (section 3.3.7): `test/m3`, whose
-     `.expected` is the output of AOT code.
-   - `require` of a library name, the packages of spinel and their
-     `native_func` bindings (sections 3.3.6 and 3.3.7): `test/m3`.
-   - Heap frames for a scope that a Proc outlives (section 3.3.1):
-     `test/m3`.
-   - Next, the tests of a Roundhouse output (`spin test`) under Fluxpinel and
-     AOT. Roundhouse lowers a Rails app to Ruby that spinel compiles.
-   - Then the largest blockers of the oracle report.
-6. **M4: Fluxpinel as a host.** Build the kernel and Fluxpinel in one TU (section
-   3.6). Fluxpinel uses the symbol table and the class names of the kernel, and
-   chains each hook to the hook of the kernel. `make test-host` runs
-   `test/m2` and `test/m3` on the host build, with `test/kernel/app.rb` as
-   the kernel.
-7. **M5: walker to AOT.** A tool reads the entries of a kernel and
-   generates a wrapper for each one. The wrapper boxes the result.
-   A script calls an entry as a singleton method of its module, and holds
-   an AOT object as a value. Fluxpinel works around the limits of the exports.
-8. **M6: scripts.** AOT code calls Fluxpinel through `kernel/fluxpinel.rb` (section
-   3.6), and `test/host` checks it. The demo `examples/textkit`: an AOT
-   program loads `plugins/*.rb` at start, and each plugin adds a filter and
-   calls the AOT code.
-9. **M7: console.** A REPL over a socket on the base of M6. It keeps the
-   locals from one line to the next, and Prism tells an incomplete line.
-10. **M8: eval with a binding and dynamic dispatch.** With the demos of M6
-    and M7, ask the spinel maintainer for the changes of sections 5.2 and
-    5.3.
+The plan has six parts, in the order of their priority. The steps of a
+part are in order too. A step that needs a change of spinel or of
+Roundhouse says so. Such a change is proposed with a demo that shows its
+use.
+
+### 9.1 Roundhouse
+
+The console of a compiled Rails app (section 5.4) is the main use of the
+dynamic layer.
+
+1. **Changes of Roundhouse.** `roundhouse/apply.rb` changes the output of
+   Roundhouse by anchor lines (section 5.4.2). Propose these changes to
+   Roundhouse:
+   - The output starts the server from an entry, not from its top level.
+   - Roundhouse builds the output as a kernel that a host links.
+
+   When Roundhouse has them, `apply.rb` goes.
+2. **More classes in the console.** The blog names four classes for
+   `--ext-class` (`RH_EXT_CLASS`), as spinel refuses the blog with
+   `--ext-class all` (section 5.4.5). Find what spinel refuses, and name
+   each class that a session uses until `all` compiles.
+3. **A larger app.** Run the console on an app of Roundhouse with more
+   than the scaffold of the blog. The gaps that it meets come first in
+   the parts 9.2 to 9.5.
+4. **The tests of an app.** Run the tests of a Roundhouse output under
+   Fluxpinel and under AOT code, as the oracle does for the tests of
+   spinel (section 4). A difference points to spinel or to Fluxpinel
+   before the app runs.
+5. **`binding.irb` in an action.** A `binding.irb` in a controller opens
+   IRB on the locals of the action. This demo needs step 2 of section 9.2.
+
+### 9.2 The boundary to AOT code
+
+Each step needs a change of spinel.
+
+1. **A hook at the waits of the runtime.** Fluxpinel gives its lock up
+   around each wait of the runtime by hand (`FX_UNLOCKED`, section 3.3.5).
+   Propose two hooks, which the runtime calls when a public wait starts
+   and when it ends. An embedder then frees its lock in one place.
+   Fluxpinel drops the `FX_UNLOCKED` sites of the waits and the table of
+   the wrappers that park (`tools/bop_gen.c`).
+2. **eval with a binding (section 5.2).** At a call of `binding`, AOT
+   code gives the locals of its method: the name, the type and the address
+   of each one. A Binding of the walker takes such a frame, reads the
+   locals and writes them back.
+3. **A method with a keyword parameter.** The table of `--ext-class` has
+   no row for it (section 3.6.6), so a script does not call it by name.
+4. **Dynamic dispatch (section 5.3).** AOT code hands a call that it
+   cannot resolve to Fluxpinel.
+
+A script does not replace a method that AOT code calls directly (section
+5.1). The plan has no step for that.
+
+### 9.3 IRB and the console
+
+1. **The gems with no change.** Two pull requests remove what Fluxpinel
+   adds to the gems:
+   - `--irb-port` needs a Reline that runs on a socket (ruby/reline#932).
+     When a release of Reline has it, `GEM_DIRS_FIRST` goes from
+     `docs/development.md`, and the CI runs the case of `--irb-port`.
+   - `lib/fluxpinel/irb_ri_guard.rb` rescues the LoadError of the ri
+     driver for IRB (ruby/irb#1272). When a release of IRB has it, the
+     file goes.
+2. **`$LOADED_FEATURES`.** The list names the files that `require`
+   loaded.
+3. **The gem oracle (section 4.2).** Take the first failures of its
+   report, in the order of the gems that a session of IRB loads.
+
+### 9.4 The builtin layer
+
+The layer shrinks (section 3.2.2).
+
+1. **The known shadows.** Each line of `tools/shadowed_known.txt` has a
+   reason: what the row of spinel lacks for the walker. Report each reason
+   to spinel as an issue or a pull request. When the pin has the row, the
+   hand-written method and the line go.
+2. **A reason for each method.** Each hand-written method names its
+   reason in a comment: the method calls a block of the walker, or spinel
+   has no row and no runtime function. `make census` then lists the
+   methods of the second kind, which are the candidates for spinel.
+3. **The helpers of the runtime.** Answer the question of section 8. A
+   generated map from the `sp_poly_*` helpers to method names replaces the
+   core methods that call one helper by hand.
+
+### 9.5 Compatibility with CRuby
+
+Coverage is not a step of its own. Take first the gaps that a demo or a
+user meets. Then take the largest items of the oracle report
+(`build/oracle/report.md`):
+
+- the reasons of "Unsupported in the walker",
+- the methods of "Missing builtin methods",
+- the tests in which only Fluxpinel differs from CRuby. Group them by
+  cause first.
+
+Each step runs `make oracle` and commits `tools/oracle_agree.txt`.
+
+### 9.6 Speed
+
+Speed must not damage the dynamic layer, the oracle or the ease of
+maintenance. [side-table.md](side-table.md) has the stop conditions
+(section 6) and the measures on hold (section 4).
+
+1. **Builtin calls beside the fast path.** A call of a builtin method
+   that `fx_fast_call` does not answer is slower in a program that reopens
+   builtin classes, as a gem does. Measure it under IRB, and cut the
+   lookups that such a call does again each time.
+2. **The measures on hold.** Start one only when its stop condition
+   allows it.
