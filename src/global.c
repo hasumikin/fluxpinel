@@ -541,6 +541,7 @@ static int fx_io_console(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
   return 1;
 }
 
+extern sp_File *sp_File_reopen(sp_File *f, const char *path, const char *mode);   /* lib/sp_io.c of spinel */
 static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (!fx_is_io(r)) return 0;
   sp_File *io = (sp_File *)r.v.p;
@@ -562,6 +563,18 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     return 1;
   }
   if (argc == 0 && FX_IS("internal_encoding")) { *out = sp_box_nil(); return 1; }
+  /* reopen(path[, mode]): the row of the table takes an IO only, so a
+     path goes to the runtime's sp_File_reopen; with no mode the handle
+     keeps its own, as CRuby's does. The argument follows sp_poly_arg_path
+     (a String, a to_path, else TypeError). */
+  if (FX_IS("reopen") && (argc == 1 || argc == 2) && !fx_is_io(argv[0])) {
+    const char *path = sp_poly_arg_path(argv[0]);
+    SP_GC_ROOT_STR(path);
+    const char *mode = argc == 2 && argv[1].tag != SP_TAG_NIL ? sp_poly_arg_str_chk(argv[1]) : NULL;
+    SP_GC_ROOT_STR(mode);
+    *out = sp_box_nullable_obj((void *)sp_File_reopen(io, path, mode), SP_BUILTIN_IO);
+    return 1;
+  }
 #ifndef FX_KERNEL
   /* flock that waits: one OS thread runs every thread of a standalone
      program (Thread.new in fiber.c), so a wait inside flock(2) stops them
