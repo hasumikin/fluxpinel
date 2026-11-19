@@ -152,7 +152,7 @@ $(BUILD)/off.flags: $(BUILD)/bop_gen_out.c tools/bop_report.rb
 # machine. The header changes only when the directories change, so a
 # newer gem relinks and nothing else does. GEM_DIRS_FIRST names
 # directories that come before the gems' (a checkout of Reline).
-IRB_GEMS = irb reline prism rdoc
+IRB_GEMS = irb reline prism rdoc did_you_mean
 GEM_DIRS_FIRST ?=
 $(BUILD)/gem_dirs.h: tools/gem_dirs.rb FORCE
 	@mkdir -p $(BUILD)

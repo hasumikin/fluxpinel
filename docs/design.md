@@ -1616,8 +1616,12 @@ A script does not replace a method that AOT code calls directly (section
    decision:
    - A backtrace has no frame for a builtin method (`'Integer#/'`,
      `'Kernel#loop'`).
-   - An error has no `Did you mean?` line and no mark under its source
-     (the gems did_you_mean and error_highlight).
+   - An error of a wrong constant has no `Did you mean?` line. The gem
+     did_you_mean keeps the names of the constants in instances of a
+     subclass of String, which Fluxpinel does not have.
+   - An error has no mark under its source (the gem error_highlight,
+     which reads `RubyVM::AbstractSyntaxTree`). Fluxpinel has the node
+     of the call and can write the mark with no gem.
    - `show_source` of a method of the session reads
      `RubyVM::InstructionSequence`, which Fluxpinel does not have.
    - `10 ** 30` is a RangeError in the IRB of a host build, which is in

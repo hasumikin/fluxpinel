@@ -215,7 +215,8 @@ of spinel.
 build records the lib directories of the gems `irb`, `reline`, `prism`
 and `rdoc` of the Ruby that builds Fluxpinel (`tools/gem_dirs.rb`), and
 `--irb` adds them at the end of `$LOAD_PATH`. Name other copies with `-I`
-or `RUBYLIB`. A host program with `KERNEL_MAIN` opens IRB with `--irb` as
+or `RUBYLIB`. With the gem `did_you_mean` too, an error of a session has
+its `Did you mean?` line. A host program with `KERNEL_MAIN` opens IRB with `--irb` as
 its first argument, with the program loaded but not run.
 
 `--irb-port PORT` listens on `127.0.0.1:PORT` before the program runs. A

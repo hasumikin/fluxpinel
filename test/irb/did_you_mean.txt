@@ -1,0 +1,11 @@
+foo_value = 1
+foo_valeu
+[1].frist
+"str".upcsae
+def helper_one = 1
+helper_on
+h = { apple: 1 }
+(h.fetch(:aple) rescue $!.detailed_message(highlight: false))
+no_name_near_this
+1 + 1
+exit

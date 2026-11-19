@@ -28,22 +28,33 @@ def unusable(name, spec)
   nil
 end
 
+# The gems that --irb starts without. did_you_mean is a default gem of
+# CRuby: its files are in the directory of the standard library until the
+# gem is installed too, and that directory cannot be on the load path of
+# Fluxpinel.
+OPTIONAL = { "did_you_mean" => "an error has no \"Did you mean?\" line" }.freeze
+
 first = ENV.fetch("GEM_DIRS_FIRST", "").split(":").reject(&:empty?)
 problems = []
+missing = []
 dirs = first + ARGV.filter_map do |name|
   spec = Gem::Specification.find_by_name(name)
   why = unusable(name, spec)
-  problems << "#{name} #{spec.version} #{why}" if why
+  (OPTIONAL[name] ? missing : problems) << "#{name} #{spec.version} #{why}" if why
   dir = File.join(spec.full_gem_path, "lib")
   dir if Dir.exist?(dir)
 rescue Gem::MissingSpecError
-  problems << "no gem #{name}"
+  (OPTIONAL[name] ? missing : problems) << "no gem #{name}"
   nil
 end
 unless problems.empty?
   warn "gem_dirs.rb: --irb of this build will not start with Ruby #{RUBY_VERSION}: #{problems.join('; ')}."
-  warn "gem_dirs.rb: Run `make gems`."
 end
+unless missing.empty?
+  warn "gem_dirs.rb: --irb of this build has less with Ruby #{RUBY_VERSION}: #{missing.join('; ')} " \
+       "(#{OPTIONAL.values_at(*ARGV).compact.join('; ')})."
+end
+warn "gem_dirs.rb: Run `make gems`." unless problems.empty? && missing.empty?
 
 puts "/* the lib directories of the gems of --irb (tools/gem_dirs.rb) */"
 puts "#define FX_GEM_DIRS #{dirs.join(':').inspect}" unless dirs.empty?

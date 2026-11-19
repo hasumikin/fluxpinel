@@ -40,6 +40,10 @@ The build and the tests read some gems of the Ruby that runs make. The
 - `--irb` runs the gems `irb`, `reline`, `prism` and `rdoc` under
   Fluxpinel. The build records their lib directories
   (`tools/gem_dirs.rb`).
+- `--irb` also loads `did_you_mean`, for the `Did you mean?` line of an
+  error. CRuby has it as a default gem, with its files in the directory
+  of the standard library. `make gems` installs it in a directory of its
+  own. Without it, `--irb` starts and an error has no such line.
 - `test/m3/ffi_gem.rb` compares with the `ffi` gem under CRuby.
 
 Run `make gems` once, and again after a change of the Ruby. It runs

@@ -16,6 +16,7 @@
 require "socket"
 require "irb"
 require "fluxpinel/irb_ri_guard"
+require "fluxpinel/irb_did_you_mean"
 
 module Fluxpinel
   module RemoteIRB
