@@ -2,6 +2,8 @@
 #
 #   make deps   fetch spinel at the commit in SPINEL_COMMIT into deps/spinel
 #               and build it
+#   make gems   install the gems of the Gemfile (IRB and the gems of the
+#               tests) and build the shared library of the prism gem
 #   make        build build/fluxpinel
 #   make test   run test/*.rb under CRuby and Fluxpinel and compare, once as is
 #               and once under the GC stress and verify modes of spinel, and
@@ -41,7 +43,7 @@ SPINEL_URL ?= https://github.com/matz/spinel.git
 SPINEL_COMMIT := $(shell cat SPINEL_COMMIT)
 SPINEL_PIN ?= 1
 ifeq ($(SPINEL_PIN),1)
-ifeq ($(filter deps clean upgrade_spinel,$(MAKECMDGOALS)),)
+ifeq ($(filter deps gems clean upgrade_spinel,$(MAKECMDGOALS)),)
 SPINEL_HEAD := $(shell git -C $(SPINEL) rev-parse HEAD 2>/dev/null)
 ifneq ($(SPINEL_HEAD),$(SPINEL_COMMIT))
 $(error $(SPINEL) is at $(or $(SPINEL_HEAD),no commit), and SPINEL_COMMIT is $(SPINEL_COMMIT). \
@@ -338,6 +340,14 @@ optcarrot:
 	ruby tools/optcarrot.rb --dir $(DEPS_OPTCARROT) --fluxpinel $(BUILD)/promote/fluxpinel \
 	  --frames $(OPTCARROT_FRAMES)
 
+# The gems of the Gemfile into the Ruby that runs make, and the shared
+# library of the prism gem: IRB loads prism through its ffi backend
+# (lib/prism/ffi.rb), which opens build/libprism.so in the directory of the
+# gem. Run it after a change of the Ruby.
+gems:
+	bundle install
+	$(MAKE) -C "$$(ruby -e 'puts Gem::Specification.find_by_name("prism").full_gem_path')" shared
+
 # Fetches only the pinned commit, and builds spinel in place. A checkout
 # that SPINEL names elsewhere is yours: make deps does not touch it.
 deps:
@@ -394,5 +404,5 @@ check-spinel-master:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test park-audit host test-host oracle regress census gem-oracle optcarrot deps upgrade_spinel \
+.PHONY: all test park-audit host test-host oracle regress census gem-oracle optcarrot deps gems upgrade_spinel \
         check-spinel-master clean FORCE

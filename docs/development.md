@@ -32,6 +32,29 @@ GEM_DIRS_FIRST = $(HOME)/work/ruby/reline/lib
 The runtime API of spinel is internal and changes often. The pin makes each
 update of spinel an explicit step.
 
+## The gems
+
+The build and the tests read some gems of the Ruby that runs make. The
+`Gemfile` names them.
+
+- `--irb` runs the gems `irb`, `reline`, `prism` and `rdoc` under
+  Fluxpinel. The build records their lib directories
+  (`tools/gem_dirs.rb`).
+- `test/m3/ffi_gem.rb` compares with the `ffi` gem under CRuby.
+
+Run `make gems` once, and again after a change of the Ruby. It runs
+`bundle install`. Then it builds the shared library of the prism gem
+(`build/libprism.so` in the directory of the gem), which IRB loads through
+the ffi backend of prism.
+
+Fluxpinel does not run under Bundler. Make and the tests call `ruby` with
+no `bundle exec`, and the build takes the newest version of each gem. Git
+does not track `Gemfile.lock`.
+
+When a gem of `--irb` is missing or too old, each `make` prints a warning
+that names the gem. The build goes on, and `--irb` of that build does not
+start.
+
 ## The checks
 
 | Command | What it does | Time |
