@@ -1031,7 +1031,60 @@ static int fx_fast_eqq(sp_RbVal v, sp_RbVal s, sp_RbVal *out) {
    for a call, and for super from a method of the program. A builtin
    method that takes a block is one of fx_iter; Fluxpinel stops at any other
    one, since the generated wrappers would drop the block. */
+/* The methods of String that take a String argument by to_str: an object
+   of the program with a to_str stands for its String there, as CRuby's
+   implicit conversion. The functions of the runtime for a boxed receiver
+   convert in some of them (include?, index) and not in others (+, <<,
+   concat), where spinel emits the conversion at the call. */
+static int fx_str_takes_to_str(const char *name) {
+  static const char *const names[] = {
+    "+", "<<", "concat", "prepend", "replace", "insert", "sub", "sub!", "gsub", "gsub!", "split", "scan",
+    "start_with?", "end_with?", "partition", "rpartition", "index", "rindex", "byteindex", "byterindex",
+    "include?", "delete", "delete!", "count", "squeeze", "squeeze!", "tr", "tr!", "tr_s", "tr_s!", "center",
+    "ljust", "rjust", "casecmp", "casecmp?", "chomp", "chomp!", "delete_prefix", "delete_prefix!",
+    "delete_suffix", "delete_suffix!", "unpack", "unpack1", NULL };
+  for (int i = 0; names[i]; i++)
+    if (!strcmp(name, names[i])) return 1;
+  return 0;
+}
+
+/* The String that the to_str of the object v answers, or v itself for a
+   class with no to_str; an answer that is no String is CRuby's TypeError. */
+static sp_RbVal fx_to_str_arg(sp_RbVal v) {
+  FxMethod *m = fx_find_method(fx_lookup_class(v), sp_sym_intern("to_str"));
+  if (!m) return v;
+  SP_GC_ROOT_RBVAL(v);
+  sp_RbVal s = fx_invoke(m, v, 0, NULL);
+  if (!fx_is_string(s))
+    sp_raise_cls("TypeError", sp_sprintf("can't convert %s to String (%s#to_str gives %s)", sp_poly_class_name(v),
+                                         sp_poly_class_name(v), sp_poly_class_name(s)));
+  return s;
+}
+
+static int fx_builtin_call_2(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                               sp_RbVal *out);
+
+/* A builtin call. A String receiver first gets the String of each
+   argument that is an object of the program with a to_str. */
 static int fx_builtin_call_1(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                               sp_RbVal *out) {
+  int objs = 0;
+  if (argc >= 1 && argc <= 4 && fx_is_string(recv))
+    for (int i = 0; i < argc; i++) objs |= fx_is_fx_object(argv[i]);
+  if (!objs || !fx_str_takes_to_str(name)) return fx_builtin_call_2(recv, name, argc, argv, blk, out);
+  SP_GC_SAVE();   /* the roots of conv go at the return */
+  SP_GC_ROOT_RBVAL(recv);
+  sp_RbVal conv[4];
+  for (int i = 0; i < argc; i++) {
+    conv[i] = argv[i];
+    _sp_gc_root_push((void **)((uintptr_t)&conv[i] | (uintptr_t)1));
+  }
+  for (int i = 0; i < argc; i++)
+    if (fx_is_fx_object(conv[i])) conv[i] = fx_to_str_arg(conv[i]);
+  return fx_builtin_call_2(recv, name, argc, conv, blk, out);
+}
+
+static int fx_builtin_call_2(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                                sp_RbVal *out) {
   /* IO#printf and StringIO#printf: Kernel#printf to the receiver, which
      needs a format */
