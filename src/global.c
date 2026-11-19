@@ -566,13 +566,18 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
   /* reopen(path[, mode]): the row of the table takes an IO only, so a
      path goes to the runtime's sp_File_reopen; with no mode the handle
      keeps its own, as CRuby's does. The argument follows sp_poly_arg_path
-     (a String, a to_path, else TypeError). */
+     (a String, a to_path, else TypeError). The open of a FIFO waits for
+     the other end and lets the other green threads run meanwhile, so the
+     walker lock is given up for its time (FX_UNLOCKED); the handle is the
+     receiver, which the caller's frame roots. */
   if (FX_IS("reopen") && (argc == 1 || argc == 2) && !fx_is_io(argv[0])) {
     const char *path = sp_poly_arg_path(argv[0]);
     SP_GC_ROOT_STR(path);
     const char *mode = argc == 2 && argv[1].tag != SP_TAG_NIL ? sp_poly_arg_str_chk(argv[1]) : NULL;
     SP_GC_ROOT_STR(mode);
-    *out = sp_box_nullable_obj((void *)sp_File_reopen(io, path, mode), SP_BUILTIN_IO);
+    sp_File *nf;
+    FX_UNLOCKED(nf = sp_File_reopen(io, path, mode));
+    *out = sp_box_nullable_obj((void *)nf, SP_BUILTIN_IO);
     return 1;
   }
 #ifndef FX_KERNEL

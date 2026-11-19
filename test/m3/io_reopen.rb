@@ -55,6 +55,20 @@ Dir.mktmpdir("fx_reopen") do |d|
   rd.close
   p File.read(b)
 
+  # a writer's reopen onto a FIFO waits for a reader, and the other threads
+  # run meanwhile: the reader here is started by one of them (a process
+  # reads the FIFO, since spinel's own read of a FIFO hangs on macOS)
+  fifo = File.join(d, "fifo")
+  File.mkfifo(fifo)
+  $stdout.flush
+  t = Thread.new { system("cat", fifo) }
+  fw = File.open(a, "w")
+  fw.reopen(fifo, "w")
+  fw.puts "through the fifo"
+  fw.close
+  p t.value
+  File.delete(fifo)
+
   # the standard streams of a child, as a shell redirects them
   out = File.join(d, "out")
   pid = fork do
