@@ -141,11 +141,11 @@ static sp_RbVal fx_spawn_fd(sp_RbVal opts, sp_PolyArray *slots, int slot, int *o
   sp_RbVal v = sp_process_redirect_value(opts, slot, &found, &prior);
   if (!found) return sp_box_int(-1);
   if (prior >= 0) return slots->data[prior];
-  v = sp_poly_strbuf_deref(v);
   if (v.tag == SP_TAG_NIL || (v.tag == SP_TAG_BOOL && !v.v.i)) return sp_box_int(-1);
   if (v.tag == SP_TAG_INT) return v;
   if (v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_IO && v.v.p) return sp_box_int(sp_File_fileno((sp_File *)v.v.p));
-  if (v.tag == SP_TAG_STR) return sp_box_int(sp_process_open_redirect(v.v.s, slot, owned));
+  if (fx_is_string(v) && v.v.p)
+    return sp_box_int(sp_process_open_redirect(sp_String_cstr((sp_String *)v.v.p), slot, owned));
   if (v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_POLY_ARRAY) {
     sp_PolyArray *a = (sp_PolyArray *)v.v.p;
     if (a->len < 2 || a->data[0].tag != SP_TAG_SYM || a->data[0].v.i != sp_sym_intern("child"))
@@ -180,8 +180,8 @@ static sp_PolyArray *fx_spawn_opts(sp_RbVal opts, sp_RbVal env) {
     sp_PolyArray_push(a, v.tag == SP_TAG_INT ? v : sp_box_nil());
     v = fx_opt_get(opts, "rlimit_as");
     sp_PolyArray_push(a, v.tag == SP_TAG_INT ? v : sp_box_nil());
-    v = sp_poly_strbuf_deref(fx_opt_get(opts, "chdir"));
-    sp_PolyArray_push(a, v.tag == SP_TAG_STR ? v : sp_box_nil());
+    v = fx_opt_get(opts, "chdir");
+    sp_PolyArray_push(a, fx_is_string(v) ? v : sp_box_nil());
   }
   sp_PolyArray_push(a, sp_box_int((owned[0] >= 0) | ((owned[1] >= 0) << 1) | ((owned[2] >= 0) << 2)));
   sp_PolyArray_push(a, env);
@@ -203,9 +203,26 @@ static sp_int fx_spawn(int argc, sp_RbVal *argv) {
   if (cmd.tag == SP_TAG_OBJ && cmd.cls_id != SP_BUILTIN_POLY_ARRAY && sp_rbval_is_array(cmd))
     cmd = sp_box_poly_array(sp_poly_to_poly_array(cmd));
   SP_GC_ROOT_RBVAL(cmd);
+  /* The program, the pair [program, argv0] and each argument convert in
+     their order, as spinel emits for system: a to_str of the program runs,
+     a null byte is an ArgumentError, and each value is a copy that a later
+     conversion does not change (sp_system_arg_box). */
+  if (fx_is_array(cmd)) {
+    sp_PolyArray *pair = sp_PolyArray_new();
+    sp_RbVal pv = sp_box_poly_array(pair);
+    SP_GC_ROOT_RBVAL(pv);
+    /* the values of the pair are read first: a to_str of the program can
+       change the Array that holds the pair */
+    sp_int n = sp_poly_length(cmd);
+    for (sp_int i = 0; i < n; i++) sp_PolyArray_push(pair, sp_poly_arr_get(cmd, i));
+    for (sp_int i = 0; i < n; i++) sp_PolyArray_set(pair, i, sp_system_arg_box(pair->data[i]));
+    cmd = pv;
+  } else {
+    cmd = sp_system_arg_box(cmd);
+  }
   sp_PolyArray *args = sp_PolyArray_new();
   SP_GC_ROOT(args);
-  for (int i = 1; i < argc; i++) sp_PolyArray_push(args, argv[i]);
+  for (int i = 1; i < argc; i++) sp_PolyArray_push(args, sp_system_arg_box(argv[i]));
   sp_PolyArray *o = fx_spawn_opts(opts, env);
   SP_GC_ROOT(o);
   sp_int pid;

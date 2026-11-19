@@ -115,6 +115,12 @@ static int fx_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
     *out = argv[1];
     return 1;
   }
+  /* default(key): the answer of the default proc for the key, with no
+     store of its own; the default value when there is no proc */
+  if (argc == 1 && FX_IS("default")) {
+    *out = h->dproc ? h->dproc(h, argv[0], h->dproc_self) : h->default_v;
+    return 1;
+  }
   if (argc == 1 && (FX_IS("key?") || FX_IS("has_key?") || FX_IS("include?") || FX_IS("member?"))) {
     *out = sp_box_bool(sp_PolyPolyHash_has_key(h, argv[0]));
     return 1;

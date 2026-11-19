@@ -544,18 +544,20 @@ static sp_int fx_hook_to_int(int cls_id, void *p, int *ok) {
   return r;
 }
 
-static const char *fx_hook_to_str_u(int cls_id, void *p) {
+/* to_str: the handle of the String that the method answers, or NULL for a
+   class with no to_str and for an answer that is no String. */
+static sp_String *fx_hook_to_str_u(int cls_id, void *p) {
   sp_RbVal v = sp_box_obj(p, cls_id);
   FxMethod *m = fx_hook_method(v, "to_str");
   if (!m) return NULL;
   SP_GC_ROOT_RBVAL(v);
   sp_RbVal s = fx_invoke(m, v, 0, NULL);
-  return fx_is_string(s) ? sp_poly_recv_s(s, "to_str") : NULL;
+  return fx_is_string(s) ? (sp_String *)s.v.p : NULL;
 }
 
-static const char *fx_hook_to_str(int cls_id, void *p) {
+static sp_String *fx_hook_to_str(int cls_id, void *p) {
   if (fx_kernel_cls(cls_id) && fx_kernel_hooks.to_str) return fx_kernel_hooks.to_str(cls_id, p);
-  const char *r;
+  sp_String *r;
   FX_HOOKED(r = fx_hook_to_str_u(cls_id, p));
   return r;
 }

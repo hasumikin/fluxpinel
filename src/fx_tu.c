@@ -27,14 +27,14 @@ static struct {
   const char *(*class_name)(sp_Class c);
   void (*mark)(void);
   const char *(*obj_cls_name)(int cls_id);
-  const char *(*obj_to_s)(int cls_id, void *p);
-  const char *(*obj_inspect)(int cls_id, void *p);
+  sp_RbVal (*obj_to_s)(int cls_id, void *p, int *found);
+  sp_RbVal (*obj_inspect)(int cls_id, void *p, int *found);
   int (*class_is_module)(sp_Class c);
   const char *(*exc_parent)(const char *name);
   sp_RbVal (*to_ary)(sp_RbVal v);
   sp_RbVal (*to_a)(sp_RbVal v);
   sp_int (*to_int)(int cls_id, void *p, int *ok);
-  const char *(*to_str)(int cls_id, void *p);
+  sp_String *(*to_str)(int cls_id, void *p);
   const char *(*to_path)(int cls_id, void *p);
   sp_user_binop_fn binop;
   sp_user_coerce_fn coerce;

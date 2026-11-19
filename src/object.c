@@ -1721,20 +1721,46 @@ static const char *fx_obj_text(int cls_id, void *p, const char *name) {
   return name[0] == 't' ? fx_default_to_s(cls_id, p) : fx_default_inspect(cls_id, p);
 }
 
-static const char *fx_hook_obj_to_s(int cls_id, void *p) {
-  if (fx_kernel_cls(cls_id) && fx_kernel_hooks.obj_to_s)
-    return fx_kernel_hooks.obj_to_s(cls_id, p);
-  const char *r;
-  FX_HOOKED(r = fx_obj_text(cls_id, p, "to_s"));
-  return r;
+/* to_s or inspect of an instance of a subclass of Array, Hash or String,
+   which the runtime asks with the class of the instance: the method of
+   the program on the instance, or *found = 0 for a class with none, and
+   the runtime then writes the Array, the Hash or the String. */
+static sp_RbVal fx_bsub_text(FxClass *k, void *p, const char *name, int *found) {
+  FxMethod *m = fx_find_method(k, sp_sym_intern(name));
+  *found = m != NULL;
+  if (!m) return sp_box_nil();
+  sp_RbVal v = sp_box_obj(p, fx_is_array_class(k) ? SP_BUILTIN_POLY_ARRAY
+                             : fx_is_hash_class(k) ? SP_BUILTIN_POLY_POLY_HASH : SP_BUILTIN_STRBUF);
+  SP_GC_ROOT_RBVAL(v);
+  return sp_box_str_new(sp_poly_to_s(fx_invoke(m, v, 0, NULL)));
 }
 
-static const char *fx_hook_obj_inspect(int cls_id, void *p) {
+/* The hooks answer a String box and set *found, as the runtime asks
+   (sp_obj_to_s_fn, sp_obj_inspect_fn): Fluxpinel has a text for every
+   object of the program, its own or the default one. */
+static sp_RbVal fx_hook_obj_text(int cls_id, void *p, const char *name, int *found) {
+  FxClass *k = fx_class_by_id(cls_id);
+  sp_RbVal r;
+  if (k && fx_is_bsub_class(k)) {
+    FX_HOOKED(r = fx_bsub_text(k, p, name, found));
+    return r;
+  }
+  const char *s;
+  FX_HOOKED(s = fx_obj_text(cls_id, p, name));
+  *found = 1;
+  return sp_box_str_new(s);
+}
+
+static sp_RbVal fx_hook_obj_to_s(int cls_id, void *p, int *found) {
+  if (fx_kernel_cls(cls_id) && fx_kernel_hooks.obj_to_s)
+    return fx_kernel_hooks.obj_to_s(cls_id, p, found);
+  return fx_hook_obj_text(cls_id, p, "to_s", found);
+}
+
+static sp_RbVal fx_hook_obj_inspect(int cls_id, void *p, int *found) {
   if (fx_kernel_cls(cls_id) && fx_kernel_hooks.obj_inspect)
-    return fx_kernel_hooks.obj_inspect(cls_id, p);
-  const char *r;
-  FX_HOOKED(r = fx_obj_text(cls_id, p, "inspect"));
-  return r;
+    return fx_kernel_hooks.obj_inspect(cls_id, p, found);
+  return fx_hook_obj_text(cls_id, p, "inspect", found);
 }
 
 /* The runtime asks a user object for an operator (==, <=>, + ...) through

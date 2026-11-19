@@ -19,9 +19,9 @@ static sp_RbVal fx_kernel_complex(int argc, sp_RbVal *argv, int raise) {
   sp_RbVal a = argv[0], b = argc == 2 ? argv[1] : sp_box_int(0);
   if (!raise) {
     for (int i = 0; i < argc; i++) {
-      sp_RbVal v = sp_rbval_str(argv[i]);
+      sp_RbVal v = argv[i];
       int real = v.tag == SP_TAG_INT || v.tag == SP_TAG_BIGINT || v.tag == SP_TAG_FLT || sp_poly_is_rat_kind(v);
-      if (!real && v.tag != SP_TAG_STR && !(v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_COMPLEX)) return sp_box_nil();
+      if (!real && !fx_is_string(v) && !(v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_COMPLEX)) return sp_box_nil();
     }
     sp_convert_soft = 1;
     sp_convert_failed = 0;

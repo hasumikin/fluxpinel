@@ -24,7 +24,6 @@ static int fx_kind_of(sp_RbVal v, const char **family, const char **variant) {
   switch (v.tag) {
   case SP_TAG_INT: fam = var = "int"; kind = FX_TY_INT; break;
   case SP_TAG_FLT: fam = var = "float"; kind = FX_TY_FLOAT; break;
-  case SP_TAG_STR: fam = var = "string"; kind = FX_TY_STRING; break;
   case SP_TAG_SYM: fam = var = "symbol"; kind = FX_TY_SYMBOL; break;
   case SP_TAG_BOOL: kind = FX_TY_BOOL; break;
   case SP_TAG_NIL: kind = FX_TY_NIL; break;
@@ -195,9 +194,9 @@ static int fx_is_integer(sp_RbVal v) {
   return v.tag == SP_TAG_INT || v.tag == SP_TAG_BIGINT;
 }
 
-/* A String has two forms: a literal (SP_TAG_STR) and a mutable handle. */
+/* A String is a handle (STRBUF), frozen or not. */
 static int fx_is_string(sp_RbVal v) {
-  return v.tag == SP_TAG_STR || (v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_STRBUF);
+  return v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_STRBUF;
 }
 
 /* Methods that a runtime helper on boxed values answers as a whole. The
@@ -535,7 +534,7 @@ static int fx_int_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
     else if (FX_IS("to_s") || FX_IS("inspect")) {
       sp_int base = sp_poly_arg_int_chk(a);
       if (base < 2 || base > 36) sp_raise_cls("ArgumentError", sp_sprintf("invalid radix %lld", (long long)base));
-      *out = sp_box_str(sp_bigint_to_s_base(b, base));
+      *out = sp_box_str_new(sp_bigint_to_s_base(b, base));
     } else {
       return 0;
     }
@@ -1399,7 +1398,7 @@ static sp_RbVal fx_kernel_String(sp_RbVal v) {
    Integer, a String) raises TypeError, as CRuby's rb_obj_dig does */
 static sp_RbVal fx_dig_rest(sp_RbVal v, int argc, sp_RbVal *argv) {
   if (argc == 0 || v.tag == SP_TAG_NIL) return v;
-  int plain = v.tag == SP_TAG_INT || v.tag == SP_TAG_FLT || v.tag == SP_TAG_STR || v.tag == SP_TAG_SYM ||
+  int plain = v.tag == SP_TAG_INT || v.tag == SP_TAG_FLT || v.tag == SP_TAG_SYM ||
               v.tag == SP_TAG_BOOL || v.tag == SP_TAG_BIGINT || sp_poly_is_strbuf(v);
   if (!plain && fx_is_fx_object(v) && !fx_record_of(fx_class_of(v)) &&
       !fx_find_method(fx_lookup_class(v), sp_sym_intern("dig")))
@@ -1514,7 +1513,7 @@ static int fx_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) 
   if (((!strcmp(name, "format") || !strcmp(name, "sprintf")) && argc >= 1) || !strcmp(name, "printf")) {
     if (argc == 0) { *out = sp_box_nil(); return 1; }
     sp_RbVal io = sp_box_nil();
-    if (name[0] == 'p' && argv[0].tag != SP_TAG_STR && !fx_is_string(argv[0])) {
+    if (name[0] == 'p' && !fx_is_string(argv[0])) {
       io = argv[0];
       argc--;
       argv++;

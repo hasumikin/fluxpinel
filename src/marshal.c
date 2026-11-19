@@ -137,7 +137,7 @@ static int fx_marshal_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *o
     SP_GC_ROOT_RBVAL(argv[0]);
     sp_RbVal io = argc >= 2 && !fx_is_integer(argv[1]) ? argv[1] : sp_box_nil();
     SP_GC_ROOT_RBVAL(io);
-    sp_RbVal s = sp_box_str(sp_marshal_dump(argv[0]));
+    sp_RbVal s = sp_box_str_new(sp_marshal_dump(argv[0]));
     if (io.tag == SP_TAG_NIL) {
       *out = s;
       return 1;

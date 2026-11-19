@@ -836,8 +836,7 @@ code can hold any of the 12 forms. The walker reads all 12 forms.
   the bytes, calls the C function of the typed String and writes the new
   bytes back into the handle (`sp_poly_str_become`). A bang method with a
   plain form calls the plain form and answers nil when nothing changes.
-  A String of the tag `SP_TAG_STR` comes from the runtime, so a mutator
-  raises `FrozenError` on a frozen one and stops as a gap on another.
+  A mutator raises `FrozenError` on a frozen String.
 - **User objects in an Array.** The helpers reach the program through
   hooks: `sp_obj_cmp_hook` calls `<=>`, and `sp_obj_to_ary_fn`,
   `sp_obj_to_a_fn`, `sp_obj_to_int_fn` and `sp_obj_to_str_fn` call the
@@ -1144,12 +1143,10 @@ room for a Bignum. The default there is raise, the default of spinel.
 
 ### 4.4 A defect only Fluxpinel reaches
 
-`"%c" % s` answers `""` when `s` is a mutable String handle in a poly slot.
-CRuby answers the first character. The `%c` branch of
-`sp_str_format_polyarr` (`lib/sp_poly_cold.c`) tests `SP_TAG_STR` only and
-does not dereference a STRBUF handle. The AOT tests pass a literal there,
-which is `SP_TAG_STR`. Fluxpinel makes every String literal a new handle, so it
-takes the handle path on every run.
+Fluxpinel holds every value in a box, and calls the functions of the
+runtime for a boxed value. Code that spinel compiles holds most values in
+a typed form, and reaches those functions less. A defect in such a
+function can show in Fluxpinel only.
 
 Fluxpinel does not work around such a defect, as the oracle must show it.
 `tools/oracle_known.tsv` lists the known defects. The oracle counts a
@@ -1468,9 +1465,8 @@ These facts apply to spinel commit `ffac8340d`.
 - `spinel_rt.h` declares hooks such as `sp_class_to_s` and `sp_sym_to_s`
   as `static`. Each TU that includes the header must define them. Thus all
   Fluxpinel code that uses the runtime is one TU (a unity build).
-- A poly String has two forms. A literal is `SP_TAG_STR`. A new String is a
-  mutable handle: `SP_TAG_OBJ` with `cls_id` `SP_BUILTIN_STRBUF` (-40). The
-  walker treats both forms as String.
+- A boxed String is its handle: `SP_TAG_OBJ` with `cls_id`
+  `SP_BUILTIN_STRBUF` (-40), frozen or not.
 - The integer overflow mode is a compile-time macro
   (`SP_INT_OVERFLOW_MODE_RAISE`, `_WRAP` or `_PROMOTE`). The default of
   spinel is `raise`. A host build uses the mode of its kernel
@@ -1540,9 +1536,14 @@ These facts apply to spinel commit `ffac8340d`.
   (`sp_re_caps`) that `sp_re_last_matchdata` reads. Fluxpinel sets the
   registers again from the MatchData, so `$~` after `str.match(re)` reads
   this match.
-- Fluxpinel makes a mutable String for each String literal. Thus
-  `"ab12".slice!(/\d+/)` changes a String in Fluxpinel, but CRuby and AOT raise
-  FrozenError (`string_slice_bang_regexp_arm`).
+- Fluxpinel makes a mutable String for each String literal, as CRuby does
+  with no `# frozen_string_literal: true`. spinel freezes each literal, and
+  the `.expected` of a test is the answer of CRuby with frozen literals.
+  Thus `"ab12".slice!(/\d+/)` changes a String in Fluxpinel, where the
+  `.expected` has FrozenError (`string_slice_bang_regexp_arm`), and two
+  literals of the same text are two objects
+  (`compare_by_identity_string_key`). With the comment at the top of a
+  file, Fluxpinel freezes the literals of that file.
 - `rescue` lets a program reach two old defects of Fluxpinel. A generated
   wrapper whose row has no argument kinds takes any argument: `"s".include?(:x)`
   passes a Symbol to `sp_str_include`, which crashes

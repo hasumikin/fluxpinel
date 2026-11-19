@@ -9,6 +9,7 @@
 # is not here.
 ANY_ARRAY/poly_array#dup/0	the row answers a plain Array; an instance of a subclass of Array keeps its class
 ANY_HASH/poly_poly_hash#dup/0	the row answers a plain Hash; an instance of a subclass of Hash keeps its class
+ANY_HASH/poly_poly_hash#to_h/0	the row answers the receiver; an instance of a subclass of Hash answers a plain Hash
 addrinfo/addrinfo#inspect/0	fx_core of Fluxpinel answers inspect of every receiver before the table; the row never runs
 addrinfo/addrinfo#to_sockaddr/0	the row answers a text String; CRuby answers a binary String
 complex/complex#==/1	the row answers false for an object of the program; CRuby asks the == of the object
@@ -22,6 +23,7 @@ string/string#end_with?/1	bop_rows[] has no String#start_with? with one argument
 string/string#gsub/2	the row leaves $~ as it is; CRuby sets it for a String pattern too
 string/string#prepend/0	the row answers a new String; CRuby answers the receiver itself
 string/string#sub/2	the row leaves $~ as it is; CRuby sets it for a String pattern too
+string/string#to_s/0	the row answers the receiver; an instance of a subclass of String answers a plain String
 string/string#to_str/0	the row answers a new String; CRuby answers the receiver itself
 symbol/symbol#[]/2	the row reads both arguments as Integers; CRuby takes a Regexp and a group too
 symbol/symbol#start_with?/1	the String argument of the row takes any boxed value (TypeError for a Regexp); CRuby matches a Regexp

@@ -357,8 +357,8 @@ static int fx_re_matcher(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
   if (argc == 2 && argv[1].tag != SP_TAG_INT) fx_gap(sp_sprintf("%s with a position that is not an Integer", name));
   /* the subject that $~ keeps is a copy of a String that can change */
   SP_GC_ROOT_RBVAL(r);
-  if (!test && r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_STRBUF) r = sp_box_str(fx_re_subject(r, name));
-  if (!test && a.tag == SP_TAG_OBJ && a.cls_id == SP_BUILTIN_STRBUF) a = sp_box_str(fx_re_subject(a, name));
+  if (!test && r.tag == SP_TAG_OBJ && r.cls_id == SP_BUILTIN_STRBUF) r = sp_box_str_fresh(fx_re_subject(r, name));
+  if (!test && a.tag == SP_TAG_OBJ && a.cls_id == SP_BUILTIN_STRBUF) a = sp_box_str_fresh(fx_re_subject(a, name));
   if (name[0] == '=') {
     sp_oint i = sp_poly_match_index(r, a);
     *out = sp_box_oint(i);
@@ -657,7 +657,7 @@ static int fx_re_md_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     return 1;
   }
   /* the subject, frozen as CRuby answers it (the row answers a new String) */
-  if (FX_IS("string") && argc == 0) { *out = sp_box_str(sp_MatchData_string(m)); return 1; }
+  if (FX_IS("string") && argc == 0) { *out = fx_box_str_frozen(sp_MatchData_string(m)); return 1; }
   if (FX_IS("values_at")) {
     sp_PolyArray *a = sp_PolyArray_new();
     SP_GC_ROOT(a);

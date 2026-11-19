@@ -352,6 +352,16 @@ typedef struct {
 
 static Fluxpinel L;
 
+/* A frozen String of the bytes s, in a handle of its own: the value of a
+   call that answers a frozen String in CRuby (defined?, ENV[], the
+   subject of a MatchData). The handle is new, so the freeze reaches no
+   String that the program holds. NULL is nil. */
+static inline sp_RbVal fx_box_str_frozen(const char *s) {
+  sp_RbVal v = sp_box_str_fresh(s);
+  if (v.tag == SP_TAG_OBJ && v.v.p) sp_String_freeze((sp_String *)v.v.p);
+  return v;
+}
+
 /* The bytes of a String into an Array of Strings. The Array of the runtime
    takes the handle of a String, so the bytes get their handle first. The
    handle and the room in the Array are allocated here, and a collection

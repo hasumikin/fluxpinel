@@ -6,9 +6,8 @@
    function of the typed String and writes the new bytes back into the
    handle (sp_poly_str_become). Fluxpinel does the same here.
 
-   Every String that the walker makes is a mutable handle (STRBUF). A
-   String of the tag SP_TAG_STR comes from the runtime and is frozen, so
-   a mutator raises FrozenError on it, as sp_str_check_mutable does.
+   Every String is a handle (STRBUF). A frozen one raises FrozenError in
+   a mutator.
 
    A bang method that has a plain form (upcase!, strip!, ...) runs the
    plain form and writes its result back. It answers nil when nothing
@@ -240,6 +239,17 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     return 1;
   }
   if (fx_str_case_opts(r, name, argc, argv, out)) return 1;
+  /* lines(sep = $/, chomp: false): the row of the table is an emitter of
+     spinel, with no function to call, so the lines of the runtime */
+  if (FX_IS("lines") && argc <= 2) {
+    int n = argc;
+    sp_RbVal kw = sp_box_nil();
+    if (n && fx_is_hash(argv[n - 1]) && argv[n - 1].v.p == L.kwhash) kw = argv[--n];
+    if (n > 1) fx_arity_error(n, 0, 1, 0);
+    *out = sp_box_nullable_obj((void *)sp_poly_string_lines(r, n == 1 ? argv[0] : sp_box_nil(), kw, n, name),
+                               SP_BUILTIN_STR_ARRAY);
+    return 1;
+  }
   /* each_line(sep, chomp:) with no block: an Enumerator over the lines */
   if (FX_IS("each_line") && argc >= 1 && argc <= 2) {
     int chomp = 0, n = argc;
@@ -249,19 +259,15 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       n--;
     }
     if (n > 1) return 0;
-    const char *s = sp_poly_recv_s(r, name);
-    SP_GC_ROOT_STR(s);
-    sp_StrArray *lines;
-    if (n == 1 && argv[0].tag == SP_TAG_NIL) {
-      lines = sp_StrArray_new();
-      fx_strs_push(lines, s);
-    } else if (n == 1) {
-      const char *sep = sp_poly_arg_str_chk(argv[0]);
-      SP_GC_ROOT_STR(sep);
-      lines = chomp ? sp_str_lines_sep_chomp(s, sep) : sp_str_lines_sep(s, sep);
-    } else {
-      lines = chomp ? sp_str_lines_chomp(s) : sp_str_lines(s);
+    /* the lines of the runtime, which reads the separator and chomp: */
+    sp_RbVal kw = sp_box_nil();
+    SP_GC_ROOT_RBVAL(kw);
+    if (chomp) {
+      sp_PolyPolyHash *h = sp_PolyPolyHash_new();
+      kw = sp_box_obj(h, SP_BUILTIN_POLY_POLY_HASH);
+      sp_PolyPolyHash_set(h, sp_box_sym(sp_sym_intern("chomp")), sp_box_bool(1));
     }
+    sp_StrArray *lines = sp_poly_string_lines(r, n == 1 ? argv[0] : sp_box_nil(), kw, n, name);
     SP_GC_ROOT(lines);
     /* the label names the arguments: each_line("c", chomp: true) */
     const char *m = "";
@@ -304,22 +310,16 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       !(argv[0].tag == SP_TAG_OBJ && argv[0].cls_id == SP_BUILTIN_REGEX))
     sp_raise_cls("TypeError", sp_sprintf("wrong argument type %s (expected Regexp)", sp_poly_class_name(argv[0])));
   if (argc == 0) {
-    /* dup of a String of the runtime: a new handle, which keeps the
-       encoding and can change */
-    if (FX_IS("dup")) {
-      *out = r.tag == SP_TAG_STR ? sp_box_str_new(sp_str_dup(r.v.s)) : sp_poly_dup(r, 0);
-      return 1;
-    }
+    if (FX_IS("dup")) { *out = sp_poly_dup(r, 0); return 1; }
     if (FX_IS("to_str")) { *out = r; return 1; }
     if (FX_IS("clone")) { *out = sp_poly_dup(r, 1); return 1; }
     /* -s: s itself when frozen, else a frozen copy */
     if (FX_IS("-@") || FX_IS("dedup")) {
-      *out = r.tag == SP_TAG_STR || sp_poly_frozen(r) ? r : sp_poly_neg_chk(r);
+      *out = sp_poly_frozen(r) ? r : sp_poly_neg_chk(r);
       return 1;
     }
     if (FX_IS("freeze")) { *out = sp_poly_freeze(r); return 1; }
-    /* a String of the runtime (SP_TAG_STR) is frozen */
-    if (FX_IS("frozen?")) { *out = sp_box_bool(r.tag == SP_TAG_STR || sp_poly_frozen(r)); return 1; }
+    if (FX_IS("frozen?")) { *out = sp_box_bool(sp_poly_frozen(r)); return 1; }
     if (FX_IS("object_id")) { *out = sp_box_int((sp_int)(uintptr_t)sp_poly_identity_ptr(r)); return 1; }
     if (FX_IS("to_i")) { *out = fx_str_to_i(sp_poly_recv_s(r, name), -1); return 1; }
     if (FX_IS("clear")) { fx_str_mut(r, name); *out = sp_poly_clear(r); return 1; }
@@ -385,6 +385,9 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
                                  SP_BUILTIN_STR_ARRAY);
       return 1;
     }
+    /* casecmp and casecmp?: the rows of the table are emitters of spinel;
+       the function of the runtime for a boxed receiver */
+    if (FX_IS("casecmp") || FX_IS("casecmp?")) { *out = sp_poly_casecmp(r, a, name[7] == '?'); return 1; }
     if (fx_is_string(a) && FX_IS("chomp")) {
       *out = sp_box_str_new(sp_str_chomp_sep(sp_poly_recv_s(r, name), sp_poly_recv_s(a, name)));
       return 1;
@@ -404,14 +407,6 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       if (sp_poly_is_strbuf(r)) {
         sp_String *h = (sp_String *)r.v.p;
         sp_String_force_encoding(h, sp_String_is_frozen(h) ? -1 : sp_force_encoding_mode(a));
-      }
-      /* a String of no handle takes the tag on its bytes, as
-         emit_str_force_encoding does */
-      else if (r.tag == SP_TAG_STR && r.v.s) {
-        sp_str_check_mutable(r.v.s);
-        int mode = sp_force_encoding_mode(a);
-        if (mode == 1) sp_str_as_binary(r.v.s);
-        else if (mode == 0) sp_str_as_text(r.v.s);
       }
       *out = r;
       return 1;

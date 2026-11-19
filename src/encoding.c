@@ -48,7 +48,7 @@ static int fx_encoding_const(FxClass *enc, sp_sym name, sp_RbVal *out) {
   /* the Unicode version of the tables of the runtime (lib/regexp/unicase.h) */
   if (!strcmp(c, "UNICODE_VERSION")) v = fx_frozen_cstr("17.0.0");
   for (int i = 0; v.tag == SP_TAG_NIL && fx_enc_names[i][0]; i++)
-    if (fx_enc_const_of(fx_enc_names[i][0], c)) v = sp_encoding_find(sp_box_str(fx_enc_names[i][0]));
+    if (fx_enc_const_of(fx_enc_names[i][0], c)) v = sp_encoding_find(sp_box_str_fresh(fx_enc_names[i][0]));
   if (v.tag == SP_TAG_NIL) return 0;
   SP_GC_ROOT_RBVAL(v);
   fx_const_set(enc, name, v);

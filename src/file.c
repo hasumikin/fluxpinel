@@ -89,14 +89,14 @@ static sp_RbVal fx_file_read(int bin, int argc, sp_RbVal *argv) {
 }
 
 /* File.delete(*paths): each path converts and is checked before the first
-   unlink, as CRuby converts them all first. Answers the count. */
+   unlink, as CRuby converts them all first, and a conversion that changes
+   a String of another path does not change the path that was taken
+   (sp_file_delete_splat keeps a copy of each). Answers the count. */
 static sp_RbVal fx_file_delete(int argc, sp_RbVal *argv) {
   sp_PolyArray *paths = sp_PolyArray_new();
   SP_GC_ROOT(paths);
-  for (int i = 0; i < argc; i++) sp_PolyArray_push(paths, sp_box_str(sp_poly_arg_path(argv[i])));
-  for (sp_int i = 0; i < paths->len; i++) sp_file_path_check(paths->data[i].v.s);
-  for (sp_int i = 0; i < paths->len; i++) sp_file_delete(paths->data[i].v.s);
-  return sp_box_int(argc);
+  for (int i = 0; i < argc; i++) sp_PolyArray_push(paths, argv[i]);
+  return sp_box_int(sp_file_delete_splat(sp_box_poly_array(paths)));
 }
 
 /* The stat of an argument of File.identical?: a path, or an open IO,

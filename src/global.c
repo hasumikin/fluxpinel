@@ -192,7 +192,7 @@ static const char *fx_env_key(sp_RbVal k) {
 
 static sp_RbVal fx_env_get(const char *k) {
   const char *v = getenv(k);
-  return v ? sp_box_str(sp_env_str(v)) : sp_box_nil();
+  return v ? fx_box_str_frozen(sp_env_str(v)) : sp_box_nil();
 }
 
 /* A Hash of the environment, in the order of environ. */
@@ -202,7 +202,7 @@ static sp_RbVal fx_env_hash(void) {
   sp_PolyPolyHash *h = sp_PolyPolyHash_new();
   SP_GC_ROOT(h);
   for (sp_int i = 0; i < s->len; i++)
-    sp_PolyPolyHash_set(h, sp_box_str(s->order[i]), sp_box_str(sp_StrStrHash_get(s, s->order[i])));
+    sp_PolyPolyHash_set(h, fx_box_str_frozen(s->order[i]), fx_box_str_frozen(sp_StrStrHash_get(s, s->order[i])));
   return fx_hash_box(h);
 }
 
@@ -217,7 +217,7 @@ static void fx_env_update(sp_RbVal hv, int replace) {
   sp_StrStrHash *s = sp_env_to_h();
   SP_GC_ROOT(s);
   for (sp_int i = 0; i < s->len; i++)
-    if (!sp_PolyPolyHash_has_key(h, sp_box_str(s->order[i]))) unsetenv(s->order[i]);
+    if (!sp_PolyPolyHash_has_key(h, sp_box_str_fresh(s->order[i]))) unsetenv(s->order[i]);
 }
 
 static int fx_env_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,

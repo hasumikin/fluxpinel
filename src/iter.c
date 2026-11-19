@@ -2127,7 +2127,6 @@ static sp_RbVal fx_srange_side(sp_StrRange g, int end) {
    Range. */
 static const char *fx_srange_arg(sp_StrRange g, sp_RbVal a) {
   if (g.sym) return a.tag == SP_TAG_SYM ? sp_sym_to_s((sp_sym)a.v.i) : NULL;
-  if (a.tag == SP_TAG_STR) return a.v.s;
   return sp_poly_strbuf_copy(a);
 }
 

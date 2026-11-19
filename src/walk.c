@@ -2308,7 +2308,6 @@ static sp_RbVal fx_hash_lit(FxFrame *f, const pm_node_list_t *elts) {
 /* The text of a String end of a Range, or NULL for nil. */
 static const char *fx_range_text(sp_RbVal v) {
   if (v.tag == SP_TAG_NIL) return NULL;
-  if (v.tag == SP_TAG_STR) return v.v.s;
   return sp_poly_strbuf_copy(v);
 }
 
@@ -3338,7 +3337,13 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
     return sp_box_float(((const pm_float_node_t *)n)->value);
   case PM_STRING_NODE: {
     const pm_string_t *s = &((const pm_string_node_t *)n)->unescaped;
-    return fx_new_string(pm_string_source(s), pm_string_length(s));
+    sp_RbVal v = fx_new_string(pm_string_source(s), pm_string_length(s));
+    /* `# frozen_string_literal: true` at the top of the file: prism marks
+       each plain literal, and the String is frozen. It is a new String at
+       each run of the literal, where CRuby answers one object. */
+    if (PM_NODE_FLAG_P(n, PM_STRING_FLAGS_FROZEN) && v.tag == SP_TAG_OBJ && v.v.p)
+      sp_String_freeze((sp_String *)v.v.p);
+    return v;
   }
   case PM_INTERPOLATED_STRING_NODE:
     return fx_interpolate(f, &((const pm_interpolated_string_node_t *)n)->parts);
@@ -3431,7 +3436,7 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
   case PM_DEFINED_NODE: {
     const char *k = fx_defined(f, ((const pm_defined_node_t *)n)->value);
     /* CRuby answers a frozen String */
-    return k ? sp_box_str(k) : sp_box_nil();
+    return fx_box_str_frozen(k);
   }
   case PM_MATCH_PREDICATE_NODE: {
     const pm_match_predicate_node_t *m = (const pm_match_predicate_node_t *)n;
