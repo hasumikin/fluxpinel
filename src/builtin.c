@@ -1283,6 +1283,52 @@ static sp_RbVal fx_denied(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
 /* The same, with the visibility of the method. check is 0 for a call
    that reaches any method (send, a call from the runtime), 1 for a call
    with a receiver, from *caller, and 2 for public_send. */
+/* The builtin class of the receiver of a builtin method, for its entry in
+   the backtrace (fx_bt_builtin_enter), or NULL for a call that CRuby
+   shows no frame for or that reads the frames itself: a call of a Proc or
+   a Method, send and its kin, the eval family, new. *singleton is set for
+   a method of a builtin class itself (File.open). The name lives on: a
+   literal, or the name of a class. */
+static const char *fx_bt_builtin_cls(sp_RbVal recv, const char *name, int *singleton) {
+  static const char *const skip[] = { "send", "__send__", "public_send", "method_missing", "respond_to?",
+                                      "instance_eval", "instance_exec", "class_eval", "module_eval", "class_exec",
+                                      "module_exec", "new", "allocate", "binding", "define_method", NULL };
+  /* this runs at each builtin call of the walker: the first letter tells
+     most names from the list, and the tag and the class id tell the class
+     with no read of the value */
+  switch (name[0]) {
+  case 's': case '_': case 'p': case 'm': case 'r': case 'i': case 'c': case 'n': case 'a': case 'b': case 'd':
+    for (int i = 0; skip[i]; i++)
+      if (!strcmp(name, skip[i])) return NULL;
+  }
+  switch (recv.tag) {
+  case SP_TAG_INT: return "Integer";
+  case SP_TAG_FLT: return "Float";
+  case SP_TAG_SYM: return "Symbol";
+  case SP_TAG_NIL: return "NilClass";
+  case SP_TAG_CLASS: {
+    const FxClass *k = fx_class_value(recv);
+    if (!k || k->cls_id >= FX_CLS_BASE || k->anon) return NULL;
+    *singleton = 1;
+    return k->name;
+  }
+  case SP_TAG_OBJ:
+    /* an instance of a subclass of Array, Hash or String has the class id
+       of its builtin class, which owns the builtin method */
+    switch (recv.cls_id) {
+    case SP_BUILTIN_POLY_ARRAY: return "Array";
+    case SP_BUILTIN_POLY_POLY_HASH: return "Hash";
+    case SP_BUILTIN_STRBUF: return "String";
+    case SP_BUILTIN_EXCEPTION: return "Exception";
+    case SP_BUILTIN_PROC: case SP_BUILTIN_METHOD: return NULL;
+    }
+    if (recv.cls_id >= FX_CLS_BASE) return "Object";
+    if (fx_is_binding(recv)) return NULL;
+    break;
+  }
+  return sp_poly_class_name(recv);
+}
+
 static sp_RbVal fx_send_v(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                             int check, const sp_RbVal *caller) {
   sp_RbVal out;
@@ -1292,7 +1338,13 @@ static sp_RbVal fx_send_v(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
   } else if (recv.tag == SP_TAG_CLASS) {
     FxClass *k = fx_class_value(recv);
     m = k ? fx_find_smethod(k, fx_name_sym(name)) : NULL;
-    if (!m && fx_class_core(NULL, recv, name, argc, argv, blk, &out)) return out;
+    if (!m) {
+      /* a method of a builtin class itself is in the backtrace too */
+      int singleton = 0;
+      const char *cls = caller ? fx_bt_builtin_cls(recv, name, &singleton) : NULL;
+      int d __attribute__((cleanup(fx_bt_builtin_exit))) = cls ? fx_bt_builtin_enter(cls, name, singleton) : -1;
+      if (fx_class_core(NULL, recv, name, argc, argv, blk, &out)) return out;
+    }
   } else if (fx_is_kernel_object(recv)) {
     /* an object of the kernel: the methods of its class are the rows of
        the table of --ext-class (host.c), before the builtin methods */
@@ -1317,7 +1369,19 @@ static sp_RbVal fx_send_v(sp_RbVal recv, const char *name, int argc, sp_RbVal *a
     if (fx_method_missing(recv, name, argc, argv, blk, FX_MISS_METHOD, &out)) return out;
     fx_no_method_args(recv, name, argc, argv, FX_MISS_METHOD);
   }
-  if (fx_builtin_call(recv, name, argc, argv, blk, &out)) return out;
+  /* a call of the walker (caller): the builtin method is in the backtrace
+     while it runs */
+  if (caller) {
+    int singleton = 0;
+    const char *cls = fx_bt_builtin_cls(recv, name, &singleton);
+    int d __attribute__((cleanup(fx_bt_builtin_exit))) = cls ? fx_bt_builtin_enter(cls, name, singleton) : -1;
+    /* a method of Enumerable with a block walks the each of the receiver,
+       which CRuby shows above it (`Array#each` above `Enumerable#inject`) */
+    if (cls && blk && !singleton && !strcmp(fx_rs_owner(cls, name), "Enumerable")) fx_bt_builtin_enter(cls, "each", 0);
+    if (fx_builtin_call(recv, name, argc, argv, blk, &out)) return out;
+  } else if (fx_builtin_call(recv, name, argc, argv, blk, &out)) {
+    return out;
+  }
   if (blk && argc >= 1 && (!strcmp(name, "send") || !strcmp(name, "__send__") || !strcmp(name, "public_send")))
     return fx_send_v(recv, fx_name_arg(argv[0]), argc - 1, argv + 1, blk, name[0] == 'p' ? 2 : 0, NULL);
   /* a method of Object (a top-level def) after the builtin methods of

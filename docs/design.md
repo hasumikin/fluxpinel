@@ -332,9 +332,15 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   block, and the kind of frame. A landing (`FX_TRY_LANDED`) reads the
   records of the unwound frames before it cuts them, and puts the lines
   (`file:line:in 'A#m'`) on the exception, unless it has them already.
-  `Kernel#caller` reads the same records. Fluxpinel has no frame for a
-  builtin method, so the frames that CRuby shows for them (`Array#each`,
-  `Kernel#Integer`) are not in a backtrace. The main program runs under
+  `Kernel#caller` reads the same records. A builtin method that the
+  walker calls has a record too, with no frame (`fx_bt_builtin_enter`):
+  the backtrace has `Array#each` and `Kernel#Integer` where CRuby has
+  them, named by the class or module that owns the method in CRuby
+  (`fx_rs_owner`). A method of Enumerable with a block has the `each` of
+  its receiver above it. Two kinds of lines of CRuby are not there: the
+  operators of the fast path (`Integer#/`), which make no record, and the
+  methods that CRuby calls inside a builtin method (`File#initialize`
+  under `IO.open`). The main program runs under
   a handler (`fx_run_main_source`) that gives an uncaught exception its
   backtrace and raises it again, with `sp_bt_enabled` set, so the report
   of the runtime prints the frames as CRuby does.
@@ -1631,8 +1637,9 @@ A script does not replace a method that AOT code calls directly (section
    of `test/irb`.
 3. **The differences that the sessions leave out.** Each one needs a
    decision:
-   - A backtrace has no frame for a builtin method (`'Integer#/'`,
-     `'Kernel#loop'`).
+   - A backtrace has no line for an operator of the fast path
+     (`'Integer#/'`), and none for the methods that CRuby calls inside a
+     builtin method (section 3.3.2).
    - An error has no mark under its source (the gem error_highlight,
      which reads `RubyVM::AbstractSyntaxTree`). Fluxpinel has the node
      of the call and can write the mark with no gem.

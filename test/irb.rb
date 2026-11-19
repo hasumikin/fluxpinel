@@ -9,9 +9,9 @@
 #
 # - An address (0x000071e2...) reads 0xADDR.
 # - A time that `measure` prints reads 0.0s.
-# - A line of a backtrace after the first ("\tfrom ...") goes. Fluxpinel has
-#   no frame for a builtin method, and the launcher of each side has
-#   frames of its own.
+# - A line of a backtrace after the first ("\tfrom ...") goes. The launcher
+#   of each side has frames of its own, and Fluxpinel has no line for the
+#   methods that CRuby calls inside a builtin method.
 #
 # The first difference of a failed session shows with its line number.
 

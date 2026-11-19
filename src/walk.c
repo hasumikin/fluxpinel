@@ -230,6 +230,11 @@ static const char *fx_bt_label(const FxTrace *t) {
     case FX_TR_CLASS: in = sp_sprintf("<class:%s>", t->cls); break;
     case FX_TR_MODULE: in = sp_sprintf("<module:%s>", t->cls); break;
     case FX_TR_SCLASS: in = sp_sprintf("singleton class"); break;
+    /* a builtin method: the class or module that owns it in CRuby */
+    case FX_TR_BUILTIN:
+      in = t->singleton ? sp_sprintf("%s.%s", fx_rs_sing_owner(t->cls, t->bname), t->bname)
+                        : sp_sprintf("%s#%s", fx_rs_owner(t->cls, t->bname), t->bname);
+      break;
     default: in = sp_sprintf("<main>");
   }
   if (t->kind != FX_TR_BLOCK) return in;
@@ -237,11 +242,50 @@ static const char *fx_bt_label(const FxTrace *t) {
   return t->levels > 1 ? sp_sprintf("block (%d levels) in %s", t->levels, in) : sp_sprintf("block in %s", in);
 }
 
+/* A builtin method that the walker calls gets an entry of the frame stack,
+   with no frame: the backtrace then has `Array#each` or `Kernel#Integer`
+   where CRuby has it. cls is the builtin class of the receiver and name
+   the method, two Strings that live on. The line is that of the call,
+   which the entry below has. Answers the depth to give back at the return
+   (fx_bt_builtin_exit); a raise leaves the entry to the landing.
+
+   The fast path of the operators (fx_fast_call) makes no entry, so
+   `Integer#/` is not in a backtrace. The frames that CRuby shows for the
+   inside of a builtin method (`Array#each` under `Enumerable#sort_by`)
+   are not there either. */
+static int fx_bt_builtin_enter(const char *cls, const char *name, int singleton) {
+  int d = fx_frame_enter(++L.serial);
+  FxFrameStack *s = fx_fs();
+  FxTrace *t = &s->tr[d];
+  t->kind = FX_TR_BUILTIN;
+  t->cls = cls;
+  t->bname = name;
+  t->singleton = (uint8_t)singleton;
+  t->at = d ? s->tr[d - 1].at : NULL;
+  return d;
+}
+
+static void fx_bt_builtin_exit(int *d) {
+  if (*d >= 0) fx_fs()->depth = *d;
+}
+
+/* The entry of a function of Kernel in a call with no receiver, or -1 for
+   a name that is no private method of Kernel and for the names that read
+   the frame of the call or that CRuby shows no frame for. */
+static int fx_bt_kernel_enter(const char *name) {
+  static const char *const skip[] = { "raise", "fail", "binding", "caller", "caller_locations", "block_given?",
+                                      "iterator?", "__method__", "__callee__", "__dir__", "local_variables",
+                                      "eval", "require", "require_relative", "load", "autoload", "autoload?",
+                                      "global_variables", "exit!", NULL };
+  if (!fx_kernel_private(name)) return -1;
+  for (int i = 0; skip[i]; i++)
+    if (!strcmp(name, skip[i])) return -1;
+  return fx_bt_builtin_enter("Kernel", name, 0);
+}
+
 /* The backtrace of the frames of s below top, the innermost first, after
    the skip innermost ones: "file:line:in 'label'" for each, as CRuby
-   writes a frame of Ruby. Fluxpinel has no frame for a builtin method, so
-   the frames that CRuby shows for them (`Array#each`, `Kernel#Integer`)
-   are not in it. */
+   writes a frame. */
 static sp_StrArray *fx_bt_build(const FxFrameStack *s, int top, int skip) {
   SP_GC_SAVE();
   sp_StrArray *a = sp_StrArray_new();
@@ -265,6 +309,11 @@ static sp_StrArray *fx_bt_build(const FxFrameStack *s, int top, int skip) {
    makes the object later and takes the trace from L.bt. */
 static void fx_bt_land(void) {
   sp_Exception *e = (sp_Exception *)sp_exc_obj[sp_exc_top];
+  /* a raise by name that an inner landing raised again (fx_reraise): the
+     trace of that landing has the frames that are cut by now */
+  int keep = L.bt_keep && !e && L.bt;
+  L.bt_keep = 0;
+  if (keep) return;
   L.bt = NULL;
   if (e && e->backtrace) return;
   SP_GC_SAVE();
@@ -1527,6 +1576,8 @@ static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *a
     if (fx_method_missing(self, name, argc, argv, blk, why, &out)) return out;
     fx_no_method_args(self, name, argc, argv, why);
   }
+  /* a function of Kernel is in the backtrace from here to the return */
+  int kd __attribute__((cleanup(fx_bt_builtin_exit))) = fx_bt_kernel_enter(name);
   if (fx_kernel_block(f, name, argc, argv, blk, &out)) return out;
   /* Kernel#eval needs the frame of the call for its locals */
   if (argc >= 1 && !blk && !strcmp(name, "eval")) return fx_eval_string(f, argc, argv);
@@ -2862,6 +2913,7 @@ static sp_Exception *fx_caught_obj(FxCaught *c) {
 
 /* Raises a caught exception again, the same object. */
 static __attribute__((noreturn)) void fx_reraise(FxCaught c) {
+  if (!c.obj) L.bt_keep = 1;
   sp_pending_exc_obj = c.obj;
   sp_bt_keep = 1;
   sp_raise_cls(c.cls, c.msg);

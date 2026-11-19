@@ -134,13 +134,15 @@ struct FxFrame;
 /* What a backtrace says of a frame (fx_bt_build). The frames live on the
    C stack, which a raise unwinds before a handler can read them, so each
    frame stack keeps one of these per depth, on the heap. */
-enum { FX_TR_TOP, FX_TR_METHOD, FX_TR_BLOCK, FX_TR_CLASS, FX_TR_MODULE, FX_TR_SCLASS };
+enum { FX_TR_TOP, FX_TR_METHOD, FX_TR_BLOCK, FX_TR_CLASS, FX_TR_MODULE, FX_TR_SCLASS, FX_TR_BUILTIN };
 typedef struct {
   const pm_node_t *at;            /* the statement or call under evaluation */
   const pm_node_t *body;          /* the def or block node, for a frame before its
                                      first statement */
   const FxMethod *method;         /* a method frame, or the method of a block */
-  const char *cls;                /* a class or module body: its name */
+  const char *cls;                /* a class or module body: its name; a builtin
+                                     method: the builtin class of its receiver */
+  const char *bname;              /* a builtin method: its name */
   uint8_t kind;                   /* FX_TR_* */
   uint8_t singleton;              /* the method runs on a class: "A.m", not "A#m" */
   uint8_t levels;                 /* a block: how many blocks deep in its method */
@@ -331,6 +333,7 @@ typedef struct {
                             its entry when it ends; a rescue cuts the entries of
                             the frames that a raise unwound */
   FxFrameStack *main_fs;   /* the stack of the frames of a root fiber */
+  int bt_keep;         /* a raise by name is raised again: the next landing keeps bt */
   sp_StrArray *bt;     /* the backtrace of a raise by name that landed, for the
                           exception object that fx_caught_obj makes */
   struct { const void *fiber; FxFrameStack *fs; } *fstacks;   /* by fiber */
@@ -647,6 +650,10 @@ static int fx_rs_errno_name(const char *name);
 static void fx_rs_errno_names_push(sp_PolyArray *a);
 static int fx_rs_own(sp_RbVal r, const char *mn);
 static int fx_rs_own_of(const char *cls, const char *mn);
+static const char *fx_rs_owner(const char *cls, const char *mn);
+static const char *fx_rs_sing_owner(const char *cls, const char *mn);
+static int fx_bt_builtin_enter(const char *cls, const char *name, int singleton);
+static void fx_bt_builtin_exit(int *d);
 static int fx_rs_instance(const char *cls, const char *mn);
 static int fx_rs_defined(const FxClass *k, const char *mn, int inherit);
 static void fx_rs_own_names(sp_PolyArray *a, const char *cls);

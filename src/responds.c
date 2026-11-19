@@ -88,6 +88,30 @@ static int fx_rs_own_of(const char *cls, const char *mn) {
   return row && fx_rs_has(row->inst, row->feat_inst, mn);
 }
 
+/* The class or module that owns the instance method mn of the builtin
+   class cls in CRuby, by name: cls, or the first ancestor whose row has
+   the method; Kernel for a private method of Kernel; cls when no row
+   tells. A backtrace names a builtin method by its owner. */
+static const char *fx_rs_owner(const char *cls, const char *mn) {
+  const FxRespondRow *row = fx_rs_row(cls);
+  if (row) {
+    if (fx_rs_has(row->inst, row->feat_inst, mn)) return row->name;
+    for (int i = 0; row->anc[i]; i++) {
+      const FxRespondRow *a = fx_rs_row(row->anc[i]);
+      if (a && fx_rs_has(a->inst, a->feat_inst, mn)) return a->name;
+    }
+  }
+  return fx_kernel_private(mn) ? "Kernel" : cls;
+}
+
+/* The same for a method of the class itself (File.open): cls, or the
+   first superclass whose row has the singleton method. */
+static const char *fx_rs_sing_owner(const char *cls, const char *mn) {
+  for (const FxRespondRow *row = fx_rs_row(cls); row; row = row->super ? fx_rs_row(row->super) : NULL)
+    if (fx_rs_has(row->sing, row->feat_sing, mn)) return row->name;
+  return cls;
+}
+
 /* The same, for the builtin class of r. */
 static int fx_rs_own(sp_RbVal r, const char *mn) {
   return fx_rs_own_of(sp_poly_class_name(r), mn);
