@@ -1105,6 +1105,13 @@ CRuby that runs make.
   `fluxpinel --irb`, and compares the output. It reads an address and a
   measured time as equal, and drops each line of a backtrace after the
   first. A session holds only the lines that give the same output.
+- **The terminal.** A session with no terminal does not use the line
+  editor of Reline. `make test` also runs `test/irb_tty.rb`, which starts
+  `fluxpinel --irb` on a pseudo terminal and types as a user does. It
+  checks the prompt, a def of three lines, the completion of Tab, Ctrl-C,
+  the history of the up arrow, an error and `exit`. It waits for a text
+  on the screen at each step, and does not compare with CRuby: the two
+  draw the same screen with different sequences.
 
 ### 4.3 The overflow mode
 
@@ -1626,8 +1633,6 @@ A script does not replace a method that AOT code calls directly (section
      `RubyVM::InstructionSequence`, which Fluxpinel does not have.
    - `10 ** 30` is a RangeError in the IRB of a host build, which is in
      raise mode as its kernel (section 4.3).
-   - The sessions run with no terminal. The path through Reline needs a
-     pty in the test.
 
 ### 9.4 The builtin layer
 

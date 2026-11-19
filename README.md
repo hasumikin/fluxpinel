@@ -281,7 +281,8 @@ Fluxpinel, and compares stdout and the exit status. It also runs each
 input in `test/console` through the console of both, and the cases of the
 command line in `test/cli/cases.rb`. Last, it runs each session in
 `test/irb` under the IRB of CRuby and under `fluxpinel --irb`, and compares
-the output.
+the output. It also types into `fluxpinel --irb` on a pseudo terminal
+(`test/irb_tty.rb`).
 
 `build/fluxpinel --console` reads Ruby from stdin, one line at a time, as
 irb does. A host program gives the same console to a socket with
