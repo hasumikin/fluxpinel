@@ -1629,8 +1629,6 @@ A script does not replace a method that AOT code calls directly (section
    - An error has no mark under its source (the gem error_highlight,
      which reads `RubyVM::AbstractSyntaxTree`). Fluxpinel has the node
      of the call and can write the mark with no gem.
-   - `show_source` of a method of the session reads
-     `RubyVM::InstructionSequence`, which Fluxpinel does not have.
    - `10 ** 30` is a RangeError in the IRB of a host build, which is in
      raise mode as its kernel (section 4.3).
 

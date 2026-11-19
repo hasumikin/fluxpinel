@@ -66,6 +66,8 @@ typedef struct {
   sp_RbVal value;         /* marked by the globals hook */
   const char *autoload;   /* the file that defines it, until a read loads it */
   int loading;            /* the file runs now: the constant is not defined yet */
+  const pm_node_t *at;    /* the node that ran when the constant was made, or NULL
+                             (Module#const_source_location) */
 } FxConst;
 
 /* A class or a module. A builtin class (Integer, Object, ...) gets one
@@ -424,6 +426,8 @@ static int fx_integer_class(const FxClass *k, const char *name, int argc, sp_RbV
 static int fx_symbol_class(const FxClass *k, const char *name, int argc, sp_RbVal *out);
 static int fx_fast_eqq(sp_RbVal v, sp_RbVal s, sp_RbVal *out);
 static FxFrameStack *fx_fs(void);
+static FxSource *fx_source_of(const pm_node_t *n);   /* walk.c */
+static int fx_line(const pm_node_t *n);
 static void fx_bt_land(void);
 static const char *fx_str_mut(sp_RbVal r, const char *name);   /* string.c */
 static void fx_frame_tag(const FxFrame *f, int kind, const FxMethod *m, const char *cls, const pm_node_t *body,

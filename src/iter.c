@@ -1556,6 +1556,21 @@ static sp_RbVal fx_curry(sp_RbVal r, int argc, sp_RbVal *argv) {
   return fx_curry_proc(r, sp_PolyArray_new(), n, p->b.lambda);
 }
 
+/* The lines of the source that holds the node n, each with its newline:
+   the file, or the String of the eval. */
+static sp_RbVal fx_script_lines(const pm_node_t *n) {
+  const FxSource *s = fx_source_of(n);
+  sp_PolyArray *a = sp_PolyArray_new();
+  SP_GC_ROOT(a);
+  for (const uint8_t *p = s->start; p < s->end;) {
+    const uint8_t *nl = memchr(p, '\n', (size_t)(s->end - p));
+    const uint8_t *q = nl ? nl + 1 : s->end;
+    sp_PolyArray_push(a, fx_new_string(p, (size_t)(q - p)));
+    p = q;
+  }
+  return sp_box_poly_array(a);
+}
+
 static int fx_proc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                         sp_RbVal *out) {
   FxProc *p = (FxProc *)r.v.p;
@@ -1568,6 +1583,18 @@ static int fx_proc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
   if ((FX_IS(">>") || FX_IS("<<")) && argc == 1) { *out = fx_compose(r, name, argv[0], p->b.lambda); return 1; }
   if (argc == 0 && FX_IS("to_proc")) { *out = r; return 1; }
   if (argc == 0 && FX_IS("lambda?")) { *out = sp_box_bool(p->b.lambda); return 1; }
+  /* inspect and to_s of a Proc of a block: the file and the line, as
+     CRuby writes them; any other Proc has the text of the runtime */
+  if (argc == 0 && (FX_IS("inspect") || FX_IS("to_s")) && p->b.node && !p->b.cfn) {
+    *out = sp_box_str_new(sp_sprintf("#<Proc:0x%016llx %s:%d%s>", (unsigned long long)(uintptr_t)p,
+                                     fx_source_of(p->b.node)->path, fx_line(p->b.node),
+                                     p->b.lambda ? " (lambda)" : ""));
+    return 1;
+  }
+  if (argc == 0 && FX_IS("__fx_script_lines__")) {
+    *out = p->b.node && !p->b.cfn ? fx_script_lines(p->b.node) : sp_box_nil();
+    return 1;
+  }
   /* source_location: the file and the line of the block, or nil for a
      Proc with no block in the program (a Symbol, a method of the runtime) */
   if (argc == 0 && FX_IS("source_location")) {
@@ -1957,6 +1984,12 @@ static int fx_method_value_core(sp_RbVal r, const char *name, int argc, sp_RbVal
   }
   if (FX_IS("receiver")) { *out = mv->recv; return 1; }
   if (FX_IS("owner")) { *out = fx_class_box(fx_method_value_owner(mv)); return 1; }
+  /* the lines of the source that holds the def, for the
+     RubyVM::InstructionSequence of lib/fluxpinel/irb_script_lines.rb */
+  if (FX_IS("__fx_script_lines__")) {
+    *out = mv->m && mv->m->kind == FX_M_DEF ? fx_script_lines((const pm_node_t *)mv->m->def) : sp_box_nil();
+    return 1;
+  }
   if (FX_IS("source_location")) {
     if (!mv->m || mv->m->kind != FX_M_DEF) { *out = sp_box_nil(); return 1; }
     const pm_node_t *d = (const pm_node_t *)mv->m->def;

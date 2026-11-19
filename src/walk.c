@@ -1167,6 +1167,20 @@ static int fx_is_kernel(sp_RbVal v) {
    here, unless the program defines a method of the name. */
 static int fx_binding_call(FxFrame *f, const pm_node_t *n, int has_recv, sp_RbVal recv, const char *name, int argc,
                            const FxBlock *blk, sp_RbVal *out) {
+  /* Module.nesting: the classes and modules of the scope of the call, the
+     innermost first. Fluxpinel keeps one lexical scope for a class, that
+     of its first body, so a body reopened by a path (`class A::B` at the
+     top level) answers the scopes of the first body. The body of
+     `class << self` answers the class, not its singleton class. */
+  if (has_recv && !argc && !blk && name[0] == 'n' && !strcmp(name, "nesting") && recv.tag == SP_TAG_CLASS) {
+    FxClass *k = fx_class_value(recv);
+    if (!k || k->cls_id >= 0 || strcmp(k->name, "Module")) return 0;
+    sp_PolyArray *a = sp_PolyArray_new();
+    SP_GC_ROOT(a);
+    for (FxClass *c = f->cref; c && c != L.object; c = c->lexical) sp_PolyArray_push(a, fx_class_box(c));
+    *out = sp_box_poly_array(a);
+    return 1;
+  }
   if (argc || blk || name[0] != 'b' || strcmp(name, "binding")) return 0;
   if (has_recv) {
     if (!fx_is_kernel(recv)) return 0;

@@ -976,7 +976,11 @@ static FxConst *fx_const_add(FxClass *c, sp_sym name, sp_RbVal v) {
     c->consts_cap = c->consts_cap ? c->consts_cap * 2 : 8;
     c->consts = realloc(c->consts, sizeof *c->consts * (size_t)c->consts_cap);
   }
-  c->consts[c->nconsts] = (FxConst){ name, v, NULL, 0 };
+  /* the statement or the call that runs now (the frame tag of the walker);
+     none at the start of the program, when the builtin constants are made */
+  const FxFrameStack *s = L.nsources > 0 ? fx_fs() : NULL;
+  const pm_node_t *at = s && s->depth ? s->tr[s->depth - 1].at : NULL;
+  c->consts[c->nconsts] = (FxConst){ name, v, NULL, 0, at };
   return &c->consts[c->nconsts++];
 }
 
@@ -2654,6 +2658,28 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     sp_RbVal v;
     int inherit = argc == 1 || sp_poly_truthy(argv[1]);
     *out = sp_box_bool(inherit ? fx_const_scoped_peek(k, s, &v) : fx_const_find(k, s, 0) != NULL);
+    return 1;
+  }
+  /* const_source_location(name, inherit = true): the file and the line
+     where the program made the constant; an empty Array for a constant
+     with no place in the program (a builtin class); nil for no constant */
+  if ((argc == 1 || argc == 2) && !strcmp(name, "const_source_location")) {
+    sp_sym s = sp_sym_intern(fx_name_arg(argv[0]));
+    int inherit = argc == 1 || sp_poly_truthy(argv[1]);
+    const FxClass *anc[128];
+    int n = inherit ? fx_ancestors(k, anc, 128) : 1;
+    if (!inherit) anc[0] = k;
+    const FxConst *found = NULL;
+    for (int i = 0; i < n && !found; i++) found = fx_const_find((FxClass *)anc[i], s, 0);
+    sp_RbVal v;
+    if (!found && !(inherit ? fx_const_scoped_peek(k, s, &v) : 0)) { *out = sp_box_nil(); return 1; }
+    sp_PolyArray *a = sp_PolyArray_new();
+    SP_GC_ROOT(a);
+    if (found && found->at) {
+      sp_PolyArray_push(a, sp_box_str_new(sp_str_dup(fx_source_of(found->at)->path)));
+      sp_PolyArray_push(a, sp_box_int(fx_line(found->at)));
+    }
+    *out = sp_box_poly_array(a);
     return 1;
   }
   /* constants(inherit = true): the names of the own constants, then those

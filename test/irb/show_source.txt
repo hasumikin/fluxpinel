@@ -1,0 +1,15 @@
+def foo(x)
+  x + 1
+end
+show_source foo
+class Bar
+  def hi = "hi"
+  def self.make = new
+end
+show_source Bar#hi
+show_source Bar.make
+show_source Bar
+show_source no_such_thing
+pr = proc { |v| v * 2 }
+foo(1)
+exit
