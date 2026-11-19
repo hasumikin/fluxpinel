@@ -1047,6 +1047,21 @@ static int fx_builtin_call_1(sp_RbVal recv, const char *name, int argc, sp_RbVal
     return fx_kernel(name, (int)a->len, a->data, out);
   }
   if (fx_singleton_core(recv, name, argc, argv, blk, out)) return 1;
+  /* An instance of a subclass of String: to_s and to_str are a plain
+     String of its bytes, as CRuby's String#to_s. The comparisons of the
+     runtime read the class of the receiver, and take an instance for an
+     object of the program, so they run on that plain String. */
+  if (!blk && fx_strsub_of(recv)) {
+    int to_s = argc == 0 && (!strcmp(name, "to_s") || !strcmp(name, "to_str"));
+    int cmp = argc == 1 && (!strcmp(name, "==") || !strcmp(name, "!=") || !strcmp(name, "eql?") ||
+                            !strcmp(name, "===") || !strcmp(name, "<=>"));
+    if (to_s || cmp) {
+      sp_RbVal plain = sp_box_str_new(sp_str_dup(sp_String_cstr((sp_String *)recv.v.p)));
+      if (to_s) { *out = plain; return 1; }
+      SP_GC_ROOT_RBVAL(plain);
+      return fx_builtin_call_1(plain, name, argc, argv, blk, out);
+    }
+  }
   /* dup and clone of an instance of a subclass of Array or Hash keep its
      class; to_a and to_h are a plain Array or Hash of its elements; merge
      and compact of a Hash answer an instance of the class, as in CRuby */

@@ -1196,8 +1196,13 @@ static int fx_const_lookup_peek(const FxClass *cref, sp_sym name, sp_RbVal *out)
   return fx_const_lookup_load(cref, name, out, 0);
 }
 
-static __attribute__((noreturn)) void fx_const_missing(const char *name) {
+/* The NameError of a constant that scope does not have. name is as the
+   message shows it ("A::B" for a path). The receiver of the error is the
+   scope: the class or module of the path, or of the body that reads a
+   bare name (NameError#receiver, which did_you_mean reads). */
+static __attribute__((noreturn)) void fx_const_missing(const FxClass *scope, const char *name) {
   fx_trace_missing("const#", name, 0);
+  sp_exc_stage_recv(fx_class_box((FxClass *)(scope ? scope : L.object)));
   sp_raise_cls("NameError", sp_sprintf("uninitialized constant %s", name));
 }
 
@@ -1246,13 +1251,30 @@ static FxHashSub *fx_hashsub_of(sp_RbVal v) {
   return h->scan == fx_hashsub_scan ? (FxHashSub *)v.v.p : NULL;
 }
 
-/* The class and the ivars of an instance of a subclass of Array or Hash,
-   or NULL for any other value. */
+/* An instance of a class under String is its String handle, as spinel
+   lays one out (sp_String_init_embedded): the runtime sees a String, and
+   asks sp_bsub_cls_fn whether it is an instance (sp_poly_is_str_subclass),
+   for a to_s that answers a plain String. A plain handle has no scan
+   function; the one of an instance marks its ivars. */
+static void fx_strsub_scan(void *p) {
+  sp_mark_rbval(((FxStrSub *)p)->t.ivars);
+}
+
+static FxStrSub *fx_strsub_of(sp_RbVal v) {
+  if (v.tag != SP_TAG_OBJ || v.cls_id != SP_BUILTIN_STRBUF || !v.v.p) return NULL;
+  const sp_gc_hdr *h = (const sp_gc_hdr *)v.v.p - 1;
+  return h->scan == fx_strsub_scan ? (FxStrSub *)v.v.p : NULL;
+}
+
+/* The class and the ivars of an instance of a subclass of Array, Hash or
+   String, or NULL for any other value. */
 static FxSubTail *fx_bsub_tail(sp_RbVal v) {
   FxArraySub *a = fx_arysub_of(v);
   if (a) return &a->t;
   FxHashSub *h = fx_hashsub_of(v);
-  return h ? &h->t : NULL;
+  if (h) return &h->t;
+  FxStrSub *s = fx_strsub_of(v);
+  return s ? &s->t : NULL;
 }
 
 /* The class of an instance, for the runtime; -1 for a plain value. */
@@ -1301,9 +1323,46 @@ static sp_RbVal fx_hashsub_new(FxClass *k) {
   return sp_box_obj(s, SP_BUILTIN_POLY_POLY_HASH);
 }
 
-/* A new empty instance of k, a subclass of Array or Hash. */
+static int fx_is_string_class(const FxClass *k) {
+  const FxClass *b = fx_builtin_base(k);
+  return b && !strcmp(b->name, "String");
+}
+
+/* Whether an instance of k is its Array, Hash or String (fx_bsub_new). */
+static int fx_is_bsub_class(const FxClass *k) {
+  return fx_is_array_class(k) || fx_is_hash_class(k) || fx_is_string_class(k);
+}
+
+/* A new empty instance of k, a subclass of String, with the finalizer of
+   a String handle for its bytes. */
+static sp_RbVal fx_strsub_new(FxClass *k) {
+  FxStrSub *s = (FxStrSub *)sp_gc_alloc(sizeof *s, sp_String_fin, fx_strsub_scan);
+  s->t.inst_id = k->inst_id;
+  s->t.ivars = sp_box_nil();
+  sp_String_init_embedded(&s->s);
+  return sp_box_obj(s, SP_BUILTIN_STRBUF);
+}
+
+/* The bytes and the encoding of the String from into the instance to. */
+static void fx_strsub_fill(sp_RbVal to, sp_RbVal from) {
+  SP_GC_ROOT_RBVAL(to);
+  const char *bytes = sp_poly_to_s(from);
+  SP_GC_ROOT_STR(bytes);
+  sp_String_set_bin_enc(&((FxStrSub *)to.v.p)->s, bytes);
+}
+
+/* String#initialize on an instance (super in its initialize, or a class
+   with none): the bytes of String.new with the same arguments. */
+static void fx_strsub_init(sp_RbVal v, int argc, sp_RbVal *argv, const FxBlock *blk) {
+  SP_GC_ROOT_RBVAL(v);
+  sp_RbVal plain = fx_send_b(fx_class_box(fx_builtin("String")), "new", argc, argv, blk);
+  SP_GC_ROOT_RBVAL(plain);
+  fx_strsub_fill(v, plain);
+}
+
+/* A new empty instance of k, a subclass of Array, Hash or String. */
 static sp_RbVal fx_bsub_new(FxClass *k) {
-  return fx_is_array_class(k) ? fx_arysub_new(k) : fx_hashsub_new(k);
+  return fx_is_array_class(k) ? fx_arysub_new(k) : fx_is_hash_class(k) ? fx_hashsub_new(k) : fx_strsub_new(k);
 }
 
 /* Array#initialize on an instance (super in its initialize, or a class
@@ -1375,6 +1434,9 @@ static sp_RbVal fx_bsub_copy(sp_RbVal v, int clone) {
   if (s) {
     for (sp_int i = 0; i < s->a.len; i++) sp_PolyArray_push(&((FxArraySub *)c.v.p)->a, s->a.data[i]);
     if (clone && s->a.frozen) ((FxArraySub *)c.v.p)->a.frozen = 1;
+  } else if (fx_strsub_of(v)) {
+    fx_strsub_fill(c, v);
+    if (clone && sp_String_is_frozen((sp_String *)v.v.p)) sp_String_freeze((sp_String *)c.v.p);
   } else {
     fx_hashsub_fill(c, v);
   }
@@ -2374,15 +2436,17 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
        class with no row, and allocate, are a gap: the constructor is no
        entry */
     if (fx_kernel_cls(k->cls_id)) fx_gap(sp_sprintf("%s.%s of a class of the kernel", k->name, name));
-    /* an instance of a subclass of Array or Hash is its Array or Hash */
-    if (fx_is_array_class(k) || fx_is_hash_class(k)) {
+    /* an instance of a subclass of Array, Hash or String is its Array,
+       Hash or String */
+    if (fx_is_bsub_class(k)) {
       sp_RbVal obj = fx_bsub_new(k);
       SP_GC_ROOT_RBVAL(obj);
       if (name[0] == 'n') {
         FxMethod *init = fx_find_method(k, sp_sym_intern("initialize"));
         if (init) fx_invoke_b(init, obj, argc, argv, blk);
         else if (fx_is_array_class(k)) fx_arysub_init(obj, argc, argv, blk);
-        else fx_hashsub_init(obj, argc, argv, blk);
+        else if (fx_is_hash_class(k)) fx_hashsub_init(obj, argc, argv, blk);
+        else fx_strsub_init(obj, argc, argv, blk);
       }
       *out = obj;
       return 1;
@@ -2637,7 +2701,7 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   if (argc == 1 && !strcmp(name, "const_get")) {
     sp_RbVal v;
     const char *cn = fx_name_arg(argv[0]);
-    if (!fx_const_scoped(k, sp_sym_intern(cn), &v)) fx_const_missing(cn);
+    if (!fx_const_scoped(k, sp_sym_intern(cn), &v)) fx_const_missing(k, cn);
     *out = v;
     return 1;
   }
@@ -2691,7 +2755,15 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     const FxClass *anc[128];
     int n = inherit ? fx_ancestors(k, anc, 128) : 1;
     if (!inherit) anc[0] = k;
-    for (int i = 0; i < n && (i == 0 || anc[i] != L.object); i++) {
+    /* the walk ends before the ancestors of Object, which are Object and
+       the modules ahead of it (a prepend), unless Object is the receiver */
+    int stop = n;
+    if (k != L.object && inherit) {
+      const FxClass *oanc[128];
+      int m = fx_ancestors(L.object, oanc, 128);
+      if (m <= n && anc[n - m] == oanc[0]) stop = n - m;
+    }
+    for (int i = 0; i < stop; i++) {
       for (int j = 0; j < anc[i]->nconsts; j++) {
         if (anc[i]->consts[j].loading) continue;
         fx_names_push(a, anc[i]->consts[j].name);

@@ -1666,6 +1666,7 @@ static sp_RbVal fx_super_call(FxFrame *f, const pm_node_t *n, const pm_arguments
     if (fx_is_exc(f->self)) fx_exc_init(f->self, argc, argv);
     else if (fx_arysub_of(f->self)) fx_arysub_init(f->self, argc, argv, blk);
     else if (fx_hashsub_of(f->self)) fx_hashsub_init(f->self, argc, argv, blk);
+    else if (fx_strsub_of(f->self)) fx_strsub_init(f->self, argc, argv, blk);
     else if (fx_is_fx_object(f->self) && fx_record_of(fx_class_of(f->self))) fx_record_init(f->self, argc, argv);
     return sp_box_nil();
   }
@@ -2459,7 +2460,7 @@ static sp_RbVal fx_const_read(FxFrame *f, const pm_node_t *n) {
   sp_RbVal v;
   if (PM_NODE_TYPE_P(n, PM_CONSTANT_READ_NODE)) {
     sp_sym name = fx_sym(((const pm_constant_read_node_t *)n)->name);
-    if (!fx_const_lookup(f->cref, name, &v)) fx_const_missing(sp_sym_to_s(name));
+    if (!fx_const_lookup(f->cref, name, &v)) fx_const_missing(f->cref, sp_sym_to_s(name));
     return v;
   }
   const pm_constant_path_node_t *cp = (const pm_constant_path_node_t *)n;
@@ -2471,7 +2472,7 @@ static sp_RbVal fx_const_read(FxFrame *f, const pm_node_t *n) {
     scope = fx_class_value(pv);
     if (!scope) sp_raise_cls("TypeError", sp_sprintf("%s is not a class/module", sp_poly_inspect(pv)));
   }
-  if (!fx_const_path(scope, name, &v)) fx_const_missing(fx_const_full(scope, name));
+  if (!fx_const_path(scope, name, &v)) fx_const_missing(scope, fx_const_full(scope, name));
   return v;
 }
 
@@ -2529,7 +2530,7 @@ static sp_RbVal fx_const_logic_write(FxFrame *f, const pm_node_t *n) {
     scope = f->cref, name = fx_sym(id);
     hit = fx_const_lookup(scope, name, &cur);
   }
-  if (!hit && kind != 1) fx_const_missing(path ? fx_const_full(scope, name) : sp_sym_to_s(name));
+  if (!hit && kind != 1) fx_const_missing(scope, path ? fx_const_full(scope, name) : sp_sym_to_s(name));
   SP_GC_ROOT_RBVAL(cur);
   if (kind == 1 && sp_poly_truthy(cur)) return cur;
   if (kind == 2 && !sp_poly_truthy(cur)) return cur;

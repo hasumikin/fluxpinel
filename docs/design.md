@@ -734,14 +734,23 @@ Fluxpinel gives walker classes their own object kind (`src/object.c`):
 - **Freeze.** `freeze` on an object sets the frozen bit of its heap
   header, and an ivar write to a frozen object raises FrozenError. A class
   keeps its own frozen flag.
-- **A subclass of Array or Hash.** Its instance is an Array or a Hash
-  with the class and its ivars after it (`FxArraySub`, `FxHashSub`), as
-  spinel lays one out. The runtime sees an Array or a Hash, and
-  `sp_bsub_cls_fn` gives it the class; the walker finds the class by the
-  scan function of the heap object. A call finds the methods of the class
-  first, then the builtin ones; `super` reaches those. `dup` and `clone`
-  keep the class, and so do `merge` and `compact` of a Hash; `to_a` and
-  `to_h` are plain.
+- **A subclass of Array, Hash or String.** Its instance is an Array, a
+  Hash or a String handle with the class and its ivars after it
+  (`FxArraySub`, `FxHashSub`, `FxStrSub`), as spinel lays one out. The
+  runtime sees an Array, a Hash or a String, and `sp_bsub_cls_fn` gives it
+  the class; the walker finds the class by the scan function of the heap
+  object. A call finds the methods of the class first, then the builtin
+  ones; `super` reaches those. `dup` and `clone` keep the class, and so do
+  `merge` and `compact` of a Hash; `to_a` and `to_h` are plain.
+  - A method of String that changes its receiver (`<<`, `upcase!`)
+    changes the instance. Any other one answers a plain String, as in
+    CRuby, and so do `to_s` and `to_str`.
+  - `==`, `!=`, `eql?`, `===` and `<=>` run on a plain String of the
+    bytes: the comparisons of the runtime read the class of the receiver.
+  - `Class.new(String)` and its kin for Array and Hash make such a class.
+  - `Marshal.dump` of an instance of a subclass of String raises
+    TypeError. The record of the runtime for a subclass holds an Array or
+    a Hash only. CRuby writes the String.
 - **Marshal.** `Marshal.dump` and `Marshal.load` run the serializer of
   the runtime (`src/marshal.c`). The runtime writes and reads the builtin
   values, and asks its vtable for an object of the program: Fluxpinel
@@ -1623,9 +1632,6 @@ A script does not replace a method that AOT code calls directly (section
    decision:
    - A backtrace has no frame for a builtin method (`'Integer#/'`,
      `'Kernel#loop'`).
-   - An error of a wrong constant has no `Did you mean?` line. The gem
-     did_you_mean keeps the names of the constants in instances of a
-     subclass of String, which Fluxpinel does not have.
    - An error has no mark under its source (the gem error_highlight,
      which reads `RubyVM::AbstractSyntaxTree`). Fluxpinel has the node
      of the call and can write the mark with no gem.

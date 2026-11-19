@@ -40,6 +40,10 @@ static int fx_marshal_obj_dump(sp_mar_buf *b, int cls_id, void *p) {
   FxClass *c = fx_class_by_id(cls_id);
   if (!c || c->native || fx_record_of(c)) return 0;
   if (c->anon) sp_raise_cls("TypeError", sp_sprintf("can't dump anonymous class %s", c->name));
+  /* an instance of a subclass of String is not written: the `C` record of
+     the runtime holds an Array or a Hash only (sp_mar_w_body), so the
+     runtime raises its TypeError, where CRuby writes the String */
+  if (fx_is_string_class(c)) return 0;
   if (fx_is_array_class(c) || fx_is_hash_class(c)) {
     sp_RbVal v = sp_box_obj(p, fx_is_array_class(c) ? SP_BUILTIN_POLY_ARRAY : SP_BUILTIN_POLY_POLY_HASH);
     const FxSubTail *t = fx_bsub_tail(v);
@@ -79,7 +83,7 @@ static sp_RbVal fx_marshal_obj_load(const char *name, sp_RbVal into, sp_RbVal iv
       *ok = 0;
       return sp_box_nil();
     }
-    if (k->is_module || k->native || fx_record_of(k) || fx_is_exc_class(k)) {
+    if (k->is_module || k->native || fx_record_of(k) || fx_is_exc_class(k) || fx_is_string_class(k)) {
       *ok = 0;
       return sp_box_nil();
     }

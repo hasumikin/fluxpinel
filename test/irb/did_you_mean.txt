@@ -7,5 +7,9 @@ helper_on
 h = { apple: 1 }
 (h.fetch(:aple) rescue $!.detailed_message(highlight: false))
 no_name_near_this
+Strng
+class Outer; class Innner; end; end
+Outer::Inner
+Flie.basename("a/b")
 1 + 1
 exit
