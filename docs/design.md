@@ -1330,9 +1330,10 @@ Console.create("Comment", {article_id: 1, commenter: "fx", body: "live"})
 
 ### 5.4.5 IRB over telnet
 
-The host also takes `--irb-port PORT` as its first two arguments and
-opens IRB, with the line editor of Reline, to each telnet connection on
-127.0.0.1:PORT (see `--irb-port` in the [README](../README.md)).
+The host also takes `--irb-port PORT` and opens IRB, with the line editor
+of Reline, to each telnet connection on 127.0.0.1:PORT (see `--irb-port`
+in the [README](../README.md)). The two arguments can be at any place
+before a `--`, and the entry does not get them.
 The kernel is compiled with `--ext-class` for the models and for
 `ActiveRecord::Base` and `ActiveRecord::Relation` (`RH_EXT_CLASS`), so IRB
 calls the methods of the models and of a `Relation` by name:

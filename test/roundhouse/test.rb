@@ -60,14 +60,14 @@ end
 
 # Reads the screen of an IRB of --irb-port until it has text, as ASCII with
 # no escape sequence, and answers the cursor position query of Reline as a
-# terminal does. Answers false after 20 seconds, or at the end of the
-# connection.
+# terminal does. Answers the screen, or false after 20 seconds and at the
+# end of the connection.
 def irb_screen(sock, text)
   seen = "".b
   deadline = Time.now + 20
   loop do
     plain = seen.bytes.select { |b| b < 128 }.pack("C*").gsub(/\e\[[0-9;?]*[A-Za-z]/, "")
-    return true if plain.include?(text)
+    return plain if plain.include?(text)
     return false if Time.now > deadline
     next unless sock.wait_readable(0.1)
     chunk = sock.readpartial(4096)
@@ -195,7 +195,9 @@ Dir.mktmpdir("fx-blog") do |dir|
   system("sqlite3", db, in: File.join(blog, "db/seed.sql"), exception: true) if File.delete(db)
   irb = free_port
   env = { "PORT" => http.to_s, "BLOG_DB" => db, "HOME" => dir }
-  pid = spawn(env, host, "--irb-port", irb.to_s, chdir: blog, [:out, :err] => log)
+  # --irb-port is not the first argument: the host takes it at any place,
+  # and the blog gets its -b
+  pid = spawn(env, host, "-b", "127.0.0.1", "--irb-port", irb.to_s, chdir: blog, [:out, :err] => log)
   begin
     wait_port(http, pid, log)
     if File.read(log).include?("--irb-port needs a Reline")
@@ -212,6 +214,11 @@ Dir.mktmpdir("fx-blog") do |dir|
         Process.waitpid(pid, Process::WNOHANG).nil? && get(http, "/articles").code == "200"
       sock = TCPSocket.new("127.0.0.1", irb)
       check "a second session of IRB answers", irb_line(sock, "Article.find(1).title", "=> \"Getting Started with Rails\"\r\n")
+      # the backtrace of an error has no frame of the listener
+      sock.write("Article.find(99)\r")
+      screen = irb_screen(sock, "irb(main):003")
+      check "an error shows with no frame of the listener",
+        screen && screen.include?("(ActiveRecord::RecordNotFound)") && !screen.include?("remote_irb.rb")
       sock.write("exit\r")
       check "the exit command closes the session", irb_closed?(sock)
       check "the server runs after the exit command", Process.waitpid(pid, Process::WNOHANG).nil?

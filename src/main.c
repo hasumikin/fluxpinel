@@ -22,8 +22,9 @@
    A host build with FX_KERNEL_MAIN (an entry such as "Logq.main") takes
    no FILE.rb: it calls the entry with ARGV, which holds every argument.
    With --irb as the first argument, it opens IRB instead, with the program
-   loaded by its init but not run. With --irb-port PORT first, it listens
-   and then runs the entry.
+   loaded by its init but not run. With --irb-port PORT at any place
+   before a "--", it listens and then runs the entry with the other
+   arguments.
 
    spinel_rt.h declares hooks as static, so all Fluxpinel code that uses the
    runtime is one TU. This file includes the others in order. */
@@ -373,14 +374,19 @@ int main(int argc, char **argv) {
   L.path = argv[0];
   int skip = 0;
   if (argc > 1 && !strcmp(argv[1], "--irb")) { fx_irb = fx_gap_raises = 1; skip = 1; }
-  else if (argc > 1 && !strcmp(argv[1], "--irb-port")) {
-    if (argc < 3 || !fx_is_port(argv[2])) {
+  /* --irb-port PORT at any place before a "--": the two arguments go, and
+     the entry gets the others in their order */
+  for (int i = 1; !fx_irb && i < argc && strcmp(argv[i], "--"); i++) {
+    if (strcmp(argv[i], "--irb-port")) continue;
+    if (i + 1 >= argc || !fx_is_port(argv[i + 1])) {
       fprintf(stderr, "%s: --irb-port needs a port number (ArgumentError)\n", argv[0]);
       return 1;
     }
-    fx_irb_port = argv[2];
+    fx_irb_port = argv[i + 1];
     fx_gap_raises = 1;
-    skip = 2;
+    for (int j = i; j + 2 <= argc; j++) argv[j] = argv[j + 2];
+    argc -= 2;
+    break;
   }
   L.args = argv + 1 + skip;
   L.nargs = argc - 1 - skip;

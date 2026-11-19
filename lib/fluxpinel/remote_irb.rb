@@ -185,7 +185,9 @@ module Fluxpinel
 
       # The settings of every session: the line editor on a terminal that
       # is not a tty of the process, and no pager (it reads the process's
-      # STDIN).
+      # STDIN). The backtrace of an error of a line leaves out the frames
+      # of this file, which are the listener under IRB; a filter of the
+      # user (~/.irbrc) runs after that.
       def setup
         return if @setup
         @setup = true
@@ -193,6 +195,11 @@ module Fluxpinel
         IRB.conf[:USE_MULTILINE] = true
         IRB.conf[:PROMPT_MODE] = :DEFAULT
         IRB.conf[:USE_PAGER] = false
+        theirs = IRB.conf[:BACKTRACE_FILTER]
+        IRB.conf[:BACKTRACE_FILTER] = lambda do |bt|
+          bt = bt.reject { |l| l.start_with?(__FILE__ + ":") }
+          theirs.respond_to?(:call) ? theirs.call(bt) : bt
+        end
       end
 
       # Reads sock until its end, in a thread: the data bytes go to queue,

@@ -216,7 +216,9 @@ and `rdoc` of the Ruby that builds Fluxpinel (`tools/gem_dirs.rb`), and
 or `RUBYLIB`. A host program with `KERNEL_MAIN` opens IRB with `--irb` as
 its first argument, with the program loaded but not run.
 
-`--irb-port PORT` listens on `127.0.0.1:PORT` before the program runs.
+`--irb-port PORT` listens on `127.0.0.1:PORT` before the program runs. A
+host program with `KERNEL_MAIN` takes the two arguments at any place
+before a `--`, and its entry gets the others.
 `telnet localhost PORT` then opens IRB in the running program, with the
 line editor of Reline on the terminal of the client
 (`lib/fluxpinel/remote_irb.rb`). One session runs at a time. `exit` ends
