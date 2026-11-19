@@ -1556,17 +1556,29 @@ static sp_RbVal fx_curry(sp_RbVal r, int argc, sp_RbVal *argv) {
   return fx_curry_proc(r, sp_PolyArray_new(), n, p->b.lambda);
 }
 
-static int fx_proc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+static int fx_proc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                        sp_RbVal *out) {
   FxProc *p = (FxProc *)r.v.p;
   if (FX_IS("call") || FX_IS("()") || FX_IS("yield") || FX_IS("[]") || FX_IS("===")) {
     SP_GC_ROOT_RBVAL(r);
-    *out = fx_yield_x(&p->b, argc, argv, 1);
+    *out = fx_yield_xb(&p->b, argc, argv, blk);
     return 1;
   }
   if (FX_IS("curry") && argc <= 1) { *out = fx_curry(r, argc, argv); return 1; }
   if ((FX_IS(">>") || FX_IS("<<")) && argc == 1) { *out = fx_compose(r, name, argv[0], p->b.lambda); return 1; }
   if (argc == 0 && FX_IS("to_proc")) { *out = r; return 1; }
   if (argc == 0 && FX_IS("lambda?")) { *out = sp_box_bool(p->b.lambda); return 1; }
+  /* source_location: the file and the line of the block, or nil for a
+     Proc with no block in the program (a Symbol, a method of the runtime) */
+  if (argc == 0 && FX_IS("source_location")) {
+    if (!p->b.node || p->b.cfn) { *out = sp_box_nil(); return 1; }
+    sp_PolyArray *a = sp_PolyArray_new();
+    SP_GC_ROOT(a);
+    sp_PolyArray_push(a, sp_box_str_new(sp_str_dup(fx_source_of(p->b.node)->path)));
+    sp_PolyArray_push(a, sp_box_int(fx_line(p->b.node)));
+    *out = sp_box_poly_array(a);
+    return 1;
+  }
   if (argc == 0 && FX_IS("arity")) { *out = sp_box_int(fx_proc_arity(&p->b)); return 1; }
   /* parameters(lambda: bool): a proc lists a required parameter as :opt,
      unless lambda: true asks for the list of a lambda */
@@ -1632,7 +1644,12 @@ static sp_RbVal fx_method_value_make(sp_RbVal recv, const FxMethod *m, sp_sym na
    that gave an UnboundMethod, else the class of the receiver. */
 static const FxClass *fx_method_value_owner(const FxMethodValue *mv) {
   if (mv->m) return mv->m->owner;
-  return mv->klass ? mv->klass : fx_class_of(mv->recv);
+  if (mv->klass) return mv->klass;
+  /* a private method of Kernel (puts, format, require) that the class of
+     the receiver does not replace */
+  const char *mn = sp_sym_to_s(mv->name);
+  if (fx_kernel_private(mn) && (fx_is_fx_object(mv->recv) || fx_rs_lacks(mv->recv, mn))) return fx_builtin("Kernel");
+  return fx_class_of(mv->recv);
 }
 
 /* Whether v can be the receiver of a method of k (UnboundMethod#bind):

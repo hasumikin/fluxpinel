@@ -5,7 +5,8 @@
 #   make        build build/fluxpinel
 #   make test   run test/*.rb under CRuby and Fluxpinel and compare, once as is
 #               and once under the GC stress and verify modes of spinel, and
-#               run the cases of the command line (test/cli.rb)
+#               run the cases of the command line (test/cli.rb) and the
+#               sessions of IRB (test/irb.rb)
 #   make oracle run the spinel test corpus under CRuby, Fluxpinel and AOT
 #   make regress
 #               run the tests that the last oracle found right, under
@@ -181,6 +182,7 @@ test: $(BUILD)/fluxpinel park-audit
 	ruby test/console.rb $(BUILD)/fluxpinel test/console
 	SPINEL_GC_STRESS=2 SPINEL_GC_VERIFY=1 ruby test/console.rb $(BUILD)/fluxpinel test/console
 	ruby test/cli.rb $(BUILD)/fluxpinel
+	ruby test/irb.rb $(BUILD)/fluxpinel test/irb
 
 # Every call of a runtime function that parks the green thread gives up the
 # walker lock (FX_UNLOCKED). The audit reads the runtime for the functions

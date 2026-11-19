@@ -41,6 +41,7 @@ t("names") do
    File.extname("x")]
 end
 t("expand") { [File.expand_path("b", "/a"), File.expand_path("../c", "/a/b"), File.absolute_path("/q/./r")] }
+t("absolute?") { [File.absolute_path?("/a/b"), File.absolute_path?("a/b"), File.absolute_path?("~/a"), File.respond_to?(:absolute_path?)] }
 t("respond_to?") { [File.respond_to?(:join), File.respond_to?(:write), File.respond_to?(:nope)] }
 t("symlink?") { [File.symlink?(a), File.symlink?(dir), File.symlink?(File.join(dir, "fx_nope"))] }
 b = File.join(dir, "fx_files_b.txt")

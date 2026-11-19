@@ -66,18 +66,7 @@ static sp_RbVal *fx_binding_slot(FxBinding *b, sp_sym name) {
 
 /* Binding#local_variables: the names of the frames, the newest first, each
    once, as CRuby lists the locals of an eval before those of the scope. */
-static sp_RbVal fx_binding_locals(FxBinding *b) {
-  sp_PolyArray *a = sp_PolyArray_new();
-  SP_GC_ROOT(a);
-  for (FxFrame *p = b->frame; p; p = p->parent)
-    for (size_t i = 0; i < p->names->size; i++) {
-      sp_sym s = fx_sym(p->names->ids[i]);
-      int seen = 0;
-      for (sp_int j = 0; j < a->len && !seen; j++) seen = (sp_sym)a->data[j].v.i == s;
-      if (!seen) sp_PolyArray_push(a, sp_box_sym(s));
-    }
-  return sp_box_poly_array(a);
-}
+static sp_RbVal fx_binding_locals(FxBinding *b) { return fx_frame_locals(b->frame); }
 
 /* local_variable_set of a name that no frame has: a frame of that one
    name under the last frame, as an eval of an assignment would add. The

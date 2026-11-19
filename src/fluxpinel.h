@@ -401,7 +401,8 @@ static sp_RbVal fx_yield(const FxBlock *b, int argc, sp_RbVal *argv);
 static sp_RbVal fx_block_proc(const FxBlock *b);
 static __attribute__((noreturn)) void fx_arity_error(int argc, int nreq, int nopt, int rest);
 static int fx_iter(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out);
-static int fx_proc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+static int fx_proc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                        sp_RbVal *out);
 static int fx_range_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int fx_hash_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                           sp_RbVal *out);

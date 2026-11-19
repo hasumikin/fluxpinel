@@ -272,7 +272,9 @@ on it.
 `make test` runs each program in `test/m2` and `test/m3` under CRuby and
 Fluxpinel, and compares stdout and the exit status. It also runs each
 input in `test/console` through the console of both, and the cases of the
-command line in `test/cli/cases.rb`.
+command line in `test/cli/cases.rb`. Last, it runs each session in
+`test/irb` under the IRB of CRuby and under `fluxpinel --irb`, and compares
+the output.
 
 `build/fluxpinel --console` reads Ruby from stdin, one line at a time, as
 irb does. A host program gives the same console to a socket with

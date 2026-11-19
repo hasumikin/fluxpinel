@@ -1,0 +1,23 @@
+class Bar
+  def hi = "hi"
+end
+ls Bar
+ls "str", grep: /up/
+show_source IRB::Context#evaluate
+show_source String#upcase
+whereami
+irb_info
+measure
+1 + 1
+measure :off
+1 + 1
+help ls
+show_cmds
+context.irb_name
+conf.echo
+conf.echo = false
+42
+conf.echo = true
+42
+irb_load "/nonexistent.rb"
+exit

@@ -719,7 +719,10 @@ static void fx_block_parts(const pm_node_t *n, const pm_constant_id_list_t **loc
    frame, with sdefs for its singleton_defs (the body of Class.new,
    class_eval and instance_eval); constants stay those of the home. m is
    set for the body of a method that define_method made: the block is the
-   body, super starts from m, and mblk is the block of the call. */
+   body, super starts from m, and mblk is the block of the call. With no
+   m, mblk is the block that Proc#call got: the block parameter of the
+   block takes it (nil when there is none), and a yield in the body still
+   goes to the block of the home. */
 static sp_RbVal fx_yield_in(const FxBlock *b, int argc, sp_RbVal *argv, int strict, const sp_RbVal *self,
                               FxClass *definee, int sdefs, const FxMethod *m, const FxBlock *mblk) {
   if (b->cfn) return b->cfn(b->ctx, argc, argv);
@@ -748,7 +751,9 @@ static sp_RbVal fx_yield_in(const FxBlock *b, int argc, sp_RbVal *argv, int stri
   /* a block in a block of a live home is one level deeper */
   int lv = live && h->fs->tr[h->depth].kind == FX_TR_BLOCK ? h->fs->tr[h->depth].levels + 1 : 1;
   fx_frame_tag(&bf, FX_TR_BLOCK, bf.method, NULL, b->node, bf.self.tag == SP_TAG_CLASS, lv);
+  if (!m) bf.block = mblk;
   fx_bind_block(&bf, params, argc, argv, b->lambda, strict);
+  if (!m) bf.block = h->block;
   sp_RbVal v;
   for (;;) {
     v = body ? fx_eval(&bf, body) : sp_box_nil();
@@ -779,6 +784,11 @@ static sp_RbVal fx_yield_in(const FxBlock *b, int argc, sp_RbVal *argv, int stri
 
 static sp_RbVal fx_yield_x(const FxBlock *b, int argc, sp_RbVal *argv, int strict) {
   return fx_yield_in(b, argc, argv, strict, NULL, NULL, 0, NULL, NULL);
+}
+
+/* Proc#call with a block: blk goes to the block parameter of b. */
+static sp_RbVal fx_yield_xb(const FxBlock *b, int argc, sp_RbVal *argv, const FxBlock *blk) {
+  return fx_yield_in(b, argc, argv, 1, NULL, NULL, 0, NULL, blk);
 }
 
 static sp_RbVal fx_yield(const FxBlock *b, int argc, sp_RbVal *argv) {
@@ -1377,12 +1387,33 @@ static sp_RbVal fx_trap(int argc, sp_RbVal *argv, const FxBlock *blk) {
   return prev;
 }
 
+/* The names of the locals that the frame f sees, as Symbols: those of f,
+   then those of each scope out of it, each name once (Kernel#local_variables
+   and Binding#local_variables). */
+static sp_RbVal fx_frame_locals(FxFrame *f) {
+  sp_PolyArray *a = sp_PolyArray_new();
+  SP_GC_ROOT(a);
+  for (FxFrame *p = f; p; p = p->parent)
+    for (size_t i = 0; i < p->names->size; i++) {
+      sp_sym s = fx_sym(p->names->ids[i]);
+      int seen = 0;
+      for (sp_int j = 0; j < a->len && !seen; j++) seen = (sp_sym)a->data[j].v.i == s;
+      if (!seen) sp_PolyArray_push(a, sp_box_sym(s));
+    }
+  return sp_box_poly_array(a);
+}
+
 /* The Kernel methods that take the block of the call. Answers 1 and sets
    *out when it handles the call. */
 static int fx_kernel_block(FxFrame *f, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                              sp_RbVal *out) {
   if (argc == 0 && (!strcmp(name, "block_given?") || !strcmp(name, "iterator?"))) {
     *out = sp_box_bool(f->block != NULL);
+    return 1;
+  }
+  if (!strcmp(name, "local_variables")) {
+    if (argc) fx_arity_error(argc, 0, 0, 0);
+    *out = fx_frame_locals(f);
     return 1;
   }
   /* __method__ and __callee__: the name of the running method, through
@@ -1496,7 +1527,11 @@ static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *a
   if (fx_object_core(self, name, argc, argv, &out)) return out;
   /* a method of a Binding from a method that a refinement gives it */
   if (fx_is_binding(self) && fx_binding_core(self, name, argc, argv, blk, &out)) return out;
-  if (!fx_is_fx_object(self) && self.tag != SP_TAG_CLASS) return fx_send(self, name, argc, argv);
+  /* a builtin value as self: its builtin method. A bare name that the
+     value has no method for stays here, for the NameError of a name that
+     could be a local variable. */
+  if (!fx_is_fx_object(self) && self.tag != SP_TAG_CLASS && !(why == FX_MISS_VCALL && fx_rs_lacks(self, name)))
+    return fx_send(self, name, argc, argv);
   if (fx_method_missing(self, name, argc, argv, NULL, why, &out)) return out;
   fx_trace_missing("Kernel#", name, argc);
   /* a bare name that could be a local variable is a NameError */

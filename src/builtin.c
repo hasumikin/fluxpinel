@@ -1083,7 +1083,7 @@ static int fx_builtin_call_1(sp_RbVal recv, const char *name, int argc, sp_RbVal
   if (fx_enum_core(recv, name, argc, argv, blk, out)) return 1;
   if (fx_env_core(recv, name, argc, argv, blk, out)) return 1;
   if (fx_record_core(recv, name, argc, argv, blk, out)) return 1;
-  if (fx_is_proc(recv) && fx_proc_core(recv, name, argc, argv, out)) return 1;
+  if (fx_is_proc(recv) && fx_proc_core(recv, name, argc, argv, blk, out)) return 1;
   /* Symbol#to_proc: the lambda that &:sym passes */
   if (recv.tag == SP_TAG_SYM && argc == 0 && !blk && !strcmp(name, "to_proc")) {
     FxBlock b = { .sym = (sp_sym)recv.v.i, .lambda = 1 };

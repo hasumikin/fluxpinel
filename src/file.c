@@ -294,6 +294,10 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
     *out = sp_box_str_new(sp_file_expand_path(path, argc == 2 ? sp_poly_arg_path(argv[1]) : NULL));
     return 1;
   }
+  if (FX_IS("absolute_path?") && argc == 1) {
+    *out = sp_box_bool(sp_file_absolute_path_p(sp_poly_arg_path(argv[0])));
+    return 1;
+  }
   return 0;
 }
 
@@ -807,7 +811,8 @@ static int fx_file_responds(sp_RbVal r, const char *name) {
                                        "write", "binwrite", "read", "binread",
                                        "exist?", "directory?", "file?", "symlink?", "size", "basename", "dirname",
                                        "extname", "readable?", "writable?", "executable?", "mtime", "atime",
-                                       "ctime", "path", "stat", "lstat", "expand_path", "absolute_path", NULL };
+                                       "ctime", "path", "stat", "lstat", "expand_path", "absolute_path",
+                                       "absolute_path?", NULL };
   FxClass *k = fx_class_value(r);
   if (!k || k->cls_id >= 0 || strcmp(k->name, "File")) return 0;
   for (int i = 0; names[i]; i++)

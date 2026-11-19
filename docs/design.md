@@ -1079,15 +1079,6 @@ with a session of a user is different: `--irb`, `--irb-port` and
 `Fluxpinel::Session` make both raise `NotImplementedError`. A line of the
 session then shows the error, and the program runs on.
 
-### 4.2 The gem oracle
-
-`make gem-oracle` runs `tools/gem_oracle.rb`. It loads each entry file of
-the packages of spinel, and each file of the gems that IRB needs (reline,
-irb, prism, rdoc), under Fluxpinel. The gems come from the CRuby that runs
-make. A file that CRuby cannot load alone is skipped. The report
-(`build/gem_oracle/report.md`) gives the first failure of each item, and
-groups the failures by reason. The goal of this list is IRB on Fluxpinel.
-
 Most of the time of the oracle goes to the compile of each test by spinel
 and the C compiler. `make regress` skips this part:
 
@@ -1097,7 +1088,25 @@ and the C compiler. `make regress` skips this part:
   a test no longer gives the CRuby answer.
 - The run takes about 10 seconds, so it can follow each change of spinel.
 
-### 4.2 The overflow mode
+### 4.2 The gems of IRB
+
+The goal of these two checks is IRB on Fluxpinel. The gems come from the
+CRuby that runs make.
+
+- **The gem oracle.** `make gem-oracle` runs `tools/gem_oracle.rb`. It
+  loads each entry file of the packages of spinel, and each file of the
+  gems that IRB needs (reline, irb, prism, rdoc), under Fluxpinel. A file
+  that CRuby cannot load alone is skipped. The report
+  (`build/gem_oracle/report.md`) gives the first failure of each item, and
+  groups the failures by reason.
+- **The sessions.** A file that loads can still give a wrong answer. `make
+  test` runs `test/irb.rb`: each session in `test/irb` is the input of an
+  IRB with no terminal. The test runs it under the IRB of CRuby and under
+  `fluxpinel --irb`, and compares the output. It reads an address and a
+  measured time as equal, and drops each line of a backtrace after the
+  first. A session holds only the lines that give the same output.
+
+### 4.3 The overflow mode
 
 The oracle runs Fluxpinel and AOT in promote mode. Spinel's raise mode is not a
 property of the runtime alone: the analysis still promotes an Integer where
@@ -1108,7 +1117,7 @@ cannot make the same choice. In raise mode, 56 tests that Fluxpinel ran gave
 The corpus follows spinel's own promote lane: it leaves out the tests in
 `RAISE_MODE_PINS` of spinel's Makefile.
 
-### 4.3 A defect only Fluxpinel reaches
+### 4.4 A defect only Fluxpinel reaches
 
 `"%c" % s` answers `""` when `s` is a mutable String handle in a poly slot.
 CRuby answers the first character. The `%c` branch of
@@ -1581,8 +1590,22 @@ A script does not replace a method that AOT code calls directly (section
    - `lib/fluxpinel/irb_ri_guard.rb` rescues the LoadError of the ri
      driver for IRB (ruby/irb#1272). When a release of IRB has it, the
      file goes.
-2. **The gem oracle (section 4.2).** Take the first failures of its
-   report, in the order of the gems that a session of IRB loads.
+2. **The sessions of IRB (section 4.2).** Run a session with more of the
+   commands and the input of a user, and take its first differences from
+   the IRB of CRuby. When a difference goes, its line goes into a session
+   of `test/irb`.
+3. **The differences that the sessions leave out.** Each one needs a
+   decision:
+   - A backtrace has no frame for a builtin method (`'Integer#/'`,
+     `'Kernel#loop'`).
+   - An error has no `Did you mean?` line and no mark under its source
+     (the gems did_you_mean and error_highlight).
+   - `show_source` of a method of the session reads
+     `RubyVM::InstructionSequence`, which Fluxpinel does not have.
+   - `10 ** 30` is a RangeError in the default build, which is not the
+     promote build.
+   - The sessions run with no terminal. The path through Reline needs a
+     pty in the test.
 
 ### 9.4 The builtin layer
 

@@ -1,0 +1,19 @@
+class Bar
+  def hi = "hi"
+end
+workspaces
+cd Bar
+self
+cd ..
+self
+pushws Object.new
+workspaces
+popws
+chws 5
+self
+local_variables.size > 0
+zzz_no_such_name
+abs
+method(:puts).owner
+jobs
+exit

@@ -1,0 +1,49 @@
+1 + 2
+a = [1, 2, 3].map { |x| x * 2 }
+def foo(x)
+  x + 1
+end
+foo(41)
+class Bar
+  def hi = "hi"
+end
+Bar.new.hi
+h = { a: 1, "b" => [1, 2.5, nil, :sym] }
+_
+puts "out"
+raise "boom"
+"abc".nosuch
+s = <<~T
+  line1
+  line2
+T
+x = [1,
+  2,
+  3]
+x.sum
+3.times do |i|
+  puts i
+end
+"あいう".size
+a, b = 1, 2
+->(v) { v * 2 }.call(4)
+Struct.new(:a, :b).new(1, 2)
+1.0 / 3
+"%05.2f" % 3.14159
+[1, 2, 3].each_slice(2).to_a
+(1..Float::INFINITY).lazy.map { |i| i * 2 }.first(3)
+catch(:done) { throw :done, 7 }
+Thread.new { 5 }.value
+require "json"
+JSON.generate({ "a" => 1 })
+$0
+__FILE__
+__LINE__
+__method__.inspect
+binding.local_variable_defined?(:x)
+local_variables.first(3)
+method(:puts).owner
+self.class
+pp({ long: "a" * 30, other: (1..20).to_a, more: { nested: [1, 2, 3] * 5 } })
+42;
+exit
