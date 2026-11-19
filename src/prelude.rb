@@ -445,6 +445,11 @@ class String
     self
   end
 
+  def each_codepoint
+    self.codepoints.each { |c| yield c }
+    self
+  end
+
   def each_line(sep = "\n", chomp: false)
     if sep.nil?
       yield self unless self.empty?

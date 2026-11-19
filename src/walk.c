@@ -1534,7 +1534,13 @@ static sp_RbVal fx_call_self(FxFrame *f, const char *name, int argc, sp_RbVal *a
     return fx_send(self, name, argc, argv);
   if (fx_method_missing(self, name, argc, argv, NULL, why, &out)) return out;
   fx_trace_missing("Kernel#", name, argc);
-  /* a bare name that could be a local variable is a NameError */
+  /* a bare name that could be a local variable is a NameError, which
+     keeps the names of the locals of the scope (NameError#local_variables,
+     for did_you_mean) where a NoMethodError keeps its arguments */
+  if (why == FX_MISS_VCALL) {
+    sp_exc_stage_key(fx_frame_locals(f));
+    fx_no_method(self, name, why);
+  }
   fx_no_method_args(self, name, argc, argv, why);
 }
 
@@ -2426,6 +2432,10 @@ static sp_RbVal fx_singleton_class(FxFrame *f, const pm_singleton_class_node_t *
   k = fx_singleton_of(target, 1);
   if (!k) sp_raise_cls("TypeError", "can't define singleton");
   if (!n->body) return sp_box_nil();
+  /* the body reads a constant from the scope where it is written, as a
+     class body does. A singleton class has one lexical scope: that of the
+     last `class << obj` that ran. */
+  k->lexical = f->cref;
   FX_FRAME(of, &n->locals, fx_class_box(k), k);
   fx_frame_tag(&of, FX_TR_SCLASS, NULL, NULL, n->body, 0, 0);
   return fx_eval(&of, n->body);

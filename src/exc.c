@@ -307,6 +307,14 @@ static int fx_exc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
     *out = c;
     return 1;
   }
+  /* NameError#local_variables: the names of the locals at a bare name that
+     is no local and no method (fx_call_self), else none. did_you_mean
+     reads it. */
+  if (argc == 0 && FX_IS("local_variables") && fx_exc_is(r, "NameError")) {
+    int kept = e->has_key && !fx_exc_is(r, "NoMethodError") && fx_is_array_value(e->xkey);
+    *out = kept ? e->xkey : sp_box_poly_array(sp_PolyArray_new());
+    return 1;
+  }
   /* LoadError#path: the feature of a require that loaded nothing, else nil */
   if (argc == 0 && FX_IS("path")) { *out = sp_exc_path_acc(e); return 1; }
   /* full_message(highlight:, order:) and detailed_message(highlight:) */
@@ -319,8 +327,22 @@ static int fx_exc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
       sp_RbVal order = sp_PolyPolyHash_get(h, sp_box_sym(sp_sym_intern("order")));
       bottom = order.tag == SP_TAG_SYM && !strcmp(sp_sym_to_s((sp_sym)order.v.i), "bottom");
     }
-    const char *d = fx_exc_detailed(r, e, hl);
+    const char *d = NULL;
     SP_GC_ROOT_STR(d);
+    /* full_message asks the detailed_message of the program, when the
+       class or a module ahead of it defines one (did_you_mean), with
+       highlight: as CRuby's rb_error_write does */
+    FxMethod *dm = name[0] == 'f' ? fx_find_method(fx_lookup_class(r), sp_sym_intern("detailed_message")) : NULL;
+    if (dm && dm->kind != FX_M_BUILTIN) {
+      sp_PolyPolyHash *h = sp_PolyPolyHash_new();
+      sp_RbVal hv = sp_box_obj(h, SP_BUILTIN_POLY_POLY_HASH);
+      SP_GC_ROOT_RBVAL(hv);
+      sp_PolyPolyHash_set(h, sp_box_sym(sp_sym_intern("highlight")), sp_box_bool(hl));
+      L.kwhash = h;
+      d = sp_poly_to_s(fx_invoke_b(dm, r, 1, &hv, NULL));
+    } else {
+      d = fx_exc_detailed(r, e, hl);
+    }
     *out = sp_box_str_new(name[0] == 'd' ? d : fx_exc_full(e, d, bottom));
     return 1;
   }
