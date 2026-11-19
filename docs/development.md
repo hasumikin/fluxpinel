@@ -68,8 +68,9 @@ start.
 Run `make test` and `make regress` after each change. Run `make oracle`
 before a change of the pin and after a large change of the walker.
 
-`make regress` and `make oracle` use the promote build in
-`build/promote`. They build it when it is out of date.
+`make regress` and `make oracle` need Fluxpinel in the promote mode,
+which is the default (`INT_OVERFLOW`). They stop on a build of another
+mode.
 
 ### CI
 
@@ -129,7 +130,7 @@ stops them early. The oracle removes the files that a run adds.
 `make optcarrot` fetches [optcarrot](https://github.com/mame/optcarrot) at
 the commit in `OPTCARROT_COMMIT` into `deps/optcarrot`. The commit is on
 the branch that spinel tests. `tools/optcarrot.rb` then runs
-`bin/optcarrot -b` under CRuby and under the promote build of Fluxpinel.
+`bin/optcarrot -b` under CRuby and under Fluxpinel.
 
 - The checksum of Fluxpinel must be the checksum of CRuby, or the run
   fails.

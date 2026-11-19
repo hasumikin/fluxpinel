@@ -54,8 +54,15 @@ endif
 endif
 CC ?= cc
 BUILD = build
-# RAISE, WRAP or PROMOTE: match spinel --int-overflow of the AOT side.
-INT_OVERFLOW ?= RAISE
+# The integer overflow mode of spinel: RAISE, WRAP or PROMOTE. It is a
+# macro of spinel_rt.h, so one binary has one mode.
+# INT_OVERFLOW is the mode of Fluxpinel alone. PROMOTE is the semantics of
+# CRuby: an Integer that overflows becomes a Bignum.
+# HOST_INT_OVERFLOW is the mode of a host build. Fluxpinel and the kernel
+# are one TU there, so it is also the --int-overflow of spinel for the
+# kernel. RAISE is the default of spinel.
+INT_OVERFLOW ?= PROMOTE
+HOST_INT_OVERFLOW ?= RAISE
 # 1: the threaded runtime, which spinel links for a program that uses
 # threads; its scheduler parks a green thread at sleep and at I/O. 0: the
 # single-threaded runtime. Run `make clean` after a change.
@@ -91,11 +98,13 @@ FX_VERSION := $(shell cat VERSION)
 FX_SPINEL_REV := $(shell git -C $(SPINEL) rev-parse --short=9 HEAD 2>/dev/null)
 FX_ENGINE_FLAGS := $(if $(wildcard $(SPINEL)/src/analyze.h),$(shell ruby tools/engine_flags.rb $(SPINEL)))
 # The runtime of spinel holds a String as its handle (SP_ONE_STRING).
-CFLAGS = -O2 -g -std=gnu11 -ffp-contract=off -DSP_ONE_STRING -DSP_INT_OVERFLOW_MODE_$(INT_OVERFLOW) $(RT_CFLAGS) \
+BASE_CFLAGS = -O2 -g -std=gnu11 -ffp-contract=off -DSP_ONE_STRING $(RT_CFLAGS) \
          -DFX_PACKAGES_DIR='"$(SPINEL)/packages"' -DFX_BUILTINS_DIR='"$(SPINEL)/builtins"' \
          -DFX_LIB_DIR='"$(CURDIR)/lib"' -DFX_FFI=$(FFI) \
          -DFX_VERSION='"$(FX_VERSION)"' -DFX_SPINEL_REV='"$(FX_SPINEL_REV)"' $(FX_ENGINE_FLAGS) \
          -Isrc -I$(BUILD) -I$(SPINEL)/lib -I$(SPINEL)/lib/regexp -I$(SPINEL)/vendor/prism/include
+CFLAGS = $(BASE_CFLAGS) -DSP_INT_OVERFLOW_MODE_$(INT_OVERFLOW)
+HOST_CFLAGS = $(BASE_CFLAGS) -DSP_INT_OVERFLOW_MODE_$(HOST_INT_OVERFLOW)
 # macOS: crypt(3) is in libSystem, with no libcrypt to name, and Homebrew
 # keeps libffi and OpenSSL out of the default paths (keg-only). Their
 # directories go through CPATH and LIBRARY_PATH, as spinel's own Makefile
@@ -166,12 +175,17 @@ $(BUILD)/responds.inc: tools/responds_gen.rb src/fx_tu.c
 	mkdir -p $(BUILD)
 	ruby --disable-gems tools/responds_gen.rb src/fx_tu.c > $@
 
+# int_overflow records the mode of the binary. It changes only when the
+# mode changes, and the binary is then made again. The oracle reads it.
+$(BUILD)/int_overflow: FORCE
+	@mkdir -p $(BUILD)
+	@echo '$(INT_OVERFLOW)' | cmp -s - $@ || echo '$(INT_OVERFLOW)' > $@
+
 $(BUILD)/fluxpinel: src/*.c src/*.h $(BUILD)/bop_gen_out.c $(BUILD)/off.flags $(BUILD)/prelude.inc $(BUILD)/responds.inc \
-                    $(BUILD)/gem_dirs.h $(NATIVE_FLAGS) VERSION
+                    $(BUILD)/gem_dirs.h $(NATIVE_FLAGS) VERSION $(BUILD)/int_overflow
 	$(CC) $(CFLAGS) $$(cat $(BUILD)/off.flags) -o $@ src/main.c $(if $(NATIVE_FLAGS),$$(cat $(NATIVE_FLAGS))) \
 	  $(LIBS)
 	git -C $(SPINEL) rev-parse HEAD > $(BUILD)/spinel.rev
-	echo $(INT_OVERFLOW) > $(BUILD)/int_overflow
 
 # A missing GC root passes the plain run and fails the stress run: the
 # collector runs at each allocation, and the verify mode aborts on a freed
@@ -210,7 +224,7 @@ HOST = $(BUILD)/host
 # App.main), it takes no script and calls that entry with ARGV.
 HOST_NAME = fluxpinel
 KERNEL_MAIN =
-KERNEL_OVERFLOW = $(shell echo $(INT_OVERFLOW) | tr A-Z a-z)
+KERNEL_OVERFLOW = $(shell echo $(HOST_INT_OVERFLOW) | tr A-Z a-z)
 # KERNEL_FLAGS: more flags of spinel for the kernel, such as the ones that
 # `spin flags` prints for a spin project (-I DIR --rbs DIR). HOST_LIBS: more
 # libraries for the link, such as the ones that the kernel binds with
@@ -264,7 +278,7 @@ $(HOST)/ivars.c: $(HOST)/kernel.c tools/ivar_gen.rb tools/c_box.rb
 $(HOST)/$(HOST_NAME): src/*.c src/*.h $(HOST)/kernel.c $(HOST)/entries.c $(HOST)/ivars.c $(BUILD)/bop_gen_out.c \
               $(BUILD)/off.flags $(BUILD)/prelude.inc $(BUILD)/responds.inc $(BUILD)/gem_dirs.h $(NATIVE_FLAGS) \
               $(HOST)/link.args
-	$(CC) $(CFLAGS) -I$(HOST) -DFX_KERNEL=fx_kernel_init $(if $(KERNEL_MAIN),'-DFX_KERNEL_MAIN="$(KERNEL_MAIN)"') \
+	$(CC) $(HOST_CFLAGS) -I$(HOST) -DFX_KERNEL=fx_kernel_init $(if $(KERNEL_MAIN),'-DFX_KERNEL_MAIN="$(KERNEL_MAIN)"') \
 	  -include src/kernel_prelude.h -include $(HOST)/kernel.c \
 	  -include $(HOST)/entries.c -include $(HOST)/ivars.c $$(cat $(BUILD)/off.flags) -o $@ src/main.c \
 	  $(if $(NATIVE_FLAGS),$$(cat $(NATIVE_FLAGS))) $(LIBS) $(HOST_LIBS)
@@ -286,26 +300,25 @@ include roundhouse/roundhouse.mk
 # The oracle: the spinel test corpus under CRuby (.expected), Fluxpinel and AOT,
 # in promote mode on both sides. In raise mode, spinel's analysis still
 # promotes an Integer where it sees growth (10 ** 30), and a walker with no
-# analysis cannot make the same choice.
+# analysis cannot make the same choice. The oracle stops when Fluxpinel is
+# built in another mode (INT_OVERFLOW).
 # ORACLE_TIMEOUT is the seconds a test may run: the timeout is for a test
 # that never ends, and the GC tests of spinel that measure a collector
 # (gc_locality_build, gc_str_major_interval) take 5 to 7 seconds alone.
 # make regress runs last, on the list that the oracle wrote: the census
 # reads the tests that the list gained.
 ORACLE_TIMEOUT = 30
-oracle:
-	$(MAKE) BUILD=$(BUILD)/promote INT_OVERFLOW=PROMOTE $(BUILD)/promote/fluxpinel
-	ruby tools/oracle.rb --spinel $(SPINEL) --fluxpinel $(BUILD)/promote/fluxpinel --timeout $(ORACLE_TIMEOUT) \
+oracle: $(BUILD)/fluxpinel
+	ruby tools/oracle.rb --spinel $(SPINEL) --fluxpinel $(BUILD)/fluxpinel --timeout $(ORACLE_TIMEOUT) \
 	  --int-overflow promote --out $(BUILD)/oracle --write-agree tools/oracle_agree.txt
 	$(MAKE) regress
 
 # The tests that the last oracle found right, under Fluxpinel only. It
 # finds in seconds a change of spinel that breaks Fluxpinel.
-regress:
-	$(MAKE) BUILD=$(BUILD)/promote INT_OVERFLOW=PROMOTE $(BUILD)/promote/fluxpinel
-	ruby tools/oracle.rb --spinel $(SPINEL) --fluxpinel $(BUILD)/promote/fluxpinel --timeout $(ORACLE_TIMEOUT) \
+regress: $(BUILD)/fluxpinel
+	ruby tools/oracle.rb --spinel $(SPINEL) --fluxpinel $(BUILD)/fluxpinel --timeout $(ORACLE_TIMEOUT) \
 	  --int-overflow promote --out $(BUILD)/regress --regress tools/oracle_agree.txt
-	ruby tools/builtin_census.rb $(BUILD)/promote/manifest.tsv $(BUILD)/regress/shadowed.txt
+	ruby tools/builtin_census.rb $(BUILD)/manifest.tsv $(BUILD)/regress/shadowed.txt
 
 # The counts of the builtin layer (docs/design.md, section 3.2.2): the
 # methods written by hand against the generated wrappers, and the shadows
@@ -336,8 +349,8 @@ optcarrot:
 	if [ "$$(git -C $(DEPS_OPTCARROT) rev-parse -q --verify HEAD)" != "$(OPTCARROT_COMMIT)" ]; then \
 	  git -C $(DEPS_OPTCARROT) fetch -q --depth 1 origin $(OPTCARROT_COMMIT) && \
 	  git -C $(DEPS_OPTCARROT) checkout -q --detach FETCH_HEAD; fi
-	$(MAKE) BUILD=$(BUILD)/promote INT_OVERFLOW=PROMOTE $(BUILD)/promote/fluxpinel
-	ruby tools/optcarrot.rb --dir $(DEPS_OPTCARROT) --fluxpinel $(BUILD)/promote/fluxpinel \
+	$(MAKE) $(BUILD)/fluxpinel
+	ruby tools/optcarrot.rb --dir $(DEPS_OPTCARROT) --fluxpinel $(BUILD)/fluxpinel \
 	  --frames $(OPTCARROT_FRAMES)
 
 # The gems of the Gemfile into the Ruby that runs make, and the shared

@@ -1117,6 +1117,15 @@ cannot make the same choice. In raise mode, 56 tests that Fluxpinel ran gave
 The corpus follows spinel's own promote lane: it leaves out the tests in
 `RAISE_MODE_PINS` of spinel's Makefile.
 
+Fluxpinel alone is built in promote mode by default (`INT_OVERFLOW`), so
+`build/fluxpinel` is the binary of the oracle. No code of spinel is in
+that binary, and the walker holds each value in a box: a Bignum can go
+where an Integer goes. A host build is different. The mode is a macro of
+`spinel_rt.h`, and Fluxpinel and the kernel are one TU, so they have one
+mode (`HOST_INT_OVERFLOW`). The C code of the kernel also has the shape
+of its mode: in raise mode, a local of spinel is a machine integer with no
+room for a Bignum. The default there is raise, the default of spinel.
+
 ### 4.4 A defect only Fluxpinel reaches
 
 `"%c" % s` answers `""` when `s` is a mutable String handle in a poly slot.
@@ -1447,8 +1456,9 @@ These facts apply to spinel commit `ffac8340d`.
   mutable handle: `SP_TAG_OBJ` with `cls_id` `SP_BUILTIN_STRBUF` (-40). The
   walker treats both forms as String.
 - The integer overflow mode is a compile-time macro
-  (`SP_INT_OVERFLOW_MODE_RAISE`, `_WRAP` or `_PROMOTE`). The default is
-  `raise`. Fluxpinel uses the mode of the AOT build that it runs with.
+  (`SP_INT_OVERFLOW_MODE_RAISE`, `_WRAP` or `_PROMOTE`). The default of
+  spinel is `raise`. A host build uses the mode of its kernel
+  (section 4.3).
 - Exceptions use the `setjmp` frame that spinel emits for `begin`/`rescue`
   (`sp_exc_stack`, `sp_exc_top`, `sp_last_exc_cls`). Fluxpinel code can use the
   same frame.
@@ -1610,8 +1620,8 @@ A script does not replace a method that AOT code calls directly (section
      (the gems did_you_mean and error_highlight).
    - `show_source` of a method of the session reads
      `RubyVM::InstructionSequence`, which Fluxpinel does not have.
-   - `10 ** 30` is a RangeError in the default build, which is not the
-     promote build.
+   - `10 ** 30` is a RangeError in the IRB of a host build, which is in
+     raise mode as its kernel (section 4.3).
    - The sessions run with no terminal. The path through Reline needs a
      pty in the test.
 

@@ -178,17 +178,19 @@ Fluxpinel runs a Ruby script on its own, as the `ruby` command does. The
 arguments after the script go to `ARGV`:
 
 ```sh
-build/promote/fluxpinel script.rb arg1 arg2
-build/promote/fluxpinel -Ilib -rmylib -e 'p MyLib.answer'
-echo 'p 1 + 2' | build/promote/fluxpinel
-build/promote/fluxpinel -v
+build/fluxpinel script.rb arg1 arg2
+build/fluxpinel -Ilib -rmylib -e 'p MyLib.answer'
+echo 'p 1 + 2' | build/fluxpinel
+build/fluxpinel -v
 ```
 
 - The runtime of spinel runs inside. A builtin method calls the runtime
   function of spinel where one exists.
-- Use the promote build (`build/promote/fluxpinel`) for the semantics of
-  CRuby. An Integer that overflows becomes a Bignum there. The default
-  build (`build/fluxpinel`) raises a RangeError on an overflow.
+- An Integer that overflows becomes a Bignum, as in CRuby (the promote
+  mode of spinel). `make INT_OVERFLOW=RAISE` builds an interpreter that
+  raises a RangeError on an overflow. A host build (`make host`) raises by
+  default, as the code that spinel compiles does: its mode is
+  `HOST_INT_OVERFLOW`, for Fluxpinel and the kernel together.
 - [optcarrot](https://github.com/mame/optcarrot), an NES emulator and a
   common benchmark of Ruby, runs. `make optcarrot` runs it under CRuby and
   Fluxpinel, and compares the checksums. On 180 frames, Fluxpinel runs at

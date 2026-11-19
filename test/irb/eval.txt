@@ -29,6 +29,8 @@ a, b = 1, 2
 ->(v) { v * 2 }.call(4)
 Struct.new(:a, :b).new(1, 2)
 1.0 / 3
+10 ** 30
+(2 ** 64 + 1).class
 "%05.2f" % 3.14159
 [1, 2, 3].each_slice(2).to_a
 (1..Float::INFINITY).lazy.map { |i| i * 2 }.first(3)
