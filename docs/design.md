@@ -1389,6 +1389,13 @@ checks these things:
 - `exit` closes the session, and the server runs after it.
 - The page of the article shows the new comment.
 
+The test then starts the server with `--irb-port`. With no Reline that
+runs on a socket, it skips this part. It checks these things:
+
+- A session of IRB calls a model.
+- `exit` as Ruby code (`(exit)`) and the `exit` command of IRB close the
+  session, and the server runs after each.
+
 ## 6. Prior art
 
 - **suppify** (bash0C7/suppify). It wraps spinel output as a C library, a

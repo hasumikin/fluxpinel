@@ -166,6 +166,10 @@ module Fluxpinel
             begin
               @busy = true
               serve(sock)
+            rescue SystemExit
+              # Kernel#exit as Ruby code of the session (`exit if done`),
+              # not the command of IRB: it ends the session, and the
+              # program runs on
             rescue Errno::EPIPE, Errno::ECONNRESET, IOError
               # the client closed the connection with no exit: IRB wrote to
               # the closed socket on its way out

@@ -1,4 +1,5 @@
-# Runs the host build of the blog and checks the pages and the console:
+# Runs the host build of the blog and checks the pages, the console and the
+# IRB of --irb-port:
 #
 #   ruby test/roundhouse/test.rb BLOG HOST
 #
@@ -55,6 +56,57 @@ end
 def eval_line(sock, line)
   sock.write(line + "\n")
   reply(sock)
+end
+
+# Reads the screen of an IRB of --irb-port until it has text, as ASCII with
+# no escape sequence, and answers the cursor position query of Reline as a
+# terminal does. Answers false after 20 seconds, or at the end of the
+# connection.
+def irb_screen(sock, text)
+  seen = "".b
+  deadline = Time.now + 20
+  loop do
+    plain = seen.bytes.select { |b| b < 128 }.pack("C*").gsub(/\e\[[0-9;?]*[A-Za-z]/, "")
+    return true if plain.include?(text)
+    return false if Time.now > deadline
+    next unless sock.wait_readable(0.1)
+    chunk = sock.readpartial(4096)
+    seen << chunk
+    sock.write("\e[1;1R") if chunk.include?("\e[6n")
+  end
+rescue EOFError, SystemCallError
+  false
+end
+
+# Types a line at the prompt of the IRB, and waits for its answer.
+def irb_line(sock, line, answer)
+  return false unless irb_screen(sock, "irb(main):001")
+  sock.write(line + "\r")
+  irb_screen(sock, answer)
+end
+
+# Whether the server closes the connection within 10 seconds.
+def irb_closed?(sock)
+  deadline = Time.now + 10
+  loop do
+    return false if Time.now > deadline
+    next unless sock.wait_readable(0.1)
+    sock.readpartial(4096)
+  end
+rescue EOFError, SystemCallError
+  sock.close
+  true
+end
+
+# Ends the server: TERM, then KILL after 3 seconds.
+def stop(pid)
+  Process.kill(:TERM, pid)
+  unless 30.times.any? { sleep 0.1; Process.waitpid(pid, Process::WNOHANG) }
+    Process.kill(:KILL, pid)
+    Process.wait(pid)
+  end
+rescue Errno::ESRCH, Errno::ECHILD
+  # the server has exited, and the test has reaped it
 end
 
 Dir.mktmpdir("fx-blog") do |dir|
@@ -133,15 +185,39 @@ Dir.mktmpdir("fx-blog") do |dir|
 
     check "the server runs after the session", Process.waitpid(pid, Process::WNOHANG).nil?
   ensure
-    begin
-      Process.kill(:TERM, pid)
-      unless 30.times.any? { sleep 0.1; Process.waitpid(pid, Process::WNOHANG) }
-        Process.kill(:KILL, pid)
-        Process.wait(pid)
-      end
-    rescue Errno::ESRCH, Errno::ECHILD
-      # the server has exited, and wait_port has reaped it
+    stop(pid)
+    puts File.read(log).lines.last(20).join if $failed
+  end
+
+  # --irb-port: IRB with the line editor of Reline, for a telnet client.
+  # The listener needs a Reline that runs on a socket (GEM_DIRS_FIRST of
+  # the Makefile); with no such Reline it writes a line and is not there.
+  system("sqlite3", db, in: File.join(blog, "db/seed.sql"), exception: true) if File.delete(db)
+  irb = free_port
+  env = { "PORT" => http.to_s, "BLOG_DB" => db, "HOME" => dir }
+  pid = spawn(env, host, "--irb-port", irb.to_s, chdir: blog, [:out, :err] => log)
+  begin
+    wait_port(http, pid, log)
+    if File.read(log).include?("--irb-port needs a Reline")
+      puts "skip the IRB of --irb-port (no Reline that runs on a socket)"
+    else
+      wait_port(irb, pid, log)
+      sock = TCPSocket.new("127.0.0.1", irb)
+      check "the IRB of --irb-port counts the articles", irb_line(sock, "Article.count", "=> 3\r\n")
+      # exit as Ruby code is Kernel#exit, not the command of IRB: it ends
+      # the session, not the server
+      sock.write("(exit)\r")
+      check "exit as Ruby code closes the session", irb_closed?(sock)
+      check "the server runs after exit as Ruby code",
+        Process.waitpid(pid, Process::WNOHANG).nil? && get(http, "/articles").code == "200"
+      sock = TCPSocket.new("127.0.0.1", irb)
+      check "a second session of IRB answers", irb_line(sock, "Article.find(1).title", "=> \"Getting Started with Rails\"\r\n")
+      sock.write("exit\r")
+      check "the exit command closes the session", irb_closed?(sock)
+      check "the server runs after the exit command", Process.waitpid(pid, Process::WNOHANG).nil?
     end
+  ensure
+    stop(pid)
     puts File.read(log).lines.last(20).join if $failed
   end
 end
