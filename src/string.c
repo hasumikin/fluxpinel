@@ -348,6 +348,8 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
   if (argc == 1) {
     sp_RbVal a = argv[0];
     if (FX_IS("[]") || FX_IS("slice")) {
+      /* an index that is an object of the program converts by its to_int */
+      if (fx_is_fx_object(a)) a = sp_box_int(sp_poly_arg_int_chk(a));
       *out = fx_is_string(a) ? sp_poly_get_str(r, sp_poly_recv_s(a, name)) : sp_poly_index_poly(r, a);
       return 1;
     }
@@ -414,6 +416,10 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
   }
   if (argc == 2) {
     sp_RbVal a = argv[0], b = argv[1];
+    if (FX_IS("[]") || FX_IS("slice")) {
+      if (fx_is_fx_object(a)) a = sp_box_int(sp_poly_arg_int_chk(a));
+      if (fx_is_fx_object(b)) b = sp_box_int(sp_poly_arg_int_chk(b));
+    }
     if ((FX_IS("[]") || FX_IS("slice")) && a.tag == SP_TAG_INT && b.tag == SP_TAG_INT) {
       *out = sp_poly_slice(r, a.v.i, b.v.i);
       return 1;

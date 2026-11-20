@@ -535,7 +535,9 @@ static sp_RbVal fx_hook_to_a(sp_RbVal v) {
   return r;
 }
 
-/* to_int and to_str, for an implicit conversion of an argument */
+/* to_int and to_str, for an implicit conversion of an argument. A to_int
+   that answers no Integer raises the TypeError of CRuby, which names the
+   method and the class of its answer. */
 static sp_int fx_hook_to_int_u(int cls_id, void *p, int *ok) {
   sp_RbVal v = sp_box_obj(p, cls_id);
   FxMethod *m = fx_hook_method(v, "to_int");
@@ -543,6 +545,13 @@ static sp_int fx_hook_to_int_u(int cls_id, void *p, int *ok) {
   if (!m) return 0;
   SP_GC_ROOT_RBVAL(v);
   sp_RbVal i = fx_invoke(m, v, 0, NULL);
+  if (i.tag != SP_TAG_INT && L.ctl == FX_CTL_NONE) {
+    SP_GC_ROOT_RBVAL(i);
+    if (fx_is_integer(i)) sp_raise_cls("RangeError", "bignum too big to convert into 'long'");
+    const char *c = sp_poly_class_name(v);
+    SP_GC_ROOT_STR(c);
+    sp_raise_cls("TypeError", sp_sprintf("can't convert %s to Integer (%s#to_int gives %s)", c, c, sp_poly_class_name(i)));
+  }
   *ok = i.tag == SP_TAG_INT;
   return *ok ? i.v.i : 0;
 }
