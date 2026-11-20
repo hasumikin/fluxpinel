@@ -199,10 +199,11 @@ know what the next pin move meets, and which commit of spinel brought it.
    by default): the date, the commit of spinel, and green, or the target
    that failed. The commit of the last green run stays in
    `build/master/good`.
-5. When a target fails, it bisects spinel between the last green commit
-   and master with `git bisect run`, and the line names the first bad
-   commit. Each step builds spinel and Fluxpinel again, so the bisect of a
-   day of commits takes about half an hour.
+5. When a target fails, it bisects spinel with `git bisect run`, and the
+   line names the first bad commit. The bisect starts at the last green
+   commit or at the pin (`SPINEL_COMMIT`), the nearer ancestor of master.
+   Each step builds spinel and Fluxpinel again, so the bisect of a day of
+   commits takes about half an hour.
 
 Read the line in the morning. A removed or renamed function of the
 runtime is a change of Fluxpinel; a table or a thunk of `--ext-class` that

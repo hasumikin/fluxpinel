@@ -9,9 +9,10 @@
 # (SPINEL_PIN=0) under build/master/fx, and runs make all, test, test-host
 # and regress in that order. It appends one line to FILE: the date, the
 # commit of spinel, and green, or the target that failed. The commit of the
-# last green run stays in build/master/good. When a target fails and a
-# green commit is known, check bisects spinel between the two with step,
-# and the line names the first bad commit.
+# last green run stays in build/master/good. When a target fails, check
+# bisects spinel with step, and the line names the first bad commit. The
+# bisect starts at the commit of the last green run or at the pin
+# (SPINEL_COMMIT), the one that is the nearer ancestor of the master.
 #
 # step is the command of git bisect run: it builds spinel as checked out
 # (125 when spinel itself does not build), builds Fluxpinel on it from
@@ -80,7 +81,12 @@ system("git", "-C", DIR, "checkout", "-q", "--detach", "FETCH_HEAD")
 head = git("rev-parse", "HEAD")
 subject = git("log", "-1", "--format=%h %s")
 good_file = File.join(STATE, "good")
-good = File.exist?(good_file) ? File.read(good_file).strip : nil
+# The start of a bisect: the commit of the last green run or the pin
+# (SPINEL_COMMIT), the one of the two that is the nearer ancestor of head.
+good = [good_file, File.join(ROOT, "SPINEL_COMMIT")]
+       .filter_map { |f| File.exist?(f) && File.read(f).strip }
+       .select { |c| c != head && system("git", "-C", DIR, "merge-base", "--is-ancestor", c, head, err: File::NULL) }
+       .min_by { |c| git("rev-list", "--count", "#{c}..#{head}").to_i }
 stamp = Time.now.strftime("%Y-%m-%d %H:%M")
 
 def report(file, line)
@@ -99,17 +105,17 @@ if failed.nil?
   exit 0
 end
 line = "- #{stamp} spinel #{subject}: red at make #{failed} (#{STATE}/#{failed}.log)"
-if good && good != head && git("merge-base", "--is-ancestor", good, head) && $?.success?
+if good
   system("git", "-C", DIR, "bisect", "start", head, good, out: File::NULL)
   bisect_log = File.join(STATE, "bisect.log")
   run(["git", "-C", DIR, "bisect", "run", "ruby", __FILE__, "step", failed, "--dir", DIR, "--jobs", JOBS.to_s],
       bisect_log)
-  culprit = File.read(bisect_log)[/^([0-9a-f]{40}) is the first bad commit/, 1]
+  culprit = File.read(bisect_log)[/^([0-9a-f]{40}) is the first '?bad'? commit/, 1]
   system("git", "-C", DIR, "bisect", "reset", out: File::NULL, err: File::NULL)
   system("git", "-C", DIR, "checkout", "-q", "--detach", head)
   line += culprit ? "; first bad: #{git("log", "-1", "--format=%h %s", culprit)}" : "; bisect gave no commit (#{bisect_log})"
 else
-  line += "; no green commit to bisect from" unless good
+  line += "; no green commit to bisect from"
 end
 report(opts[:report], line)
 exit 1
