@@ -754,14 +754,11 @@ Fluxpinel gives walker classes their own object kind (`src/object.c`):
   - `==`, `!=`, `eql?`, `===` and `<=>` run on a plain String of the
     bytes: the comparisons of the runtime read the class of the receiver.
   - `Class.new(String)` and its kin for Array and Hash make such a class.
-  - `Marshal.dump` of an instance of a subclass of String raises
-    TypeError. The record of the runtime for a subclass holds an Array or
-    a Hash only. CRuby writes the String.
 - **Marshal.** `Marshal.dump` and `Marshal.load` run the serializer of
   the runtime (`src/marshal.c`). The runtime writes and reads the builtin
   values, and asks its vtable for an object of the program: Fluxpinel
   writes an object as CRuby does (`o`, the class, the ivars that are set),
-  an instance of a subclass of Array or Hash as `C`, and reads one back
+  an instance of a subclass of Array, Hash or String as `C`, and reads one back
   into an instance of the class by its name. In the host build, the kernel
   fills the vtable for its classes first, and Fluxpinel chains to it. A
   record (Struct, Data), a native object, a Proc and a Binding raise

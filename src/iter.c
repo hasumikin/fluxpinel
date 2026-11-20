@@ -1046,7 +1046,7 @@ static int fx_range_step(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
                                            n.tag == SP_TAG_NIL ? "nil" : n.tag == SP_TAG_BOOL ? (n.v.b ? "true" : "false")
                                                                                               : sp_poly_class_name(n)));
     if (n.tag == SP_TAG_FLT) sp_raise_cls("TypeError", "no implicit conversion of Float into String");
-    sp_StrRange g = SP_SRANGE_OF(r.v.p);
+    sp_StrRange g = sp_srange_value(r.v.p);
     SP_GC_ROOT_SRANGE(g);
     if (!g.first) sp_raise_cls("TypeError", "can't iterate from NilClass");
     sp_RbVal v = fx_srange_side(g, 0);
@@ -2117,9 +2117,9 @@ static int fx_frange_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
 
 /* An end of a String Range as a value: nil, a String, or a Symbol. */
 static sp_RbVal fx_srange_side(sp_StrRange g, int end) {
-  const char *s = end ? g.last : g.first;
+  sp_String *s = end ? g.last : g.first;
   if (!s) return sp_box_nil();
-  return g.sym ? sp_box_sym(sp_sym_intern(s)) : sp_box_str_new(sp_str_dup(s));
+  return g.sym ? sp_box_sym(sp_sym_intern(s->data)) : sp_box_obj(s, SP_BUILTIN_STRBUF);
 }
 
 /* The text of a value that a String Range compares, or NULL when the value
@@ -2149,7 +2149,7 @@ static sp_RbVal fx_srange_to_a(sp_StrRange g) {
    include? walks the elements, as CRuby does, unless both ends and the
    value are one character; cover? and === compare with the ends. */
 static int fx_srange_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
-  sp_StrRange g = SP_SRANGE_OF(r.v.p);
+  sp_StrRange g = sp_srange_value(r.v.p);
   SP_GC_ROOT_SRANGE(g);
   if (argc == 0) {
     if (FX_IS("begin")) { *out = fx_srange_side(g, 0); return 1; }
@@ -2181,7 +2181,7 @@ static int fx_srange_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     const char *x = fx_srange_arg(g, argv[0]);
     if (!x) { *out = sp_box_bool(0); return 1; }
     int walk = (FX_IS("include?") || FX_IS("member?")) && g.first && g.last &&
-               !(strlen(g.first) == 1 && strlen(g.last) == 1 && strlen(x) == 1);
+               !(g.first->len == 1 && g.last->len == 1 && strlen(x) == 1);
     if (!walk) { *out = sp_box_bool(sp_srange_cover(g, x)); return 1; }
     sp_RbVal all = fx_srange_to_a(g);
     SP_GC_ROOT_RBVAL(all);
@@ -2193,7 +2193,7 @@ static int fx_srange_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
   if (argc == 1 && (FX_IS("==") || FX_IS("eql?"))) {
     sp_RbVal o = argv[0];
     int same = o.tag == SP_TAG_OBJ && o.cls_id == SP_BUILTIN_STR_RANGE && o.v.p &&
-               ((const sp_StrRange *)o.v.p)->sym == g.sym && sp_srange_eq(g, SP_SRANGE_OF(o.v.p));
+               ((const sp_StrRange *)o.v.p)->sym == g.sym && sp_srange_eq(g, sp_srange_value(o.v.p));
     *out = sp_box_bool(same);
     return 1;
   }

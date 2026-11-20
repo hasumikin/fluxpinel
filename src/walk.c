@@ -2356,10 +2356,10 @@ static sp_RbVal fx_hash_lit(FxFrame *f, const pm_node_list_t *elts) {
   return sp_box_obj(h, SP_BUILTIN_POLY_POLY_HASH);
 }
 
-/* The text of a String end of a Range, or NULL for nil. */
-static const char *fx_range_text(sp_RbVal v) {
-  if (v.tag == SP_TAG_NIL) return NULL;
-  return sp_poly_strbuf_copy(v);
+/* The handle of a String end of a Range, or NULL for nil. The Range holds
+   the String itself, as in CRuby. */
+static sp_String *fx_range_text(sp_RbVal v) {
+  return v.tag == SP_TAG_NIL ? NULL : (sp_String *)v.v.p;
 }
 
 /* A Range in the form of the runtime that spinel gives the same ends. A
@@ -2397,16 +2397,21 @@ static sp_RbVal fx_range(FxFrame *f, const pm_range_node_t *n) {
   }
   int lsym = lt == SP_TAG_SYM, hsym = ht == SP_TAG_SYM;
   if ((lsym || lt == SP_TAG_NIL) && (hsym || ht == SP_TAG_NIL)) {
-    sp_StrRange r = sp_srange_new(lsym ? sp_sym_to_s((sp_sym)lo.v.i) : NULL,
-                                  hsym ? sp_sym_to_s((sp_sym)hi.v.i) : NULL, excl);
+    sp_String *a = lsym ? sp_sym_name_handle((sp_sym)lo.v.i) : NULL;
+    SP_GC_ROOT(a);
+    sp_String *b = hsym ? sp_sym_name_handle((sp_sym)hi.v.i) : NULL;
+    sp_StrRange r = sp_srange_new(a, b, excl);
     r.sym = 1;
     return sp_box_srange(r);
   }
   if ((fx_is_string(lo) || lt == SP_TAG_NIL) && (fx_is_string(hi) || ht == SP_TAG_NIL)) {
-    const char *a = fx_range_text(lo);
-    SP_GC_ROOT_STR(a);
-    const char *b = fx_range_text(hi);
-    SP_GC_ROOT_STR(b);
+    sp_String *a = fx_range_text(lo);
+    sp_String *b = fx_range_text(hi);
+    /* CRuby makes a Range of two String literals once, with frozen ends */
+    if (n->left && n->right && PM_NODE_TYPE_P(n->left, PM_STRING_NODE) && PM_NODE_TYPE_P(n->right, PM_STRING_NODE)) {
+      sp_String_freeze(a);
+      sp_String_freeze(b);
+    }
     return sp_box_srange(sp_srange_new(a, b, excl));
   }
   fx_unsupported((const pm_node_t *)n, "Range of values other than Integer, Float, String and Symbol");

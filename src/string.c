@@ -419,7 +419,7 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       return 1;
     }
     if (FX_IS("index") || FX_IS("rindex")) {
-      *out = sp_box_oint(sp_poly_str_index_from_val(r, a, sp_poly_arg_int_chk(b), name[0] == 'r'));
+      *out = sp_box_oint(sp_poly_str_index_from_val(r, a, b, name[0] == 'r'));
       return 1;
     }
     if (fx_is_string(a) && (FX_IS("byteindex") || FX_IS("byterindex"))) {

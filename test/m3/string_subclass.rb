@@ -69,3 +69,11 @@ p d, d.class, d.lang, d.shout, Deep.superclass
 # a singleton method and a comparison
 def n.only = :one
 p n.only, n <=> "RUBY!", [Name.new("b"), "a", Name.new("c")].sort, [Name.new("b"), "a"].min.class
+
+# Marshal writes the class, the bytes, the encoding and the ivars
+m = Marshal.dump(Name.new("abc", :ja))
+p m
+back = Marshal.load(m)
+p back, back.class, back.lang, back.encoding
+m = Marshal.dump(Plain.new("\xff".b))
+p m, Marshal.load(m).class, Marshal.load(m).encoding

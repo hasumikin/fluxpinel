@@ -5,7 +5,7 @@
    class of the program it asks the vtable sp_marshal_v, which the code
    that spinel emits fills for its classes. Fluxpinel fills it here: it
    writes an FxObject as CRuby does (`o`, the class, the ivars), an
-   instance of a subclass of Array or Hash as the runtime expects (`C`),
+   instance of a subclass of Array, Hash or String as CRuby does (`C`),
    and reads one back into an instance of the class by its name. In the
    host build, the kernel fills the vtable first for its own classes, and
    Fluxpinel chains to it for an object of the kernel. */
@@ -31,8 +31,8 @@ static void fx_marshal_ivars(sp_mar_buf *b, const FxClass *c, const FxObject *o,
 }
 
 /* An object of the program: `o`, the class and the ivars; an instance of
-   a subclass of Array or Hash: `C`, the class and its elements, under `I`
-   with the ivars when it has any. A native object and a record (Struct,
+   a subclass of Array, Hash or String: `C`, the class and its elements or
+   bytes, under `I` with the ivars when it has any (sp_mar_w_bsub). A native object and a record (Struct,
    Data) are not written: the runtime raises TypeError. An exception of a
    class of the program is an sp_Exception, which the runtime writes. */
 static int fx_marshal_obj_dump(sp_mar_buf *b, int cls_id, void *p) {
@@ -40,23 +40,14 @@ static int fx_marshal_obj_dump(sp_mar_buf *b, int cls_id, void *p) {
   FxClass *c = fx_class_by_id(cls_id);
   if (!c || c->native || fx_record_of(c)) return 0;
   if (c->anon) sp_raise_cls("TypeError", sp_sprintf("can't dump anonymous class %s", c->name));
-  /* an instance of a subclass of String is not written: the `C` record of
-     the runtime holds an Array or a Hash only (sp_mar_w_body), so the
-     runtime raises its TypeError, where CRuby writes the String */
-  if (fx_is_string_class(c)) return 0;
-  if (fx_is_array_class(c) || fx_is_hash_class(c)) {
-    sp_RbVal v = sp_box_obj(p, fx_is_array_class(c) ? SP_BUILTIN_POLY_ARRAY : SP_BUILTIN_POLY_POLY_HASH);
+  if (fx_is_bsub_class(c)) {
+    sp_RbVal v = sp_box_obj(p, fx_is_array_class(c) ? SP_BUILTIN_POLY_ARRAY
+                               : fx_is_hash_class(c) ? SP_BUILTIN_POLY_POLY_HASH : SP_BUILTIN_STRBUF);
     const FxSubTail *t = fx_bsub_tail(v);
     const FxObject *h = t && fx_is_fx_object(t->ivars) ? (const FxObject *)t->ivars.v.p : NULL;
     long n = h ? fx_marshal_nivars(c, h) : 0;
-    if (n) sp_mar_b(b, 'I');
-    sp_mar_b(b, 'C');
-    sp_mar_sym(b, c->name);
-    sp_mar_w_body(b, v);
-    if (n) {
-      sp_mar_long(b, n);
-      fx_marshal_ivars(b, c, h, n);
-    }
+    sp_mar_w_bsub(b, c->name, v, n);
+    if (n) fx_marshal_ivars(b, c, h, n);
     return 1;
   }
   const FxObject *o = (const FxObject *)p;
@@ -83,12 +74,12 @@ static sp_RbVal fx_marshal_obj_load(const char *name, sp_RbVal into, sp_RbVal iv
       *ok = 0;
       return sp_box_nil();
     }
-    if (k->is_module || k->native || fx_record_of(k) || fx_is_exc_class(k) || fx_is_string_class(k)) {
+    if (k->is_module || k->native || fx_record_of(k) || fx_is_exc_class(k)) {
       *ok = 0;
       return sp_box_nil();
     }
     sp_RbVal v;
-    FX_HOOKED(v = fx_is_array_class(k) || fx_is_hash_class(k) ? fx_bsub_new(k) : fx_new_object(k));
+    FX_HOOKED(v = fx_is_bsub_class(k) ? fx_bsub_new(k) : fx_new_object(k));
     return v;
   }
   if (!fx_is_fx_object(into) && !fx_bsub_tail(into)) {
