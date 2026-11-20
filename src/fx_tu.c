@@ -34,7 +34,7 @@ static struct {
   sp_RbVal (*to_ary)(sp_RbVal v);
   sp_RbVal (*to_a)(sp_RbVal v);
   sp_int (*to_int)(int cls_id, void *p, int *ok);
-  sp_String *(*to_str)(int cls_id, void *p);
+  sp_RbVal (*to_str)(int cls_id, void *p, int *found);
   const char *(*to_path)(int cls_id, void *p);
   sp_user_binop_fn binop;
   sp_user_coerce_fn coerce;
