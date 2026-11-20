@@ -12,10 +12,92 @@
 
 #include "fluxpinel.h"
 #include <fcntl.h>
+#include <sys/resource.h>   /* RLIMIT_* and getrlimit */
 
 #define FX_IS(s) (!strcmp(name, (s)))
 
 static int fx_process_wait(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
+
+/* The resources of getrlimit and setrlimit that the platform names, as
+   CRuby defines the constants it finds. */
+static const struct { const char *name; int v; } fx_rlimits[] = {
+#ifdef RLIMIT_AS
+  { "AS", RLIMIT_AS },
+#endif
+#ifdef RLIMIT_CORE
+  { "CORE", RLIMIT_CORE },
+#endif
+#ifdef RLIMIT_CPU
+  { "CPU", RLIMIT_CPU },
+#endif
+#ifdef RLIMIT_DATA
+  { "DATA", RLIMIT_DATA },
+#endif
+#ifdef RLIMIT_FSIZE
+  { "FSIZE", RLIMIT_FSIZE },
+#endif
+#ifdef RLIMIT_MEMLOCK
+  { "MEMLOCK", RLIMIT_MEMLOCK },
+#endif
+#ifdef RLIMIT_MSGQUEUE
+  { "MSGQUEUE", RLIMIT_MSGQUEUE },
+#endif
+#ifdef RLIMIT_NICE
+  { "NICE", RLIMIT_NICE },
+#endif
+#ifdef RLIMIT_NOFILE
+  { "NOFILE", RLIMIT_NOFILE },
+#endif
+#ifdef RLIMIT_NPROC
+  { "NPROC", RLIMIT_NPROC },
+#endif
+#ifdef RLIMIT_RSS
+  { "RSS", RLIMIT_RSS },
+#endif
+#ifdef RLIMIT_RTPRIO
+  { "RTPRIO", RLIMIT_RTPRIO },
+#endif
+#ifdef RLIMIT_RTTIME
+  { "RTTIME", RLIMIT_RTTIME },
+#endif
+#ifdef RLIMIT_SBSIZE
+  { "SBSIZE", RLIMIT_SBSIZE },
+#endif
+#ifdef RLIMIT_SIGPENDING
+  { "SIGPENDING", RLIMIT_SIGPENDING },
+#endif
+#ifdef RLIMIT_STACK
+  { "STACK", RLIMIT_STACK },
+#endif
+};
+
+/* An rlim_t as an Integer: unsigned, so a value past sp_int (RLIM_INFINITY
+   on Linux) is a Bignum, as CRuby gives it. */
+static sp_RbVal fx_box_rlim(rlim_t v) {
+  if ((unsigned long long)v <= (unsigned long long)INT64_MAX) return sp_box_int((sp_int)v);
+  unsigned char b[8];
+  for (int i = 0; i < 8; i++) b[i] = (unsigned char)(((unsigned long long)v >> (8 * i)) & 0xff);
+  return sp_box_bigint(sp_bigint_from_le_bytes(0, b, 8));
+}
+
+/* A limit given to setrlimit: an Integer, or a Bignum for RLIM_INFINITY. */
+static rlim_t fx_rlim_arg(sp_RbVal v) {
+  if (v.tag == SP_TAG_BIGINT) return RLIM_INFINITY;
+  return (rlim_t)sp_poly_arg_int_chk(v);
+}
+
+/* The resource of getrlimit and setrlimit: an Integer, or a Symbol or a
+   String that names one with or without RLIMIT_; ArgumentError for a name
+   of no resource, as CRuby words it. */
+static int fx_rlimit_resource(sp_RbVal v) {
+  if (v.tag != SP_TAG_SYM && !fx_is_string(v)) return (int)sp_poly_arg_int_chk(v);
+  const char *n = v.tag == SP_TAG_SYM ? sp_sym_to_s((sp_sym)v.v.i) : sp_poly_recv_s(v, "getrlimit");
+  SP_GC_ROOT_STR(n);
+  const char *bare = !strncmp(n, "RLIMIT_", 7) ? n + 7 : n;
+  for (size_t i = 0; i < sizeof fx_rlimits / sizeof fx_rlimits[0]; i++)
+    if (!strcmp(bare, fx_rlimits[i].name)) return fx_rlimits[i].v;
+  sp_raise_cls("ArgumentError", sp_sprintf("invalid resource name: %s", n));
+}
 
 /* The constants of Process, with the values of the platform. */
 static void fx_process_consts(FxClass *c) {
@@ -33,6 +115,9 @@ static void fx_process_consts(FxClass *c) {
   };
   for (size_t i = 0; i < sizeof k / sizeof k[0]; i++)
     fx_const_set(c, sp_sym_intern(k[i].name), sp_box_int(k[i].v));
+  for (size_t i = 0; i < sizeof fx_rlimits / sizeof fx_rlimits[0]; i++)
+    fx_const_set(c, sp_sym_intern(sp_sprintf("RLIMIT_%s", fx_rlimits[i].name)), sp_box_int(fx_rlimits[i].v));
+  fx_const_set(c, sp_sym_intern("RLIM_INFINITY"), fx_box_rlim(RLIM_INFINITY));
 }
 
 /* The clock of clock_gettime: an id, or a Symbol that names a clock
@@ -82,6 +167,25 @@ static int fx_process_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *o
       *out = sp_box_int((sp_int)r);
       return 1;
     }
+  }
+  /* Process.getrlimit(resource) and setrlimit(resource, soft, hard = soft):
+     the runtime has neither, so they are the system calls */
+  if (FX_IS("getrlimit") && argc == 1) {
+    struct rlimit rl;
+    if (getrlimit(fx_rlimit_resource(argv[0]), &rl) < 0) sp_raise_cls(sp_errno_class_name(errno), strerror(errno));
+    sp_PolyArray *a = sp_PolyArray_new();
+    SP_GC_ROOT(a);
+    sp_PolyArray_push(a, fx_box_rlim(rl.rlim_cur));
+    sp_PolyArray_push(a, fx_box_rlim(rl.rlim_max));
+    *out = sp_box_poly_array(a);
+    return 1;
+  }
+  if (FX_IS("setrlimit") && (argc == 2 || argc == 3)) {
+    int res = fx_rlimit_resource(argv[0]);
+    struct rlimit rl = { fx_rlim_arg(argv[1]), fx_rlim_arg(argc == 3 ? argv[2] : argv[1]) };
+    if (setrlimit(res, &rl) < 0) sp_raise_cls(sp_errno_class_name(errno), strerror(errno));
+    *out = sp_box_nil();
+    return 1;
   }
   if (FX_IS("getpgid") && argc == 1) {
     pid_t r = getpgid((pid_t)sp_poly_arg_int_chk(argv[0]));
