@@ -2298,6 +2298,16 @@ static sp_RbVal fx_interpolate(FxFrame *f, const pm_node_list_t *parts) {
       v = fx_eval_stmts(f, ((const pm_embedded_statements_node_t *)p)->statements);
       if (L.ctl != FX_CTL_NONE) return sp_box_nil();
       if (!fx_is_string(v)) v = sp_poly_to_s_box(v);
+    } else if (PM_NODE_TYPE_P(p, PM_EMBEDDED_VARIABLE_NODE)) {
+      /* "#@x", "#@@x" and "#$x": as "#{@x}" */
+      v = fx_eval(f, ((const pm_embedded_variable_node_t *)p)->variable);
+      if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+      if (!fx_is_string(v)) v = sp_poly_to_s_box(v);
+    } else if (PM_NODE_TYPE_P(p, PM_INTERPOLATED_STRING_NODE)) {
+      /* a literal adjacent to this one ("a#{x}" "b#{y}"), a part of its
+         own kind: it interpolates in turn */
+      v = fx_interpolate(f, &((const pm_interpolated_string_node_t *)p)->parts);
+      if (L.ctl != FX_CTL_NONE) return sp_box_nil();
     } else {
       fx_unsupported(p, "interpolation part");
     }
