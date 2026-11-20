@@ -2272,7 +2272,7 @@ static sp_RbVal fx_define_from_method(FxClass *k, int singleton, int vis, sp_sym
   if (m) {
     FxClass *owner = m->owner;
     if (owner->singleton && owner != k) sp_raise_cls("TypeError", "can't bind singleton method to a different class");
-    FxClass *anc[128];
+    const FxClass *anc[128];
     int n = fx_ancestors(k, anc, 128), found = 0;
     for (int i = 0; i < n && !found; i++) found = anc[i] == owner;
     if (!found) sp_raise_cls("TypeError", sp_sprintf("bind argument must be a subclass of %s", owner->name));
