@@ -2260,8 +2260,37 @@ static FX_ANC_FN sp_RbVal fx_instance_methods(FxClass *k, int mask, int inherit)
   return sp_box_poly_array(a);
 }
 
+/* define_method(name, method): a copy of the method a Method or an
+   UnboundMethod names, under the new name, as alias makes one, so its body
+   runs on the receiver of the new method. The method must come from an
+   ancestor of k, and a singleton method binds to no other class, as CRuby
+   refuses them. A builtin method becomes an entry that calls it by name,
+   as an alias of one does. Answers the name. */
+static sp_RbVal fx_define_from_method(FxClass *k, int singleton, int vis, sp_sym name, const FxMethodValue *mv) {
+  const FxMethod *m = mv->m;
+  FxMethod *c;
+  if (m) {
+    FxClass *owner = m->owner;
+    if (owner->singleton && owner != k) sp_raise_cls("TypeError", "can't bind singleton method to a different class");
+    FxClass *anc[128];
+    int n = fx_ancestors(k, anc, 128), found = 0;
+    for (int i = 0; i < n && !found; i++) found = anc[i] == owner;
+    if (!found) sp_raise_cls("TypeError", sp_sprintf("bind argument must be a subclass of %s", owner->name));
+    c = fx_method_copy(m, m->vis);
+    c->orig = m->orig ? m->orig : m->name;
+  } else {
+    c = fx_method_new(FX_M_BUILTIN, name, NULL, 0, k);
+    c->builtin = mv->name;
+    c->vis = FX_VIS_PUBLIC;
+  }
+  c->name = name;
+  fx_define_vis(k, c, singleton, vis);
+  return sp_box_sym(name);
+}
+
 /* define_method(name) { ... } and define_method(name, proc): a method whose
-   body is the block (FX_M_PROC). Answers the name. */
+   body is the block (FX_M_PROC), or a copy of a Method's
+   (fx_define_from_method). Answers the name. */
 static sp_RbVal fx_define_proc_method(FxClass *k, int singleton, int vis, int argc, sp_RbVal *argv,
                                         const FxBlock *blk) {
   if (argc != 1 && argc != 2) fx_arity_error(argc, 1, 1, 0);
@@ -2269,9 +2298,9 @@ static sp_RbVal fx_define_proc_method(FxClass *k, int singleton, int vis, int ar
   sp_RbVal body;
   if (argc == 2) {
     body = argv[1];
+    if (fx_is_method_value(body)) return fx_define_from_method(k, singleton, vis, name, (const FxMethodValue *)body.v.p);
     if (!fx_is_proc(body)) {
       const char *cls = sp_poly_class_name(body);
-      if (!strcmp(cls, "Method") || !strcmp(cls, "UnboundMethod")) fx_gap(sp_sprintf("define_method with a %s", cls));
       sp_raise_cls("TypeError", sp_sprintf("wrong argument type %s (expected Proc/Method/UnboundMethod)", cls));
     }
   } else {
