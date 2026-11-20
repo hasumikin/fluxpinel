@@ -48,7 +48,10 @@ failed = CLI_CASES.reject do |c|
   end
   puts "#{why ? 'NG' : 'ok'} fluxpinel #{args.join(' ')}#{c[:stdin] ? ' < stdin' : ''}"
   puts "   #{why}" if why
-  # the stderr of a failed case: a require that failed names what is missing
+  # the status and the stderr of a failed case: a signal that ended the
+  # process shows in the status, and a require that failed names what is
+  # missing
+  puts "   #{st.inspect.sub(/pid \d+ /, '')}" if why
   puts "   stderr #{err.inspect}" if why && !err.empty?
   !why
 end
