@@ -1064,10 +1064,28 @@ static sp_RbVal fx_to_str_arg(sp_RbVal v) {
 static int fx_builtin_call_2(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                                sp_RbVal *out);
 
+/* The methods of a Range and of an Integer that take a count or an index
+   by to_int, where the functions of the runtime take an Integer only. */
+static int fx_takes_to_int(sp_RbVal recv, const char *name) {
+  if (recv.tag == SP_TAG_INT) return !strcmp(name, "[]");
+  if (recv.tag != SP_TAG_OBJ || !(recv.cls_id == SP_BUILTIN_RANGE || recv.cls_id == SP_BUILTIN_FLOAT_RANGE ||
+                                  recv.cls_id == SP_BUILTIN_STR_RANGE))
+    return 0;
+  static const char *const names[] = { "first", "last", "take", "drop", "min", "max", "each_slice", "each_cons", NULL };
+  for (int i = 0; names[i]; i++)
+    if (!strcmp(name, names[i])) return 1;
+  return 0;
+}
+
 /* A builtin call. A String receiver first gets the String of each
-   argument that is an object of the program with a to_str. */
+   argument that is an object of the program with a to_str, and a count
+   or an index of a Range or an Integer converts by its to_int. */
 static int fx_builtin_call_1(sp_RbVal recv, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                                sp_RbVal *out) {
+  if ((argc == 1 || argc == 2) && fx_is_fx_object(argv[0]) && fx_takes_to_int(recv, name)) {
+    sp_RbVal conv[2] = { sp_box_int(sp_poly_arg_int_chk(argv[0])), argc == 2 ? argv[1] : sp_box_nil() };
+    return fx_builtin_call_2(recv, name, argc, conv, blk, out);
+  }
   int objs = 0;
   if (argc >= 1 && argc <= 4 && fx_is_string(recv))
     for (int i = 0; i < argc; i++) objs |= fx_is_fx_object(argv[i]);
