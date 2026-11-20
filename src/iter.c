@@ -796,13 +796,20 @@ static int fx_num_step(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
   if (argc == 2 && has_by) sp_raise_cls("ArgumentError", "step is given twice");
   sp_RbVal lim = argc ? argv[0] : to;
   sp_RbVal st = argc == 2 ? argv[1] : by.tag == SP_TAG_NIL ? sp_box_int(1) : by;
+  /* with no block, a nil step is 1 (with a block it is a TypeError) */
+  if (st.tag == SP_TAG_NIL) st = sp_box_int(1);
   SP_GC_ROOT_RBVAL(lim);
   SP_GC_ROOT_RBVAL(st);
   /* CRuby raises for a step or a limit that is not a number only when
-     the walk starts, which an Enumerator over the values cannot do */
+     the walk starts: the answer is an Enumerator over the step with a
+     block (Numeric#step of the prelude), which raises at its start */
   int st_num = fx_is_integer(st) || st.tag == SP_TAG_FLT || sp_poly_is_rat_kind(st);
   int lim_num = fx_is_integer(lim) || lim.tag == SP_TAG_FLT || sp_poly_is_rat_kind(lim);
-  if (!st_num || (lim.tag != SP_TAG_NIL && !lim_num)) fx_gap("Numeric#step with no block and a value that is not a number");
+  if (!st_num || (lim.tag != SP_TAG_NIL && !lim_num)) {
+    sp_RbVal args[3] = { sp_box_sym(sp_sym_intern("step")), lim, st };
+    *out = fx_send(r, "enum_for", 3, args);
+    return 1;
+  }
   if (sp_poly_eq(st, sp_box_int(0))) sp_raise_cls("ArgumentError", "step can't be 0");
   if (r.tag == SP_TAG_FLT || lim.tag == SP_TAG_FLT || st.tag == SP_TAG_FLT) {
     if (sp_poly_is_rat_kind(lim) || sp_poly_is_rat_kind(st)) fx_gap("Numeric#step of a Float and a Rational");

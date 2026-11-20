@@ -1224,6 +1224,30 @@ static int fx_builtin_call_2(sp_RbVal recv, const char *name, int argc, sp_RbVal
     if (fx_kernel_private(name) && fx_rs_lacks(recv, name)) return 0;
     /* the module function Kernel.fork */
     if (argc == 0 && !strcmp(name, "fork")) { *out = fx_fork(blk); return 1; }
+    /* min(n), max(n), min_by(n) and max_by(n) with a block: a value that
+       is no Array goes by its to_a, and min and max of an Array take the
+       ends of its sort by the block */
+    if (argc == 1 && (!strcmp(name, "min") || !strcmp(name, "max") || !strcmp(name, "min_by") || !strcmp(name, "max_by"))) {
+      int by = name[3] == '_';
+      if (!fx_is_array(recv)) {
+        sp_RbVal a = fx_send(recv, "to_a", 0, NULL);
+        SP_GC_ROOT_RBVAL(a);
+        if (fx_is_array(a)) { *out = fx_send_b(a, name, argc, argv, blk); return 1; }
+      } else if (!by) {
+        sp_int n = sp_poly_arg_int_chk(argv[0]);
+        if (n < 0) sp_raise_cls("ArgumentError", sp_sprintf("negative size (%lld)", (long long)n));
+        /* max: the sort of the reverse, reversed, so that equal elements
+           keep their order */
+        int max = name[1] == 'a';
+        sp_RbVal s = max ? fx_send(recv, "reverse", 0, NULL) : recv;
+        SP_GC_ROOT_RBVAL(s);
+        s = fx_send_b(s, "sort", 0, NULL, blk);
+        if (max) s = fx_send(s, "reverse", 0, NULL);
+        sp_RbVal cnt = sp_box_int(n);
+        *out = fx_send(s, "first", 1, &cnt);
+        return 1;
+      }
+    }
     fx_gap(sp_sprintf("block for the builtin %s#%s", sp_poly_class_name(recv), name));
   }
   /* the core methods and the helpers call one sp_poly_* function of the

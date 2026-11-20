@@ -384,7 +384,10 @@ class Numeric
     lim = args.size > 0 ? args[0] : to
     raise TypeError, "step must be numeric" if args.size > 1 && args[1].nil?
     st = args.size > 1 ? args[1] : (by.nil? ? 1 : by)
-    raise ArgumentError, "comparison of #{st.class} with 0 failed" unless st.is_a?(Numeric)
+    unless st.is_a?(Numeric)
+      raise TypeError, "0 can't be coerced into #{st.class}" unless st.respond_to?(:>)
+      raise ArgumentError, "comparison of #{st.class} with 0 failed"
+    end
     unless lim.nil? || lim.is_a?(Numeric)
       raise ArgumentError, "comparison of #{self.class} with #{lim.class} failed"
     end
