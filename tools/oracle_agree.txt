@@ -165,6 +165,8 @@ array_dig_splat_trailing_keys
 array_dup_sort_gc
 array_each_nil_receiver_raises
 array_element_set_bad_index
+array_element_store_receiver_rooted
+array_element_write_implicit_code_rooted
 array_element_write_local_drop_rooted
 array_empty_and_pattern
 array_eq_cross_kind
@@ -223,6 +225,7 @@ array_index_op_write_poly_rhs
 array_index_or_write
 array_index_range_variable
 array_index_string_typeerror
+array_index_type_errors
 array_index_typed_answer
 array_insert_no_values
 array_insert_pads_nil
@@ -3984,6 +3987,10 @@ io_readlines_limit_args
 io_readpartial_buffer_ivar_poly
 io_readpartial_into_buffer
 io_readpartial_negative_length
+io_reopen_closed_after_failed_reopen
+io_reopen_failed_keeps_handle
+io_reopen_path_stream_state
+io_reopen_static_stream_strings_rooted
 io_respond_to_winsize_no_console
 io_select_buffered
 io_select_high_fd
@@ -3992,6 +3999,7 @@ io_select_set_parks_thread
 io_select_timeout_interval
 io_select_user_to_io
 io_set_encoding
+io_set_encoding_unknown_name_reopen_mode
 io_stat_from_fd
 io_stdin_lines_chomp_paragraph
 io_stdout_tty_chain
@@ -7692,6 +7700,7 @@ socket_readpartial_idle_thread_gc
 socket_readpartial_then_write
 socket_recv_after_read
 socket_recv_closed_in_thread
+socket_reopen_drops_buffered_bytes
 socket_reopen_takes_shut_state
 socket_resolution_error
 socket_send_boxed_handle

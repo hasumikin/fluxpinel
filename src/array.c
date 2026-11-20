@@ -284,6 +284,16 @@ static int fx_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     *out = sp_poly_fetch(r, argv[0], argc == 2, argc == 2 ? argv[1] : sp_box_nil());
     return 1;
   }
+  /* a[x] = v on a frozen Array raises before the index converts, and an
+     index with a to_int converts */
+  if ((argc == 2 || argc == 3) && FX_IS("[]=")) {
+    if (sp_poly_array_frozen(r)) sp_raise_frozen_array_at(r.v.p, r.cls_id);
+    if (argc == 2 && fx_is_fx_object(argv[0])) {
+      sp_RbVal args[2] = { sp_box_int(sp_poly_arg_int_chk(argv[0])), argv[1] };
+      *out = fx_send(r, "[]=", 2, args);
+      return 1;
+    }
+  }
   /* a[x] = v with an index of no kind the wrappers take: the TypeError of
      its conversion, as CRuby raises it */
   if (argc == 2 && FX_IS("[]=") && !fx_is_integer(argv[0]) && argv[0].tag != SP_TAG_FLT && !fx_is_range(argv[0]) &&

@@ -121,3 +121,28 @@ def ret_splat = (return *xs_of(2))
 def xs_of(n) = (1..n).to_a
 x = *nil
 p ret_splat, [1, 2].map { |v| next *[v, v] }, [1].each { break *{ k: 1 } }, x
+
+# a[x] = v: an index with a to_int converts, and a frozen Array raises
+# before the conversion
+class StoreIndex
+  def to_int = (puts "to_int"; 0)
+end
+st = [1, 2]
+st[StoreIndex.new] = 7
+p st
+st.freeze
+[StoreIndex.new, 0, 1.5, 0..1, "x", nil].each do |i|
+  st[i] = [9]
+rescue => e
+  p [e.class, e.message]
+end
+begin
+  st[0, 1] = 9
+rescue => e
+  p [e.class, e.message]
+end
+begin
+  [1][Object.new] = 1
+rescue => e
+  p [e.class, e.message]
+end
