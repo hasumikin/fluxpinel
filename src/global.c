@@ -316,6 +316,9 @@ static void fx_builtin_consts(void) {
 
   fx_const_set(file, sp_sym_intern("SEPARATOR"), fx_frozen_cstr("/"));
   fx_const_set(file, sp_sym_intern("PATH_SEPARATOR"), fx_frozen_cstr(":"));
+  /* the null device is IO's, and File's through it; the File of Fluxpinel is
+     no subclass of IO, so both are set, as the seek whences above */
+  fx_const_set(ios[0], sp_sym_intern("NULL"), fx_frozen_cstr("/dev/null"));
   fx_const_set(file, sp_sym_intern("NULL"), fx_frozen_cstr("/dev/null"));
   fx_const_set(file, sp_sym_intern("ALT_SEPARATOR"), sp_box_nil());
   /* the flags of open(2) and flock(2), and the flags of File.fnmatch with
