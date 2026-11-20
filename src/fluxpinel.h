@@ -341,6 +341,9 @@ typedef struct {
   FxConst *globals;    /* the global variables that the program assigned;
                             marked by the mark hook */
   int nglobals, globals_cap;
+  struct { sp_sym from, to; } *gvar_aliases;   /* alias $from $to: to is the name an
+                                                   alias stands for (fx_gvar_canon) */
+  int ngvar_aliases, gvar_aliases_cap;
   void **procs;          /* the FxProc of each define_method, also of a method
                             that a later definition replaced, as a call of it
                             can still run; marked by the mark hook */
@@ -683,6 +686,7 @@ static struct {
 static int fx_argf_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out);
 static sp_RbVal fx_io_select(int argc, sp_RbVal *argv);
 static void fx_gvar_set(const char *name, sp_RbVal v);
+static void fx_gvar_alias(sp_sym from, const char *old);
 static int fx_is_io(sp_RbVal v);
 static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int fx_io_console(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,

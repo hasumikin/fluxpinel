@@ -3163,11 +3163,22 @@ static int fx_defined_eval(FxFrame *f, const pm_node_t *n, sp_RbVal *out) {
   return 0;
 }
 
-/* The globals that are there with no assignment. */
+/* The name of the global variable of an alias: $x, or a back reference
+   ($&), whose node is its own kind. */
+static pm_constant_id_t fx_gvar_node_name(const pm_node_t *n) {
+  if (PM_NODE_TYPE_P(n, PM_GLOBAL_VARIABLE_READ_NODE)) return ((const pm_global_variable_read_node_t *)n)->name;
+  if (PM_NODE_TYPE_P(n, PM_BACK_REFERENCE_READ_NODE)) return ((const pm_back_reference_read_node_t *)n)->name;
+  fx_unsupported(n, "alias of a global variable of this kind");
+}
+
+/* The globals that are there with no assignment (the back references
+   among them for an alias of one: the node of the name itself is its
+   own kind, defined by the last match). */
 static int fx_gvar_builtin(const char *g) {
   static const char *const names[] = { "$!", "$~", "$_", "$stdout", "$stderr", "$stdin", "$/", "$?", "$$",
                                        "$0", "$PROGRAM_NAME", "$*", "$LOAD_PATH", "$LOADED_FEATURES",
-                                       "$VERBOSE", "$DEBUG", "$,", "$;", "$\\", "$@", NULL };
+                                       "$VERBOSE", "$DEBUG", "$,", "$;", "$\\", "$@", "$&", "$`", "$'", "$+",
+                                       NULL };
   for (int i = 0; names[i]; i++) if (!strcmp(g, names[i])) return 1;
   return 0;
 }
@@ -3543,6 +3554,13 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
              (sp_sym)from.v.i);
     return sp_box_nil();
   }
+  /* alias $new $old: the names are one variable (fx_gvar_alias); a name
+     of a back reference ($&) is a node of its own */
+  case PM_ALIAS_GLOBAL_VARIABLE_NODE: {
+    const pm_alias_global_variable_node_t *a = (const pm_alias_global_variable_node_t *)n;
+    fx_gvar_alias(fx_sym(fx_gvar_node_name(a->new_name)), sp_sym_to_s(fx_sym(fx_gvar_node_name(a->old_name))));
+    return sp_box_nil();
+  }
   /* `# shareable_constant_value:` wraps each constant write: the value is
      frozen, as CRuby makes it shareable (the elements of a container stay
      as they are: a program with no Ractor shares nothing) */
@@ -3754,8 +3772,9 @@ static sp_RbVal fx_eval(FxFrame *f, const pm_node_t *n) {
     L.ctl_val = sp_box_nil();
     return sp_box_nil();
   case PM_GLOBAL_VARIABLE_READ_NODE: {
-    /* $!: the exception that a rescue handles; $~: the last match */
-    const char *g = sp_sym_to_s(fx_sym(((const pm_global_variable_read_node_t *)n)->name));
+    /* $!: the exception that a rescue handles; $~: the last match; an
+       alias of either reads the same */
+    const char *g = fx_gvar_canon(sp_sym_to_s(fx_sym(((const pm_global_variable_read_node_t *)n)->name)));
     if (!strcmp(g, "$~")) return fx_re_last();
     if (strcmp(g, "$!")) return fx_gvar_eval(f, n);
     return sp_rescue_sp > 0 ? fx_exc_box((sp_Exception *)sp_exc_handling[sp_rescue_sp - 1]) : sp_box_nil();
