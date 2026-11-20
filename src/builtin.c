@@ -808,6 +808,7 @@ static int fx_builtin_responds(sp_RbVal r, const char *name) {
   if (fx_is_array(r) || fx_is_range(r) || fx_is_hash(r)) lists[nl++] = enm;
   if (fx_is_hash(r)) lists[nl++] = hsh;
   if (fx_is_binding(r) && fx_binding_responds(name)) return 1;
+  if (fx_is_location(r) && fx_location_responds(name)) return 1;
   if (fx_ostruct_responds(r, name)) return 1;
   for (int l = 0; l < nl; l++)
     for (int i = 0; lists[l][i]; i++)
@@ -1177,6 +1178,7 @@ static int fx_builtin_call_2(sp_RbVal recv, const char *name, int argc, sp_RbVal
   }
   if (fx_is_method_value(recv) && fx_method_value_core(recv, name, argc, argv, blk, out)) return 1;
   if (fx_is_binding(recv) && fx_binding_core(recv, name, argc, argv, blk, out)) return 1;
+  if (fx_is_location(recv) && fx_location_core(recv, name, argc, argv, blk, out)) return 1;
   if (!blk && fx_range_core(recv, name, argc, argv, out)) return 1;
   if (fx_hash_core(recv, name, argc, argv, blk, out)) return 1;
   if (!blk && fx_array_hash(recv, name, argc, out)) return 1;
@@ -1365,7 +1367,7 @@ static const char *fx_bt_builtin_cls(sp_RbVal recv, const char *name, int *singl
     case SP_BUILTIN_PROC: case SP_BUILTIN_METHOD: return NULL;
     }
     if (recv.cls_id >= FX_CLS_BASE) return "Object";
-    if (fx_is_binding(recv)) return NULL;
+    if (fx_is_binding(recv) || fx_is_location(recv)) return NULL;
     break;
   }
   return sp_poly_class_name(recv);

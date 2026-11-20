@@ -332,12 +332,17 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   block, and the kind of frame. A landing (`FX_TRY_LANDED`) reads the
   records of the unwound frames before it cuts them, and puts the lines
   (`file:line:in 'A#m'`) on the exception, unless it has them already.
-  `Kernel#caller` reads the same records. A builtin method that the
-  walker calls has a record too, with no frame (`fx_bt_builtin_enter`):
-  the backtrace has `Array#each` and `Kernel#Integer` where CRuby has
-  them, named by the class or module that owns the method in CRuby
-  (`fx_rs_owner`). A method of Enumerable with a block has the `each` of
-  its receiver above it. Two kinds of lines of CRuby are not there: the
+  `Kernel#caller` reads the same records, and `Kernel#caller_locations`
+  makes a `Thread::Backtrace::Location` of each (`src/location.c`, an
+  instance of a native class, as a Binding is), which holds the path,
+  the line, the label and the base label of its line.
+  `Exception#backtrace_locations` is nil: a landing keeps the lines only.
+  A builtin method that the walker calls has a record too, with no frame
+  (`fx_bt_builtin_enter`): the backtrace has `Array#each` and
+  `Kernel#Integer` where CRuby has them, named by the class or module
+  that owns the method in CRuby (`fx_rs_owner`). A method of Enumerable
+  with a block has the `each` of its receiver above it. Two kinds of
+  lines of CRuby are not there: the
   operators of the fast path (`Integer#/`), which make no record, and the
   methods that CRuby calls inside a builtin method (`File#initialize`
   under `IO.open`). The main program runs under
