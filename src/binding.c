@@ -97,7 +97,8 @@ static sp_RbVal fx_binding_eval(sp_RbVal bv, const char *src, const char *path, 
   SP_GC_ROOT_RBVAL(bv);
   FxBinding *b = (FxBinding *)bv.v.p;
   FxFrame *kept = NULL;
-  sp_RbVal v = fx_eval_in(b->frame, b->base, src, path ? path : "(eval)", line, &kept);
+  /* named after the eval call, as CRuby names it, not the binding */
+  sp_RbVal v = fx_eval_in(b->frame, b->base, src, path ? path : fx_eval_source_name_top(), line, &kept);
   sp_gc_wb(b);
   b->frame = kept;
   return v;

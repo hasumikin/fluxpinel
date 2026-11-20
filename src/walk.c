@@ -867,7 +867,7 @@ static int fx_eval_string_on(FxFrame *under, sp_RbVal r, const char *name, int a
   if (!(inst || (mod && k)) || argc < 1 || argc > 3) return 0;
   const char *src = sp_poly_arg_str_chk(argv[0]);
   SP_GC_ROOT_STR(src);
-  const char *path = argc >= 2 && argv[1].tag != SP_TAG_NIL ? sp_poly_arg_str_chk(argv[1]) : "(eval)";
+  const char *path = argc >= 2 && argv[1].tag != SP_TAG_NIL ? sp_poly_arg_str_chk(argv[1]) : fx_eval_source_name(under);
   SP_GC_ROOT_STR(path);
   int line = argc == 3 && argv[2].tag != SP_TAG_NIL ? (int)sp_poly_arg_int_chk(argv[2]) : 1;
   FxFrame ctx;
@@ -1203,6 +1203,24 @@ static int fx_call_cached(FxFrame *f, const pm_call_node_t *c, FxCallCache *cc, 
   if (c->receiver && fx_vis_denied(m, !PM_NODE_TYPE_P(c->receiver, PM_SELF_NODE), &f->self)) return 0;
   *out = fx_invoke_b(m, r, argc, argv, blk);
   return 1;
+}
+
+/* The name of the source of an eval with no file of its own: "(eval at
+   FILE:LINE)" of the call under evaluation in the frame f, as CRuby names
+   it; "(eval)" for a frame with no call yet. */
+static const char *fx_eval_source_name(const FxFrame *f) {
+  const pm_node_t *at = f->fs->tr[f->depth].at;
+  if (!at) return "(eval)";
+  return sp_sprintf("(eval at %s:%d)", fx_source_of(at)->path, fx_line(at));
+}
+
+/* The same for a call with no frame of its own at hand (Binding#eval): the
+   call under evaluation at the top of the frame stack. */
+static const char *fx_eval_source_name_top(void) {
+  FxFrameStack *s = fx_fs();
+  const pm_node_t *at = s->depth > 0 ? s->tr[s->depth - 1].at : NULL;
+  if (!at) return "(eval)";
+  return sp_sprintf("(eval at %s:%d)", fx_source_of(at)->path, fx_line(at));
 }
 
 /* The module Kernel as a receiver (`::Kernel.load`). */

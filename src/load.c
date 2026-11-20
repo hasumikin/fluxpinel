@@ -226,7 +226,7 @@ static sp_RbVal fx_eval_string(FxFrame *f, int argc, sp_RbVal *argv) {
       sp_raise_cls("TypeError", sp_sprintf("wrong argument type %s (expected binding)", sp_poly_class_name(argv[1])));
     return fx_binding_eval(argv[1], src, path, line);
   }
-  return fx_eval_in(f, f, src, path ? path : "(eval)", line, NULL);
+  return fx_eval_in(f, f, src, path ? path : fx_eval_source_name(f), line, NULL);
 }
 
 /* Runs the top level of a source, as a program of its own. A return at
