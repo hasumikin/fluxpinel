@@ -766,6 +766,13 @@ static sp_RbVal fx_binding_eval(sp_RbVal bv, const char *src, const char *path, 
 static int fx_binding_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                              sp_RbVal *out);
 static int fx_binding_responds(const char *name);
+/* Thread::Backtrace::Location (location.c) */
+static void fx_location_init(void);
+static int fx_is_location(sp_RbVal v);
+static sp_RbVal fx_locations_build(const FxFrameStack *s, int top, int skip, sp_int len);
+static int fx_location_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
+                            sp_RbVal *out);
+static int fx_location_responds(const char *name);
 static sp_RbVal fx_trap(int argc, sp_RbVal *argv, const FxBlock *blk);   /* walk.c */
 static int fx_kernel_block(FxFrame *f, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out);
 /* refinements (walk.c) */

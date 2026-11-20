@@ -1487,13 +1487,19 @@ static int fx_kernel_block(FxFrame *f, const char *name, int argc, sp_RbVal *arg
     return 1;
   }
   /* caller(start = 1, length = nil): the backtrace of the frames out of
-     this one (fx_bt_build); nil when start is past the outermost */
-  if (!blk && !strcmp(name, "caller") && argc <= 2 && (argc == 0 || argv[0].tag == SP_TAG_INT)) {
+     this one (fx_bt_build); nil when start is past the outermost.
+     caller_locations takes the same and answers Locations (location.c). */
+  int locs = !strcmp(name, "caller_locations");
+  if (!blk && (locs || !strcmp(name, "caller")) && argc <= 2 && (argc == 0 || argv[0].tag == SP_TAG_INT)) {
     sp_int start = argc >= 1 ? argv[0].v.i : 1;
-    sp_int len = argc == 2 && argv[1].tag != SP_TAG_NIL ? sp_poly_arg_int_chk(argv[1]) : -1;
+    sp_int len = -1;   /* all */
     if (start < 0) sp_raise_cls("ArgumentError", sp_sprintf("negative level (%d)", (int)start));
-    if (len < -1) sp_raise_cls("ArgumentError", sp_sprintf("negative size (%d)", (int)len));
+    if (argc == 2 && argv[1].tag != SP_TAG_NIL) {
+      len = sp_poly_arg_int_chk(argv[1]);
+      if (len < 0) sp_raise_cls("ArgumentError", sp_sprintf("negative size (%d)", (int)len));
+    }
     if (start > f->fs->depth) { *out = sp_box_nil(); return 1; }
+    if (locs) { *out = fx_locations_build(f->fs, f->fs->depth, (int)start, len); return 1; }
     sp_StrArray *a = fx_bt_build(f->fs, f->fs->depth, (int)start);
     if (len >= 0 && a->len > len) a->len = len;
     *out = sp_box_nullable_obj((void *)a, SP_BUILTIN_STR_ARRAY);

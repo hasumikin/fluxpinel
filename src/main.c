@@ -59,6 +59,7 @@
 #include "encoding.c"
 #include "host.c"
 #include "binding.c"
+#include "location.c"
 #include "console.c"
 #include "gem_dirs.h"
 
@@ -318,6 +319,7 @@ static void fx_body(void) {
   fx_global_init();
   fx_sock_init();
   fx_binding_init();
+  fx_location_init();
   fx_marshal_init();
   /* a fiber runs the walker, whose frames are larger than those of AOT
      code: the size that codegen asks for an unoptimised build */
