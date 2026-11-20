@@ -413,9 +413,13 @@ The walker evaluates the prism AST directly (`src/walk.c`).
     their runtime values.
   - `$VERBOSE` and `$DEBUG` read false until the program assigns them.
 
-  An alias (`$-v`, `$PROGRAM_NAME`, `$:`, ...) names the same global. An
-  assignment to a writable special global goes into the table, and a read
-  prefers the table.
+  An alias (`$-v`, `$PROGRAM_NAME`, `$:`, ...) names the same global, and
+  so does one the program makes (`alias $new $old`, a table of
+  `L.gvar_aliases` that `fx_gvar_canon` reads): a read, a write and
+  `defined?` go to the name the alias stands for, a special global
+  included, so `lib/English.rb` is the aliases of CRuby's library of
+  the name. An assignment to a writable special global goes into the
+  table, and a read prefers the table.
 - **Output.** After `$stdout = obj`, Kernel#puts, #print and #p write to
   obj, as in CRuby. An assignment of an object with no `write` method
   raises TypeError.

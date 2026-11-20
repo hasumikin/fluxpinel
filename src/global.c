@@ -21,14 +21,38 @@
 
 #define FX_IS(s) (!strcmp(name, (s)))
 
-/* The name that an alias stands for. */
+/* The name that an alias stands for: the aliases of CRuby, then those of
+   the program (alias $new $old). */
 static const char *fx_gvar_canon(const char *name) {
   if (FX_IS("$-v") || FX_IS("$-w")) return "$VERBOSE";
   if (FX_IS("$-d")) return "$DEBUG";
   if (FX_IS("$PROGRAM_NAME")) return "$0";
   if (FX_IS("$:") || FX_IS("$-I")) return "$LOAD_PATH";
   if (FX_IS("$\"")) return "$LOADED_FEATURES";
+  if (L.ngvar_aliases) {
+    sp_sym s = sp_sym_intern(name);
+    for (int i = 0; i < L.ngvar_aliases; i++)
+      if (L.gvar_aliases[i].from == s) return sp_sym_to_s(L.gvar_aliases[i].to);
+  }
   return name;
+}
+
+/* alias $from $old: from names the variable that old names, by the name
+   old stands for, so a later alias of old does not move it. A value that
+   from had of its own goes, as CRuby replaces the entry. */
+static void fx_gvar_alias(sp_sym from, const char *old) {
+  const char *to = fx_gvar_canon(old);
+  if (!strcmp(sp_sym_to_s(from), to)) return;
+  for (int i = 0; i < L.nglobals; i++)
+    if (L.globals[i].name == from) { L.globals[i] = L.globals[--L.nglobals]; break; }
+  for (int i = 0; i < L.ngvar_aliases; i++)
+    if (L.gvar_aliases[i].from == from) { L.gvar_aliases[i].to = sp_sym_intern(to); return; }
+  if (L.ngvar_aliases == L.gvar_aliases_cap) {
+    L.gvar_aliases_cap = L.gvar_aliases_cap ? L.gvar_aliases_cap * 2 : 8;
+    L.gvar_aliases = realloc(L.gvar_aliases, sizeof *L.gvar_aliases * (size_t)L.gvar_aliases_cap);
+  }
+  L.gvar_aliases[L.ngvar_aliases].from = from;
+  L.gvar_aliases[L.ngvar_aliases++].to = sp_sym_intern(to);
 }
 
 static FxConst *fx_gvar_slot(sp_sym s) {
@@ -63,6 +87,9 @@ static sp_RbVal fx_gvar_get(const char *name) {
   if (FX_IS("$stderr") && fx_thread_stream("fluxpinel_stderr", &ts)) return ts;
   FxConst *g = fx_gvar_slot(sp_sym_intern(name));
   if (g) return g->value;
+  /* a back reference under an alias ($MATCH of English); the node of the
+     name itself is a back reference node (fx_re_backref) */
+  if (FX_IS("$&") || FX_IS("$`") || FX_IS("$'") || FX_IS("$+")) return fx_re_backref(name);
   if (FX_IS("$stdout")) return fx_io_box(sp_io_stdout());
   if (FX_IS("$stderr")) return fx_io_box(sp_io_stderr());
   if (FX_IS("$stdin")) return fx_io_box(sp_io_stdin());
@@ -90,6 +117,7 @@ static sp_RbVal fx_global_names(void) {
   SP_GC_ROOT(a);
   for (int i = 0; special[i]; i++) fx_names_push(a, sp_sym_intern(special[i]));
   for (int i = 0; i < L.nglobals; i++) fx_names_push(a, L.globals[i].name);
+  for (int i = 0; i < L.ngvar_aliases; i++) fx_names_push(a, L.gvar_aliases[i].from);
   return sp_box_poly_array(a);
 }
 
@@ -101,9 +129,10 @@ static int fx_gvar_writable(sp_RbVal v) {
 }
 
 static void fx_gvar_set(const char *name, sp_RbVal v) {
+  const char *given = name;   /* the error names the variable as written */
   name = fx_gvar_canon(name);
   if (FX_IS("$?") || FX_IS("$$") || FX_IS("$LOAD_PATH") || FX_IS("$LOADED_FEATURES"))
-    sp_raise_cls("NameError", sp_sprintf("%s is a read-only variable", name));
+    sp_raise_cls("NameError", sp_sprintf("%s is a read-only variable", given));
   if ((FX_IS("$stdout") || FX_IS("$stderr")) && !fx_gvar_writable(v))
     sp_raise_cls("TypeError", sp_sprintf("%s must have write method, %s given", name,
                                          v.tag == SP_TAG_NIL ? "NilClass" : sp_poly_class_name(v)));
