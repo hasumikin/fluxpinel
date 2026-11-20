@@ -9,6 +9,7 @@ p Math::PI, Math::E, Math::PI * 2 > 6.28
 p IO::SEEK_SET, IO::SEEK_CUR, IO::SEEK_END, File::SEEK_END
 p File::SEPARATOR, File::PATH_SEPARATOR, File::ALT_SEPARATOR, File::NULL
 p File::SEPARATOR.frozen?, File::NULL.frozen?
+p IO::NULL, IO::NULL.frozen?, IO::NULL == File::NULL
 p File::RDONLY, File::WRONLY, File::RDWR, File::CREAT, File::EXCL, File::TRUNC
 p File::APPEND, File::NONBLOCK, File::NOFOLLOW, File::NOCTTY, File::BINARY
 p File::LOCK_SH, File::LOCK_EX, File::LOCK_UN, File::LOCK_NB
