@@ -364,9 +364,11 @@ static int fx_load_once(char *real, const char *extra) {
   fx_run_source(s);
   /* $LOADED_FEATURES names the file that a require ran. The first call
      allocates the Array, so the Array comes before the copy of the path:
-     a collection in between would free a copy that nothing holds yet. */
+     a collection in between would free a copy that nothing holds yet.
+     real is memory of malloc, with no marker byte of a String of spinel
+     before it: sp_str_dup reads that byte, sp_str_dup_external does not. */
   sp_StrArray *feats = sp_get_loaded_features();
-  fx_strs_push(feats, sp_str_dup(real));
+  fx_strs_push(feats, sp_str_dup_external(real));
   return 1;
 }
 

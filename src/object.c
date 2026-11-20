@@ -1032,7 +1032,9 @@ static const char *fx_autoload_path(const FxClass *c, sp_sym name) {
    of Set, which a require runs now), the autoload goes and the constant is
    not defined: NULL. */
 static FxConst *fx_const_load(FxClass *c, sp_sym name, FxConst *k) {
-  const char *path = k->autoload;
+  /* a copy: the definition of the constant in the file frees k->autoload,
+     and the require reads the path after the file ran */
+  char *const path = strdup(k->autoload);
   k->loading = 1;
   const int depth = fx_fs()->depth;
   FX_TRY_PUSH();
@@ -1040,9 +1042,11 @@ static FxConst *fx_const_load(FxClass *c, sp_sym name, FxConst *k) {
     if (path[0] == '/' || !strncmp(path, "./", 2) || !strncmp(path, "../", 3)) fx_require(NULL, path, 0);
     else fx_require_lib(path);
     sp_exc_top--;
+    free(path);
   } else {
     FX_TRY_LANDED(depth);
     FxCaught caught = fx_caught();
+    free(path);
     k = fx_const_own(c, name);
     if (k) k->loading = 0;
     fx_reraise(caught);
@@ -2766,7 +2770,7 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     sp_PolyArray *a = sp_PolyArray_new();
     SP_GC_ROOT(a);
     if (found && found->at) {
-      sp_PolyArray_push(a, sp_box_str_new(sp_str_dup(fx_source_of(found->at)->path)));
+      sp_PolyArray_push(a, sp_box_str_new(sp_str_dup_external(fx_source_of(found->at)->path)));
       sp_PolyArray_push(a, sp_box_int(fx_line(found->at)));
     }
     *out = sp_box_poly_array(a);
