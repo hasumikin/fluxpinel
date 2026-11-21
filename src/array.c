@@ -308,9 +308,10 @@ static int fx_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     *out = fx_send(r, "[]=", 2, args);
     return 1;
   }
-  /* slice!(i) and slice!(range): the elements taken out, or nil for a
-     start outside the Array. The table has slice!(start, len). */
-  if (argc == 1 && FX_IS("slice!") && !fx_is_fx_object(argv[0])) {
+  /* slice!(range) and slice!(f) with a Float index: the elements taken
+     out, or nil for a start outside the Array. The table has
+     slice!(start, len) and slice!(i) with an Integer. */
+  if (argc == 1 && FX_IS("slice!") && argv[0].tag != SP_TAG_INT && !fx_is_fx_object(argv[0])) {
     sp_poly_array_recv(r, name, 1);   /* FrozenError before any change */
     sp_int n = sp_poly_length(r), start, len, one = !fx_is_range(argv[0]);
     if (one) {
@@ -401,25 +402,27 @@ static int fx_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
     *out = sp_poly_fill(r, argv[0], len.nil && argc == 2 ? 2 : 3, start, len);
     return 1;
   }
-  if (FX_IS("push") || FX_IS("append") || (FX_IS("<<") && argc == 1)) {
+  /* with no argument, the table answers push, append, unshift, prepend
+     and concat, and insert with an index only */
+  if ((argc >= 1 && (FX_IS("push") || FX_IS("append"))) || (argc == 1 && FX_IS("<<"))) {
     w = sp_poly_array_recv(r, name, 1);
     for (int i = 0; i < argc; i++) sp_PolyArray_push(w, argv[i]);
     sp_poly_arr_writeback(r, w);
     *out = r;
     return 1;
   }
-  if (FX_IS("unshift") || FX_IS("prepend")) {
+  if (argc >= 1 && (FX_IS("unshift") || FX_IS("prepend"))) {
     sp_poly_array_recv(r, name, 1);
-    *out = argc ? sp_poly_insert_n(r, 0, fx_ary_args(argc, argv)) : r;
+    *out = sp_poly_insert_n(r, 0, fx_ary_args(argc, argv));
     return 1;
   }
-  if (argc >= 1 && FX_IS("insert")) {
+  if (argc >= 2 && FX_IS("insert")) {
     sp_poly_array_recv(r, name, 1);
     *out = sp_poly_insert_n(r, sp_poly_arg_int_chk(argv[0]), fx_ary_args(argc - 1, argv + 1));
     return 1;
   }
   /* concat(*arrays): each operand is read before any append, as a.concat(a) */
-  if (FX_IS("concat")) {
+  if (argc >= 1 && FX_IS("concat")) {
     w = sp_poly_array_recv(r, name, 1);
     sp_PolyArray *ops = sp_PolyArray_new();
     SP_GC_ROOT(ops);
@@ -563,21 +566,23 @@ static sp_int fx_hook_to_int(int cls_id, void *p, int *ok) {
   return r;
 }
 
-/* to_str: the handle of the String that the method answers, or NULL for a
-   class with no to_str and for an answer that is no String. */
-static sp_String *fx_hook_to_str_u(int cls_id, void *p) {
+/* to_str: the String that the method answers, boxed. *found says whether
+   the class has a to_str; an answer that is no String is nil, as the
+   switch of a compiled program answers (sp_obj_to_str_sw). */
+static sp_RbVal fx_hook_to_str_u(int cls_id, void *p, int *found) {
   sp_RbVal v = sp_box_obj(p, cls_id);
   FxMethod *m = fx_hook_method(v, "to_str");
-  if (!m) return NULL;
+  *found = m != NULL;
+  if (!m) return sp_box_nil();
   SP_GC_ROOT_RBVAL(v);
   sp_RbVal s = fx_invoke(m, v, 0, NULL);
-  return fx_is_string(s) ? (sp_String *)s.v.p : NULL;
+  return fx_is_string(s) ? s : sp_box_nil();
 }
 
-static sp_String *fx_hook_to_str(int cls_id, void *p) {
-  if (fx_kernel_cls(cls_id) && fx_kernel_hooks.to_str) return fx_kernel_hooks.to_str(cls_id, p);
-  sp_String *r;
-  FX_HOOKED(r = fx_hook_to_str_u(cls_id, p));
+static sp_RbVal fx_hook_to_str(int cls_id, void *p, int *found) {
+  if (fx_kernel_cls(cls_id) && fx_kernel_hooks.to_str) return fx_kernel_hooks.to_str(cls_id, p, found);
+  sp_RbVal r;
+  FX_HOOKED(r = fx_hook_to_str_u(cls_id, p, found));
   return r;
 }
 
