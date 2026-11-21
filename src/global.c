@@ -241,7 +241,7 @@ static void fx_env_update(sp_RbVal hv, int replace) {
   sp_PolyPolyHash *h = sp_poly_as_poly_poly_hash(hv);
   SP_GC_ROOT(h);
   for (sp_int i = 0; i < h->len; i++)
-    sp_env_aset(fx_env_key(h->keys[h->order[i]]), h->vals[h->order[i]]);
+    sp_env_aset(h->keys[h->order[i]], h->vals[h->order[i]], 1);
   if (!replace) return;
   sp_StrStrHash *s = sp_env_to_h();
   SP_GC_ROOT(s);
@@ -263,7 +263,7 @@ static int fx_env_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, c
     sp_raise_cls("KeyError", sp_sprintf("key not found: %s", sp_poly_inspect(argv[0])));
   }
   if (argc == 2 && (FX_IS("[]=") || FX_IS("store"))) {
-    sp_env_aset(fx_env_key(argv[0]), argv[1]);
+    sp_env_aset(argv[0], argv[1], 1);
     *out = argv[1];
     return 1;
   }

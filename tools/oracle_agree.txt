@@ -1,5 +1,5 @@
 # The spinel tests that Fluxpinel answers right, for make regress.
-# make oracle writes this file. spinel: a7dff9b99034
+# make oracle writes this file. spinel: f93f0e83b28b
 absolute_class_reopen_inside_module
 abstract_raise_override_return
 accessor_def_history_both_sides
@@ -21,6 +21,7 @@ alias_counterpart_own_class
 alias_date_compare_without_coercion
 alias_deconstruct_boxed
 alias_extended_module_redefined
+alias_global
 alias_in_builtin_reopen
 alias_in_included_and_extended_module
 alias_inherited_after_accessor_alias
@@ -251,6 +252,7 @@ array_negative_size_validation
 array_new_bare_receiver
 array_new_block_argument
 array_new_block_discarded_if
+array_new_block_fills_fresh
 array_new_block_fresh_binding
 array_new_block_nested_int_table
 array_new_block_next
@@ -752,6 +754,10 @@ block_yield_optional_param
 blockcall_tail_if_string_boxed
 blockless_cycle_enumerator
 bm_instance_eval
+body_def_builtin_list
+body_def_called_from_body
+body_def_class_value_respond
+body_def_instance_list
 body_def_list_side
 body_def_presence_window
 body_def_sure_point
@@ -1268,6 +1274,7 @@ call_receiver_root
 call_splat_positional
 call_window_pushed_begin
 call_with_def_in_operand
+caller_locations
 capture_wrap_keeps_byref
 capture_wrap_walk_narrows
 captured_block_call_value
@@ -1430,6 +1437,7 @@ class_def_order
 class_eqq_nullable_string
 class_eqq_user_object
 class_escape_rescue_clause
+class_eval_block_bare_reflection
 class_eval_block_class_ivar
 class_eval_block_on_self_in_method
 class_eval_def_versions
@@ -1452,6 +1460,7 @@ class_eval_text_reads_body_local
 class_eval_text_source_line
 class_eval_value_bare_call
 class_eval_value_form
+class_eval_value_on_constant_path
 class_exec_def_body
 class_facts_row_of_table
 class_header_alias_between_headers
@@ -1650,6 +1659,7 @@ class_value_new_kwsplat_skips_other_ctors
 class_value_new_leading_optional
 class_value_new_module_with_initialize
 class_value_new_narrowing_limits
+class_value_new_nil_unlisted
 class_value_new_optional_param
 class_value_new_positional_ctor_param
 class_value_new_proc_into_yielding_init
@@ -1853,6 +1863,7 @@ computed_send_program_object_methods
 computed_send_toplevel_def_builtin_receiver
 computed_send_writer_attr_override
 computed_send_writer_attr_typed_value
+computed_send_writer_nullable_value
 computed_undef_beside_string_class_eval
 concat_boxed_source
 concat_chain_operand_gc_root
@@ -2048,6 +2059,7 @@ control_flow_until_cond_method_arg
 control_flow_until_modifier_method
 control_flow_while_modifier_method
 conv_alias_inherited_method
+conv_bridge_boxed_answer
 conv_typeerror_names_the_right_class
 count_block_poly_pred
 crashers_536
@@ -2217,6 +2229,7 @@ deprecate_constant_class_body
 destructure_splat_underflow
 destructure_typed_ptr_array_return
 desugar_builtin_calls_beside_reopen
+desugar_step_self_private
 devirt_call_return_box
 dig_multi_step_typeerror
 dig_recv_hold_rest
@@ -2492,6 +2505,7 @@ enum_for_method_with_args
 enum_index_reduce
 enum_instance_eval_receiver
 enum_map_chain
+enum_nil_safe_nav
 enum_own_arm_typed_receiver
 enum_reader_blocks
 enum_reader_names
@@ -2590,6 +2604,7 @@ exc_frame_break_next_pops
 exc_frame_depth_bounded
 exc_frame_early_return_pops
 exc_is_a_constant_path
+exc_reinit_without_arm_keeps_message
 exc_reopen_initialize_block_param
 exc_rescued_is_a_narrowed_read
 exc_stack_window_cleared
@@ -2647,6 +2662,7 @@ exception_nonstring_message
 exception_nonstring_message_typed
 exception_nonstring_to_s
 exception_nullable_message
+exception_object_cause_through_ensure
 exception_override_message_unqueried
 exception_own_methods_implicit_self
 exception_own_to_s
@@ -3056,6 +3072,7 @@ frozen_attr_or_op_write
 frozen_boxed_hash_delete_clear_store
 frozen_const_table_row_store
 frozen_empty_hash_copy_store
+frozen_error_subclass_name
 frozen_exception_no_implicit_cause
 frozen_global_into_appender
 frozen_hash_error_message
@@ -3202,6 +3219,7 @@ hash_compare_by_identity
 hash_compare_by_identity_or_write
 hash_compound_assign_more
 hash_const_into_defaulted_param
+hash_copy_keeps_default
 hash_default_array_fetch_concat_wave9
 hash_default_block_string_mutated
 hash_default_block_valued_next
@@ -3256,6 +3274,7 @@ hash_fetch_default_nil_block_arg
 hash_fetch_dig_nil_int_key
 hash_fetch_forwarded_block
 hash_fetch_keyerror
+hash_fetch_nil_default_into_int_local
 hash_filter_bang_return
 hash_flatten_rassoc_compact
 hash_float_value_preserved
@@ -3403,6 +3422,7 @@ hash_splat_to_a
 hash_spread_other_variant
 hash_static_key_handles
 hash_store_boxed_chain
+hash_store_boxed_globals
 hash_store_boxed_origins
 hash_store_boxed_returns
 hash_store_boxed_unbounded
@@ -3435,11 +3455,15 @@ hash_temp_gc_root
 hash_to_a_entries
 hash_to_h_identity
 hash_to_hash_answers_receiver
+hash_transform_boxed_numeric_nil
 hash_transform_group
 hash_transform_keys_bang
 hash_transform_keys_block_param
 hash_transform_keys_cross
+hash_transform_keys_nullable_values
 hash_transform_next_ensure
+hash_transform_next_for_collection
+hash_transform_nullable_integer_values
 hash_transform_values_boxed_next
 hash_update_block_value_widens
 hash_update_forwarded_block
@@ -3808,6 +3832,7 @@ instance_method_named_new_param
 instance_method_parameters_dynamic
 instance_methods_false
 instance_methods_false_chain
+instance_methods_own_behind_reopened_mixin
 instance_methods_prepended_own
 instance_of_in_inherited_method
 instance_variable_get_poly_recv
@@ -3870,6 +3895,7 @@ int_min_sign_mask
 int_modulo_divmod_bignum_divisor
 int_named_division_boxed_divisor
 int_nil_boxing_at_poly_boundary
+int_nil_boxing_min_max_block
 int_nil_shift_recv
 int_opt_p_inspect
 int_overflow_promote
@@ -3935,11 +3961,13 @@ interp_single_buffer
 interp_statements_run_in_place
 interp_symbol
 interp_value_obj_default_to_s
+interp_wrapped_string_identity
 interpolate_handles
 interpolate_range
 interpolated_inspect_under_subclass_overrides
 interpolation_multistmt
 interpolation_operand_order
+interpolation_repeat_visibility
 interpolation_symbol_name
 introspection_constant_path
 invalid_utf8_split_one_and_setbyte
@@ -3965,6 +3993,7 @@ io_line_read_boxed_splat
 io_lines_chomp_paragraph
 io_nil_inspect
 io_nul_bytes
+io_null_constant
 io_pipe
 io_pipe_close_on_exec
 io_pipe_sync_write
@@ -4463,6 +4492,7 @@ ivar_hash_or_write_shared_value
 ivar_int_table_narrowing
 ivar_lazy_init_push_via_inherited_getter
 ivar_method_string_handed_to_appender
+ivar_never_set_reads_nil
 ivar_nil_guard_reads_slot_not_hold
 ivar_nil_p_unassigned_scalar
 ivar_nil_tested_once
@@ -4518,6 +4548,7 @@ json_parse_ostruct_member_names
 json_parse_temp_source
 kept_block_index_write_non_string
 kept_block_later_def
+kept_block_mixin_reach
 kept_block_param_not_hash
 kept_block_runs_after_later_def
 kept_block_runs_after_later_def_deep
@@ -4686,6 +4717,7 @@ lazy_boxed_source
 lazy_chain_forced_after_chain_on
 lazy_crosses_variable_and_method
 lazy_drop_while_each_slice
+lazy_drop_while_parameters
 lazy_endless_take_while
 lazy_first_no_stage
 lazy_method_block_local
@@ -4772,11 +4804,13 @@ main_chain_capture_merges_object_and_main_includes
 main_chain_kernel_receiver_beside_conditional_include
 main_chain_prepend_over_top_def_capture
 main_chain_undef_stops_capture
+main_computed_string_ivar
 main_extend_include_order
 main_extend_undef_stops
 main_implicit_self_itself
 main_object_dup_before_reopen
 main_object_one_entry
+main_reflective_string_gc
 main_self_paths
 main_send_toplevel_method
 main_singleton_beside_object_versions
@@ -5195,6 +5229,7 @@ module_function_through_nested_include
 module_include_p
 module_include_transitive_ancestry
 module_included_class_and_toplevel
+module_includer_runs_included_hook
 module_initialize_no_ctor
 module_instance_method_unbound
 module_ivar_empty_hash_reset
@@ -5272,6 +5307,8 @@ multi_toplevel_ivar_array
 multi_value_return_splat
 multi_write_call_rhs_as_expr
 multi_write_ivar_const_from_array_rhs
+multi_write_overridden_writer_roots
+multi_write_post_splat_string
 multi_write_scalar_rhs
 multiple_assignment_to_ary
 multiple_assignment_to_ary_reopened
@@ -5397,6 +5434,7 @@ nil_array_ivar_frozen_p
 nil_array_to_a_entries
 nil_block_argument
 nil_call_argument_keeps_side_effects
+nil_class_operator_reopened
 nil_closed_method_maybe_nil
 nil_collection_methods_raise
 nil_default_param_lsp_shape
@@ -5407,6 +5445,7 @@ nil_default_range_param
 nil_eq_before_later_object_eq
 nil_fact_guard_loop_narrowing
 nil_free_method_version
+nil_global_joins_local
 nil_guard_narrows_int_or_nil
 nil_guard_param_narrow
 nil_guard_post_test_loop
@@ -5544,6 +5583,7 @@ numeric_reopen_self_any_number
 numeric_step_by_kw_edges
 numeric_step_by_only
 numeric_step_zero
+numeric_string_argument
 numeric_tower_methods
 numeric_tower_remainder
 oasgn_singleton_writer_value
@@ -6427,6 +6467,7 @@ polyarray_insert_delete_at
 polypoly_hash_update
 pool_recycle_parallel_sweep
 post_rest_keyword_hash
+pow_negative_base_complex
 pp_store_float_inf_literal
 predicate_block_next_value
 predicate_block_p_value
@@ -6497,6 +6538,7 @@ proc_boxed_digit_string_arg
 proc_boxed_param_hash_int_key
 proc_boxed_render
 proc_boxed_struct_arg_root
+proc_boxed_yield_keywords
 proc_call_array_autosplat
 proc_call_blk_gc_root
 proc_call_block_parameter_inline
@@ -6546,6 +6588,7 @@ proc_default_reads_capture
 proc_destructured_parameters
 proc_empty_kwsplat_positional_hash
 proc_escaped_arg_types
+proc_explicit_yield
 proc_float_arg
 proc_float_return
 proc_form_block_given_in_lifted_block
@@ -6642,6 +6685,7 @@ process_spawn_file_redirect
 process_spawn_group_redirect
 process_spawn_splat_and_pair
 process_status_equality
+process_status_generic_to_s
 process_status_last_child
 process_wait_flags_thread
 process_wait_wnohang
@@ -6831,6 +6875,7 @@ range_index_unbounded_receiver
 range_last_endless
 range_literal_ends_operand_order
 range_local_passed_to_call
+range_min_by_count
 range_min_max_empty_open
 range_mixed_endpoint_kinds
 range_negative_count_arg
@@ -7716,9 +7761,11 @@ socket_tcp_thread
 socket_two_readers_one_buffer
 socket_unpack_sockaddr_un_edges
 socket_write_parked_across_spawn
+sort_block_cmp_answer_float
 sort_block_nil_answer
 sort_block_nil_compare
 sort_block_poly_receiver
+sort_block_raising_tail
 sort_block_sign_unrelated_gt
 sort_by_array_key
 sort_by_bool_key
@@ -8869,6 +8916,7 @@ to_enum_value_tail
 to_enum_with_size_block
 to_h_on_boxed_hash
 to_h_with_block
+to_int_gives_non_integer
 to_path_boxed_shared_string
 to_s_answers_string_subclass
 to_set_in_block_poly_receiver
@@ -9128,6 +9176,8 @@ void_value_hash_store_nil
 void_value_if_writer_arm
 void_value_in_value_position
 volatile_strip_skips_coerced_arg
+wait_raises_default_signal
+wait_runs_trapped_signal
 waitpid_thread_drains_pipe
 warn_category
 warn_double_splat
