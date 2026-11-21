@@ -1608,7 +1608,7 @@ static int fx_proc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
     if (!p->b.node || p->b.cfn) { *out = sp_box_nil(); return 1; }
     sp_PolyArray *a = sp_PolyArray_new();
     SP_GC_ROOT(a);
-    sp_PolyArray_push(a, sp_box_str_new(sp_str_dup(fx_source_of(p->b.node)->path)));
+    sp_PolyArray_push(a, sp_box_str_new(sp_str_dup_external(fx_source_of(p->b.node)->path)));
     sp_PolyArray_push(a, sp_box_int(fx_line(p->b.node)));
     *out = sp_box_poly_array(a);
     return 1;
@@ -2002,7 +2002,7 @@ static int fx_method_value_core(sp_RbVal r, const char *name, int argc, sp_RbVal
     const pm_node_t *d = (const pm_node_t *)mv->m->def;
     sp_PolyArray *a = sp_PolyArray_new();
     SP_GC_ROOT(a);
-    sp_PolyArray_push(a, sp_box_str_new(sp_str_dup(fx_source_of(d)->path)));
+    sp_PolyArray_push(a, sp_box_str_new(sp_str_dup_external(fx_source_of(d)->path)));
     sp_PolyArray_push(a, sp_box_int(fx_line(d)));
     *out = sp_box_poly_array(a);
     return 1;

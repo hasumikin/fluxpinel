@@ -17,14 +17,23 @@
 static sp_marshal_vt fx_marshal_kernel;   /* the vtable of the kernel, or zero */
 
 /* The slots of the ivars of an object of the program: o->iv, which has a
-   slot for each ivar that a write made, as instance_variables lists. */
-static long fx_marshal_nivars(const FxClass *c, const FxObject *o) {
+   slot for each ivar that a write made, as instance_variables lists, the
+   slots a remove_instance_variable took aside. */
+static long fx_marshal_slots(const FxClass *c, const FxObject *o) {
   long n = o->iv ? (long)o->iv->len : 0;
   return n < c->nivars ? n : c->nivars;
 }
 
+static long fx_marshal_nivars(const FxClass *c, const FxObject *o) {
+  long n = 0;
+  for (long i = 0; i < fx_marshal_slots(c, o); i++) n += !fx_ivar_gone(o->iv->data[i]);
+  return n;
+}
+
 static void fx_marshal_ivars(sp_mar_buf *b, const FxClass *c, const FxObject *o, long n) {
-  for (long i = 0; i < n; i++) {
+  (void)n;
+  for (long i = 0; i < fx_marshal_slots(c, o); i++) {
+    if (fx_ivar_gone(o->iv->data[i])) continue;
     sp_mar_sym(b, sp_sym_to_s(c->ivars[i]));
     sp_mar_w(b, o->iv->data[i]);
   }

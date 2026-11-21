@@ -55,6 +55,9 @@ CLI_CASES = [
     env: { "HOME" => Dir.tmpdir },
     out: /unsupported undef of an interpolated name \(PM_UNDEF_NODE\) \(NotImplementedError\).*unsupported block for the builtin Integer#succ \(NotImplementedError\).*^2\n+\z/m },
   { args: ["-e", "1.succ { 2 }"], out: /\A\z/, status: 2 },
+  # an irb that parses with ripper: --irb names the gems and `make gems`
+  { args: ["-Iold_irb", "--irb"], out: /\A\z/, status: 1,
+    stderr: /\Afluxpinel: IRB does not load \(cannot load such file -- ripper\)\.\n.*irb \(1\.18 or later\).*`make gems`/m },
   # --irb-port: the program itself is the telnet client of its listener.
   # The case needs a Reline that runs on a socket (GEM_DIRS_FIRST of the
   # Makefile names its lib directory).

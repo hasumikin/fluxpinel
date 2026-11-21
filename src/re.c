@@ -658,7 +658,8 @@ static int fx_re_md_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
   }
   /* the subject, frozen as CRuby answers it (the row answers a new String) */
   if (FX_IS("string") && argc == 0) { *out = fx_box_str_frozen(sp_MatchData_string(m)); return 1; }
-  if (FX_IS("values_at")) {
+  /* values_at with no argument is a row of the table */
+  if (argc >= 1 && FX_IS("values_at")) {
     sp_PolyArray *a = sp_PolyArray_new();
     SP_GC_ROOT(a);
     for (int i = 0; i < argc; i++) {
