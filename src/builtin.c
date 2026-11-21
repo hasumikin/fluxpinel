@@ -599,6 +599,9 @@ static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_Rb
       return 1;
     }
   }
+  /* the logic operators of nil, true and false take one value */
+  if (argc != 1 && (r.tag == SP_TAG_NIL || r.tag == SP_TAG_BOOL) && (!strcmp(name, "&") || !strcmp(name, "|") || !strcmp(name, "^")))
+    fx_arity_error(argc, 1, 0, 0);
   if (argc == 0) {
     if (!strcmp(name, "!")) { *out = sp_box_bool(!sp_poly_truthy(r)); return 1; }
     if (!strcmp(name, "nil?")) { *out = sp_box_bool(r.tag == SP_TAG_NIL); return 1; }
@@ -648,9 +651,13 @@ static int fx_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_Rb
   }
   if (argc == 1) {
     sp_RbVal a = argv[0];
-    /* nil & x is false; nil | x and nil ^ x are the truth of x */
-    if (r.tag == SP_TAG_NIL && (!strcmp(name, "&") || !strcmp(name, "|") || !strcmp(name, "^"))) {
-      *out = sp_box_bool(name[0] != '&' && sp_poly_truthy(a));
+    /* the logic operators of nil, true and false, which take any value:
+       nil & x is false, nil | x and nil ^ x are the truth of x; true & x
+       is the truth of x, true | x is true, true ^ x is the untruth of x;
+       false & x is false, false | x and false ^ x are the truth of x */
+    if ((r.tag == SP_TAG_NIL || r.tag == SP_TAG_BOOL) && (!strcmp(name, "&") || !strcmp(name, "|") || !strcmp(name, "^"))) {
+      int self = r.tag == SP_TAG_BOOL && r.v.i, x = sp_poly_truthy(a);
+      *out = sp_box_bool(name[0] == '&' ? self && x : name[0] == '|' ? self || x : self != x);
       return 1;
     }
     if (!strcmp(name, "+")) { *out = sp_poly_add(r, a); return 1; }
