@@ -23,6 +23,10 @@ t("to_i") { ["42abc".to_i, "ff".to_i(16)] }
 t("<<") { x = +"a"; x << "b" << 99 }
 t("concat") { x = +"a"; [x.concat("b", "c"), x.concat(x)] }
 t("prepend") { x = +"c"; x.prepend("a", "b") }
+t("append_as_bytes") { x = +"a"; [x.append_as_bytes("b", 0x63, 256 + 0x64, -1).bytes, x.append_as_bytes.equal?(x), x.encoding.to_s] }
+t("append_as_bytes self") { x = +"a"; x.append_as_bytes(x, "b", x) }
+t("append_as_bytes type") { x = +"a"; x.append_as_bytes("b", :c) }
+t("append_as_bytes frozen") { "a".freeze.append_as_bytes("b") }
 t("unpack") { ["\x01\x02".unpack1("C"), "\x01\x02".unpack("C*")] }
 t("index") { [s.index("o"), s.index("o", 5), s.rindex("o"), s.index("z"), s.byteindex("o")] }
 t("bytes") { x = +"abc"; [s.getbyte(0), x.setbyte(0, 65), x] }

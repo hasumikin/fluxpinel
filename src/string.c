@@ -511,14 +511,15 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       *out = sp_box_bool(hit);
       return 1;
     }
-    if (FX_IS("append_as_bytes")) {
-      const char *s = fx_str_mut(r, name);
-      SP_GC_ROOT(s);
-      for (int i = 0; i < argc; i++) s = sp_str_append_bytes(s, sp_poly_recv_s(argv[i], name));
-      sp_poly_str_become(r, s);
-      *out = r;
-      return 1;
-    }
+  }
+  /* append_as_bytes(*parts): the runtime checks the parts (a String gives
+     its bytes, an Integer its low byte, any other value is a TypeError) and
+     the frozen state, and grows the receiver once */
+  if (FX_IS("append_as_bytes")) {
+    fx_str_mut(r, name);
+    sp_strbuf_append_as_bytes((sp_String *)r.v.p, argc, argv);
+    *out = r;
+    return 1;
   }
   if (FX_IS("concat") || FX_IS("prepend")) {
     const char *s = fx_str_mut(r, name);

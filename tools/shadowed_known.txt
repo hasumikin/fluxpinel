@@ -18,6 +18,10 @@ float_range/float_range#first/0	the row raises TypeError (can't iterate from Flo
 io/io#flock/1	the row waits inside flock(2), which stops the one OS thread of a standalone program; the hand-written call asks with LOCK_NB and sleeps
 matchdata/matchdata#string/0	the row answers a new String; CRuby answers the frozen subject itself
 str_range/str_range#%/1	fx_core of Fluxpinel answers % of every receiver before the table; the row never runs
+str_range/str_range#begin/0	the row answers a String for an end of a Range of Symbols; CRuby answers the Symbol
+str_range/str_range#end/0	the row answers a String for an end of a Range of Symbols; CRuby answers the Symbol
+str_range/str_range#first/0	the row answers a String for an end of a Range of Symbols; CRuby answers the Symbol
+str_range/str_range#last/0	the row answers a String for an end of a Range of Symbols; CRuby answers the Symbol
 string/string#concat/0	the row answers a new String; CRuby answers the receiver itself
 string/string#end_with?/1	bop_rows[] has no String#start_with? with one argument; the pair stays together
 string/string#gsub/2	the row leaves $~ as it is; CRuby sets it for a String pattern too

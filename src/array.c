@@ -379,6 +379,7 @@ static int fx_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
          the first element is RangeError, an end before the start fills
          nothing, and a length the Array cannot hold is ArgumentError */
       sp_int s, last;
+      int max_end = 0;   /* an inclusive end of the largest Integer */
       if (frange) {
         const sp_FloatRange *g = (const sp_FloatRange *)argv[1].v.p;
         s = g->omitted & SP_FRANGE_NO_BEGIN ? 0 : (sp_int)g->first;
@@ -387,9 +388,12 @@ static int fx_array_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
         const sp_Range *g = (const sp_Range *)argv[1].v.p;
         s = g->nobeg ? 0 : g->first;
         last = g->noend ? n - 1 : g->excl ? g->last - 1 : g->last;
+        max_end = !g->noend && !g->excl && g->last == INT64_MAX;
       }
       if (s < 0) s += n;
       if (s < 0) sp_raise_cls("RangeError", sp_sprintf("%s out of range", sp_poly_inspect(argv[1])));
+      /* CRuby 4.0.10: the end + 1 of such a Range does not wrap to an empty span */
+      if (max_end) sp_raise_cls("ArgumentError", "argument too big");
       if (last < 0) last += n;
       sp_int span = (sp_int)((uint64_t)last - (uint64_t)s + 1);   /* wraps as CRuby's long does */
       if (span > INT64_MAX / 8) sp_raise_cls("ArgumentError", "argument too big");
