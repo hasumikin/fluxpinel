@@ -786,6 +786,7 @@ static int fx_location_core(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
 static int fx_location_responds(const char *name);
 static sp_RbVal fx_trap(int argc, sp_RbVal *argv, const FxBlock *blk);   /* walk.c */
 static int fx_kernel_block(FxFrame *f, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out);
+static sp_RbVal fx_eval_string(FxFrame *f, int argc, sp_RbVal *argv);   /* load.c */
 /* refinements (walk.c) */
 static int fx_refine(FxFrame *f, FxClass *k, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                      sp_RbVal *out);
