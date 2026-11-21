@@ -8,7 +8,8 @@
 # stdout and the exit status are the same. With err: true, stderr must be
 # the same too, after "ruby:" at the start of a line reads "fluxpinel:". A
 # case with :out (a Regexp) passes when stdout matches it and the status
-# is :status (0 by default). :env adds to the environment of the command.
+# is :status (0 by default), and stderr matches :stderr (a Regexp) when the
+# case has one. :env adds to the environment of the command.
 # A case with :skip (a Regexp) is skipped when stdout matches it: the case
 # says that this machine does not have what it needs. The last line counts
 # the skipped cases.
@@ -39,6 +40,7 @@ failed = CLI_CASES.reject do |c|
     want = c.fetch(:status, 0)
     why = "stdout #{out.inspect} does not match #{c[:out].inspect}" unless c[:out].match?(out)
     why ||= "status #{st.exitstatus}, not #{want}" unless st.exitstatus == want
+    why ||= "stderr #{err.inspect} does not match #{c[:stderr].inspect}" if c[:stderr] && !c[:stderr].match?(err)
   else
     rout, rerr, rst = run("ruby", args, c[:stdin], c[:env] || {})
     rerr = rerr.gsub(/^ruby:/, "fluxpinel:")
