@@ -284,7 +284,8 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   CRuby. `local_variables` lists the frames from the newest, each name
   once. `dup` shares the frames and takes its own new ones from then on.
   `TOPLEVEL_BINDING` is the scope of the main program. The default file of
-  an eval is `(eval)`; CRuby names the call site (`(eval at FILE:LINE)`).
+  an eval names its call, `(eval at FILE:LINE)`, as CRuby's does; `__dir__`
+  is nil in such an eval and `require_relative` has no base path.
 - **Lifetime.** The home frame is on the C stack. Each frame has a serial
   number and an entry in a stack of serials on the heap
   (`FxFrameStack`). Each fiber that runs walker code has its own stack

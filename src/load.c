@@ -298,6 +298,7 @@ static const char *fx_parse_in(const char *path, const char *real, char *buf, si
     L.sources = realloc(L.sources, sizeof *L.sources * (size_t)L.sources_cap);
   }
   L.sources[L.nsources++] = s;
+  fx_source_index(s);
   *out = s;
   if (!s->parser.error_list.size) return NULL;
   return fx_syntax_error_message(s, path);
@@ -355,7 +356,8 @@ static sp_RbVal fx_eval_in(FxFrame *under, const FxFrame *ctx, const char *src, 
   return v;
 }
 
-/* Kernel#eval(src, binding = nil, file = "(eval)", line = 1). With no
+/* Kernel#eval(src, binding = nil, file = "(eval at FILE:LINE)", line = 1):
+   the default file names the call (fx_eval_source_name). With no
    binding, the code runs under the frame of the call, with its self, its
    lexical class and the block of its method, as in CRuby. With a Binding,
    it runs under the frames of the Binding (binding.c). */
@@ -369,7 +371,7 @@ static sp_RbVal fx_eval_string(FxFrame *f, int argc, sp_RbVal *argv) {
       sp_raise_cls("TypeError", sp_sprintf("wrong argument type %s (expected binding)", sp_poly_class_name(argv[1])));
     return fx_binding_eval(argv[1], src, path, line);
   }
-  return fx_eval_in(f, f, src, path ? path : "(eval)", line, NULL);
+  return fx_eval_in(f, f, src, path ? path : fx_eval_source_name(f), line, NULL);
 }
 
 /* Runs the top level of a source, as a program of its own. A return at
@@ -520,6 +522,11 @@ static int fx_load_once(char *real, const char *extra) {
 
 /* require_relative "x", and require "./x" or require "/x". Answers true
    after it runs the file, and false for a file that is loaded already. */
+/* Whether s is the source of an eval with no file of its own, named
+   "(eval at FILE:LINE)" (fx_eval_source_name): it has no directory, so
+   __dir__ is nil in it and require_relative cannot infer a base path. */
+static int fx_source_is_eval(const FxSource *s) { return s->real && !strncmp(s->real, "(eval", 5); }
+
 static sp_RbVal fx_require(const pm_node_t *n, const char *arg, int rel) {
   const char *path = arg, *file = NULL, *shown = NULL;
   SP_GC_ROOT_STR(path);
@@ -527,6 +534,8 @@ static sp_RbVal fx_require(const pm_node_t *n, const char *arg, int rel) {
   SP_GC_ROOT_STR(shown);
   /* an absolute path names the file itself */
   if (rel && arg[0] != '/') {
+    /* an eval with no file has no directory, as in CRuby */
+    if (fx_source_is_eval(fx_source_of(n))) sp_raise_cls("LoadError", "cannot infer basepath");
     char *dir = fx_dirname(fx_source_of(n)->real);
     path = sp_sprintf("%s/%s", dir, arg);
     free(dir);
@@ -660,6 +669,7 @@ static int fx_load_call(const pm_node_t *n, sp_RbVal self, int on_kernel, const 
   }
   if (FX_IS("load")) return 0;
   if (FX_IS("__dir__") && argc == 0) {
+    if (fx_source_is_eval(fx_source_of(n))) { *out = sp_box_nil(); return 1; }   /* nil, as in CRuby */
     char *dir = fx_dirname(fx_source_of(n)->real);
     *out = fx_new_string((const uint8_t *)dir, strlen(dir));
     free(dir);

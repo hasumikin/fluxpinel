@@ -6,11 +6,76 @@
 
 #include "fluxpinel.h"
 
-/* The source file that holds node n, by the bytes it points into. */
+/* The source index: the sources by the pages of their bytes, in a hash
+   table of page numbers with open addressing. Each eval adds a source, and
+   a walk over all of them for the source of a node grew with the count of
+   evals: a program that evals in a loop, or calls a method an eval defined
+   that evals in turn, paid for every eval before (rubish evaluates
+   arithmetic with Kernel.eval, Rails defines methods from Strings). The
+   entry of a page is the chain of the sources with bytes in it: the parse
+   buffers of evals are small and share pages, so a chain has several
+   sources, but no more than a page holds. */
+#define FX_SRC_PAGE_BITS 12
+
+/* The slot of a page key (page number + 1): its own, or the empty one its
+   probe ends at. */
+static size_t fx_srcidx_slot(uintptr_t key) {
+  size_t mask = L.srcidx.cap - 1;
+  size_t i = (size_t)((key * 0x9E3779B97F4A7C15ull) >> 24) & mask;
+  while (L.srcidx.pages[i] && L.srcidx.pages[i] != key) i = (i + 1) & mask;
+  return i;
+}
+
+static void fx_srcidx_grow(void) {
+  size_t ocap = L.srcidx.cap;
+  uintptr_t *op = L.srcidx.pages;
+  FxSrcLink **oc = L.srcidx.chains;
+  L.srcidx.cap = ocap ? ocap * 2 : 1024;
+  L.srcidx.pages = calloc(L.srcidx.cap, sizeof *L.srcidx.pages);
+  L.srcidx.chains = calloc(L.srcidx.cap, sizeof *L.srcidx.chains);
+  for (size_t i = 0; i < ocap; i++) {
+    if (!op[i]) continue;
+    size_t j = fx_srcidx_slot(op[i]);
+    L.srcidx.pages[j] = op[i];
+    L.srcidx.chains[j] = oc[i];
+  }
+  free(op);
+  free(oc);
+}
+
+/* A parsed source joins the index: one link on each page its bytes touch. */
+static void fx_source_index(FxSource *s) {
+  uintptr_t last = (uintptr_t)s->end >> FX_SRC_PAGE_BITS;
+  for (uintptr_t pg = (uintptr_t)s->start >> FX_SRC_PAGE_BITS; pg <= last; pg++) {
+    if ((L.srcidx.n + 1) * 2 > L.srcidx.cap) fx_srcidx_grow();
+    size_t i = fx_srcidx_slot(pg + 1);
+    if (!L.srcidx.pages[i]) {
+      L.srcidx.pages[i] = pg + 1;
+      L.srcidx.n++;
+    }
+    FxSrcLink *l = malloc(sizeof *l);
+    l->s = s;
+    l->next = L.srcidx.chains[i];
+    L.srcidx.chains[i] = l;
+  }
+}
+
+/* The source file that holds node n, by the bytes it points into: the last
+   answer first (a source lives to the end of the process, so it never
+   dangles), then the chain of the node's page. A node in no source, which
+   should not happen, is the main one's. */
 static FxSource *fx_source_of(const pm_node_t *n) {
-  for (int i = L.nsources - 1; i >= 0; i--) {
-    FxSource *s = L.sources[i];
-    if (n->location.start >= s->start && n->location.start <= s->end) return s;
+  const uint8_t *at = n->location.start;
+  static FxSource *last;
+  FxSource *l = last;
+  if (l && at >= l->start && at <= l->end) return l;
+  if (L.srcidx.cap) {
+    size_t i = fx_srcidx_slot(((uintptr_t)at >> FX_SRC_PAGE_BITS) + 1);
+    for (FxSrcLink *k = L.srcidx.chains[i]; k; k = k->next)
+      if (at >= k->s->start && at <= k->s->end) {
+        last = k->s;
+        return k->s;
+      }
   }
   return L.sources[0];
 }
@@ -867,7 +932,7 @@ static int fx_eval_string_on(FxFrame *under, sp_RbVal r, const char *name, int a
   if (!(inst || (mod && k)) || argc < 1 || argc > 3) return 0;
   const char *src = sp_poly_arg_str_chk(argv[0]);
   SP_GC_ROOT_STR(src);
-  const char *path = argc >= 2 && argv[1].tag != SP_TAG_NIL ? sp_poly_arg_str_chk(argv[1]) : "(eval)";
+  const char *path = argc >= 2 && argv[1].tag != SP_TAG_NIL ? sp_poly_arg_str_chk(argv[1]) : fx_eval_source_name(under);
   SP_GC_ROOT_STR(path);
   int line = argc == 3 && argv[2].tag != SP_TAG_NIL ? (int)sp_poly_arg_int_chk(argv[2]) : 1;
   FxFrame ctx;
@@ -1203,6 +1268,24 @@ static int fx_call_cached(FxFrame *f, const pm_call_node_t *c, FxCallCache *cc, 
   if (c->receiver && fx_vis_denied(m, !PM_NODE_TYPE_P(c->receiver, PM_SELF_NODE), &f->self)) return 0;
   *out = fx_invoke_b(m, r, argc, argv, blk);
   return 1;
+}
+
+/* The name of the source of an eval with no file of its own: "(eval at
+   FILE:LINE)" of the call under evaluation in the frame f, as CRuby names
+   it; "(eval)" for a frame with no call yet. */
+static const char *fx_eval_source_name(const FxFrame *f) {
+  const pm_node_t *at = f->fs->tr[f->depth].at;
+  if (!at) return "(eval)";
+  return sp_sprintf("(eval at %s:%d)", fx_source_of(at)->path, fx_line(at));
+}
+
+/* The same for a call with no frame of its own at hand (Binding#eval): the
+   call under evaluation at the top of the frame stack. */
+static const char *fx_eval_source_name_top(void) {
+  FxFrameStack *s = fx_fs();
+  const pm_node_t *at = s->depth > 0 ? s->tr[s->depth - 1].at : NULL;
+  if (!at) return "(eval)";
+  return sp_sprintf("(eval at %s:%d)", fx_source_of(at)->path, fx_line(at));
 }
 
 /* The module Kernel as a receiver (`::Kernel.load`). */
