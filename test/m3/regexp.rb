@@ -90,3 +90,13 @@ p $1
 
 case_like = ["x1", "y", "z22"].map { |w| w =~ /\d/ ? w.to_sym : w }
 p case_like
+
+# scan with a String pattern finds the String itself, as CRuby does (a
+# metacharacter in it is literal): the matches, or each match to a block
+# with $~ set
+p "aXbXc".scan("X"), "a.b.c".scan("."), "a+b+c".scan("+"), "abab".scan("ab").size
+p "日本日".scan("日"), "x".scan(""), "abc".scan("z"), "AbAb".scan("ab")
+found = []
+"x1y1".scan("1") { |m| found << [m, $~[0], $~.begin(0)] }
+p found
+p "a\xffb".b.scan("\xff".b)

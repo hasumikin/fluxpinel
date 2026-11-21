@@ -564,6 +564,17 @@ static int fx_re_string(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
                           sp_RbVal *out) {
   if (fx_re_matcher(r, name, argc, argv, blk, out)) return 1;
   if (fx_re_subst(r, name, argc, argv, blk, out)) return 1;
+  /* scan with a String pattern finds the String itself, as CRuby does: the
+     pattern is the String escaped, as the String forms of sub and gsub
+     take it */
+  sp_RbVal strpat[1];
+  if (FX_IS("scan") && argc == 1 && fx_is_string(argv[0])) {
+    const char *ps = sp_re_escape(sp_poly_arg_str_chk(argv[0]));
+    SP_GC_ROOT_STR(ps);
+    strpat[0] = fx_re_box(re_compile(ps, (int64_t)sp_str_byte_len(ps), 0));
+    SP_GC_ROOT_RBVAL(strpat[0]);
+    argv = strpat;
+  }
   if (argc < 1 || !fx_is_regexp(argv[0])) {
     /* start_with?(a, re, ...) */
     if (!FX_IS("start_with?")) return 0;
