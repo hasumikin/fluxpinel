@@ -67,6 +67,10 @@ static const char *const fx_enc_dummy[] = { "UTF-16", "UTF-32", "IBM037", "ISO-2
                                             "CP50220", "CP50221", "UTF-7", "ISO-2022-JP-KDDI", NULL };
 static const char *const fx_enc_not_ascii[] = { "UTF-16BE", "UTF-16LE", "UTF-32BE", "UTF-32LE", NULL };
 
+/* Whether the encoding named n is ASCII-compatible: not a dummy, and not
+   one of the wide encodings. */
+static int fx_enc_ascii_compat(const char *n) { return !fx_enc_in(n, fx_enc_dummy) && !fx_enc_in(n, fx_enc_not_ascii); }
+
 /* A method of an Encoding. Answers 1 and sets *out when it handles the
    call. */
 static int fx_encoding_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
@@ -81,10 +85,7 @@ static int fx_encoding_core(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
   const char *n = r.v.s ? r.v.s : "";
   if (FX_IS("name") || FX_IS("to_s")) { *out = fx_frozen_cstr(n); return 1; }
   if (FX_IS("dummy?")) { *out = sp_box_bool(fx_enc_in(n, fx_enc_dummy)); return 1; }
-  if (FX_IS("ascii_compatible?")) {
-    *out = sp_box_bool(!fx_enc_in(n, fx_enc_dummy) && !fx_enc_in(n, fx_enc_not_ascii));
-    return 1;
-  }
+  if (FX_IS("ascii_compatible?")) { *out = sp_box_bool(fx_enc_ascii_compat(n)); return 1; }
   return 0;
 }
 
@@ -109,8 +110,6 @@ static sp_RbVal fx_enc_set_default(int internal, sp_RbVal v) {
   return v;
 }
 
-static int fx_enc_ascii_compat(const char *n) { return !fx_enc_in(n, fx_enc_dummy) && !fx_enc_in(n, fx_enc_not_ascii); }
-
 /* The Encoding of a value for Encoding.compatible?: a String's (the
    runtime's UTF-8 or BINARY), a Symbol's and a Regexp's (US-ASCII for
    ASCII bytes, else UTF-8, as CRuby gives them), an Encoding itself; nil
@@ -127,8 +126,7 @@ static sp_RbVal fx_enc_of(sp_RbVal v, int *str, int *ascii) {
   else if (fx_is_regexp(v)) bytes = sp_poly_recv_s(fx_send(v, "source", 0, NULL), "compatible?");
   else return sp_box_nil();
   SP_GC_ROOT_STR(bytes);
-  for (const unsigned char *p = (const unsigned char *)bytes; *p; p++)
-    if (*p >= 0x80) { *ascii = 0; break; }
+  *ascii = sp_str_ascii_only(bytes);   /* by the byte length: a NUL is a byte of the value */
   if (*str) return fx_send(v, "encoding", 0, NULL);
   return *ascii ? sp_encoding_find(sp_box_str_fresh("US-ASCII")) : sp_box_encoding(sp_encoding_utf8());
 }
@@ -154,9 +152,11 @@ static sp_RbVal fx_enc_compatible(sp_RbVal a, sp_RbVal b) {
   /* a value that is no String has the encoding of its contents */
   if (!str2 && !strcmp(e2.v.s, "US-ASCII")) return e1;
   if (!str1 && !strcmp(e1.v.s, "US-ASCII")) return e2;
-  /* the String side first (the encodings keep their sides, as in CRuby,
-     whose answer for an ASCII-only String beside an Encoding is that
-     Encoding's side) */
+  /* the flags of the String side first, while e1 and e2 stay with their
+     arguments: an ASCII-only String yields to the encoding of the other
+     side, whichever side that is, as CRuby's enc_compatible_latter has it
+     ("a".b beside Encoding::UTF_8 answers UTF-8; Encoding::BINARY beside
+     "a" answers UTF-8 too, the String's, which is then e2) */
   if (!str1) { int t = str1; str1 = str2; str2 = t; t = ascii1; ascii1 = ascii2; ascii2 = t; }
   if (str1) {
     if (str2) {

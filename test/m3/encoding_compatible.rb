@@ -40,3 +40,9 @@ show :"日", :a
 show 1, 2
 show E::UTF_8, 1
 show "x", nil
+
+# a NUL byte is a byte of the String, not its end
+show "a\0日".b, "日"
+show "日", "a\0\xff".b
+show "a\0b".b, "日"
+
