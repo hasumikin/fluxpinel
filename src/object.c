@@ -319,6 +319,7 @@ static sp_int fx_builtin_id(const char *name) {
 static void fx_const_set(FxClass *c, sp_sym name, sp_RbVal v);   /* the constants section */
 static int fx_const_scoped(const FxClass *scope, sp_sym name, sp_RbVal *out);
 static sp_RbVal fx_ivar_get(sp_RbVal self, sp_sym name);          /* the objects section */
+static const char *fx_name_arg(sp_RbVal v);
 
 /* The FxClass of a builtin class name, made on first use, or NULL. */
 static FxClass *fx_builtin(const char *name) {
@@ -1032,7 +1033,9 @@ static const char *fx_autoload_path(const FxClass *c, sp_sym name) {
    of Set, which a require runs now), the autoload goes and the constant is
    not defined: NULL. */
 static FxConst *fx_const_load(FxClass *c, sp_sym name, FxConst *k) {
-  const char *path = k->autoload;
+  /* a copy: the definition of the constant in the file frees k->autoload,
+     and the require reads the path after the file ran */
+  char *const path = strdup(k->autoload);
   k->loading = 1;
   const int depth = fx_fs()->depth;
   FX_TRY_PUSH();
@@ -1040,9 +1043,11 @@ static FxConst *fx_const_load(FxClass *c, sp_sym name, FxConst *k) {
     if (path[0] == '/' || !strncmp(path, "./", 2) || !strncmp(path, "../", 3)) fx_require(NULL, path, 0);
     else fx_require_lib(path);
     sp_exc_top--;
+    free(path);
   } else {
     FX_TRY_LANDED(depth);
     FxCaught caught = fx_caught();
+    free(path);
     k = fx_const_own(c, name);
     if (k) k->loading = 0;
     fx_reraise(caught);
@@ -1571,7 +1576,7 @@ static sp_RbVal fx_ivar_get(sp_RbVal self, sp_sym name) {
   if (!fx_is_fx_object(h) || fx_is_native_obj(h)) return sp_box_nil();
   FxObject *o = (FxObject *)h.v.p;
   int slot = fx_ivar_slot(fx_class_by_id(o->cls_id), name, 0);
-  if (slot < 0 || !o->iv || slot >= o->iv->len) return sp_box_nil();
+  if (slot < 0 || !o->iv || slot >= o->iv->len || fx_ivar_gone(o->iv->data[slot])) return sp_box_nil();
   return o->iv->data[slot];
 }
 
@@ -1586,7 +1591,14 @@ static int fx_ivar_defined(sp_RbVal self, sp_sym name) {
   if (!fx_is_fx_object(h) || fx_is_native_obj(h)) return 0;
   FxObject *o = (FxObject *)h.v.p;
   int slot = fx_ivar_slot(fx_class_by_id(o->cls_id), name, 0);
-  return slot >= 0 && o->iv && slot < o->iv->len;
+  return slot >= 0 && o->iv && slot < o->iv->len && !fx_ivar_gone(o->iv->data[slot]);
+}
+
+/* The FrozenError of a write to a frozen value, as CRuby words it. */
+static __attribute__((noreturn)) void fx_raise_frozen(sp_RbVal self) {
+  const char *msg = sp_sprintf("can't modify frozen %s: %s", fx_class_of(self)->name, sp_poly_inspect(self));
+  sp_exc_stage_recv(self);
+  sp_raise_cls("FrozenError", msg);
 }
 
 static void fx_ivar_set(sp_RbVal self, sp_sym name, sp_RbVal v) {
@@ -1597,19 +1609,47 @@ static void fx_ivar_set(sp_RbVal self, sp_sym name, sp_RbVal v) {
   SP_GC_ROOT_RBVAL(h);
   FxObject *o = (FxObject *)h.v.p;
   /* a frozen object: an ivar, an attr writer or a Struct member */
-  if (fx_is_fx_object(self) && sp_gc_is_frozen(self.v.p)) {
-    const char *msg = sp_sprintf("can't modify frozen %s: %s", fx_class_of(self)->name, sp_poly_inspect(self));
-    sp_exc_stage_recv(self);
-    sp_raise_cls("FrozenError", msg);
-  }
+  if (fx_is_fx_object(self) && sp_gc_is_frozen(self.v.p)) fx_raise_frozen(self);
   int slot = fx_ivar_slot(fx_class_by_id(o->cls_id), name, 1);
   if (!o->iv) {
     sp_PolyArray *iv = sp_PolyArray_new();
     sp_gc_wb(o);
     o->iv = iv;
   }
-  while (o->iv->len <= slot) sp_PolyArray_push(o->iv, sp_box_nil());
+  /* the slots passed over are gone, not nil: the object has no variable
+     of theirs until a write */
+  sp_RbVal gone = sp_box_nil();
+  gone.cls_id = FX_IVAR_GONE;
+  while (o->iv->len <= slot) sp_PolyArray_push(o->iv, gone);
   sp_PolyArray_set(o->iv, slot, v);
+}
+
+/* Object#remove_instance_variable: the value, and the slot marked gone
+   (FX_IVAR_GONE). NameError for a name the object has no variable of and
+   for a name that is no ivar's; FrozenError for a frozen object, which
+   an immediate value is. */
+static sp_RbVal fx_ivar_remove(sp_RbVal self, sp_RbVal namev) {
+  SP_GC_ROOT_RBVAL(self);
+  sp_ivar_name_check(namev);
+  const char *name = fx_name_arg(namev);
+  SP_GC_ROOT_STR(name);
+  sp_RbVal h = fx_ivar_holder(self);
+  FxObject *o = fx_is_fx_object(h) && !fx_is_native_obj(h) ? (FxObject *)h.v.p : NULL;
+  /* an immediate value is frozen; a builtin object has no variables */
+  if (fx_is_fx_object(self) ? sp_gc_is_frozen(self.v.p) : self.tag != SP_TAG_OBJ && self.tag != SP_TAG_CLASS)
+    fx_raise_frozen(self);
+  int slot = o ? fx_ivar_slot(fx_class_by_id(o->cls_id), sp_sym_intern(name), 0) : -1;
+  if (slot < 0 || !o->iv || slot >= o->iv->len || fx_ivar_gone(o->iv->data[slot])) {
+    sp_exc_stage_name(name);
+    sp_raise_cls("NameError", sp_sprintf("instance variable %s not defined", name));
+  }
+  sp_RbVal v = o->iv->data[slot];
+  sp_RbVal gone = sp_box_nil();
+  gone.cls_id = FX_IVAR_GONE;
+  sp_PolyArray_set(o->iv, slot, gone);
+  /* the last slots gone: the list is shorter, as before their writes */
+  while (o->iv->len > 0 && fx_ivar_gone(o->iv->data[o->iv->len - 1])) o->iv->len--;
+  return v;
 }
 
 /* Keeps the slot of name in ic, when self is an object of the program
@@ -1630,7 +1670,9 @@ static void fx_ivar_learn(sp_RbVal self, sp_sym name, FxIvarCache *ic) {
 static sp_RbVal fx_ivar_get_c(sp_RbVal self, sp_sym name, FxIvarCache *ic) {
   if (FX_IC_HIT(self, ic)) {
     const FxObject *o = (const FxObject *)self.v.p;
-    return o->iv && ic->slot < o->iv->len ? o->iv->data[ic->slot] : sp_box_nil();
+    if (!o->iv || ic->slot >= o->iv->len) return sp_box_nil();
+    sp_RbVal v = o->iv->data[ic->slot];
+    return fx_ivar_gone(v) ? sp_box_nil() : v;
   }
   sp_RbVal v = fx_ivar_get(self, name);
   fx_ivar_learn(self, name, ic);
@@ -1701,6 +1743,7 @@ static const char *fx_default_inspect(int cls_id, void *p) {
   SP_GC_ROOT(out);
   int first = 1;
   for (int i = 0; o->iv && i < c->nivars && i < o->iv->len; i++) {
+    if (fx_ivar_gone(o->iv->data[i])) continue;
     sp_String_append(out, first ? " " : ", ");
     sp_String_append(out, sp_sym_to_s(c->ivars[i]));
     sp_String_append(out, "=");
@@ -2022,7 +2065,8 @@ static int fx_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
         FxClass *c = fx_class_by_id(o->cls_id);
         /* the members of a Struct have slots too, under names with no @ */
         for (int i = 0; o->iv && i < c->nivars && i < o->iv->len; i++)
-          if (sp_sym_to_s(c->ivars[i])[0] == '@') sp_PolyArray_push(a, sp_box_sym(c->ivars[i]));
+          if (sp_sym_to_s(c->ivars[i])[0] == '@' && !fx_ivar_gone(o->iv->data[i]))
+            sp_PolyArray_push(a, sp_box_sym(c->ivars[i]));
       }
       *out = sp_box_poly_array(a);
       return 1;
@@ -2072,6 +2116,7 @@ static int fx_object_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       sp_raise_cls("NameError", sp_sprintf("undefined method '%s' for class '%s'", fx_name_arg(a), on));
     }
     if (!strcmp(name, "instance_variable_get")) { *out = fx_ivar_get(r, sp_sym_intern(fx_name_arg(a))); return 1; }
+    if (!strcmp(name, "remove_instance_variable")) { *out = fx_ivar_remove(r, a); return 1; }
   }
   /* Comparable#between? and #clamp from the operators, which answer from
      <=> (fx_comparable) */
@@ -2766,7 +2811,7 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     sp_PolyArray *a = sp_PolyArray_new();
     SP_GC_ROOT(a);
     if (found && found->at) {
-      sp_PolyArray_push(a, sp_box_str_new(sp_str_dup(fx_source_of(found->at)->path)));
+      sp_PolyArray_push(a, sp_box_str_new(sp_str_dup_external(fx_source_of(found->at)->path)));
       sp_PolyArray_push(a, sp_box_int(fx_line(found->at)));
     }
     *out = sp_box_poly_array(a);

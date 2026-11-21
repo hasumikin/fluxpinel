@@ -117,6 +117,151 @@ static void fx_side_grow(uint32_t last) {
   L.side_chunks = need;
 }
 
+/* ---- the message of a SyntaxError, as prism's formatter writes it for CRuby
+   (src/errors_format.c of prism, in its plain form) ---- */
+
+/* The bytes of the line li (from 0) of the source, with its newline when it
+   has one, in *len; the end of the source for a line past the last. */
+static const uint8_t *fx_source_line(const FxSource *s, int li, size_t *len) {
+  const uint8_t *p = s->start;
+  for (int i = 0; i < li; i++) {
+    const uint8_t *nl = memchr(p, '\n', (size_t)(s->end - p));
+    if (!nl) { *len = 0; return s->end; }
+    p = nl + 1;
+  }
+  const uint8_t *nl = memchr(p, '\n', (size_t)(s->end - p));
+  *len = (size_t)((nl ? nl + 1 : s->end) - p);
+  return p;
+}
+
+/* The columns of the bytes [from, to) of a line: a character of several
+   bytes is one column, as prism counts them. */
+static int fx_cols(const uint8_t *p, size_t from, size_t to) {
+  int n = 0;
+  for (size_t i = from; i < to; i++) if ((p[i] & 0xC0) != 0x80) n++;
+  return n;
+}
+
+typedef struct { char *s; size_t len, cap; } FxMsgBuf;
+static void fx_msg_add(FxMsgBuf *b, const char *s, size_t n) {
+  if (b->len + n + 1 > b->cap) {
+    b->cap = (b->len + n + 1) * 2;
+    b->s = realloc(b->s, b->cap);
+  }
+  memcpy(b->s + b->len, s, n);
+  b->len += n;
+  b->s[b->len] = 0;
+}
+static void fx_msg_append(FxMsgBuf *b, const char *s) { fx_msg_add(b, s, strlen(s)); }
+static void fx_msg_repeat(FxMsgBuf *b, char c, int n) { for (int i = 0; i < n; i++) fx_msg_add(b, &c, 1); }
+
+/* One error: its line (from 0), the byte columns of its start and of its end
+   on that line (at least one column), and its place in the parse order. */
+typedef struct { const pm_diagnostic_t *d; int li, cs, ce, idx; } FxRichErr;
+
+/* The order the errors are shown in: by line and column, and the later
+   recorded first among those at one place, as prism sorts them. */
+static int fx_rich_err_cmp(const void *a, const void *b) {
+  const FxRichErr *l = a, *r = b;
+  if (l->li != r->li) return l->li < r->li ? -1 : 1;
+  if (l->cs != r->cs) return l->cs < r->cs ? -1 : 1;
+  if (l->idx != r->idx) return l->idx < r->idx ? 1 : -1;
+  return 0;
+}
+
+/* A line of the source, after its gutter: the text with its newline, or a
+   newline after a last line that has none; nothing for the empty line after
+   a trailing newline, whose newline the caller adds. */
+static void fx_msg_source_line(FxMsgBuf *b, const FxSource *s, int li) {
+  size_t len;
+  const uint8_t *p = fx_source_line(s, li, &len);
+  fx_msg_add(b, (const char *)p, len);
+  if (len && p[len - 1] != '\n') fx_msg_add(b, "\n", 1);
+}
+
+/* The message of a SyntaxError, as CRuby's is: the path and the line of
+   the first error parsed, with "syntax error(s) found"; then the lines of
+   the source: up to two of context before and after each error, a divider
+   where more are left out, the lines with an error marked ">", and under
+   each a caret at the error's column with a tilde for each further column
+   of its span and the error's words. */
+static const char *fx_syntax_error_message(const FxSource *s, const char *path) {
+  const pm_parser_t *pr = &s->parser;
+  int n = (int)pr->error_list.size, m = 0;
+  FxRichErr *e = malloc(sizeof *e * (size_t)(n > 0 ? n : 1));
+  for (const pm_diagnostic_t *d = (const pm_diagnostic_t *)pr->error_list.head; d && m < n;
+       d = (const pm_diagnostic_t *)d->node.next, m++) {
+    pm_line_column_t a = pm_newline_list_line_column(&pr->newline_list, d->location.start, 0);
+    pm_line_column_t z = pm_newline_list_line_column(&pr->newline_list, d->location.end, 0);
+    size_t len;
+    const uint8_t *lp = fx_source_line(s, a.line, &len);
+    size_t text = len && lp[len - 1] == '\n' ? len - 1 : len;
+    int cs = (int)a.column, ce = z.line == a.line ? (int)z.column : (int)text;
+    if (ce <= cs) ce = cs + 1;
+    e[m] = (FxRichErr){ d, a.line, cs, ce, m };
+  }
+  n = m;
+  FxMsgBuf b = { NULL, 0, 0 };
+  int head_line = n ? e[0].li : 0;
+  fx_msg_append(&b, sp_sprintf("%s:%d: syntax error%s found\n", path, head_line + pr->start_line, n > 1 ? "s" : ""));
+  if (!n) { free(e); const char *r0 = sp_sprintf("%s", b.s); free(b.s); return r0; }
+  qsort(e, (size_t)n, sizeof *e, fx_rich_err_cmp);
+  /* the last line that is shown as context: the empty line after a
+     trailing newline is not, though an error's own line always is */
+  int final_line = 0;
+  for (const uint8_t *p = s->start; p < s->end; p++) if (*p == '\n') final_line++;
+  if (final_line > 0 && s->end > s->start && s->end[-1] == '\n') final_line--;
+  int first_disp = e[0].li > 2 ? e[0].li - 2 : 0;
+  int last_disp = e[n - 1].li + 2 < final_line ? e[n - 1].li + 2 : final_line;
+  if (last_disp < e[n - 1].li) last_disp = e[n - 1].li;
+  int width = 1;
+  for (int v = last_disp + pr->start_line; v >= 10; v /= 10) width++;
+  for (int v = first_disp + pr->start_line, w = 1; v >= 10; v /= 10) if (++w > width) width = w;
+  int last_line = 0, window_end = 0;
+  for (int idx = 0; idx < n; idx++) {
+    int li = e[idx].li;
+    int first_context = li > 2 ? li - 2 : 0;
+    if (idx) {
+      if (li > last_line && li - last_line > 3) { fx_msg_append(&b, "  "); fx_msg_repeat(&b, '~', width + 4); fx_msg_append(&b, "\n"); }
+      if (last_line >= li) first_context = li;
+      else if (first_context <= last_line) first_context = last_line + 1;
+    }
+    for (int l = first_context; l < li; l++) {
+      fx_msg_append(&b, sp_sprintf("  %*d | ", width, l + pr->start_line));
+      fx_msg_source_line(&b, s, l);
+    }
+    if (idx == window_end) {
+      fx_msg_append(&b, sp_sprintf("> %*d | ", width, li + pr->start_line));
+      fx_msg_source_line(&b, s, li);
+      for (window_end = idx + 1; window_end < n && e[window_end].li == li; window_end++) {}
+    }
+    size_t len;
+    const uint8_t *lp = fx_source_line(s, li, &len);
+    if (lp == s->end) fx_msg_append(&b, "\n");   /* the empty line at the end has no newline of its own */
+    fx_msg_append(&b, "  ");
+    fx_msg_repeat(&b, ' ', width + 1);
+    fx_msg_append(&b, "| ");
+    fx_msg_repeat(&b, ' ', fx_cols(lp, 0, (size_t)e[idx].cs));
+    fx_msg_append(&b, "^");
+    fx_msg_repeat(&b, '~', fx_cols(lp, (size_t)e[idx].cs, (size_t)e[idx].ce) - 1);
+    fx_msg_append(&b, " ");
+    fx_msg_append(&b, e[idx].d->message);
+    fx_msg_append(&b, "\n");
+    last_line = li;
+    int last_context = final_line;
+    if (idx + 1 < n) { int next = e[idx + 1].li; last_context = next > last_line ? next - 1 : last_line; }
+    for (int count = 0; count < 2 && last_line < last_context; count++) {
+      ++last_line;
+      fx_msg_append(&b, sp_sprintf("  %*d | ", width, last_line + pr->start_line));
+      fx_msg_source_line(&b, s, last_line);
+    }
+  }
+  free(e);
+  const char *r = sp_sprintf("%s", b.s);
+  free(b.s);
+  return r;
+}
+
 /* Parses the bytes of a file into a new source, which starts at the line
    line, inside the scopes scopes (a piece of the console). Answers the
    message of the first syntax error, or NULL. */
@@ -155,9 +300,7 @@ static const char *fx_parse_in(const char *path, const char *real, char *buf, si
   L.sources[L.nsources++] = s;
   *out = s;
   if (!s->parser.error_list.size) return NULL;
-  const pm_diagnostic_t *d = (const pm_diagnostic_t *)s->parser.error_list.head;
-  int at = pm_newline_list_line_column(&s->parser.newline_list, d->location.start, s->parser.start_line).line;
-  return sp_sprintf("%s:%d: %s", path, at, d->message);
+  return fx_syntax_error_message(s, path);
 }
 
 static const char *fx_parse(const char *path, const char *real, char *buf, size_t len, FxSource **out) {
@@ -257,7 +400,10 @@ static FxSource *fx_parse_main(const char *path, const char *real, char *buf, si
   FxSource *s;
   const char *err = fx_parse(path, real, buf, len, &s);
   if (err) {
-    fprintf(stderr, "fluxpinel: syntax error: %s\n", err);
+    /* as ruby reports it: the path, the first line of the message with the
+       class, then the lines of the source */
+    const char *nl = strchr(err, '\n');
+    fprintf(stderr, "%s: %.*s (SyntaxError)\n%s\n", path, (int)(nl ? nl - err : (long)strlen(err)), err, nl ? nl + 1 : "");
     exit(1);
   }
   return s;
@@ -364,9 +510,11 @@ static int fx_load_once(char *real, const char *extra) {
   fx_run_source(s);
   /* $LOADED_FEATURES names the file that a require ran. The first call
      allocates the Array, so the Array comes before the copy of the path:
-     a collection in between would free a copy that nothing holds yet. */
+     a collection in between would free a copy that nothing holds yet.
+     real is memory of malloc, with no marker byte of a String of spinel
+     before it: sp_str_dup reads that byte, sp_str_dup_external does not. */
   sp_StrArray *feats = sp_get_loaded_features();
-  fx_strs_push(feats, sp_str_dup(real));
+  fx_strs_push(feats, sp_str_dup_external(real));
   return 1;
 }
 
