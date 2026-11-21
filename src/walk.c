@@ -6,11 +6,22 @@
 
 #include "fluxpinel.h"
 
-/* The source file that holds node n, by the bytes it points into. */
+/* The source file that holds node n, by the bytes it points into. The
+   last answer is tried first: each eval adds a source, and a program that
+   evals in a loop asks for the source of the one call node each time, so
+   the walk over the sources, newest first, would grow with the count of
+   evals (rubish evaluates arithmetic with Kernel.eval). A source lives to
+   the end of the process, so the last answer never dangles. */
 static FxSource *fx_source_of(const pm_node_t *n) {
+  static FxSource *last;
+  FxSource *l = last;
+  if (l && n->location.start >= l->start && n->location.start <= l->end) return l;
   for (int i = L.nsources - 1; i >= 0; i--) {
     FxSource *s = L.sources[i];
-    if (n->location.start >= s->start && n->location.start <= s->end) return s;
+    if (n->location.start >= s->start && n->location.start <= s->end) {
+      last = s;
+      return s;
+    }
   }
   return L.sources[0];
 }
