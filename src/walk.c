@@ -2440,7 +2440,14 @@ static sp_RbVal fx_range_make(sp_RbVal lo, sp_RbVal hi, int excl, int lit, const
     return sp_box_srange(sp_srange_new(a, b, excl));
   }
   if (at) fx_unsupported(at, "Range of values other than Integer, Float, String and Symbol");
-  sp_raise_cls("ArgumentError", "bad value for range");
+  /* Range.new: a pair that does not compare is CRuby's ArgumentError; one
+     that does is a Range in CRuby, of a kind Fluxpinel does not hold, so
+     it stops as the literal does rather than raise */
+  if (lt != SP_TAG_NIL && ht != SP_TAG_NIL) {
+    sp_RbVal c = fx_send(lo, "<=>", 1, &hi);
+    if (c.tag == SP_TAG_NIL) sp_raise_cls("ArgumentError", "bad value for range");
+  }
+  fx_gap("Range of values other than Integer, Float, String and Symbol");
 }
 
 /* A Range literal: its ends, then fx_range_make. */

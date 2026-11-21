@@ -2475,8 +2475,8 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   /* Integer.sqrt */
   if (!blk && fx_integer_class(k, name, argc, argv, out)) return 1;
   if (!blk && fx_symbol_class(k, name, argc, out)) return 1;
-  /* Range.new */
-  if (!blk && fx_range_class(k, name, argc, argv, out)) return 1;
+  /* Range.new, which takes no notice of a block, as CRuby's does */
+  if (fx_range_class(k, name, argc, argv, out)) return 1;
   /* Kernel.format, Kernel.puts, ...: a module function of Kernel */
   if (!blk && k->cls_id < 0 && !strcmp(k->name, "Kernel") && fx_kernel(name, argc, argv, out)) return 1;
   /* X[a, b] of a subclass X of Array: an instance of the elements; of a

@@ -15,6 +15,13 @@ rescue ArgumentError => e
   p e.message
 end
 begin
+  Range.new(true, false)
+rescue ArgumentError => e
+  p e.message
+end
+# a block goes unnoticed, as by CRuby's Range.new
+p Range.new(1, 3) { 1 }
+begin
   Range.new(1)
 rescue ArgumentError => e
   p e.message
