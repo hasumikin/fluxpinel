@@ -1211,6 +1211,16 @@ static int fx_is_kernel(sp_RbVal v) {
   return k && k->cls_id < 0 && !strcmp(k->name, "Kernel");
 }
 
+/* The module functions of Kernel that read the frame of their call, on
+   Kernel as the receiver (Kernel.eval, Kernel.caller, Kernel.sleep): the
+   same as with no receiver. require and binding have arms of their own
+   (fx_load_call, fx_binding_call). */
+static int fx_kernel_frame_call(FxFrame *f, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (argc >= 1 && !strcmp(name, "eval")) { *out = fx_eval_string(f, argc, argv); return 1; }
+  if (!strcmp(name, "caller") || !strcmp(name, "caller_locations")) return fx_kernel_block(f, name, argc, argv, NULL, out);
+  return fx_fiber_kernel(name, argc, argv, out);
+}
+
 /* Kernel#binding at the call node n: with no receiver, or on Kernel
    (`::Kernel.binding`). It needs the frame of the call, so it is answered
    here, unless the program defines a method of the name. */
@@ -1386,6 +1396,8 @@ static sp_RbVal fx_call(FxFrame *f, const pm_call_node_t *c) {
   } else if ((!c->receiver || fx_is_kernel(recv)) && !blk &&
              fx_load_call((const pm_node_t *)c, f->self, c->receiver != NULL, name, argc, argv, &v)) {
   } else if (fx_binding_call(f, (const pm_node_t *)c, c->receiver != NULL, recv, name, argc, blk, &v)) {
+  } else if (c->receiver && !blk && fx_is_kernel(recv) && !fx_find_smethod(fx_class_value(recv), sym) &&
+             fx_kernel_frame_call(f, name, argc, argv, &v)) {
   } else if (fx_using_call(f, (const pm_node_t *)c, c->receiver != NULL, name, argc, argv, blk, &v)) {
   } else if (fx_call_cached(f, c, cc, sym, recv, argc, argv, blk, &v)) {
   } else {
@@ -1405,7 +1417,6 @@ static sp_RbVal fx_call(FxFrame *f, const pm_call_node_t *c) {
 
 static sp_RbVal fx_loop(const FxBlock *blk);   /* the exceptions section */
 static sp_RbVal fx_catch(int argc, sp_RbVal *argv, const FxBlock *blk);
-static sp_RbVal fx_eval_string(FxFrame *f, int argc, sp_RbVal *argv);   /* load.c */
 
 /* The hook of at_exit: the runtime keeps a Proc of its own in its table of
    hooks (sp_at_exit_push), whose fn yields to the block of the Proc of
@@ -2298,6 +2309,16 @@ static sp_RbVal fx_interpolate(FxFrame *f, const pm_node_list_t *parts) {
       v = fx_eval_stmts(f, ((const pm_embedded_statements_node_t *)p)->statements);
       if (L.ctl != FX_CTL_NONE) return sp_box_nil();
       if (!fx_is_string(v)) v = sp_poly_to_s_box(v);
+    } else if (PM_NODE_TYPE_P(p, PM_EMBEDDED_VARIABLE_NODE)) {
+      /* "#@x", "#@@x" and "#$x": as "#{@x}" */
+      v = fx_eval(f, ((const pm_embedded_variable_node_t *)p)->variable);
+      if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+      if (!fx_is_string(v)) v = sp_poly_to_s_box(v);
+    } else if (PM_NODE_TYPE_P(p, PM_INTERPOLATED_STRING_NODE)) {
+      /* a literal adjacent to this one ("a#{x}" "b#{y}"), a part of its
+         own kind: it interpolates in turn */
+      v = fx_interpolate(f, &((const pm_interpolated_string_node_t *)p)->parts);
+      if (L.ctl != FX_CTL_NONE) return sp_box_nil();
     } else {
       fx_unsupported(p, "interpolation part");
     }

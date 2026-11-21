@@ -126,6 +126,13 @@ typedef struct {
   sp_PolyArray *iv;   /* slot i holds the ivar cls->ivars[i] */
 } FxObject;
 
+/* The slot of an ivar that remove_instance_variable took: a nil whose class
+   id says so, since the objects of a class share its slots. A read answers
+   nil for it; instance_variables, instance_variable_defined?, inspect and
+   Marshal pass it over. */
+#define FX_IVAR_GONE 1
+static inline int fx_ivar_gone(sp_RbVal v) { return v.tag == SP_TAG_NIL && v.cls_id == FX_IVAR_GONE; }
+
 struct FxFrame;
 
 /* The frames of one fiber that are live, outermost first, by serial. Each
@@ -779,6 +786,7 @@ static int fx_location_core(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
 static int fx_location_responds(const char *name);
 static sp_RbVal fx_trap(int argc, sp_RbVal *argv, const FxBlock *blk);   /* walk.c */
 static int fx_kernel_block(FxFrame *f, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out);
+static sp_RbVal fx_eval_string(FxFrame *f, int argc, sp_RbVal *argv);   /* load.c */
 /* refinements (walk.c) */
 static int fx_refine(FxFrame *f, FxClass *k, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                      sp_RbVal *out);

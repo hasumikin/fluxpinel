@@ -1176,6 +1176,16 @@ static int fx_builtin_call_2(sp_RbVal recv, const char *name, int argc, sp_RbVal
     *out = fx_block_proc(&b);
     return 1;
   }
+  /* Symbol#encoding: US-ASCII for a Symbol of ASCII bytes, UTF-8 for one
+     with other bytes, as CRuby answers (a Symbol of the runtime keeps no
+     encoding of its own) */
+  if (recv.tag == SP_TAG_SYM && argc == 0 && !blk && !strcmp(name, "encoding")) {
+    int ascii = 1;
+    for (const unsigned char *p = (const unsigned char *)sp_sym_to_s((sp_sym)recv.v.i); *p; p++)
+      if (*p >= 0x80) { ascii = 0; break; }
+    *out = ascii ? sp_encoding_find(sp_box_str_fresh("US-ASCII")) : sp_box_encoding(sp_encoding_utf8());
+    return 1;
+  }
   if (fx_is_method_value(recv) && fx_method_value_core(recv, name, argc, argv, blk, out)) return 1;
   if (fx_is_binding(recv) && fx_binding_core(recv, name, argc, argv, blk, out)) return 1;
   if (fx_is_location(recv) && fx_location_core(recv, name, argc, argv, blk, out)) return 1;

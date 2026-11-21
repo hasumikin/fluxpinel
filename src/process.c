@@ -493,6 +493,9 @@ static int fx_process_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVa
     sp_PolyArray *args = sp_PolyArray_new();
     SP_GC_ROOT(args);
     for (int i = 1; i < argc; i++) sp_PolyArray_push(args, argv[i]);
+    /* the options array of spawn, with no option and no environment */
+    sp_PolyArray *o = fx_spawn_opts(sp_box_nil(), sp_box_nil());
+    SP_GC_ROOT(o);
     /* a pipe of the runtime is O_NONBLOCK; the program that replaces this
        one expects blocking stdio, which the child of spawn gets the same
        way (sp_process.c of spinel). An exec that fails raises, and the
@@ -505,7 +508,7 @@ static int fx_process_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVa
     }
     FX_TRY_PUSH();
     if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
-      sp_process_exec(argv[0], sp_box_poly_array(args));
+      sp_process_exec(argv[0], sp_box_poly_array(args), sp_box_poly_array(o));
       sp_exc_top--;
     } else {
       FX_TRY_LANDED(0);

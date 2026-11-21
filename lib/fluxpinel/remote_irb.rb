@@ -14,7 +14,7 @@
 # and does nothing.
 
 require "socket"
-require "irb"
+require "fluxpinel/irb_load"
 require "fluxpinel/irb_ri_guard"
 require "fluxpinel/irb_did_you_mean"
 require "fluxpinel/irb_script_lines"
