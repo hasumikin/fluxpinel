@@ -219,6 +219,10 @@ or `RUBYLIB`. With the gem `did_you_mean` too, an error of a session has
 its `Did you mean?` line. A host program with `KERNEL_MAIN` opens IRB with `--irb` as
 its first argument, with the program loaded but not run.
 
+`--irb` needs irb 1.18 or later, which parses with prism. When the build
+found no such irb, `--irb` names the gems and exits with status 1. Run
+`make gems`, and then `make`.
+
 `--irb-port PORT` listens on `127.0.0.1:PORT` before the program runs. A
 host program with `KERNEL_MAIN` takes the two arguments at any place
 before a `--`, and its entry gets the others.
@@ -251,14 +255,20 @@ can change while it runs.
 ## Build and test
 
 Fluxpinel needs git, a C compiler, libffi and Ruby for the build tools.
-`make test` also needs the ffi gem under CRuby (`gem install ffi`).
 `make deps` fetches spinel at the commit in `SPINEL_COMMIT` into
 `deps/spinel`, and builds it there. On macOS, install libffi and OpenSSL
 with Homebrew (`brew install libffi openssl`); the Makefile finds them
 there.
 
+`make gems` installs the gems of the `Gemfile` into the Ruby that runs
+`make`, and builds the shared library of the prism gem. `--irb`,
+`--irb-port` and `make test` need them. The irb that CRuby bundles does
+not run on Fluxpinel: `--irb` needs irb 1.18 or later. Run `make gems`
+before `make`, and again after a change of the Ruby.
+
 ```sh
 make deps
+make gems
 make
 build/fluxpinel program.rb
 make test

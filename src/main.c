@@ -68,13 +68,15 @@ static int fx_irb;   /* --irb */
 /* The program of --irb. IRB reads its options from ARGV. IRB.start takes
    the path of the irb executable of the gem whose lib directory answered
    the require, as the executable passes its own: IRB shows its banner
-   only when the path ends with exe/irb. lib/fluxpinel/irb_ri_guard.rb
+   only when the path ends with exe/irb. lib/fluxpinel/irb_load.rb
+   requires irb, and names the gems when the require fails.
+   lib/fluxpinel/irb_ri_guard.rb
    keeps the completion dialog alive with no ri driver,
    lib/fluxpinel/irb_did_you_mean.rb loads the did_you_mean gem, and
    lib/fluxpinel/irb_script_lines.rb gives show_source the source of a
    method of the session. */
 static const char fx_irb_src[] =
-    "require \"irb\"\n"
+    "require \"fluxpinel/irb_load\"\n"
     "require \"fluxpinel/irb_ri_guard\"\n"
     "require \"fluxpinel/irb_did_you_mean\"\n"
     "require \"fluxpinel/irb_script_lines\"\n"
