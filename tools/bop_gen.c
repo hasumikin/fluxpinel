@@ -154,6 +154,9 @@ static const char *expand(Str *s, const BuiltinOp *op, const Variant *v, int *oi
       else return "$N on a non-numeric receiver";
       p++; continue;
     case 'A': if (!v->A) return "$A without an Array variant"; str_puts(s, v->A); p++; continue;
+    /* $Y: the class id that a FrozenError of the Array names. The wrapper
+       has the boxed receiver, whose id is that of a subclass instance too. */
+    case 'Y': str_puts(s, "(int)recv.cls_id"); p++; continue;
     case 'H': if (!v->H) return "$H without a Hash variant"; str_puts(s, v->H); p++; continue;
     case 'K': {
       const TyTraits *tr = ty_traits_of(v->recv);

@@ -645,7 +645,10 @@ work that each call does again on each run:
 - **Instance variables.** The record of each node of `@x`, and each
   accessor, keeps the class id and the slot of its last access (measure
   6). A miss goes to one global cache of the slot for each (class,
-  Symbol). A slot never moves, so an entry stays right.
+  Symbol). A slot never moves, so an entry stays right: a slot that
+  `remove_instance_variable` took, or that a write to a later slot passed
+  over, holds a nil marked gone (`FX_IVAR_GONE`), which a read shows as
+  nil and the lists, inspect and Marshal pass over.
 - **Jumps.** After each evaluation, the caller reads `L.ctl` in memory to
   see a pending `return`, `break` or `next`.
 

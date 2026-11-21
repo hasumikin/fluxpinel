@@ -298,6 +298,21 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
     *out = sp_box_bool(sp_file_absolute_path_p(sp_poly_arg_path(argv[0])));
     return 1;
   }
+  /* File.realpath(path, dir) and File.realdirpath: the path with the links
+     and the dots resolved (the runtime, lib/sp_cold.c), a relative one
+     from dir; realdirpath lets the last part be missing */
+  if ((FX_IS("realpath") || FX_IS("realdirpath")) && (argc == 1 || argc == 2)) {
+    extern const char *sp_file_realdirpath(const char *path);
+    const char *path = sp_poly_arg_path(argv[0]);
+    SP_GC_ROOT_STR(path);
+    if (argc == 2 && argv[1].tag != SP_TAG_NIL && !sp_file_absolute_path_p(path)) {
+      const char *dir = sp_poly_arg_path(argv[1]);
+      SP_GC_ROOT_STR(dir);
+      path = sp_sprintf("%s/%s", dir, path);
+    }
+    *out = sp_box_str_new(name[4] == 'p' ? sp_file_realpath(path) : sp_file_realdirpath(path));
+    return 1;
+  }
   return 0;
 }
 
