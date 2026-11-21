@@ -80,22 +80,47 @@ static sp_RbVal fx_box_rlim(rlim_t v) {
   return sp_box_bigint(sp_bigint_from_le_bytes(0, b, 8));
 }
 
-/* A limit given to setrlimit: an Integer, or a Bignum for RLIM_INFINITY. */
+/* A limit given to setrlimit, as CRuby reads one: an Integer of the width
+   of rlim_t (a Bignum up to 2**64 - 1), a Float, or one of the names
+   INFINITY, SAVED_MAX and SAVED_CUR as a Symbol or a String, with no
+   prefix; RangeError for an Integer outside the type, ArgumentError for
+   another name. */
 static rlim_t fx_rlim_arg(sp_RbVal v) {
-  if (v.tag == SP_TAG_BIGINT) return RLIM_INFINITY;
+  if (v.tag == SP_TAG_BIGINT) {
+    sp_Bigint *b = (sp_Bigint *)v.v.p;
+    unsigned char bytes[sizeof(rlim_t)] = { 0 };
+    if (sp_bigint_sign(b) < 0 || sp_bigint_to_le_bytes(b, bytes, sizeof bytes) > sizeof bytes)
+      sp_raise_cls("RangeError", "bignum too big to convert into 'unsigned long long'");
+    unsigned long long u = 0;
+    for (size_t i = 0; i < sizeof bytes; i++) u |= (unsigned long long)bytes[i] << (8 * i);
+    return (rlim_t)u;
+  }
+  if (v.tag == SP_TAG_SYM || fx_is_string(v)) {
+    const char *n = v.tag == SP_TAG_SYM ? sp_sym_to_s((sp_sym)v.v.i) : sp_poly_recv_s(v, "setrlimit");
+    SP_GC_ROOT_STR(n);
+    if (!strcmp(n, "INFINITY")) return RLIM_INFINITY;
+#ifdef RLIM_SAVED_MAX
+    if (!strcmp(n, "SAVED_MAX")) return RLIM_SAVED_MAX;
+#endif
+#ifdef RLIM_SAVED_CUR
+    if (!strcmp(n, "SAVED_CUR")) return RLIM_SAVED_CUR;
+#endif
+    sp_raise_cls("ArgumentError", sp_sprintf("invalid resource value: %s", n));
+  }
+  if (v.tag == SP_TAG_FLT) return (rlim_t)v.v.f;
   return (rlim_t)sp_poly_arg_int_chk(v);
 }
 
 /* The resource of getrlimit and setrlimit: an Integer, or a Symbol or a
-   String that names one with or without RLIMIT_; ArgumentError for a name
-   of no resource, as CRuby words it. */
+   String that names one without the RLIMIT_ prefix; ArgumentError for a
+   name of no resource, or with a NUL byte, as CRuby words them. */
 static int fx_rlimit_resource(sp_RbVal v) {
   if (v.tag != SP_TAG_SYM && !fx_is_string(v)) return (int)sp_poly_arg_int_chk(v);
   const char *n = v.tag == SP_TAG_SYM ? sp_sym_to_s((sp_sym)v.v.i) : sp_poly_recv_s(v, "getrlimit");
   SP_GC_ROOT_STR(n);
-  const char *bare = !strncmp(n, "RLIMIT_", 7) ? n + 7 : n;
+  if (strlen(n) != sp_str_byte_len(n)) sp_raise_cls("ArgumentError", "string contains null byte");
   for (size_t i = 0; i < sizeof fx_rlimits / sizeof fx_rlimits[0]; i++)
-    if (!strcmp(bare, fx_rlimits[i].name)) return fx_rlimits[i].v;
+    if (!strcmp(n, fx_rlimits[i].name)) return fx_rlimits[i].v;
   sp_raise_cls("ArgumentError", sp_sprintf("invalid resource name: %s", n));
 }
 
@@ -117,7 +142,18 @@ static void fx_process_consts(FxClass *c) {
     fx_const_set(c, sp_sym_intern(k[i].name), sp_box_int(k[i].v));
   for (size_t i = 0; i < sizeof fx_rlimits / sizeof fx_rlimits[0]; i++)
     fx_const_set(c, sp_sym_intern(sp_sprintf("RLIMIT_%s", fx_rlimits[i].name)), sp_box_int(fx_rlimits[i].v));
-  fx_const_set(c, sp_sym_intern("RLIM_INFINITY"), fx_box_rlim(RLIM_INFINITY));
+  /* the Bignum first, rooted, since C may make the Symbol after it */
+  sp_RbVal inf = fx_box_rlim(RLIM_INFINITY);
+  SP_GC_ROOT_RBVAL(inf);
+  fx_const_set(c, sp_sym_intern("RLIM_INFINITY"), inf);
+#ifdef RLIM_SAVED_MAX
+  inf = fx_box_rlim(RLIM_SAVED_MAX);
+  fx_const_set(c, sp_sym_intern("RLIM_SAVED_MAX"), inf);
+#endif
+#ifdef RLIM_SAVED_CUR
+  inf = fx_box_rlim(RLIM_SAVED_CUR);
+  fx_const_set(c, sp_sym_intern("RLIM_SAVED_CUR"), inf);
+#endif
 }
 
 /* The clock of clock_gettime: an id, or a Symbol that names a clock
@@ -172,7 +208,8 @@ static int fx_process_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *o
      the runtime has neither, so they are the system calls */
   if (FX_IS("getrlimit") && argc == 1) {
     struct rlimit rl;
-    if (getrlimit(fx_rlimit_resource(argv[0]), &rl) < 0) sp_raise_cls(sp_errno_class_name(errno), strerror(errno));
+    if (getrlimit(fx_rlimit_resource(argv[0]), &rl) < 0)
+      sp_raise_cls(sp_errno_class_name(errno), sp_sprintf("%s - getrlimit", strerror(errno)));
     sp_PolyArray *a = sp_PolyArray_new();
     SP_GC_ROOT(a);
     sp_PolyArray_push(a, fx_box_rlim(rl.rlim_cur));
@@ -182,8 +219,11 @@ static int fx_process_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *o
   }
   if (FX_IS("setrlimit") && (argc == 2 || argc == 3)) {
     int res = fx_rlimit_resource(argv[0]);
-    struct rlimit rl = { fx_rlim_arg(argv[1]), fx_rlim_arg(argc == 3 ? argv[2] : argv[1]) };
-    if (setrlimit(res, &rl) < 0) sp_raise_cls(sp_errno_class_name(errno), strerror(errno));
+    /* a hard limit left out, or nil, is the soft one */
+    struct rlimit rl;
+    rl.rlim_cur = fx_rlim_arg(argv[1]);
+    rl.rlim_max = argc == 3 && argv[2].tag != SP_TAG_NIL ? fx_rlim_arg(argv[2]) : rl.rlim_cur;
+    if (setrlimit(res, &rl) < 0) sp_raise_cls(sp_errno_class_name(errno), sp_sprintf("%s - setrlimit", strerror(errno)));
     *out = sp_box_nil();
     return 1;
   }
