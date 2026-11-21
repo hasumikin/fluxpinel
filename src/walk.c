@@ -6,22 +6,76 @@
 
 #include "fluxpinel.h"
 
-/* The source file that holds node n, by the bytes it points into. The
-   last answer is tried first: each eval adds a source, and a program that
-   evals in a loop asks for the source of the one call node each time, so
-   the walk over the sources, newest first, would grow with the count of
-   evals (rubish evaluates arithmetic with Kernel.eval). A source lives to
-   the end of the process, so the last answer never dangles. */
+/* The source index: the sources by the pages of their bytes, in a hash
+   table of page numbers with open addressing. Each eval adds a source, and
+   a walk over all of them for the source of a node grew with the count of
+   evals: a program that evals in a loop, or calls a method an eval defined
+   that evals in turn, paid for every eval before (rubish evaluates
+   arithmetic with Kernel.eval, Rails defines methods from Strings). The
+   entry of a page is the chain of the sources with bytes in it: the parse
+   buffers of evals are small and share pages, so a chain has several
+   sources, but no more than a page holds. */
+#define FX_SRC_PAGE_BITS 12
+
+/* The slot of a page key (page number + 1): its own, or the empty one its
+   probe ends at. */
+static size_t fx_srcidx_slot(uintptr_t key) {
+  size_t mask = L.srcidx.cap - 1;
+  size_t i = (size_t)((key * 0x9E3779B97F4A7C15ull) >> 24) & mask;
+  while (L.srcidx.pages[i] && L.srcidx.pages[i] != key) i = (i + 1) & mask;
+  return i;
+}
+
+static void fx_srcidx_grow(void) {
+  size_t ocap = L.srcidx.cap;
+  uintptr_t *op = L.srcidx.pages;
+  FxSrcLink **oc = L.srcidx.chains;
+  L.srcidx.cap = ocap ? ocap * 2 : 1024;
+  L.srcidx.pages = calloc(L.srcidx.cap, sizeof *L.srcidx.pages);
+  L.srcidx.chains = calloc(L.srcidx.cap, sizeof *L.srcidx.chains);
+  for (size_t i = 0; i < ocap; i++) {
+    if (!op[i]) continue;
+    size_t j = fx_srcidx_slot(op[i]);
+    L.srcidx.pages[j] = op[i];
+    L.srcidx.chains[j] = oc[i];
+  }
+  free(op);
+  free(oc);
+}
+
+/* A parsed source joins the index: one link on each page its bytes touch. */
+static void fx_source_index(FxSource *s) {
+  uintptr_t last = (uintptr_t)s->end >> FX_SRC_PAGE_BITS;
+  for (uintptr_t pg = (uintptr_t)s->start >> FX_SRC_PAGE_BITS; pg <= last; pg++) {
+    if ((L.srcidx.n + 1) * 2 > L.srcidx.cap) fx_srcidx_grow();
+    size_t i = fx_srcidx_slot(pg + 1);
+    if (!L.srcidx.pages[i]) {
+      L.srcidx.pages[i] = pg + 1;
+      L.srcidx.n++;
+    }
+    FxSrcLink *l = malloc(sizeof *l);
+    l->s = s;
+    l->next = L.srcidx.chains[i];
+    L.srcidx.chains[i] = l;
+  }
+}
+
+/* The source file that holds node n, by the bytes it points into: the last
+   answer first (a source lives to the end of the process, so it never
+   dangles), then the chain of the node's page. A node in no source, which
+   should not happen, is the main one's. */
 static FxSource *fx_source_of(const pm_node_t *n) {
+  const uint8_t *at = n->location.start;
   static FxSource *last;
   FxSource *l = last;
-  if (l && n->location.start >= l->start && n->location.start <= l->end) return l;
-  for (int i = L.nsources - 1; i >= 0; i--) {
-    FxSource *s = L.sources[i];
-    if (n->location.start >= s->start && n->location.start <= s->end) {
-      last = s;
-      return s;
-    }
+  if (l && at >= l->start && at <= l->end) return l;
+  if (L.srcidx.cap) {
+    size_t i = fx_srcidx_slot(((uintptr_t)at >> FX_SRC_PAGE_BITS) + 1);
+    for (FxSrcLink *k = L.srcidx.chains[i]; k; k = k->next)
+      if (at >= k->s->start && at <= k->s->end) {
+        last = k->s;
+        return k->s;
+      }
   }
   return L.sources[0];
 }

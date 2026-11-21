@@ -82,3 +82,9 @@ begin
 rescue LoadError => e
   p e.message
 end
+# a method an eval defined evals in turn: its name is the eval's source,
+# and a call of it beside an eval of this file keeps both names right
+eval(%q(def from_eval = eval("__FILE__")))
+p from_eval, eval("__FILE__")
+2000.times { from_eval; eval("1") }
+p from_eval, eval("__FILE__")

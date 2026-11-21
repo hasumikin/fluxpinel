@@ -298,6 +298,7 @@ static const char *fx_parse_in(const char *path, const char *real, char *buf, si
     L.sources = realloc(L.sources, sizeof *L.sources * (size_t)L.sources_cap);
   }
   L.sources[L.nsources++] = s;
+  fx_source_index(s);
   *out = s;
   if (!s->parser.error_list.size) return NULL;
   return fx_syntax_error_message(s, path);

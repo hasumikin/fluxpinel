@@ -278,6 +278,12 @@ typedef struct {
   int nusing, using_cap;
 } FxSource;
 
+/* One source in the chain of a page of the source index (walk.c). */
+typedef struct FxSrcLink {
+  FxSource *s;
+  struct FxSrcLink *next;
+} FxSrcLink;
+
 /* The record of a prism node in the side table (docs/side-table.md). A
    node kind that keeps fields adds its struct to the union. Only the case
    of the walker for that kind reads or writes the field, so the case
@@ -317,6 +323,11 @@ typedef struct {
                                 constant id indexes this one pool */
   FxSource **sources;      /* the parsed files; sources[0] is the main one */
   int nsources, sources_cap;
+  struct {                 /* the sources by the pages of their bytes (fx_source_of, walk.c) */
+    uintptr_t *pages;      /* page number + 1 of each slot; 0 for an empty one */
+    struct FxSrcLink **chains;   /* the sources with bytes in the page of the slot */
+    size_t cap, n;
+  } srcidx;
   uint32_t node_ids;     /* the last node id of all parses: each parse
                             continues the count of the one before */
   FxSide **side;         /* the side table: chunk i holds the records of the
@@ -451,6 +462,7 @@ static int fx_symbol_class(const FxClass *k, const char *name, int argc, sp_RbVa
 static int fx_fast_eqq(sp_RbVal v, sp_RbVal s, sp_RbVal *out);
 static FxFrameStack *fx_fs(void);
 static FxSource *fx_source_of(const pm_node_t *n);   /* walk.c */
+static void fx_source_index(FxSource *s);
 static int fx_line(const pm_node_t *n);
 static void fx_bt_land(void);
 static const char *fx_str_mut(sp_RbVal r, const char *name);   /* string.c */
