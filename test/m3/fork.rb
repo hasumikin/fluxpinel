@@ -172,3 +172,47 @@ $main_pid = Process.pid
 pid = fork { }
 Process.wait(pid)
 p $?.exitstatus
+
+# exec with the options of spawn: a leading Hash is the environment of the
+# program, a trailing one its redirections and the other options, as
+# CRuby's exec takes them
+require "tmpdir"
+dir = Dir.mktmpdir("fx_exec")
+out = File.join(dir, "out.txt")
+pid = fork { exec("printf", "to a file\\n", out: out) }
+Process.wait(pid)
+p $?.exitstatus, File.read(out)
+pid = fork { exec({ "FX_EXEC" => "from env" }, "sh", "-c", "printf '%s\\n' \"$FX_EXEC\"", out: out) }
+Process.wait(pid)
+p File.read(out)
+pid = fork { exec("sh", "-c", "printf err\\\\n >&2", err: [:child, :out], out: out) }
+Process.wait(pid)
+p File.read(out)
+r, w = IO.pipe
+pid = fork { r.close; exec("printf", "piped", out: w) }
+w.close
+p r.read
+r.close
+Process.wait(pid)
+pid = fork { exec("pwd", out: out, chdir: dir) }
+Process.wait(pid)
+p File.read(out).chomp == File.realpath(dir)
+# a descriptor named by its number or by an IO on it, as CRuby takes it,
+# for exec and for spawn
+r, w = IO.pipe
+pid = fork { r.close; exec("printf", "by number", 1 => w) }
+w.close
+p r.read
+r.close
+Process.wait(pid)
+r, w = IO.pipe
+pid = spawn("printf", "by IO", $stdout => w)
+w.close
+p r.read
+r.close
+Process.wait(pid)
+pid = fork { exec({ "FX_EXEC" => "x" }, "sh", "-c", "exit 7") }
+Process.wait(pid)
+p $?.exitstatus
+FileUtils.rm_rf(dir) if defined?(FileUtils)
+Dir.exist?(dir) && (File.delete(out) rescue nil; Dir.rmdir(dir))
