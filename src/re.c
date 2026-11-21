@@ -398,9 +398,8 @@ static int fx_re_subst_done(sp_RbVal r, int bang, int matched, const char *res, 
   }
   if (!matched) { *out = sp_box_nil(); return 1; }
   if (r.tag != SP_TAG_OBJ) fx_gap("a bang method on a String that cannot change");
-  /* the bytes and the encoding of the result together */
-  if (bin) sp_String_set_read_bytes((sp_String *)r.v.p, res);
-  else sp_String_set_bin((sp_String *)r.v.p, res);
+  /* the bytes and the encoding of the result together, in either direction */
+  sp_String_set_bin_enc((sp_String *)r.v.p, res);
   *out = r;
   return 1;
 }
@@ -414,6 +413,17 @@ static const char *fx_re_text(sp_RbVal v) {
 
 /* sub, gsub, sub! and gsub! with a block or a Hash. Before each block call,
    $~ is the match. */
+/* One piece of the result of a substitution: its bytes go onto acc after
+   the encoding so far takes it in by the rule of String#+ (sp_str_enc_step:
+   1 binary, 0 UTF-8), which raises Encoding::CompatibilityError for a piece
+   of high bytes in the other encoding beside high bytes so far, as CRuby's
+   rb_enc_cr_str_buf_cat does for the receiver's pieces and the
+   replacements alike. */
+static void fx_re_subst_piece(int *st, sp_String *acc, const char *p, size_t n, int bin) {
+  *st = sp_str_enc_step(*st, sp_String_cstr(acc), (size_t)acc->len, p, n, bin);
+  sp_String_append_n(acc, p, n);
+}
+
 static int fx_re_subst_each(sp_RbVal r, const char *name, sp_RbVal pv, sp_RbVal hash, const FxBlock *blk,
                               sp_RbVal *out) {
   int once = name[0] == 's', bang = name[strlen(name) - 1] == '!';
@@ -431,11 +441,10 @@ static int fx_re_subst_each(sp_RbVal r, const char *name, sp_RbVal pv, sp_RbVal 
   SP_GC_ROOT_STR(s);
   sp_String *acc = sp_String_new("");
   SP_GC_ROOT(acc);
-  /* the encoding of the result so far, by the rule of String#+ over the
-     pieces as they go in (sp_str_enc_step): 1 binary, 0 UTF-8, from the
+  /* the encoding of the result so far (fx_re_subst_piece), from the
      receiver's; an ASCII-only receiver takes a replacement's, as CRuby's
      block form has it */
-  int st = sp_str_is_binary(s) ? 1 : 0;
+  int sbin = sp_str_is_binary(s) ? 1 : 0, st = sbin;
   sp_RbVal m = sp_box_nil(), v = sp_box_nil();
   SP_GC_ROOT_RBVAL(m);
   SP_GC_ROOT_RBVAL(v);
@@ -447,24 +456,23 @@ static int fx_re_subst_each(sp_RbVal r, const char *name, sp_RbVal pv, sp_RbVal 
     if (n <= 0 || caps[0] < 0) break;
     matched = 1;
     int b = caps[0], e = caps[1];
-    sp_String_append_n(acc, s + pos, (size_t)(b - pos));
+    fx_re_subst_piece(&st, acc, s + pos, (size_t)(b - pos), sbin);
     sp_re_set_last_match(pat, s, caps, n);
     m = fx_new_string((const uint8_t *)s + b, (size_t)(e - b));
     if (blk) v = fx_y1(blk, m);
     else v = fx_send(hash, "[]", 1, &m);
     FX_STOP();
     const char *t = fx_re_text(v);
-    st = sp_str_enc_step(st, sp_String_cstr(acc), (size_t)acc->len, t, sp_str_byte_len(t), sp_str_is_binary(t));
-    sp_String_append_n(acc, t, sp_str_byte_len(t));
+    fx_re_subst_piece(&st, acc, t, sp_str_byte_len(t), sp_str_is_binary(t));
     pos = e;
     if (b == e) {
       /* a match of no width keeps the next character and steps past it */
-      if (e < slen) sp_String_append_n(acc, s + e, 1);
+      if (e < slen) fx_re_subst_piece(&st, acc, s + e, 1, sbin);
       pos = e + 1;
     }
     if (once) break;
   }
-  if (pos < slen) sp_String_append_n(acc, s + pos, (size_t)(slen - pos));
+  if (pos < slen) fx_re_subst_piece(&st, acc, s + pos, (size_t)(slen - pos), sbin);
   /* the result, a String of its own, binary when the pieces made it so */
   size_t rl = (size_t)acc->len;
   char *res = sp_str_alloc(rl);

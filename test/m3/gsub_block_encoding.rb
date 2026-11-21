@@ -19,3 +19,21 @@ p "abc".b.gsub(/b/) { "x" }.encoding, "abc".b.gsub(/b/) { "日" }.encoding
 seq = '\\M-\\C-]'.dup
 seq.gsub!(/\\M-\\C-([a-zA-Z@\[\]\\^_?])/) { |_| (0x80 | ($1.upcase.ord & 0x1F)).chr }
 p seq.encoding, seq.bytes, seq == 157.chr
+
+# a bang form sets the encoding in both directions: a BINARY receiver of
+# ASCII bytes becomes UTF-8 when a replacement is
+s2 = "a-b-c".b
+s2.gsub!(/-/) { "日" }
+p s2.encoding, s2 == "a日b日c"
+s3 = "a-b".b
+s3.sub!(/-/) { "x" }
+p s3.encoding
+
+# the pieces of the receiver fold too: a receiver with its own high bytes
+# and a replacement of the other encoding's are incompatible
+def bad; yield; rescue Encoding::CompatibilityError => e; puts e.message; end
+bad { "a-b-日".gsub(/-/) { 157.chr } }
+bad { "a-b-\xff".b.gsub(/-/) { "日" } }
+bad { "日-a".sub(/-/) { 157.chr } }
+bad { "a-日".gsub("-", "-" => 157.chr) }
+p "日-a".gsub(/-/) { "x".b }.encoding, "\xff-a".b.gsub(/-/) { "x" }.encoding

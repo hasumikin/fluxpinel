@@ -1,0 +1,29 @@
+#<Encoding:BINARY (ASCII-8BIT)>
+#<Encoding:BINARY (ASCII-8BIT)>
+#<Encoding:BINARY (ASCII-8BIT)>
+#<Encoding:BINARY (ASCII-8BIT)>
+#<Encoding:BINARY (ASCII-8BIT)>
+#<Encoding:BINARY (ASCII-8BIT)>
+[97, 157, 98, 157, 99]
+#<Encoding:BINARY (ASCII-8BIT)>
+[97, 157, 98]
+true
+#<Encoding:UTF-8>
+#<Encoding:UTF-8>
+#<Encoding:UTF-8>
+true
+#<Encoding:UTF-8>
+#<Encoding:BINARY (ASCII-8BIT)>
+#<Encoding:UTF-8>
+#<Encoding:BINARY (ASCII-8BIT)>
+[157]
+true
+#<Encoding:UTF-8>
+true
+#<Encoding:BINARY (ASCII-8BIT)>
+incompatible character encodings: BINARY (ASCII-8BIT) and UTF-8
+incompatible character encodings: UTF-8 and BINARY (ASCII-8BIT)
+incompatible character encodings: UTF-8 and BINARY (ASCII-8BIT)
+incompatible character encodings: BINARY (ASCII-8BIT) and UTF-8
+#<Encoding:UTF-8>
+#<Encoding:BINARY (ASCII-8BIT)>
