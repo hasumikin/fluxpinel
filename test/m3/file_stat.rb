@@ -18,3 +18,21 @@ rescue SystemCallError => e
   p e.class
 end
 p File.respond_to?(:stat), File.respond_to?(:lstat)
+
+# the type predicates of File answer by the kind of the file, as CRuby's
+# do: a device, a FIFO and a socket are no file (rubish's noclobber asks
+# File.file? of a redirection target before it refuses to overwrite it)
+require "tmpdir"
+require "socket"
+dir = Dir.mktmpdir("fx_ftype")
+fifo = File.join(dir, "fifo")
+system("mkfifo", fifo)
+sock = File.join(dir, "sock")
+server = UNIXServer.new(sock)
+p File.file?("/dev/null"), File.chardev?("/dev/null"), File.blockdev?("/dev/null"), File.pipe?("/dev/null"), File.socket?("/dev/null")
+p File.file?(fifo), File.pipe?(fifo), File.chardev?(fifo)
+p File.file?(sock), File.socket?(sock), File.file?(dir), File.file?(__FILE__)
+p File.pipe?(File.join(dir, "none")), File.chardev?(File.join(dir, "none")), File.file?(File.join(dir, "none"))
+server.close
+File.delete(fifo, sock)
+Dir.rmdir(dir)
