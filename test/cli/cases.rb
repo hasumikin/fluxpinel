@@ -64,6 +64,11 @@ CLI_CASES = [
   { args: ["--irb-port", "0", "remote_irb.rb"], env: { "HOME" => Dir.tmpdir },
     out: /\A=> 2\n=> "abc"\n=> :twice\n=> 42\n=> 8\nabort then interrupt!\n\^C\nbye\nclosed: ""\n\z/, skip: /\Askip\n\z/ },
   { args: ["--irb-port", "x", "remote_irb.rb"], out: /\A\z/, status: 1 },
+  # IO.console under a pseudo terminal, with the checks of the collector on
+  # inside it: the open of /dev/tty, which a run with no terminal never
+  # reaches
+  { args: ["console_tty.rb"], env: { "FLUXPINEL" => File.expand_path(ARGV[0]) },
+    out: /\A\[File, true, 2, true, "\/dev\/tty"\]\n2\n2\n2000\n50\nstatus 0\n\z/ },
   # a thread with its own $stdout and $stderr (the slots of src/global.c)
   { args: ["-rstringio", "-e", "o = StringIO.new; t = Thread.new { Thread.current[:fluxpinel_stdout] = o; Thread.current[:fluxpinel_stderr] = o; puts 1; $stdout.print 2; warn 3; $stderr << 4; p $stdout.equal?(o) }; t.join; puts 5; $stdout.puts 6; p o.string"],
     out: /\A5\n6\n"1\\n23\\n4true\\n"\n\z/ },
