@@ -612,6 +612,31 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     *out = sp_box_nullable_obj((void *)nf, SP_BUILTIN_IO);
     return 1;
   }
+  /* IO#dup and #clone: the runtime's copy of the handle (sp_File_dup, what
+     IO#initialize_copy does): dup(2) of the descriptor, close-on-exec,
+     with the path, the mode, the line number, the sync flag, the encoding
+     and the kind of this one, a socket's too, and what stdio has read
+     already given back to the descriptor first; the copy closes on its
+     own. clone(freeze: true) freezes the copy. A frozen IO cannot be
+     copied, by dup or by clone, as in CRuby. */
+  if ((FX_IS("dup") || FX_IS("clone")) &&
+      (argc == 0 || (argc == 1 && FX_IS("clone") && fx_is_hash(argv[0]) && argv[0].v.p == L.kwhash))) {
+    if (io->frozen) fx_raise_frozen(r);
+    int freeze = 0;
+    if (argc == 1) {
+      sp_PolyPolyHash *h = sp_poly_as_poly_poly_hash(argv[0]);
+      sp_RbVal k = sp_box_sym(sp_sym_intern("freeze"));
+      freeze = sp_PolyPolyHash_has_key(h, k) && sp_poly_truthy(sp_PolyPolyHash_get(h, k));
+    }
+    sp_File *nf = sp_File_dup(io, 0);
+    if (freeze) nf->frozen = 1;
+    *out = sp_box_obj(nf, SP_BUILTIN_IO);
+    return 1;
+  }
+  /* freeze and frozen?: the runtime keeps the flag of a handle in the
+     handle, not in the header of the collector that Object#frozen? reads */
+  if (argc == 0 && FX_IS("frozen?")) { *out = sp_box_bool(io->frozen); return 1; }
+  if (argc == 0 && FX_IS("freeze")) { sp_io_freeze(io); *out = r; return 1; }
 #ifndef FX_KERNEL
   /* flock that waits: one OS thread runs every thread of a standalone
      program (Thread.new in fiber.c), so a wait inside flock(2) stops them

@@ -330,6 +330,7 @@ typedef struct {
   sp_RbVal main;         /* the top-level self; a GC root */
   FxCtl ctl;
   sp_RbVal ctl_val;      /* the value that the jump carries; a GC root */
+  sp_RbVal console;      /* IO.console: the terminal, once opened; a GC root (file.c) */
   const void *ctl_target;   /* FX_CTL_RETURN: a FxFrame; FX_CTL_BREAK_BLOCK: a FxBlock */
   uint64_t serial;       /* the last FxFrame.serial */
   const void *kwhash;    /* the Hash that a call passes as keywords (`m(a: 1)`), so
@@ -785,6 +786,7 @@ static int fx_location_core(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
                             sp_RbVal *out);
 static int fx_location_responds(const char *name);
 static sp_RbVal fx_trap(int argc, sp_RbVal *argv, const FxBlock *blk);   /* walk.c */
+static int fx_range_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);   /* walk.c */
 static int fx_kernel_block(FxFrame *f, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out);
 static sp_RbVal fx_eval_string(FxFrame *f, int argc, sp_RbVal *argv);   /* load.c */
 /* refinements (walk.c) */
