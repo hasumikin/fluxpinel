@@ -2395,16 +2395,15 @@ static sp_String *fx_range_text(sp_RbVal v) {
    - Integer ends (or nil): sp_Range
    - an Integer begin and a Float end: sp_Range with the Float end
    - other Float ends (an Integer or nil on one side): sp_FloatRange
-   - String or Symbol ends: sp_StrRange */
-static sp_RbVal fx_range(FxFrame *f, const pm_range_node_t *n) {
+   - String or Symbol ends: sp_StrRange
+
+   lit says both ends are String literals, whose Range CRuby makes once,
+   with frozen ends. Other ends are unsupported at the literal `at`, and
+   ArgumentError from Range.new (at NULL), as CRuby raises. */
+static sp_RbVal fx_range_make(sp_RbVal lo, sp_RbVal hi, int excl, int lit, const pm_node_t *at) {
   SP_GC_SAVE();
-  sp_RbVal lo = n->left ? fx_eval(f, n->left) : sp_box_nil();
-  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
   SP_GC_ROOT_RBVAL(lo);
-  sp_RbVal hi = n->right ? fx_eval(f, n->right) : sp_box_nil();
-  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
   SP_GC_ROOT_RBVAL(hi);
-  int excl = PM_NODE_FLAG_P((const pm_node_t *)n, PM_RANGE_FLAGS_EXCLUDE_END);
   int lt = lo.tag, ht = hi.tag;
   int lnum = lt == SP_TAG_INT || lt == SP_TAG_FLT || lt == SP_TAG_NIL;
   int hnum = ht == SP_TAG_INT || ht == SP_TAG_FLT || ht == SP_TAG_NIL;
@@ -2434,14 +2433,44 @@ static sp_RbVal fx_range(FxFrame *f, const pm_range_node_t *n) {
   if ((fx_is_string(lo) || lt == SP_TAG_NIL) && (fx_is_string(hi) || ht == SP_TAG_NIL)) {
     sp_String *a = fx_range_text(lo);
     sp_String *b = fx_range_text(hi);
-    /* CRuby makes a Range of two String literals once, with frozen ends */
-    if (n->left && n->right && PM_NODE_TYPE_P(n->left, PM_STRING_NODE) && PM_NODE_TYPE_P(n->right, PM_STRING_NODE)) {
+    if (lit) {
       sp_String_freeze(a);
       sp_String_freeze(b);
     }
     return sp_box_srange(sp_srange_new(a, b, excl));
   }
-  fx_unsupported((const pm_node_t *)n, "Range of values other than Integer, Float, String and Symbol");
+  if (at) fx_unsupported(at, "Range of values other than Integer, Float, String and Symbol");
+  /* Range.new: a pair that does not compare is CRuby's ArgumentError; one
+     that does is a Range in CRuby, of a kind Fluxpinel does not hold, so
+     it stops as the literal does rather than raise */
+  if (lt != SP_TAG_NIL && ht != SP_TAG_NIL) {
+    sp_RbVal c = fx_send(lo, "<=>", 1, &hi);
+    if (c.tag == SP_TAG_NIL) sp_raise_cls("ArgumentError", "bad value for range");
+  }
+  fx_gap("Range of values other than Integer, Float, String and Symbol");
+}
+
+/* A Range literal: its ends, then fx_range_make. */
+static sp_RbVal fx_range(FxFrame *f, const pm_range_node_t *n) {
+  SP_GC_SAVE();
+  sp_RbVal lo = n->left ? fx_eval(f, n->left) : sp_box_nil();
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  SP_GC_ROOT_RBVAL(lo);
+  sp_RbVal hi = n->right ? fx_eval(f, n->right) : sp_box_nil();
+  if (L.ctl != FX_CTL_NONE) return sp_box_nil();
+  SP_GC_ROOT_RBVAL(hi);
+  int excl = PM_NODE_FLAG_P((const pm_node_t *)n, PM_RANGE_FLAGS_EXCLUDE_END);
+  int lit = n->left && n->right && PM_NODE_TYPE_P(n->left, PM_STRING_NODE) && PM_NODE_TYPE_P(n->right, PM_STRING_NODE);
+  return fx_range_make(lo, hi, excl, lit, (const pm_node_t *)n);
+}
+
+/* Range.new(first, last, exclude_end = false): the Range the literal of
+   the ends makes; ArgumentError for ends the literal does not take. */
+static int fx_range_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  if (k->cls_id >= 0 || strcmp(k->name, "Range") || strcmp(name, "new")) return 0;
+  if (argc < 2 || argc > 3) fx_arity_error(argc, 2, 1, 0);
+  *out = fx_range_make(argv[0], argv[1], argc == 3 && sp_poly_truthy(argv[2]), 0, NULL);
+  return 1;
 }
 
 /* ---- classes, modules and constants ---- */
