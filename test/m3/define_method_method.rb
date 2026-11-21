@@ -38,3 +38,53 @@ p M.new.respond_to?(:s)
 o = Object.new
 o.singleton_class.define_method(:h4, method(:helper))
 p o.h4(5)
+
+# a method of a module binds to any class; a class method binds to the
+# singleton side of its own class or of a subclass alone; a Method of a
+# builtin binds to its class or a subclass
+module Mod
+  def whoami = self.class
+end
+class Plain
+  def self.cm = :cm
+end
+Plain.define_method(:who, Mod.instance_method(:whoami))
+p Plain.new.who
+Plain.define_singleton_method(:who, Mod.instance_method(:whoami))
+p Plain.who
+begin
+  Plain.define_method(:cm2, Plain.method(:cm))
+rescue TypeError => e
+  p e.message
+end
+Plain.define_singleton_method(:cm3, Plain.method(:cm))
+p Plain.cm3
+class Sub < Plain; end
+Sub.define_singleton_method(:cm4, Plain.method(:cm))
+p Sub.cm4
+begin
+  Plain.define_method(:up, "x".method(:upcase))
+rescue TypeError => e
+  p e.message
+end
+class Str < String; end
+Str.define_method(:up, "x".method(:upcase))
+p Str.new("ab").up
+
+# the copy belongs to the class it is defined in: super goes on from
+# there, under the new name too, and the constants of the body stay those
+# of where it was written
+class Base
+  def f = :base
+end
+class Mid < Base
+  WHERE = :mid
+  def f = [WHERE, super()]
+end
+class Leaf < Mid
+  WHERE = :leaf
+end
+Leaf.define_method(:f, Mid.instance_method(:f))
+p Leaf.new.f, Leaf.instance_method(:f).owner
+Leaf.define_method(:g, Mid.instance_method(:f))
+p Leaf.new.g
