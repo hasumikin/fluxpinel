@@ -777,25 +777,23 @@ static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal 
     if (FX_IS("foreach")) return blk && fx_file_foreach(argc, argv, blk, out);
     /* IO.console (io/console): the terminal of the process, /dev/tty opened
        once for reading and writing and answered each time, as CRuby does;
-       nil when the process has none. The handle is a File by its path. */
-    if (fx_console_loaded && FX_IS("console") && argc == 0) {
-      static sp_RbVal console;
-      static int rooted;
-      if (!rooted) {
-        console = sp_box_nil();
-        _sp_gc_root_push((void **)((uintptr_t)&console | (uintptr_t)1));
-        rooted = 1;
-      }
-      if (console.tag == SP_TAG_NIL || sp_File_closed_p((sp_File *)console.v.p)) {
+       nil when the process has none. The handle is a File by its path, in
+       sync; L.console holds it, a root for the life of the process
+       (main.c), since a program need not keep the value itself.
+       IO.console(name, *args) sends name to it, as CRuby's does. */
+    if (fx_console_loaded && FX_IS("console")) {
+      if (L.console.tag == SP_TAG_NIL || sp_File_closed_p((sp_File *)L.console.v.p)) {
         int fd = open("/dev/tty", O_RDWR | O_CLOEXEC);
         if (fd < 0) { *out = sp_box_nil(); return 1; }
-        sp_File *f = sp_io_fdopen_ex(fd, "r+", 1);
-        f->path = sp_sprintf("%s", "/dev/tty");
+        sp_File *f = sp_io_fdopen_ex(fd, SPL("r+"), 1);
+        SP_GC_ROOT(f);
+        f->path = SPL("/dev/tty");   /* a literal with the marker byte: nothing to collect */
         f->is_file = 1;
         setvbuf(f->fp, NULL, _IONBF, 0);
-        console = sp_box_obj(f, SP_BUILTIN_IO);
+        sp_File_set_sync(f, 1);
+        L.console = sp_box_obj(f, SP_BUILTIN_IO);
       }
-      *out = console;
+      *out = argc == 0 ? L.console : fx_send(L.console, fx_name_arg(argv[0]), argc - 1, argv + 1);
       return 1;
     }
     /* IO.open(fd[, mode], **enc), IO.new and IO.for_fd: an IO on the

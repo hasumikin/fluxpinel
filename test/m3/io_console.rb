@@ -5,7 +5,7 @@ c = IO.console
 p [NilClass, File].include?(c.class)
 p IO.console.equal?(c)
 if c
-  p c.winsize.size, c.tty?, c.path
+  p c.winsize.size, c.tty?, c.path, c.sync, IO.console(:winsize) == c.winsize
   c.winsize = c.winsize
   p c.respond_to?(:raw)
 else
