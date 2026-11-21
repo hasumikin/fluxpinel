@@ -34,9 +34,10 @@ end
 # for the hard limit, which takes the soft one; the forms CRuby refuses
 p Process::RLIM_SAVED_MAX == Process::RLIM_INFINITY, Process::RLIM_SAVED_CUR == Process::RLIM_INFINITY
 fs_soft, fs_hard = Process.getrlimit(:FSIZE)
-# where the infinity is a Bignum (Linux), so is the limit one below it
+# where the infinity is a Bignum (Linux), so is the limit one below it; the
+# hard limit stays, since only root can raise it back
 if Process::RLIM_INFINITY.bit_length > 63 && fs_hard == Process::RLIM_INFINITY
-  Process.setrlimit(:FSIZE, Process::RLIM_INFINITY - 1)
+  Process.setrlimit(:FSIZE, Process::RLIM_INFINITY - 1, Process::RLIM_INFINITY)
   p Process.getrlimit(:FSIZE)[0] == Process::RLIM_INFINITY - 1
 else
   p true
