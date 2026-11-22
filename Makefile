@@ -298,6 +298,22 @@ test-host: $(HOST)/fluxpinel
 	ruby test/run.rb --require kernel/fluxpinel_cruby.rb --require test/kernel/bare.rb \
 	  $(BUILD)/host_bare/fluxpinel test/host_bare
 
+# One session of IRB under valgrind. A String function of the runtime reads
+# the byte ahead of its argument, so memory of libc given to one is a read
+# outside a block: glibc has a 0 there and the tests pass, and the
+# allocator of macOS has any byte there. IRB requires some hundreds of
+# files and so reaches most of the loader. valgrind fails the target on
+# its first report. Uninitialised values are not reported: the collector
+# scans the stacks.
+VALGRIND_SESSION ?= test/irb/eval.txt
+VALGRIND_HOME = $(BUILD)/valgrind_home
+test-valgrind: $(BUILD)/fluxpinel
+	rm -rf $(VALGRIND_HOME)
+	mkdir -p $(VALGRIND_HOME)
+	HOME=$(CURDIR)/$(VALGRIND_HOME) XDG_CONFIG_HOME=$(CURDIR)/$(VALGRIND_HOME) NO_COLOR=1 \
+	  valgrind -q --undef-value-errors=no --error-exitcode=99 $(BUILD)/fluxpinel --irb \
+	  -f --nocolorize --nomultiline --nosingleline --simple-prompt < $(VALGRIND_SESSION) > /dev/null
+
 include roundhouse/roundhouse.mk
 
 # The oracle: the spinel test corpus under CRuby (.expected), Fluxpinel and AOT,
@@ -420,5 +436,5 @@ check-spinel-master:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test park-audit host test-host oracle regress census gem-oracle optcarrot deps gems upgrade_spinel \
+.PHONY: all test park-audit host test-host test-valgrind oracle regress census gem-oracle optcarrot deps gems upgrade_spinel \
         check-spinel-master clean FORCE

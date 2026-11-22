@@ -66,6 +66,7 @@ start.
 | `make test` | runs `test/m2` and `test/m3` under CRuby and Fluxpinel, and `test/console` through the console of both, plain and under GC stress, then the cases of the command line in `test/cli/cases.rb` and the sessions of IRB in `test/irb`, and IRB on a pseudo terminal (`test/irb_tty.rb`) | about 2 minutes |
 | `make test-host` | builds the host with `test/kernel/app.rb`, then runs the same tests and `test/host` on it; then builds a host with `test/kernel/bare.rb`, a kernel with no entry, and runs `test/host_bare` | about 2 minutes from a clean build |
 | `make regress` | runs the spinel tests in `tools/oracle_agree.txt` under Fluxpinel | about 10 seconds |
+| `make test-valgrind` | runs one session of IRB (`VALGRIND_SESSION`) under valgrind and fails on a read or a write outside a block | about 30 seconds |
 | `make oracle` | runs all the spinel tests under CRuby, Fluxpinel and AOT | more than 10 minutes |
 | `make optcarrot` | runs optcarrot under CRuby and Fluxpinel and compares the checksums | about 25 seconds for 180 frames |
 
@@ -82,7 +83,7 @@ mode.
 
 - `check` runs on a push and a pull request to master, on Linux and on
   macOS. It runs `make test`, `make test-host` and `make regress` on the
-  pinned spinel.
+  pinned spinel. On Linux, it also runs `make test-valgrind`.
 - `spinel-master` runs each week and on a manual start. It runs the same
   checks on the master of spinel with `SPINEL_PIN=0`. A failure tells that
   a change of spinel breaks Fluxpinel before the pin moves.

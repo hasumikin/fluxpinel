@@ -87,6 +87,14 @@ jobs:
       - name: make regress
         run: make regress
 
+      # A read outside a block that glibc hides and macOS does not
+      # (Makefile, test-valgrind). valgrind runs on Linux alone.
+      - name: make test-valgrind (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y valgrind
+          make test-valgrind
+
       - name: Upload the regress cases
         if: failure()
         uses: actions/upload-artifact@v4
