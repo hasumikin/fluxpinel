@@ -610,6 +610,19 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
   /* a File::Stat is a handle whose mode is "stat" or "lstat"; the rows of
      the table answer its readers */
   if (io->mode && (!strcmp(io->mode, "stat") || !strcmp(io->mode, "lstat"))) return 0;
+  /* each_line and its kin with no block: an Enumerator over the call, as
+     to_enum makes it, which keeps the arguments and the keywords for the
+     block form (the prelude's). each_char and each_byte take no argument,
+     which CRuby checks at the call; each_line reads its own when it runs. */
+  int chars = FX_IS("each_char") || FX_IS("each_byte");
+  if (chars || FX_IS("each_line") || FX_IS("each")) {
+    if (chars && argc) fx_arity_error(argc, 0, 0, 0);
+    sp_RbVal args[argc + 1];
+    args[0] = sp_box_sym(sp_sym_intern(name));
+    for (int i = 0; i < argc; i++) args[i + 1] = argv[i];
+    *out = fx_to_enum(r, argc + 1, args);
+    return 1;
+  }
   /* accept, addr and the other methods of a socket (socket.c) */
   if (io->is_sock && fx_sock_core(io, name, argc, argv, out)) return 1;
   /* external_encoding: what set_encoding chose (ext_enc), else BINARY after

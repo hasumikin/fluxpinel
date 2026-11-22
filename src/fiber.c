@@ -23,6 +23,7 @@ typedef struct {
   int kind;
   sp_RbVal recv;         /* to_enum: the receiver and the method it calls */
   const char *meth;
+  int kw;                /* to_enum: the last of args is the keywords of the call */
 } FxFiberData;
 
 static void fx_fiber_data_scan(void *p) {
@@ -103,7 +104,12 @@ static void fx_fiber_body(sp_Fiber *f) {
     if (d->kind == FX_FIB_TOENUM) {
       FxBlock cb = { .cfn = fx_toenum_step, .ctx = f };
       for (sp_int i = 0; d->args && i < d->args->len; i++) sp_PolyArray_push(args, d->args->data[i]);
+      /* the keywords of the to_enum call are the method's keywords: the
+         binder of a method of the program takes the Hash L.kwhash names,
+         and a builtin leaves it, so it is cleared after the call */
+      if (d->kw) L.kwhash = args->data[args->len - 1].v.p;
       v = fx_send_b(d->recv, d->meth, (int)args->len, args->data, &cb);
+      L.kwhash = NULL;
     } else {
       v = fx_yield(&d->proc->b, (int)args->len, args->data);
     }
@@ -171,15 +177,21 @@ static sp_RbVal fx_toenum_step(void *ctx, int argc, sp_RbVal *argv) {
   return sp_Fiber_yield(fx_fiber_pack(argc, argv));
 }
 
-/* Kernel#to_enum(meth = :each, *args) and enum_for: an Enumerator that
-   runs the method of the receiver as a generator, each value it yields an
-   item; its size is nil, and inspect names the call
-   (#<Enumerator: [1, 2]:each_slice(2)>) */
+/* Kernel#to_enum(meth = :each, *args, **kw) and enum_for: an Enumerator
+   that runs the method of the receiver as a generator, each value it
+   yields an item; its size is nil, and inspect names the call
+   (#<Enumerator: [1, 2]:each_slice(2)>). The keywords of the call reach
+   the method as keywords, and inspect writes them without braces
+   (#<Enumerator: io:each_line(chomp: true)>); an empty set is no
+   argument, as `**{}` passes none. Also the Enumerator of a builtin
+   iterator with no block (IO#each_line, global.c). */
 static sp_RbVal fx_to_enum(sp_RbVal recv, int argc, sp_RbVal *argv) {
   SP_GC_ROOT_RBVAL(recv);
   /* a String of the heap: the scan of d marks it */
   const char *meth = sp_sprintf("%s", argc ? fx_name_arg(argv[0]) : "each");
   SP_GC_ROOT_STR(meth);
+  int kw = argc > 1 && fx_is_hash(argv[argc - 1]) && argv[argc - 1].v.p == L.kwhash;
+  if (kw && sp_poly_length(argv[argc - 1]) == 0) { kw = 0; argc--; }
   FxFiberData *d = (FxFiberData *)sp_gc_alloc(sizeof *d, NULL, fx_fiber_data_scan);
   SP_GC_ROOT(d);
   d->proc = NULL;
@@ -187,6 +199,7 @@ static sp_RbVal fx_to_enum(sp_RbVal recv, int argc, sp_RbVal *argv) {
   d->kind = FX_FIB_TOENUM;
   d->recv = recv;
   d->meth = meth;
+  d->kw = kw;
   sp_PolyArray *a = sp_PolyArray_new();
   SP_GC_ROOT(a);
   for (int i = 1; i < argc; i++) sp_PolyArray_push(a, argv[i]);
@@ -197,7 +210,12 @@ static sp_RbVal fx_to_enum(sp_RbVal recv, int argc, sp_RbVal *argv) {
   if (argc > 1) {
     const char *in = "";
     SP_GC_ROOT_STR(in);
-    for (sp_int i = 0; i < a->len; i++) in = sp_sprintf("%s%s%s", in, i ? ", " : "", sp_poly_inspect(a->data[i]));
+    for (sp_int i = 0; i < a->len; i++) {
+      const char *x = sp_poly_inspect(a->data[i]);
+      SP_GC_ROOT_STR(x);
+      if (kw && i == a->len - 1) x = sp_str_from_bytes(x + 1, sp_str_byte_len(x) - 2);   /* the braces off the keywords */
+      in = sp_sprintf("%s%s%s", in, i ? ", " : "", x);
+    }
     label = sp_sprintf("%s(%s)", meth, in);
   }
   sp_Enumerator *e = sp_Enumerator_new_gen(fx_fiber_body, d, sp_box_nil());
