@@ -910,6 +910,9 @@ static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal 
          it, so the default is a marked literal (SPL), not a bare one */
       const char *mode = n == 2 ? sp_poly_arg_str_chk(argv[1]) : SPL("r");
       int fd = (int)argv[0].v.i;
+      /* a descriptor that is not open is CRuby's Errno::EBADF, before the
+         stream is made (the runtime's fdopen would say IOError) */
+      if (fd < 0 || fcntl(fd, F_GETFD) < 0) sp_raise_cls("Errno::EBADF", "Bad file descriptor");
       sp_File *f = sp_io_fdopen_ex(fd, mode, fd > 2);
       if (fd <= 2) f->no_autoclose = 1;   /* a close, or the collector, flushes and leaves the descriptor */
       /* a terminal sees each write at once, as CRuby's IO flushes a write to
