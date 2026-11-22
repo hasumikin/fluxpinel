@@ -778,6 +778,98 @@ static int fx_dir_class(const char *name, int argc, sp_RbVal *argv, const FxBloc
   return 1;
 }
 
+/* The block form of IO.popen: the block takes the IO; the IO closes and
+   the child is waited for when the block ends, also by a raise or a jump;
+   the block's value is the answer. */
+static sp_RbVal fx_popen_with(sp_RbVal io, const FxBlock *blk) {
+  SP_GC_SAVE();
+  SP_GC_ROOT_RBVAL(io);
+  sp_RbVal v = sp_box_nil();
+  SP_GC_ROOT_RBVAL(v);
+  const int depth = fx_fs()->depth;
+  FX_TRY_PUSH();
+  if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
+    v = fx_y1(blk, io);
+    sp_exc_top--;
+  } else {
+    FX_TRY_LANDED(depth);
+    fx_popen_close(io);
+    if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
+    fx_reraise(fx_caught());
+  }
+  fx_popen_close(io);
+  return v;
+}
+
+/* IO.popen(env, cmd, mode = "r", **opts): a child with a pipe to its stdout
+   (mode "r") or from its stdin ("w"), through spawn with the options given
+   and the pipe's end for the child's stream (fx_spawn). The command is an
+   argv Array, each element an argument, or a command line. The IO of the
+   parent's end goes into L.popens with the pid (fx_popen_pid): close waits
+   for the child and sets $?. "r+", "-" and the other modes stop as gaps. */
+static int fx_io_popen(int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out) {
+  SP_GC_SAVE();
+  sp_RbVal env = sp_box_nil(), opts = sp_box_nil();
+  SP_GC_ROOT_RBVAL(env);
+  SP_GC_ROOT_RBVAL(opts);
+  if (argc >= 2 && fx_is_kwargs(argv[argc - 1])) opts = argv[--argc];
+  if (argc >= 2 && fx_is_hash(argv[0])) { env = argv[0]; argv++; argc--; }
+  if (argc < 1 || argc > 2) fx_arity_error(argc, 1, 2, 0);
+  sp_RbVal cmd = argv[0];
+  SP_GC_ROOT_RBVAL(cmd);
+  const char *mode = argc == 2 ? sp_poly_arg_str_chk(argv[1]) : "r";
+  SP_GC_ROOT_STR(mode);
+  int write;
+  if (!strcmp(mode, "r") || !strcmp(mode, "rb")) write = 0;
+  else if (!strcmp(mode, "w") || !strcmp(mode, "wb")) write = 1;
+  else fx_gap(sp_sprintf("IO.popen with the mode %s", mode));
+  if (fx_is_string(cmd) && !strcmp(sp_poly_recv_s(cmd, "popen"), "-")) fx_gap("IO.popen(\"-\"), a fork");
+  sp_PolyArray *ends = sp_io_pipe();
+  SP_GC_ROOT(ends);
+  sp_RbVal child_end = ends->data[write ? 0 : 1], ours = ends->data[write ? 1 : 0];
+  /* the options of spawn, plus the child's stream on the pipe */
+  sp_PolyPolyHash *h = sp_PolyPolyHash_new();
+  sp_RbVal hv = sp_box_obj(h, SP_BUILTIN_POLY_POLY_HASH);
+  SP_GC_ROOT_RBVAL(hv);
+  if (opts.tag != SP_TAG_NIL) {
+    for (sp_int j = 0, n = sp_poly_length(opts); j < n; j++) {
+      sp_RbVal key, value;
+      sp_poly_hash_pair(opts, j, &key, &value);
+      sp_PolyPolyHash_set(h, key, value);
+    }
+  }
+  sp_PolyPolyHash_set(h, sp_box_sym(sp_sym_intern(write ? "in" : "out")), child_end);
+  /* the arguments of spawn: the environment, the command, the options */
+  sp_PolyArray *sa = sp_PolyArray_new();
+  SP_GC_ROOT(sa);
+  if (env.tag != SP_TAG_NIL) sp_PolyArray_push(sa, env);
+  if (fx_is_array(cmd)) {
+    for (sp_int i = 0, n = sp_poly_length(cmd); i < n; i++) sp_PolyArray_push(sa, sp_poly_arr_get(cmd, i));
+  } else {
+    sp_PolyArray_push(sa, cmd);
+  }
+  sp_PolyArray_push(sa, hv);
+  sp_int pid;
+  const int depth = fx_fs()->depth;
+  FX_TRY_PUSH();
+  if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
+    pid = fx_spawn((int)sa->len, sa->data);
+    sp_exc_top--;
+  } else {
+    /* a spawn that fails (Errno::ENOENT) leaves no pipe behind */
+    FX_TRY_LANDED(depth);
+    sp_File_close((sp_File *)child_end.v.p);
+    sp_File_close((sp_File *)ours.v.p);
+    if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
+    fx_reraise(fx_caught());
+  }
+  sp_File_close((sp_File *)child_end.v.p);
+  if (L.popens.tag == SP_TAG_NIL) L.popens = sp_box_obj(sp_PolyPolyHash_new(), SP_BUILTIN_POLY_POLY_HASH);
+  sp_PolyPolyHash_set((sp_PolyPolyHash *)L.popens.v.p, ours, sp_box_int(pid));
+  *out = blk ? fx_popen_with(ours, blk) : ours;
+  return 1;
+}
+
 static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                          sp_RbVal *out) {
   if (k->cls_id >= 0) return 0;
@@ -785,6 +877,7 @@ static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal 
   if (!strcmp(k->name, "IO")) {
     /* IO.foreach reads a path, as File.foreach does */
     if (FX_IS("foreach")) return blk && fx_file_foreach(argc, argv, blk, out);
+    if (FX_IS("popen") && argc >= 1) return fx_io_popen(argc, argv, blk, out);
     /* IO.console (io/console): the terminal of the process, /dev/tty opened
        once for reading and writing and answered each time, as CRuby does;
        nil when the process has none. The handle is a File by its path, in

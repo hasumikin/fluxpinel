@@ -342,6 +342,7 @@ typedef struct {
   FxCtl ctl;
   sp_RbVal ctl_val;      /* the value that the jump carries; a GC root */
   sp_RbVal console;      /* IO.console: the terminal, once opened; a GC root (file.c) */
+  sp_RbVal popens;       /* IO.popen: the pid of each open child by its IO, a Hash or nil; a GC root (global.c) */
   const void *ctl_target;   /* FX_CTL_RETURN: a FxFrame; FX_CTL_BREAK_BLOCK: a FxBlock */
   uint64_t serial;       /* the last FxFrame.serial */
   const void *kwhash;    /* the Hash that a call passes as keywords (`m(a: 1)`), so

@@ -574,9 +574,39 @@ static int fx_io_console(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
 }
 
 extern sp_File *sp_File_reopen(sp_File *f, const char *path, const char *mode);   /* lib/sp_io.c of spinel */
+/* The children of IO.popen: L.popens maps each IO still open to the pid of
+   its child (file.c puts a pair in). The Hash holds the IO, so a child is
+   waited for when its IO closes, not before. */
+static sp_RbVal fx_popen_pid(sp_RbVal io) {
+  if (L.popens.tag == SP_TAG_NIL) return sp_box_nil();
+  sp_PolyPolyHash *h = (sp_PolyPolyHash *)L.popens.v.p;
+  return sp_PolyPolyHash_has_key(h, io) ? sp_PolyPolyHash_get(h, io) : sp_box_nil();
+}
+
+/* The close of an IO of IO.popen: the handle closes, then the child is
+   waited for, which sets $?, as CRuby's does. nil. */
+static sp_RbVal fx_popen_close(sp_RbVal io) {
+  SP_GC_ROOT_RBVAL(io);
+  sp_RbVal pid = fx_popen_pid(io);
+  sp_File *f = (sp_File *)io.v.p;
+  if (!sp_File_closed_p(f)) sp_File_close(f);
+  if (pid.tag == SP_TAG_INT) {
+    sp_PolyPolyHash_delete((sp_PolyPolyHash *)L.popens.v.p, io);
+    FX_UNLOCKED(sp_process_waitpid(pid.v.i));
+  }
+  return sp_box_nil();
+}
+
 static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (!fx_is_io(r)) return 0;
   sp_File *io = (sp_File *)r.v.p;
+  /* the IO of an IO.popen: its child's pid, and a close that waits for the
+     child; any other IO's pid and close are the runtime's (nil, and the
+     IOError of a closed stream) */
+  if (argc == 0 && (FX_IS("pid") || FX_IS("close")) && fx_popen_pid(r).tag == SP_TAG_INT) {
+    *out = name[0] == 'p' ? fx_popen_pid(r) : fx_popen_close(r);
+    return 1;
+  }
   /* a File::Stat is a handle whose mode is "stat" or "lstat"; the rows of
      the table answer its readers */
   if (io->mode && (!strcmp(io->mode, "stat") || !strcmp(io->mode, "lstat"))) return 0;
