@@ -817,7 +817,7 @@ static int fx_io_popen(int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *o
   if (argc < 1 || argc > 2) fx_arity_error(argc, 1, 2, 0);
   sp_RbVal cmd = argv[0];
   SP_GC_ROOT_RBVAL(cmd);
-  const char *mode = argc == 2 ? sp_poly_arg_str_chk(argv[1]) : "r";
+  const char *mode = argc == 2 ? sp_poly_arg_str_chk(argv[1]) : SPL("r");   /* rooted: a marked literal */
   SP_GC_ROOT_STR(mode);
   int write;
   if (!strcmp(mode, "r") || !strcmp(mode, "rb")) write = 0;
