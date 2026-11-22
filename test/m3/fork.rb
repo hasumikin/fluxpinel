@@ -224,6 +224,66 @@ w.close
 p r.read
 r.close
 Process.wait(pid)
+# a descriptor past 2, to an IO or to a number: the command finds it open
+r, w = IO.pipe
+pid = fork { r.close; exec("sh", "-c", "printf three >&3", 3 => w) }
+w.close
+p r.read
+r.close
+Process.wait(pid)
+p $?.exitstatus
+r, w = IO.pipe
+pid = fork { r.close; exec("sh", "-c", "printf five >&5", 5 => w.fileno) }
+w.close
+p r.read
+r.close
+Process.wait(pid)
+# a standard stream and a descriptor past 2 in one call: 3 is the stdout
+# of before the call
+r, w = IO.pipe
+r2, w2 = IO.pipe
+pid = fork do
+  r.close
+  r2.close
+  $stdout.reopen(w2)
+  exec("sh", "-c", "printf new; printf old >&3", 1 => w, 3 => $stdout)
+end
+w.close
+w2.close
+p r.read, r2.read
+r.close
+r2.close
+Process.wait(pid)
+# two of them that read each other, as they were before the call
+ra, wa = IO.pipe
+rb, wb = IO.pipe
+pid = fork do
+  ra.close
+  rb.close
+  a = wa.fileno
+  b = wb.fileno
+  # (a shell takes one digit for a descriptor: with a larger one, the child
+  # writes the same bytes itself)
+  exec("sh", "-c", "printf to_a >&#{a}; printf to_b >&#{b}", a => wb, b => wa) if a < 10 && b < 10
+  wa.write("to_b")
+  wb.write("to_a")
+  exit!(0)
+end
+wa.close
+wb.close
+p ra.read, rb.read
+ra.close
+rb.close
+Process.wait(pid)
+# a descriptor that is not open
+pid = fork do
+  begin
+    exec("true", 3 => 9999)
+  rescue SystemCallError => e
+    puts e.class
+  end
+end
+Process.wait(pid)
 pid = fork { exec({ "FX_EXEC" => "x" }, "sh", "-c", "exit 7") }
 Process.wait(pid)
 p $?.exitstatus

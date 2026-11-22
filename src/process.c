@@ -552,26 +552,90 @@ static sp_RbVal fx_fork(const FxBlock *blk) {
   fx_child_exit(st, sig);
 }
 
+/* The descriptor a redirection names by its number or by an IO on it, or
+   -1 for another value. */
+static int fx_fd_of(sp_RbVal v) {
+  if (v.tag == SP_TAG_INT) return v.v.i >= 0 && v.v.i <= INT_MAX ? (int)v.v.i : -1;
+  if (v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_IO && v.v.p) return sp_File_fileno((sp_File *)v.v.p);
+  return -1;
+}
+
+/* The redirections of an exec to a descriptor past 2 (`3 => io`,
+   `io3 => 4`), which have no slot in the options array of the runtime.
+   An exec applies its options to this process, which becomes the command,
+   so the descriptors are made here, ahead of the runtime's own: each
+   source is copied aside first, so one redirection reads the descriptor
+   another one replaces as it was before the call (`3 => r4, 4 => r3`),
+   and a standard stream sent to one of them is the stream of before
+   (`1 => w, 3 => $stdout`). The copy made by dup2 stays open across the
+   exec. As for the standard streams, the program gets a blocking
+   descriptor. An exec that fails leaves them as made, as CRuby does. */
+#define FX_EXEC_FDS 16
+static void fx_exec_fds(sp_RbVal opts) {
+  int dst[FX_EXEC_FDS], src[FX_EXEC_FDS], tmp[FX_EXEC_FDS], n = 0, floor = 3;
+  sp_int len = sp_poly_length(opts);
+  for (sp_int j = 0; j < len; j++) {
+    sp_RbVal key, value;
+    sp_poly_hash_pair(opts, j, &key, &value);
+    int fd = fx_fd_of(key);
+    if (fd <= 2) continue;
+    if (n == FX_EXEC_FDS) fx_gap("exec with more than 16 redirections of a descriptor past 2");
+    dst[n] = fd;
+    src[n++] = fx_fd_of(value);
+    if (fd >= floor) floor = fd + 1;
+  }
+  if (n == 0) return;
+  /* the runtime applies a standard stream after these: one that reads a
+     descriptor made here would read the new one, not the one of before */
+  for (sp_int j = 0; j < len; j++) {
+    sp_RbVal key, value;
+    sp_poly_hash_pair(opts, j, &key, &value);
+    if (fx_fd_of(key) > 2) continue;
+    int from = fx_fd_of(value);
+    if (sp_rbval_is_array(value) && sp_poly_length(value) == 2) from = fx_fd_of(sp_poly_arr_get(value, 1));
+    for (int i = 0; i < n; i++)
+      if (from == dst[i]) fx_gap(sp_sprintf("exec with a standard stream sent to descriptor %d, which the call replaces", from));
+  }
+  for (int i = 0; i < n; i++) {
+    tmp[i] = fcntl(src[i], F_DUPFD_CLOEXEC, floor);
+    if (tmp[i] < 0) {
+      int e = errno;
+      while (i-- > 0) close(tmp[i]);
+      sp_raise_cls(sp_errno_class_name(e), strerror(e));
+    }
+  }
+  for (int i = 0; i < n; i++) {
+    if (dup2(tmp[i], dst[i]) < 0) {
+      int e = errno;
+      for (int k = i; k < n; k++) close(tmp[k]);
+      sp_raise_cls(sp_errno_class_name(e), strerror(e));
+    }
+    close(tmp[i]);
+    int fl = fcntl(dst[i], F_GETFL);
+    if (fl >= 0 && (fl & O_NONBLOCK)) fcntl(dst[i], F_SETFL, fl & ~O_NONBLOCK);
+  }
+}
+
 /* The keys of an exec's options Hash: the ones of spawn that the runtime
    reads (in, out, err, their groups, pgroup, rlimit_cpu, rlimit_as, chdir,
-   and the ones every spawn ignores, close_others and unsetenv_others). A
-   descriptor past 2 as a key (`3 => io`) has no slot in the array, so it
-   stops as a gap, as does another key, rather than go unread. */
+   and the ones every spawn ignores, close_others and unsetenv_others), and
+   a descriptor past 2 sent to an IO or to a number, which fx_exec_fds
+   makes. Another key, or another value for such a descriptor, stops as a
+   gap rather than go unread. */
 static void fx_exec_opts_check(sp_RbVal opts) {
   static const char *const known[] = { "in", "out", "err", "pgroup", "rlimit_cpu", "rlimit_as", "chdir",
                                        "close_others", "unsetenv_others", NULL };
   for (sp_int j = 0, n = sp_poly_length(opts); j < n; j++) {
     sp_RbVal key, value;
     sp_poly_hash_pair(opts, j, &key, &value);
-    if (key.tag == SP_TAG_INT) {
-      if (key.v.i >= 0 && key.v.i <= 2) continue;
-      fx_gap(sp_sprintf("exec with a redirection of descriptor %lld", (long long)key.v.i));
+    int fd = fx_fd_of(key);
+    if (fd >= 0 && fd <= 2) continue;
+    /* a descriptor past 2: fx_exec_fds makes it, from an IO or a number */
+    if (fd > 2) {
+      if (fx_fd_of(value) >= 0) continue;
+      fx_gap(sp_sprintf("exec with a redirection of descriptor %d to a value that is no IO and no number", fd));
     }
-    if (key.tag == SP_TAG_OBJ && key.cls_id == SP_BUILTIN_IO && key.v.p) {
-      int fd = sp_File_fileno((sp_File *)key.v.p);
-      if (fd >= 0 && fd <= 2) continue;
-      fx_gap(sp_sprintf("exec with a redirection of descriptor %d", fd));
-    }
+    if (key.tag == SP_TAG_INT) fx_gap(sp_sprintf("exec with a redirection of descriptor %lld", (long long)key.v.i));
     /* a group: the runtime reads it when every member is :in, :out, :err
        or a number up to 2 (sp_process_redirect_group), and reads none of
        it otherwise */
@@ -614,8 +678,7 @@ static int fx_process_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVa
   }
   /* exec(env, cmd, *args, opts): the Hashes of spawn, read as spawn reads
      them (fx_spawn_opts). A redirection of a descriptor past 2 has no slot
-     in the options array of the runtime, so it stops as a gap rather
-     than go unread. */
+     in the options array of the runtime: fx_exec_fds makes it. */
   if (FX_IS("exec") && argc >= 1) {
     sp_RbVal env = sp_box_nil(), opts = sp_box_nil();
     SP_GC_ROOT_RBVAL(env);
@@ -629,6 +692,7 @@ static int fx_process_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVa
     for (int i = 1; i < argc; i++) sp_PolyArray_push(args, argv[i]);
     sp_PolyArray *o = fx_spawn_opts(opts, env);
     SP_GC_ROOT(o);
+    if (opts.tag != SP_TAG_NIL) fx_exec_fds(opts);
     /* a pipe of the runtime is O_NONBLOCK; the program that replaces this
        one expects blocking stdio, which the child of spawn gets the same
        way (sp_process.c of spinel). An exec that fails raises, and the
