@@ -314,6 +314,8 @@ static void fx_body(void) {
   _sp_gc_root_push((void **)((uintptr_t)&L.ctl_val | (uintptr_t)1));
   L.console = sp_box_nil();
   _sp_gc_root_push((void **)((uintptr_t)&L.console | (uintptr_t)1));
+  L.popens = sp_box_nil();
+  _sp_gc_root_push((void **)((uintptr_t)&L.popens | (uintptr_t)1));
   fx_object_init();
   fx_host_init();
   fx_hash_init();
