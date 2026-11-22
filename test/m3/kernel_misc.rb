@@ -45,3 +45,15 @@ p [1, nil].any?, [].any?, [nil].any?
 p [1, 2].all?, [].all?, [1, nil].all?
 p [nil, false].none?, [].none?, [1].none?
 p [1, nil].one?, [1, 2].one?, [].one?
+
+# IO.for_fd, IO.new and IO.open of a descriptor that is not open: Errno::EBADF,
+# as CRuby raises it (rubish's `read -u N` reports an unopened descriptor by
+# it), not an IOError of the stream
+f = File.open("/dev/null")
+gone = f.fileno
+f.close
+[-> { IO.for_fd(gone) }, -> { IO.new(gone, "r") }, -> { IO.open(gone) { |x| x } }, -> { IO.for_fd(9999, "w") }].each do |c|
+  c.call
+rescue SystemCallError => e
+  p [e.class, e.message]
+end
