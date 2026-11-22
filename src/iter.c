@@ -2170,6 +2170,24 @@ static int fx_srange_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       return 1;
     }
     if (FX_IS("exclude_end?")) { *out = sp_box_bool(g.excl); return 1; }
+    /* min and max of a Symbol Range with both ends: the wrappers answer a
+       String. As CRuby's Range#min and #max: nil for an empty Range, the
+       begin, and the end, or the greatest element when the end is
+       excluded. */
+    if (g.sym && g.first && g.last && (FX_IS("min") || FX_IS("max"))) {
+      int c = strcmp(g.first->data, g.last->data);
+      if (c > 0 || (c == 0 && g.excl)) { *out = sp_box_nil(); return 1; }
+      if (FX_IS("min") || !g.excl) { *out = fx_srange_side(g, FX_IS("max")); return 1; }
+      sp_RbVal all = fx_srange_to_a(g);
+      SP_GC_ROOT_RBVAL(all);
+      sp_RbVal top = sp_box_nil();
+      for (sp_int i = 0; i < sp_poly_length(all); i++) {
+        sp_RbVal e = sp_poly_arr_get(all, i);
+        if (top.tag == SP_TAG_NIL || strcmp(sp_sym_to_s((sp_sym)e.v.i), sp_sym_to_s((sp_sym)top.v.i)) > 0) top = e;
+      }
+      *out = top;
+      return 1;
+    }
     if (FX_IS("to_a") || FX_IS("entries")) { *out = fx_srange_to_a(g); return 1; }
     if (FX_IS("minmax")) {
       sp_RbVal hi = fx_send(r, "max", 0, NULL);
@@ -2181,6 +2199,16 @@ static int fx_srange_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
     }
     if (FX_IS("count")) { *out = sp_box_int(sp_poly_length(fx_srange_to_a(g))); return 1; }
     return 0;
+  }
+  /* first(n) of a Symbol Range with both ends: the wrapper answers Strings */
+  if (g.sym && g.first && g.last && argc == 1 && FX_IS("first") && argv[0].tag == SP_TAG_INT && argv[0].v.i >= 0) {
+    sp_RbVal all = fx_srange_to_a(g);
+    SP_GC_ROOT_RBVAL(all);
+    sp_PolyArray *p = sp_PolyArray_new();
+    SP_GC_ROOT(p);
+    for (sp_int i = 0; i < sp_poly_length(all) && i < argv[0].v.i; i++) sp_PolyArray_push(p, sp_poly_arr_get(all, i));
+    *out = sp_box_poly_array(p);
+    return 1;
   }
   if (argc == 1 && (FX_IS("include?") || FX_IS("member?") || FX_IS("cover?") || FX_IS("==="))) {
     if ((FX_IS("include?") || FX_IS("member?")) && (!g.first || !g.last))

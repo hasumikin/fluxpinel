@@ -366,6 +366,12 @@ static int fx_string_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv
       *out = r;
       return 1;
     }
+    /* (the row of unpack in the table of spinel has an emitter that types
+       the answer from a literal format, and so no wrapper) */
+    if (FX_IS("unpack")) {
+      *out = sp_box_poly_array(sp_str_unpack(sp_poly_recv_s(r, name), sp_poly_arg_str_chk(a)));
+      return 1;
+    }
     if (FX_IS("unpack1")) {
       *out = sp_PolyArray_get(sp_str_unpack(sp_poly_recv_s(r, name), sp_poly_arg_str_chk(a)), 0);
       return 1;

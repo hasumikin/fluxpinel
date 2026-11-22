@@ -1,5 +1,5 @@
 # The spinel tests that Fluxpinel answers right, for make regress.
-# make oracle writes this file. spinel: b1354828a189
+# make oracle writes this file. spinel: 9829e091b7c6
 absolute_class_reopen_inside_module
 abstract_raise_override_return
 accessor_def_history_both_sides
@@ -445,6 +445,7 @@ attr_assign_value_ivar_target
 attr_assign_value_overridden_writer
 attr_assign_value_shared_string
 attr_decl_value
+attr_def_versions_in_block_list
 attr_forms_from_load_record
 attr_index_shift_op_assign
 attr_op_assign_boxed_operand_arm
@@ -622,6 +623,7 @@ blk_param_reassigned
 blk_param_stored_proc_per_iteration
 block2
 block_alias_rebind_then_write
+block_arg_conditional_proc_string_reach
 block_arg_constant_callable
 block_arg_eval_order
 block_arg_method_lookup_operand_changes
@@ -782,6 +784,8 @@ body_word_version
 bool_case_equality
 bool_is_a_true_false
 bool_literal_method_prepend
+bool_local_bitwise_op_assign
+bool_logical_operators
 bool_nil_reopen_one_side
 bool_reopen_block
 bool_reopen_call_args
@@ -821,6 +825,7 @@ boxed_array_named_set_ops
 boxed_array_source_logic_arms
 boxed_attr_op_assign_reader_first
 boxed_attr_op_assign_reader_missing
+boxed_attr_op_assign_reader_operand
 boxed_attr_op_assign_shapes
 boxed_attr_op_assign_writer_declared_later
 boxed_begin_optional_result
@@ -951,6 +956,7 @@ boxed_respond_to_size_values_at
 boxed_respond_to_with_override
 boxed_round_float_digits_beside_class
 boxed_safe_nav_dispatch_mutator
+boxed_scan_capture_params
 boxed_self_rooted
 boxed_set_join
 boxed_setter_nilable_number
@@ -1091,6 +1097,7 @@ builtin_reopen_array_hash_overrides
 builtin_reopen_array_hash_poly
 builtin_reopen_bignum_receiver
 builtin_reopen_blank_shapes
+builtin_reopen_const_ancestor
 builtin_reopen_const_read_late_write
 builtin_reopen_enum_alias_own
 builtin_reopen_hash_time_methods
@@ -1530,7 +1537,6 @@ class_level_ivar_string_alias
 class_local_copy_receiver
 class_lt_builtin_parent
 class_macro_called_from_another_macro
-class_macro_guard_after
 class_macro_keyword_param_attr_reader
 class_macro_name_of_an_attr_reader
 class_macro_named_only_where_it_goes
@@ -1541,6 +1547,8 @@ class_macro_through_superclass
 class_maker_through_send
 class_member_beats_kernel
 class_method_bare_new_builds_descendant
+class_method_body_visibility
+class_method_body_visibility_reach
 class_method_capture_before_def
 class_method_capture_in_method_body
 class_method_case_eq
@@ -1977,6 +1985,7 @@ const_leaf_shared_with_class
 const_lookup_ancestors_on_collision
 const_lookup_prepend_on_collision
 const_missing_instance_def_unextended_unreached
+const_nil_and_poly_scan
 const_nil_int_element_past_4096_scopes
 const_op_assign_kinds
 const_parent_array_pattern
@@ -2217,7 +2226,6 @@ define_method_each_unroll_typed_apart
 define_method_early_own_define_method
 define_method_in_dead_branch
 define_method_in_uncalled_method
-define_method_nested_block_params
 define_method_other_module_unbound
 define_method_parameters
 define_method_proc_body
@@ -2706,6 +2714,7 @@ exception_object_cause_through_ensure
 exception_override_message_unqueried
 exception_own_methods_implicit_self
 exception_own_to_s
+exception_raised_by_class_records_no_key
 exception_real_objects
 exception_reopen_fresh_receiver
 exception_reopen_initialize
@@ -2737,9 +2746,13 @@ exception_super_message
 exception_uncaught_class_display
 exception_uncaught_own_message
 exception_uncaught_own_to_s
+exception_uncaught_raised_by_class_records_no_receiver
 exception_user_method_dispatch
 exception_user_method_generic_receiver
 exception_user_subclass
+exec_env_hash
+exec_failed_restores
+exec_options_hash
 exhaustive_cond_defs_method_list
 exit_bool_status
 exit_handler_kept_blocks
@@ -2964,6 +2977,7 @@ float_divmod_flodivmod
 float_divmod_zerodiv
 float_elem_binary_nil
 float_elem_cmp_nil
+float_hex_encoding_isa_bool_wave10
 float_ivar_unset_by_ctor_reads_nil
 float_limit_constants
 float_mod_pow_op_assign
@@ -3110,6 +3124,7 @@ freeze_user_object
 fresh_return_cycle_ivar_exit
 fresh_return_cycle_param_exit
 fresh_return_cycle_param_exit_reversed
+fresh_values_held_more
 frozen_array_error_inspect
 frozen_attr_or_op_write
 frozen_boxed_hash_delete_clear_store
@@ -3228,6 +3243,7 @@ gsub_block_subject_root
 gsub_forwarded_block_param
 gsub_hash_default_proc
 gsub_sub_block
+gsub_sub_scan_last_match
 gsub_with_hash_replacement
 guarded_nested_module_declares
 gvar
@@ -3676,6 +3692,7 @@ index_op_assign_reads_slot_first
 index_op_assign_rooted
 index_op_write_container_subclass
 index_op_write_int_operand_float_elem
+index_op_write_key_rebind
 index_op_write_nested
 index_op_write_two_keys
 index_op_write_user_class
@@ -4076,7 +4093,9 @@ io_readpartial_buffer_ivar_poly
 io_readpartial_into_buffer
 io_readpartial_negative_length
 io_reopen_closed_after_failed_reopen
+io_reopen_dispatch
 io_reopen_failed_keeps_handle
+io_reopen_nearest_visibility
 io_reopen_path_stream_state
 io_reopen_static_stream_strings_rooted
 io_respond_to_winsize_no_console
@@ -4094,6 +4113,7 @@ io_stdout_tty_chain
 io_sync_assign_value
 io_syswrite_checks_writable
 io_syswrite_offset
+io_tap_chained_call
 io_tty_winsize_poly_handle
 io_wait_timeout_parks_thread
 io_wait_writable_readonly_error
@@ -4213,6 +4233,7 @@ issue_2945
 issue_2946
 issue_2947
 issue_2949
+issue_2951
 issue_2952
 issue_2953
 issue_2956
@@ -4539,6 +4560,7 @@ ivar_array_pushed_via_singleton
 ivar_array_slot_inherited
 ivar_array_widens_on_read
 ivar_assign_and_expr
+ivar_bitwise_op_write_from_nil
 ivar_conditional_array_push
 ivar_conditional_nil
 ivar_container_from_param_widens_caller
@@ -5026,6 +5048,7 @@ matchdata_methods
 matchdata_named_capture_value_identity
 matchdata_named_groups
 matchdata_object_method
+matchdata_offset_unmatched_nil
 matchdata_splat
 matchdata_values_at_arg_order
 matchdata_values_at_byteoffset
@@ -5104,6 +5127,7 @@ method_capture_keeps_poly_return
 method_capture_kernel_reopen_and_include
 method_capture_loop_param_stays_unbound
 method_capture_object_reopen
+method_capture_of_a_name_nothing_defines
 method_capture_param_evidence
 method_capture_pinned_param_rebind
 method_capture_receiver_beside_top_level_def
@@ -6092,6 +6116,7 @@ poly_dir_position_controls
 poly_dispatch_arg_gc_root
 poly_dispatch_arg_prelude_order
 poly_dispatch_args_forwarded_block_proc_form
+poly_dispatch_arity_mismatch_collision
 poly_dispatch_array_transform_default
 poly_dispatch_attr_reader
 poly_dispatch_block_arg
@@ -6400,6 +6425,7 @@ poly_recv_map_join
 poly_recv_own_named_block_forward
 poly_recv_range_sym_hash_dispatch
 poly_recv_repeated_each_index
+poly_recv_runtime_regex_scan
 poly_recv_str_transform_class_method
 poly_recv_string_shortcut_beside_class_method
 poly_recv_to_i_user
@@ -6458,6 +6484,7 @@ poly_string_aset_keys
 poly_string_at_path_slot
 poly_string_bang_non_string_receiver
 poly_string_binary_methods
+poly_string_builtin_under_user_name
 poly_string_char_index
 poly_string_count_noarg
 poly_string_count_object_count
@@ -6756,6 +6783,7 @@ process_cputime_clocks
 process_detach
 process_last_status
 process_pid
+process_rlimit_defined
 process_spawn
 process_spawn_command_line
 process_spawn_env_hash
@@ -7066,6 +7094,7 @@ redo_in_yielded_block
 redo_pops_frame_and_clause
 reduce_acc_shadow
 reduce_array_accumulator
+reduce_array_set_ops
 reduce_nil_seed
 reduce_no_init_hash_merge
 reduce_numeric_promotion
@@ -7513,6 +7542,7 @@ scan_pattern_rebinds_subject
 scan_pattern_rebinds_subject_stmt
 scan_poly_parameter_subject
 scan_poly_subject_alias
+scan_receiver_result
 scan_subject_alias_conditional_break
 scan_subject_alias_in_block
 scan_subject_alias_made_in_block
@@ -7649,6 +7679,7 @@ send_split_owner_tests_are_builtin
 send_subclass_attr_reader
 send_super_pass_through
 send_traceable_name
+send_unrelated_attr_reader
 send_user_defined_scoped
 send_yielding_block_forward
 set_algebra_operand_enum
@@ -7818,6 +7849,7 @@ socket_addrinfo_and_option
 socket_bind_connect_sockaddr
 socket_boxed_connect_nonblock_sockopt
 socket_class_constants
+socket_class_hierarchy
 socket_close_read_write
 socket_connect_nonblock_keywords_alone_arm
 socket_const_defined
@@ -7851,6 +7883,7 @@ socket_shutdown_boxed_handle
 socket_tcp_basic
 socket_tcp_thread
 socket_two_readers_one_buffer
+socket_unix_tcp_class_methods
 socket_unpack_sockaddr_un_edges
 socket_write_parked_across_spawn
 sort_block_cmp_answer_float
@@ -8006,6 +8039,7 @@ str_match_position
 str_mutate_gvar_cvar_const
 str_mutator_chain_writeback
 str_mutator_paren_boxed_recv
+str_nul_bytes
 str_oct_prefix
 str_opassign_poly_gvar_cvar
 str_ord_empty
@@ -8443,6 +8477,7 @@ string_returned_arg_stored_unaffected
 string_rpartition_empty_separator
 string_rpartition_regex
 string_scan_block_kept_mutation
+string_scan_literal
 string_scrub
 string_search_binary
 string_search_slice
@@ -8517,10 +8552,12 @@ string_try_convert_user_to_str
 string_unary_minus_poly
 string_unary_plus
 string_unary_plus_frozen_receiver
+string_unary_plus_safe_receiver
 string_unbox_keeps_identity
 string_unchanged_result_is_new
 string_undump
 string_unpack_directives
+string_unpack_int_array
 string_with_embedded_nul
 string_yield_block_param_captured
 string_yield_boxed_result
@@ -8791,6 +8828,7 @@ system_argument_list
 system_as_block_tail
 system_env_hash
 system_options
+system_options_spread
 system_program_argv0_pair
 system_splat_kernel_receiver
 systemcallerror_errno_namespaced_subclass
@@ -9171,9 +9209,11 @@ unnamed_methods_backtick_override
 unnamed_methods_left_out
 unpack1_literal_format
 unpack1_short_input_nil
+unpack_base64_each_byte
 unpack_ber_bignum
 unpack_m0_strict_base64
 unpack_u64_bignum
+unpack_user_method_nil_elements
 unreferenced_class_beside_used_class
 unreferenced_class_no_object_machinery
 unreferenced_class_switch_callers
@@ -9310,6 +9350,7 @@ with_index_boxed_dispatch_typed_slot
 with_index_enumerator
 with_index_poly_recv_nil_elem
 write_payload_untyped
+write_value_sequence_local_poly
 yield
 yield_argument_diverging_block_types
 yield_argument_runs_block_once
