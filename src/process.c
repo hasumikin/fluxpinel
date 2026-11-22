@@ -306,10 +306,45 @@ static sp_RbVal fx_spawn_fd(sp_RbVal opts, sp_PolyArray *slots, int slot, int *o
   sp_process_spawn_fail(owned, "ArgumentError", "bad redirect type");
 }
 
+/* The options Hash with a standard descriptor named by its number (`1 =>
+   w`) or by an IO on it (`$stdout => w`) renamed to the Symbol the
+   runtime reads (:in, :out, :err), as CRuby takes all three forms; the Hash
+   itself when no key is of those kinds. A number past 2 stays as it is,
+   for the caller to refuse. */
+static sp_RbVal fx_spawn_opts_keys(sp_RbVal opts) {
+  static const char *const names[] = { "in", "out", "err" };
+  sp_int n = sp_poly_length(opts);
+  int renamed = 0;
+  for (sp_int j = 0; j < n && !renamed; j++) {
+    sp_RbVal key, value;
+    sp_poly_hash_pair(opts, j, &key, &value);
+    renamed = (key.tag == SP_TAG_INT && key.v.i >= 0 && key.v.i <= 2) ||
+              (key.tag == SP_TAG_OBJ && key.cls_id == SP_BUILTIN_IO && key.v.p &&
+               sp_File_fileno((sp_File *)key.v.p) <= 2);
+  }
+  if (!renamed) return opts;
+  sp_PolyPolyHash *h = sp_PolyPolyHash_new();
+  sp_RbVal hv = sp_box_obj(h, SP_BUILTIN_POLY_POLY_HASH);
+  SP_GC_ROOT_RBVAL(hv);
+  for (sp_int j = 0; j < n; j++) {
+    sp_RbVal key, value;
+    sp_poly_hash_pair(opts, j, &key, &value);
+    int fd = key.tag == SP_TAG_INT ? (int)key.v.i
+           : key.tag == SP_TAG_OBJ && key.cls_id == SP_BUILTIN_IO && key.v.p ? sp_File_fileno((sp_File *)key.v.p)
+           : -1;
+    if (fd >= 0 && fd <= 2) key = sp_box_sym(sp_sym_intern(names[fd]));
+    sp_PolyPolyHash_set(h, key, value);
+  }
+  return hv;
+}
+
 /* The options array of sp_process_spawn: [in, out, err, pgroup,
    rlimit_cpu, rlimit_as, chdir, owned, env]. opts is the options Hash or
    nil, env the environment Hash or nil. */
 static sp_PolyArray *fx_spawn_opts(sp_RbVal opts, sp_RbVal env) {
+  SP_GC_ROOT_RBVAL(opts);
+  SP_GC_ROOT_RBVAL(env);
+  if (opts.tag != SP_TAG_NIL) opts = fx_spawn_opts_keys(opts);
   sp_PolyArray *a = sp_PolyArray_new();
   SP_GC_ROOT(a);
   int owned[3] = { -1, -1, -1 };
@@ -517,6 +552,38 @@ static sp_RbVal fx_fork(const FxBlock *blk) {
   fx_child_exit(st, sig);
 }
 
+/* The keys of an exec's options Hash: the ones of spawn that the runtime
+   reads (in, out, err, their groups, pgroup, rlimit_cpu, rlimit_as, chdir,
+   and the ones every spawn ignores, close_others and unsetenv_others). A
+   descriptor past 2 as a key (`3 => io`) has no slot in the array, so it
+   stops as a gap, as does another key, rather than go unread. */
+static void fx_exec_opts_check(sp_RbVal opts) {
+  static const char *const known[] = { "in", "out", "err", "pgroup", "rlimit_cpu", "rlimit_as", "chdir",
+                                       "close_others", "unsetenv_others", NULL };
+  for (sp_int j = 0, n = sp_poly_length(opts); j < n; j++) {
+    sp_RbVal key, value;
+    sp_poly_hash_pair(opts, j, &key, &value);
+    if (key.tag == SP_TAG_INT) {
+      if (key.v.i >= 0 && key.v.i <= 2) continue;
+      fx_gap(sp_sprintf("exec with a redirection of descriptor %lld", (long long)key.v.i));
+    }
+    if (key.tag == SP_TAG_OBJ && key.cls_id == SP_BUILTIN_IO) {
+      int fd = sp_File_fileno((sp_File *)key.v.p);
+      if (fd >= 0 && fd <= 2) continue;
+      fx_gap(sp_sprintf("exec with a redirection of descriptor %d", fd));
+    }
+    if (sp_rbval_is_array(key)) continue;   /* a group of the standard ones, which the runtime reads */
+    if (key.tag == SP_TAG_SYM) {
+      const char *k = sp_sym_to_s((sp_sym)key.v.i);
+      int ok = 0;
+      for (int i = 0; known[i]; i++) if (!strcmp(k, known[i])) ok = 1;
+      if (ok) continue;
+      fx_gap(sp_sprintf("exec with the option %s", k));
+    }
+    fx_gap("exec with an option of that key");
+  }
+}
+
 static int fx_process_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   if (FX_IS("fork") && argc == 0) { *out = fx_fork(NULL); return 1; }
   if (FX_IS("spawn")) { *out = sp_box_int(fx_spawn(argc, argv)); return 1; }
@@ -528,13 +595,22 @@ static int fx_process_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVa
     *out = sp_box_str_new(s);
     return 1;
   }
+  /* exec(env, cmd, *args, opts): the Hashes of spawn, read as spawn reads
+     them (fx_spawn_opts). A redirection of a descriptor past 2 has no slot
+     in the options array of the runtime, so it stops as a gap rather
+     than go unread. */
   if (FX_IS("exec") && argc >= 1) {
-    if (fx_is_hash(argv[0]) || fx_opts_hash(argc, argv)) fx_gap("exec with an environment or an options Hash");
+    sp_RbVal env = sp_box_nil(), opts = sp_box_nil();
+    SP_GC_ROOT_RBVAL(env);
+    SP_GC_ROOT_RBVAL(opts);
+    if (fx_opts_hash(argc, argv)) opts = argv[--argc];
+    if (argc >= 1 && fx_is_hash(argv[0])) { env = argv[0]; argv++; argc--; }
+    if (argc < 1) sp_raise_cls("ArgumentError", "wrong number of arguments (given 0, expected 1+)");
+    if (opts.tag != SP_TAG_NIL) fx_exec_opts_check(opts);
     sp_PolyArray *args = sp_PolyArray_new();
     SP_GC_ROOT(args);
     for (int i = 1; i < argc; i++) sp_PolyArray_push(args, argv[i]);
-    /* the options array of spawn, with no option and no environment */
-    sp_PolyArray *o = fx_spawn_opts(sp_box_nil(), sp_box_nil());
+    sp_PolyArray *o = fx_spawn_opts(opts, env);
     SP_GC_ROOT(o);
     /* a pipe of the runtime is O_NONBLOCK; the program that replaces this
        one expects blocking stdio, which the child of spawn gets the same
