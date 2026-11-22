@@ -849,7 +849,7 @@ static int fx_argf_ensure(void) {
   fx_argf.name = sp_box_str_new(sp_str_dup(path));
   if (!strcmp(path, "-")) { fx_argf.file = fx_gvar_get("$stdin"); return 1; }
   sp_File *f;
-  FX_UNLOCKED_ROOT(f = sp_File_open(path, "r"), SP_GC_ROOT(f));
+  FX_UNLOCKED_ROOT(f = sp_File_open(path, SPL("r")), SP_GC_ROOT(f));
   fx_argf.file = sp_box_obj(f, SP_BUILTIN_IO);
   return 1;
 }

@@ -66,7 +66,7 @@ static int fx_file_write(int argc, sp_RbVal *argv, sp_RbVal *out) {
     pv = sp_PolyPolyHash_get(kw, pk);
     sp_oint perm = sp_poly_arg_perm(pv);
     sp_int n;
-    FX_UNLOCKED(n = sp_file_write_perm(path, data, mode ? mode : "w", perm));   /* an open of a FIFO waits */
+    FX_UNLOCKED(n = sp_file_write_perm(path, data, mode ? mode : SPL("w"), perm));   /* an open of a FIFO waits */
     *out = sp_box_int(n);
   } else {
     *out = sp_box_int(mode ? sp_file_write_mode(path, data, mode) : sp_file_write(path, data));
@@ -134,7 +134,7 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
     const char *path = sp_poly_arg_path(argv[0]);
     SP_GC_ROOT_STR(path);
     sp_File *f;
-    FX_UNLOCKED_ROOT(f = sp_File_open(path, "r"), SP_GC_ROOT(f));   /* an open of a FIFO waits for its peer */
+    FX_UNLOCKED_ROOT(f = sp_File_open(path, SPL("r")), SP_GC_ROOT(f));   /* an open of a FIFO waits for its peer */
     SP_GC_ROOT(f);
     sp_StrArray *a = sp_StrArray_new();
     SP_GC_ROOT(a);
@@ -813,7 +813,9 @@ static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal 
       int n = argc;
       if (fx_is_kwargs(argv[n - 1])) n--;
       if (n > 2) return 0;
-      const char *mode = n == 2 ? sp_poly_arg_str_chk(argv[1]) : "r";
+      /* the handle keeps the mode and the collector reads the byte ahead of
+         it, so the default is a marked literal (SPL), not a bare one */
+      const char *mode = n == 2 ? sp_poly_arg_str_chk(argv[1]) : SPL("r");
       int fd = (int)argv[0].v.i;
       sp_File *f = sp_io_fdopen_ex(fd, mode, fd > 2);
       if (fd <= 2) f->no_autoclose = 1;   /* a close, or the collector, flushes and leaves the descriptor */
