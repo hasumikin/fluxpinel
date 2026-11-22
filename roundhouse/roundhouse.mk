@@ -66,8 +66,9 @@ $(RH_BLOG_DIR)/.fx-stamp: $(RH_RAILS)/.fx-stamp roundhouse/apply.rb roundhouse/c
 	touch $@
 
 # --load-model=inline: under the graph model, the default of spinel, the
-# parameter of Console.serve (roundhouse/console.rb) gets no type, and
-# spinel refuses the `sock.gets` of its loop.
+# kernel of the blog has the code of Marshal. With --ext-init, spinel then
+# writes a static declaration of sp_sym_intern after its definition, which
+# is not static, and the C compiler stops.
 roundhouse: $(RH_BLOG_DIR)/.fx-stamp
 	$(MAKE) host HOST=$(RH_HOST_DIR) HOST_NAME=blog KERNEL=$(RH_BLOG_DIR)/main.rb KERNEL_MAIN=Main.start \
 	  KERNEL_ENTRIES=$(RH_ENTRIES) \
