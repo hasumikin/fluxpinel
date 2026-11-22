@@ -560,19 +560,51 @@ static int fx_fd_of(sp_RbVal v) {
   return -1;
 }
 
+/* A file value of a redirection past 2, as File.open reads it: [path,
+   mode] or [path, flags, perm], or a bare path, which is opened to read
+   (CRuby reads a path under a descriptor past 2). An element past the third
+   is not read, as CRuby reads none. The open itself is the caller's, once
+   every value of the call is read, so a value that raises leaves nothing
+   open. */
+static const char *fx_exec_file(sp_RbVal v, int *fl, int *perm) {
+  sp_RbVal path = v, mode = sp_box_nil(), pm = sp_box_nil();
+  if (sp_rbval_is_array(v)) {
+    sp_int len = sp_poly_length(v);
+    path = len > 0 ? sp_poly_arr_get(v, 0) : sp_box_nil();
+    if (len > 1) mode = sp_poly_arr_get(v, 1);
+    if (len > 2) pm = sp_poly_arr_get(v, 2);
+  }
+  const char *p = sp_poly_arg_str_chk(path);
+  *fl = O_RDONLY;
+  if (mode.tag == SP_TAG_INT) *fl = (int)mode.v.i;
+  else if (mode.tag == SP_TAG_FLT) *fl = (int)mode.v.f; /* a number is the flags, as CRuby's NUM2INT reads it */
+  else if (mode.tag != SP_TAG_NIL) {
+    const char *m = sp_poly_arg_str_chk(mode);
+    *fl = sp_io_mode_open_flags(m);
+    if (*fl < 0) sp_raise_cls("ArgumentError", sp_sprintf("invalid access mode %s", m));
+  }
+  *perm = pm.tag == SP_TAG_NIL ? 0644 : (int)sp_poly_arg_int_chk(pm);
+  return p;
+}
+
 /* The redirections of an exec to a descriptor past 2 (`3 => io`,
-   `io3 => 4`), which have no slot in the options array of the runtime.
-   An exec applies its options to this process, which becomes the command,
-   so the descriptors are made here, ahead of the runtime's own: each
-   source is copied aside first, so one redirection reads the descriptor
-   another one replaces as it was before the call (`3 => r4, 4 => r3`),
-   and a standard stream sent to one of them is the stream of before
-   (`1 => w, 3 => $stdout`). The copy made by dup2 stays open across the
-   exec. As for the standard streams, the program gets a blocking
-   descriptor. An exec that fails leaves them as made, as CRuby does. */
+   `io3 => 4`, `3 => [path, "w"]`, `3 => :close`), which have no slot in
+   the options array of the runtime. An exec applies its options to this
+   process, which becomes the command, so the descriptors are made here,
+   ahead of the runtime's own: a file is opened, each source is copied
+   aside, so one redirection reads the descriptor another one replaces as
+   it was before the call (`3 => r4, 4 => r3`), and a standard stream sent
+   to one of them is the stream of before (`1 => w, 3 => $stdout`). A
+   descriptor opened here is closed once copied, so the program gets the
+   copy alone; a :close is done after the copies land, as CRuby closes
+   after its dup2s. The copy made by dup2 stays open across the exec. As
+   for the standard streams, the program gets a blocking descriptor. An
+   exec that fails leaves them as made, as CRuby does. */
 #define FX_EXEC_FDS 16
+#define FX_EXEC_CLOSE (-2)
 static void fx_exec_fds(sp_RbVal opts) {
-  int dst[FX_EXEC_FDS], src[FX_EXEC_FDS], tmp[FX_EXEC_FDS], n = 0, floor = 3;
+  int dst[FX_EXEC_FDS], src[FX_EXEC_FDS], tmp[FX_EXEC_FDS], fl[FX_EXEC_FDS], perm[FX_EXEC_FDS], n = 0, floor = 3;
+  const char *path[FX_EXEC_FDS];
   sp_int len = sp_poly_length(opts);
   for (sp_int j = 0; j < len; j++) {
     sp_RbVal key, value;
@@ -581,12 +613,15 @@ static void fx_exec_fds(sp_RbVal opts) {
     if (fd <= 2) continue;
     if (n == FX_EXEC_FDS) fx_gap("exec with more than 16 redirections of a descriptor past 2");
     dst[n] = fd;
-    src[n++] = fx_fd_of(value);
+    path[n] = NULL;
+    if (value.tag == SP_TAG_SYM && value.v.i == sp_sym_intern("close")) src[n] = FX_EXEC_CLOSE;
+    else if ((src[n] = fx_fd_of(value)) < 0) path[n] = fx_exec_file(value, &fl[n], &perm[n]);
+    n++;
     if (fd >= floor) floor = fd + 1;
   }
   if (n == 0) return;
   /* the runtime applies a standard stream after these: one that reads a
-     descriptor made here would read the new one, not the one of before */
+     descriptor made or closed here would not read the one of before */
   for (sp_int j = 0; j < len; j++) {
     sp_RbVal key, value;
     sp_poly_hash_pair(opts, j, &key, &value);
@@ -597,31 +632,47 @@ static void fx_exec_fds(sp_RbVal opts) {
       if (from == dst[i]) fx_gap(sp_sprintf("exec with a standard stream sent to descriptor %d, which the call replaces", from));
   }
   for (int i = 0; i < n; i++) {
-    tmp[i] = fcntl(src[i], F_DUPFD_CLOEXEC, floor);
-    if (tmp[i] < 0) {
+    if (!path[i]) continue;
+    src[i] = open(path[i], fl[i], (mode_t)perm[i]);
+    if (src[i] < 0) {
       int e = errno;
-      while (i-- > 0) close(tmp[i]);
-      sp_raise_cls(sp_errno_class_name(e), strerror(e));
+      while (i-- > 0) if (path[i]) close(src[i]);
+      sp_raise_cls(sp_errno_class_name(e), sp_sprintf("%s - %s", strerror(e), path[i + 1]));
     }
   }
   for (int i = 0; i < n; i++) {
+    tmp[i] = -1;
+    if (src[i] < 0) continue;
+    tmp[i] = fcntl(src[i], F_DUPFD_CLOEXEC, floor);
+    if (tmp[i] < 0) {
+      int e = errno;
+      for (int k = 0; k < i; k++) if (tmp[k] >= 0) close(tmp[k]);
+      for (int k = 0; k < n; k++) if (path[k]) close(src[k]);
+      sp_raise_cls(sp_errno_class_name(e), strerror(e));
+    }
+  }
+  for (int i = 0; i < n; i++) if (path[i]) close(src[i]);
+  for (int i = 0; i < n; i++) {
+    if (tmp[i] < 0) continue;
     if (dup2(tmp[i], dst[i]) < 0) {
       int e = errno;
-      for (int k = i; k < n; k++) close(tmp[k]);
+      for (int k = i; k < n; k++) if (tmp[k] >= 0) close(tmp[k]);
       sp_raise_cls(sp_errno_class_name(e), strerror(e));
     }
     close(tmp[i]);
-    int fl = fcntl(dst[i], F_GETFL);
-    if (fl >= 0 && (fl & O_NONBLOCK)) fcntl(dst[i], F_SETFL, fl & ~O_NONBLOCK);
+    int f = fcntl(dst[i], F_GETFL);
+    if (f >= 0 && (f & O_NONBLOCK)) fcntl(dst[i], F_SETFL, f & ~O_NONBLOCK);
   }
+  for (int i = 0; i < n; i++) if (src[i] == FX_EXEC_CLOSE) close(dst[i]);
 }
 
 /* The keys of an exec's options Hash: the ones of spawn that the runtime
    reads (in, out, err, their groups, pgroup, rlimit_cpu, rlimit_as, chdir,
    and the ones every spawn ignores, close_others and unsetenv_others), and
-   a descriptor past 2 sent to an IO or to a number, which fx_exec_fds
-   makes. Another key, or another value for such a descriptor, stops as a
-   gap rather than go unread. */
+   a descriptor past 2 sent to an IO, a number, a file (a path, or an Array
+   of path, mode and permission) or :close, which fx_exec_fds makes. Another
+   key, or another value for such a descriptor, stops as a gap rather than
+   go unread. */
 static void fx_exec_opts_check(sp_RbVal opts) {
   static const char *const known[] = { "in", "out", "err", "pgroup", "rlimit_cpu", "rlimit_as", "chdir",
                                        "close_others", "unsetenv_others", NULL };
@@ -630,10 +681,11 @@ static void fx_exec_opts_check(sp_RbVal opts) {
     sp_poly_hash_pair(opts, j, &key, &value);
     int fd = fx_fd_of(key);
     if (fd >= 0 && fd <= 2) continue;
-    /* a descriptor past 2: fx_exec_fds makes it, from an IO or a number */
+    /* a descriptor past 2: fx_exec_fds makes it */
     if (fd > 2) {
-      if (fx_fd_of(value) >= 0) continue;
-      fx_gap(sp_sprintf("exec with a redirection of descriptor %d to a value that is no IO and no number", fd));
+      if (fx_fd_of(value) >= 0 || fx_is_string(value) || sp_rbval_is_array(value) ||
+          (value.tag == SP_TAG_SYM && value.v.i == sp_sym_intern("close"))) continue;
+      fx_gap(sp_sprintf("exec with a redirection of descriptor %d to a value that is no IO, number, file or :close", fd));
     }
     if (key.tag == SP_TAG_INT) fx_gap(sp_sprintf("exec with a redirection of descriptor %lld", (long long)key.v.i));
     /* a group: the runtime reads it when every member is :in, :out, :err

@@ -284,6 +284,65 @@ pid = fork do
   end
 end
 Process.wait(pid)
+# a descriptor past 2 to a file: [path, mode] or [path, flags, perm] opens
+# it, a bare path opens it for reading, :close closes it
+f3 = File.join(dir, "f3.txt")
+pid = fork { exec("sh", "-c", "printf written >&3", 3 => [f3, "w"]) }
+Process.wait(pid)
+p File.read(f3)
+pid = fork { exec("sh", "-c", "printf more >&3", 3 => [f3, "a"]) }
+Process.wait(pid)
+p File.read(f3)
+r, w = IO.pipe
+pid = fork { r.close; exec("sh", "-c", "read line <&3; echo $line >&4", 3 => [f3, "r"], 4 => w) }
+w.close
+p r.read
+r.close
+Process.wait(pid)
+f5 = File.join(dir, "f5.txt")
+pid = fork { exec("sh", "-c", "printf flags >&5", 5 => [f5, File::WRONLY | File::CREAT | File::TRUNC, 0600]) }
+Process.wait(pid)
+p File.read(f5), File.stat(f5).mode & 0777
+r, w = IO.pipe
+pid = fork { r.close; exec("sh", "-c", "cat <&3 >&4", 3 => f5, 4 => w) }
+w.close
+p r.read
+r.close
+Process.wait(pid)
+r, w = IO.pipe
+pid = fork do
+  r.close
+  held = File.open(f3)
+  n = held.fileno
+  exec("sh", "-c", "if [ -e /dev/fd/#{n} ]; then echo open; else echo closed; fi", n => :close, 1 => w)
+end
+w.close
+p r.read
+r.close
+Process.wait(pid)
+# the file is opened before the command: a path that cannot be opened and a
+# mode File.open refuses raise here, and a permission that is no number is
+# a TypeError
+pid = fork do
+  begin
+    exec("true", 3 => [File.join(dir, "none", "x"), "r"])
+  rescue SystemCallError => e
+    puts e.class
+  end
+  begin
+    exec("true", 3 => [f3, "z"])
+  rescue ArgumentError => e
+    puts e.message
+  end
+  begin
+    exec("true", 3 => [f3, "w", "0644"])
+  rescue TypeError => e
+    puts e.message
+  end
+  exit 3
+end
+Process.wait(pid)
+p $?.exitstatus
 pid = fork { exec({ "FX_EXEC" => "x" }, "sh", "-c", "exit 7") }
 Process.wait(pid)
 p $?.exitstatus
