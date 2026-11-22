@@ -251,7 +251,8 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
   }
   static const char *const one[] = { "exist?", "directory?", "file?", "symlink?", "size", "basename", "dirname",
                                      "extname", "readable?", "writable?", "executable?", "mtime", "atime", "ctime",
-                                     "path", "stat", "lstat", "ftype", NULL };
+                                     "path", "stat", "lstat", "ftype", "chardev?", "blockdev?", "pipe?", "socket?",
+                                     NULL };
   int is_one = 0;
   for (int i = 0; argc == 1 && one[i]; i++)
     if (FX_IS(one[i])) is_one = 1;
@@ -260,7 +261,16 @@ static int fx_file_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out)
     SP_GC_ROOT_STR(path);
     if (FX_IS("exist?")) { *out = sp_box_bool(sp_file_exist(path)); return 1; }
     if (FX_IS("directory?")) { *out = sp_box_bool(sp_file_directory(path)); return 1; }
-    if (FX_IS("file?")) { *out = sp_box_bool(!sp_file_directory(path) && sp_file_exist(path)); return 1; }
+    /* the kind of the file, by its mode, as CRuby's predicates answer it: a
+       device, a FIFO and a socket are no file; a missing path is none */
+    if (FX_IS("file?") || FX_IS("chardev?") || FX_IS("blockdev?") || FX_IS("pipe?") || FX_IS("socket?")) {
+      struct stat st;
+      int ok = stat(path, &st) == 0;
+      mode_t m = ok ? st.st_mode : 0;
+      *out = sp_box_bool(ok && (FX_IS("file?") ? S_ISREG(m) : FX_IS("chardev?") ? S_ISCHR(m) : FX_IS("blockdev?") ? S_ISBLK(m)
+                                                : FX_IS("pipe?") ? S_ISFIFO(m) : S_ISSOCK(m)));
+      return 1;
+    }
     if (FX_IS("symlink?")) { *out = sp_box_bool(sp_file_symlink(path)); return 1; }
     if (FX_IS("ftype")) { *out = sp_box_str_new(sp_file_ftype(path)); return 1; }
     if (FX_IS("size")) { *out = sp_box_int(sp_file_size(path)); return 1; }
@@ -845,7 +855,8 @@ static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal 
 static int fx_file_responds(sp_RbVal r, const char *name) {
   static const char *const names[] = { "open", "new", "foreach", "readlines", "join", "delete", "unlink",
                                        "write", "binwrite", "read", "binread",
-                                       "exist?", "directory?", "file?", "symlink?", "size", "basename", "dirname",
+                                       "exist?", "directory?", "file?", "symlink?", "chardev?", "blockdev?", "pipe?",
+                                       "socket?", "size", "basename", "dirname",
                                        "extname", "readable?", "writable?", "executable?", "mtime", "atime",
                                        "ctime", "path", "stat", "lstat", "expand_path", "absolute_path",
                                        "absolute_path?", NULL };
