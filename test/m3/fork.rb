@@ -211,6 +211,19 @@ w.close
 p r.read
 r.close
 Process.wait(pid)
+# a group of the standard descriptors, named by number or by Symbol
+r, w = IO.pipe
+pid = fork { r.close; exec("sh", "-c", "printf out; printf err >&2", [1, 2] => w) }
+w.close
+p r.read
+r.close
+Process.wait(pid)
+r, w = IO.pipe
+pid = fork { r.close; exec("sh", "-c", "printf out; printf err >&2", [:out, :err] => w) }
+w.close
+p r.read
+r.close
+Process.wait(pid)
 pid = fork { exec({ "FX_EXEC" => "x" }, "sh", "-c", "exit 7") }
 Process.wait(pid)
 p $?.exitstatus

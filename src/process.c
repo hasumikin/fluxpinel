@@ -567,12 +567,29 @@ static void fx_exec_opts_check(sp_RbVal opts) {
       if (key.v.i >= 0 && key.v.i <= 2) continue;
       fx_gap(sp_sprintf("exec with a redirection of descriptor %lld", (long long)key.v.i));
     }
-    if (key.tag == SP_TAG_OBJ && key.cls_id == SP_BUILTIN_IO) {
+    if (key.tag == SP_TAG_OBJ && key.cls_id == SP_BUILTIN_IO && key.v.p) {
       int fd = sp_File_fileno((sp_File *)key.v.p);
       if (fd >= 0 && fd <= 2) continue;
       fx_gap(sp_sprintf("exec with a redirection of descriptor %d", fd));
     }
-    if (sp_rbval_is_array(key)) continue;   /* a group of the standard ones, which the runtime reads */
+    /* a group: the runtime reads it when every member is :in, :out, :err
+       or a number up to 2 (sp_process_redirect_group), and reads none of
+       it otherwise */
+    if (sp_rbval_is_array(key)) {
+      for (sp_int i = 0, len = sp_poly_length(key); i < len; i++) {
+        sp_RbVal m = sp_poly_arr_get(key, i);
+        if (m.tag == SP_TAG_INT) {
+          if (m.v.i >= 0 && m.v.i <= 2) continue;
+          fx_gap(sp_sprintf("exec with a redirection of descriptor %lld", (long long)m.v.i));
+        }
+        if (m.tag == SP_TAG_SYM) {
+          const char *k = sp_sym_to_s((sp_sym)m.v.i);
+          if (!strcmp(k, "in") || !strcmp(k, "out") || !strcmp(k, "err")) continue;
+        }
+        fx_gap("exec with a redirection group of that member");
+      }
+      continue;
+    }
     if (key.tag == SP_TAG_SYM) {
       const char *k = sp_sym_to_s((sp_sym)key.v.i);
       int ok = 0;
