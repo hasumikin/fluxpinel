@@ -18,3 +18,4 @@ int builtin_method_arity(const char *cls, const char *m, int *out);
 int builtin_method_fixed_any(const char *m);
 int builtin_class_arity_spec(const char *cls, const char *m, int *min, int *max,
                              const char **lo_exp, const char **hi_exp);
+int core_method_vis(const char *cls, const char *m, int inherit, const char **owner);
