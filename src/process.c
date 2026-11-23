@@ -636,8 +636,8 @@ static void fx_exec_fds(sp_RbVal opts) {
     src[i] = open(path[i], fl[i], (mode_t)perm[i]);
     if (src[i] < 0) {
       int e = errno;
-      while (i-- > 0) if (path[i]) close(src[i]);
-      sp_raise_cls(sp_errno_class_name(e), sp_sprintf("%s - %s", strerror(e), path[i + 1]));
+      for (int k = 0; k < i; k++) if (path[k]) close(src[k]);
+      sp_raise_cls(sp_errno_class_name(e), sp_sprintf("%s - %s", strerror(e), path[i]));
     }
   }
   for (int i = 0; i < n; i++) {
@@ -671,8 +671,8 @@ static void fx_exec_fds(sp_RbVal opts) {
    and the ones every spawn ignores, close_others and unsetenv_others), and
    a descriptor past 2 sent to an IO, a number, a file (a path, or an Array
    of path, mode and permission) or :close, which fx_exec_fds makes. Another
-   key, or another value for such a descriptor, stops as a gap rather than
-   go unread. */
+   key, or another value for such a descriptor (one of a descriptor of the
+   child among them), stops as a gap rather than go unread. */
 static void fx_exec_opts_check(sp_RbVal opts) {
   static const char *const known[] = { "in", "out", "err", "pgroup", "rlimit_cpu", "rlimit_as", "chdir",
                                        "close_others", "unsetenv_others", NULL };
@@ -681,8 +681,13 @@ static void fx_exec_opts_check(sp_RbVal opts) {
     sp_poly_hash_pair(opts, j, &key, &value);
     int fd = fx_fd_of(key);
     if (fd >= 0 && fd <= 2) continue;
-    /* a descriptor past 2: fx_exec_fds makes it */
+    /* a descriptor past 2: fx_exec_fds makes it. An Array that names a
+       descriptor of the child ([:child, fd]) is a form it does not make;
+       another Array is a file's, and one whose first element is no String
+       raises the TypeError File.open would. */
     if (fd > 2) {
+      if (sp_rbval_is_array(value) && sp_poly_length(value) > 0 && sp_poly_arr_get(value, 0).tag == SP_TAG_SYM)
+        fx_gap(sp_sprintf("exec with a redirection of descriptor %d to a descriptor of the child", fd));
       if (fx_fd_of(value) >= 0 || fx_is_string(value) || sp_rbval_is_array(value) ||
           (value.tag == SP_TAG_SYM && value.v.i == sp_sym_intern("close"))) continue;
       fx_gap(sp_sprintf("exec with a redirection of descriptor %d to a value that is no IO, number, file or :close", fd));

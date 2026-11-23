@@ -339,6 +339,31 @@ pid = fork do
   rescue TypeError => e
     puts e.message
   end
+  # the error names the path that failed to open, after a redirection to an
+  # IO and after one to a file that opened
+  f6 = File.join(dir, "f6.txt")
+  begin
+    exec("true", 3 => $stdout, 4 => [File.join(dir, "none", "x"), "r"])
+  rescue SystemCallError => e
+    puts e.message.sub(dir, "DIR")
+  end
+  begin
+    exec("true", 3 => [f6, "w"], 4 => [File.join(dir, "none", "x"), "r"])
+  rescue SystemCallError => e
+    puts e.message.sub(dir, "DIR")
+  end
+  p File.exist?(f6)
+  # an array whose first element is no String is the TypeError of File.open
+  begin
+    exec("true", 3 => [3, "r"])
+  rescue TypeError => e
+    puts e.message
+  end
+  begin
+    exec("true", 3 => [])
+  rescue TypeError => e
+    puts e.message
+  end
   exit 3
 end
 Process.wait(pid)
