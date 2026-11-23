@@ -61,6 +61,12 @@ int builtin_class_arity_spec(const char *cls, const char *m, int *min, int *max,
                              const char **lo_exp, const char **hi_exp) {
   (void)cls; (void)m; (void)min; (void)max; (void)lo_exp; (void)hi_exp; abort();
 }
+/* builtin_module_method_known asks core_method_vis (src/codegen_call_class.c)
+   for the visibility of a method of a core class; the generator does not
+   call it either */
+int core_method_vis(const char *cls, const char *m, int inherit, const char **owner) {
+  (void)cls; (void)m; (void)inherit; (void)owner; abort();
+}
 
 typedef struct {
   TyKind recv;     /* the concrete receiver kind */
