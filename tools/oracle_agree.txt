@@ -1,5 +1,5 @@
 # The spinel tests that Fluxpinel answers right, for make regress.
-# make oracle writes this file. spinel: 13310768cc91
+# make oracle writes this file. spinel: 21e210318d93
 absolute_class_reopen_inside_module
 abstract_raise_override_return
 accessor_def_history_both_sides
@@ -1507,6 +1507,7 @@ class_eval_text_source_line
 class_eval_value_bare_call
 class_eval_value_form
 class_eval_value_on_constant_path
+class_exec_arguments_in_class_body
 class_exec_def_body
 class_facts_row_of_table
 class_header_alias_between_headers
@@ -2334,6 +2335,7 @@ dir_glob_flags_and_keywords
 dir_glob_keyword_options
 dir_glob_patterns
 dir_glob_recursive
+dir_glob_root
 dir_glob_slash_and_dedup
 dir_glob_splat_patterns
 dir_handle_objects
@@ -2582,6 +2584,7 @@ enum_for_guard_value_elsif_ladder
 enum_for_guard_value_logic
 enum_for_guard_value_logic_and
 enum_for_guard_value_rescue_mod
+enum_for_keyword_args
 enum_for_method_args
 enum_for_method_with_args
 enum_index_reduce
@@ -3718,6 +3721,7 @@ included_hook_include_enumerable_in_block
 included_hook_instance_variable_set_on_base
 included_hook_local_beside_own
 included_hook_local_per_includer
+included_hook_local_read_in_block
 included_hook_module_ivar
 included_hook_module_ivar_and_includer
 included_hook_module_ivar_into_class
@@ -3960,8 +3964,11 @@ instance_methods_false_chain
 instance_methods_own_behind_reopened_mixin
 instance_methods_prepended_own
 instance_of_in_inherited_method
+instance_variable_by_name_in_class_method
 instance_variable_by_name_on_path
+instance_variable_defined_on_class_self
 instance_variable_get_poly_recv
+instance_variable_set_in_class_body_block
 instance_variable_set_value_class
 instance_variables_list
 int_arg_into_bigint_param
@@ -4729,6 +4736,7 @@ kernel_puts_reassigned_stdout
 kernel_rational_strict
 kernel_rational_string_zerodenom
 kernel_recv_beside_own_method
+kernel_recv_const_leaves_program
 kernel_recv_in_same_named_cmethod
 kernel_reopen_bare_call_self
 kernel_reopen_in_engine_branch
@@ -6485,6 +6493,7 @@ poly_recv_hash_dup
 poly_recv_hash_each_dispatch
 poly_recv_int_iterators
 poly_recv_map_join
+poly_recv_narrowed_boxed_string_arg
 poly_recv_own_named_block_forward
 poly_recv_range_sym_hash_dispatch
 poly_recv_repeated_each_index
@@ -7359,6 +7368,7 @@ rescue_bind_in_fiber_body
 rescue_bind_in_lambda_proc_body
 rescue_binding_captured_local
 rescue_builtin_module_include
+rescue_builtin_module_leaf_class
 rescue_class_variable
 rescue_local_write_kept
 rescue_mod_yield_nil_value
@@ -7700,6 +7710,7 @@ send_computed_name_user_receiver
 send_computed_setter_class_method_beside_attr_writer
 send_computed_writer_ivar_classes
 send_dead_code
+send_declaration_in_class_body
 send_dispatch_review
 send_dynamic_arm_default_refused
 send_each_line_block
@@ -7927,6 +7938,7 @@ socket_domain_type_by_name
 socket_dup_keeps_shut_side
 socket_getaddrinfo_family_socktype
 socket_getsockname
+socket_getsockopt_raises
 socket_given_to_child
 socket_handle_kind
 socket_large_read_n
@@ -8832,6 +8844,7 @@ super_qualified_superclass
 super_reaches_basic_object_equality_reopening
 super_rest_current_value
 super_splat_spreads_into_parent
+super_subclasses_class_value_arms
 super_sym_local_block
 super_text_included_module
 super_text_kernel_via_module
@@ -8876,6 +8889,7 @@ symbol_cmp_boxed
 symbol_embedded_nul
 symbol_eql_equal_poly
 symbol_id2name_ruby_desc_minmax
+symbol_inspect_control_byte
 symbol_inspect_nonascii
 symbol_inspect_quoting
 symbol_intern_fresh_string_root
@@ -9380,6 +9394,7 @@ virtual_dispatch_void_override
 virtual_dispatch_void_override_empty_base
 visibility_decl_value
 visibility_explicit_receiver
+visibility_word_placed_then_body
 void_call_interpolated
 void_tail_same_name_elsewhere
 void_value_and_case

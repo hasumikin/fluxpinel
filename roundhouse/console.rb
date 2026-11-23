@@ -14,11 +14,8 @@ module Console
     $stderr.puts "fluxpinel console on 127.0.0.1:" + port.to_s
     loop do
       sock = server.accept
-      # The block holds sock, a local of this turn of the loop. With
-      # Thread.new(sock) { |s| ... }, spinel gives the parameter of serve no
-      # type in this program and refuses its `sock.gets`.
-      Thread.new do
-        serve(sock)
+      Thread.new(sock) do |s|
+        serve(s)
       end
     end
   end
