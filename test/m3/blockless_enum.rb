@@ -34,3 +34,54 @@ begin
 rescue ArgumentError => e
   p e.message
 end
+
+# to_enum keeps the keywords of the call as keywords: the method gets them
+# by name, and inspect writes them without braces
+class Kw
+  def pairs(*a, **k)
+    yield [a, k]
+  end
+  def inspect = "#<Kw>"
+end
+p Kw.new.to_enum(:pairs, 1, x: 2), Kw.new.to_enum(:pairs, x: 2), Kw.new.enum_for(:pairs, 1)
+p Kw.new.to_enum(:pairs, 1, x: 2).to_a, Kw.new.to_enum(:pairs, x: 2).to_a, Kw.new.to_enum(:pairs, {x: 2}).to_a
+h = {}
+p Kw.new.to_enum(:pairs, **h), Kw.new.to_enum(:pairs, **h).to_a
+
+# IO#each_line and its kin with no block: an Enumerator over the call,
+# which reads the file when it runs
+path = "/tmp/fluxpinel_blockless_io_#{$$}.txt"
+File.write(path, "a\nb\n")
+File.open(path) do |f|
+  show = ->(e) { e.inspect.sub(path, "PATH") }
+  p show[f.each_line], show[f.each_line("b")], show[f.each_line(chomp: true)], show[f.each_line("b", 1, chomp: true)]
+  p show[f.each], show[f.each_byte], show[f.each_char]
+  p f.each_line.to_a
+  f.rewind
+  p f.each_line(chomp: true).to_a, f.each_line.to_a
+  f.rewind
+  p f.each_line("b").to_a
+  f.rewind
+  p f.each_line(1).to_a
+  f.rewind
+  p f.each_byte.to_a
+  f.rewind
+  p f.each_char.first(2)
+  f.rewind
+  e = f.each_line
+  p e.next, e.next
+  begin
+    e.next
+  rescue StopIteration => x
+    p x.class
+  end
+  f.rewind
+  p f.each_line.with_index.to_a, f.each_line.size
+  begin
+    f.each_char(1)
+  rescue ArgumentError => x
+    puts x.message
+  end
+end
+p IO.pipe[0].each_line.class, $stdin.each_line.class
+File.unlink(path)
