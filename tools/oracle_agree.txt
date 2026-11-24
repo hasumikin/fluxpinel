@@ -1,5 +1,5 @@
 # The spinel tests that Fluxpinel answers right, for make regress.
-# make oracle writes this file. spinel: 21e210318d93
+# make oracle writes this file. spinel: 74a918fe2658
 absolute_class_reopen_inside_module
 abstract_raise_override_return
 accessor_def_history_both_sides
@@ -858,6 +858,7 @@ boxed_dig_receiver_checked
 boxed_dig_splat_keys
 boxed_dir_inspect
 boxed_dir_io_names
+boxed_dispatch_nil_arm_string_arm
 boxed_dispatch_opaque_named_method_param
 boxed_dispatch_self_class_arg
 boxed_dispatch_shared_private_helper_sibling_widen
@@ -1454,6 +1455,8 @@ class_body_macro_long_elsif
 class_body_macro_reverse
 class_body_macro_scoped_alias
 class_body_macro_state
+class_body_macro_state_calls_graph
+class_body_macro_string_to_residual_call
 class_body_method_defined_namespaced_string
 class_body_new_const_path_block
 class_body_private_instance_methods
@@ -1795,6 +1798,7 @@ cmethod_fanout_specialization
 cmethod_inline_yield_sibling_self_cls
 cmethod_ivar_op_assign_expr
 cmethod_lambda_self_subclass
+cmethod_new_subclass_arity_arm
 cmethod_override_without_super_leaves_ancestor_out
 cmethod_self_and_default
 cmethod_self_call_block_beats_instance_method
@@ -2268,6 +2272,7 @@ define_method_send_arm
 define_method_send_instance_method
 define_method_singleton_class_body
 define_method_string_substitution
+define_method_table_loop_beside_included_hook
 define_method_table_loop_unrolled
 define_method_unbound_method
 define_method_unbound_method_body
@@ -2307,6 +2312,7 @@ deprecate_constant_class_body
 destructure_splat_underflow
 destructure_typed_ptr_array_return
 desugar_builtin_calls_beside_reopen
+desugar_made_locals_keep_their_own_slots
 desugar_step_self_private
 devirt_call_return_box
 dig_multi_step_typeerror
@@ -2390,6 +2396,7 @@ dup_in_proc_subclass
 dup_site_before_conditional_initialize_copy
 dup_untyped_index_write_shape
 duplicate_underscore_params
+dyn_proc_boxed_local_string_shared
 dyn_ref_class_sources
 dyn_send_arm_param_kind_scalar
 dyn_send_arm_param_kind_unrelated
@@ -2430,6 +2437,7 @@ each_cons_block_destructure
 each_cons_map_types
 each_cons_slice_chain_nil_elem
 each_cons_with_index_map_no_double_gets
+each_counter_reads_in_place
 each_elem_into_mutated_param
 each_entry_returns_receiver
 each_entry_reverse_each
@@ -3599,6 +3607,7 @@ hash_zero_arguments_own_methods
 hashsub_kw_splat
 hashsub_store_value
 hc_frozen_store
+header_cache_yield_param_defaults
 held_arg_boxed_converted
 helper_results_rooted
 heterogeneous_tuple_return
@@ -3818,6 +3827,8 @@ inline_nested_yield_ivar_self
 inline_next_container
 inline_rbs_nil_param
 inline_rbs_signatures
+inline_rbs_statementless_ivar
+inline_rbs_type_aliases
 inline_recv_hold_more
 inline_recv_hold_r2
 inline_string_add_boxed_result
@@ -4951,6 +4962,11 @@ lrama_features
 lv_widen_from_callee_arg_slot
 lvar_reassigned_in_operand
 macro_inspect_runtime
+macro_state_expanded_attr_writer_state
+macro_state_expanded_case_call
+macro_state_expanded_eval_writer
+macro_state_expanded_nested_body_write
+macro_state_expanded_outside_write
 main_chain_bare_call_follows_load_order
 main_chain_capture_merges_object_and_main_includes
 main_chain_kernel_receiver_beside_conditional_include
@@ -4983,6 +4999,7 @@ map_bang_tail_widens_param_ivar_member
 map_bang_widens_element_type
 map_block_string_new_join
 map_each_cons_typed
+map_next_value_gc_rooted
 map_obj_array_poly_field
 map_object_block_narrows
 map_poly_next_value
@@ -5507,6 +5524,7 @@ name_reach_arity
 name_reach_arity_object_default
 name_reach_arity_send_fallback
 name_reader_two_types
+named_capture_writes_block_param_beside_outer_local
 named_captures_symbolize
 namespaced_class_named_like_builtin_module
 namespaced_exception_boxed_method
@@ -5716,6 +5734,7 @@ nonnumeric_reflection_sign_predicates
 noreturn_call_value
 not_match_op
 not_user_object
+nothrow_setjmp_elision
 null_pointer_nil_protocol
 nullable
 nullable_array_keyword_box
@@ -5960,6 +5979,7 @@ pack_too_few_arguments
 pack_u_utf8
 pack_unpack_move
 pack_utf8
+pack_utf8_range_int64
 param_body_array_hash_inference
 param_body_hash_inference
 param_chain_boxed_after_integer
@@ -6647,6 +6667,7 @@ pool_recycle_parallel_sweep
 post_rest_keyword_hash
 pow_negative_base_complex
 pp_store_float_inf_literal
+preanalysis_const_fold
 predicate_block_next_value
 predicate_block_p_value
 predicate_class_arg
@@ -6804,6 +6825,7 @@ proc_param_default_and_kwarg_escape
 proc_param_push_out_of_sight
 proc_param_returns_of_every_call
 proc_param_value_struct_types
+proc_parameters_implicit_it
 proc_parameters_lambda_kw
 proc_parameters_source_names
 proc_pattern_from_container
@@ -7008,8 +7030,10 @@ random_bignum_seed
 random_empty_float_range
 random_float_seed
 random_inspect
+random_int64_range_bounds
 random_methods
 random_rand_argument
+random_range_float_and_seed
 random_reopen_block_parameter
 random_reopen_methods
 random_seed_range_base64_pad
@@ -7143,6 +7167,7 @@ reader_read_only_no_copy
 reader_replaced_in_parent_reopen
 reader_shadows_inherited_def
 reader_subclass_alias
+reassigned_block_param_read_by_default
 rebindable_block_kernel_global_call
 receiver_before_arguments
 receiver_evaluated_once
@@ -7650,6 +7675,7 @@ sched_main_wake_targeted
 sched_workers_one_io_while_queue_busy
 sched_workers_one_main_runs_threads
 sclass_attr_body_masgn_ivar
+sclass_attr_writer_extended_module_ivar
 sclass_const_visibility
 sclass_def_default_self
 sclass_mixin_hooks
@@ -8266,6 +8292,7 @@ string_concat_chain_long
 string_concat_copies_rooted
 string_concat_multi_handle
 string_concat_rebound_receiver
+string_concat_staged_self_alias
 string_concat_value_snapshot
 string_conditional_elsif_ladder
 string_conditional_nested_parens
@@ -8780,6 +8807,7 @@ subclass_shares_string_reopen_ivars
 subclass_through_base_slot
 subclass_via_parent_accessor
 subclass_without_methods_lists_reopen_ivars
+subclasses_super_before_header
 subjectless_when_truthiness
 sum_block_nil_coercion
 sum_block_poly_elems_typed_param
@@ -8904,6 +8932,7 @@ symbol_reduce_user_method
 symbol_reopen_string_names
 symbol_string_methods
 symbol_to_proc_call
+symbol_to_proc_computed_name_call
 symbol_to_proc_unary_op
 symbol_to_s_new_string
 symbol_upcase_interpolation
