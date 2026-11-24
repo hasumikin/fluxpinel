@@ -801,22 +801,59 @@ static sp_RbVal fx_popen_with(sp_RbVal io, const FxBlock *blk) {
   return v;
 }
 
+/* A stream or an option of IO.popen named twice, between the options of
+   the command Array and the keywords, or with the stream the pipe takes:
+   CRuby's ArgumentError. The key is one fx_spawn_opts_keys answers. */
+static void fx_popen_option_twice(sp_RbVal key) {
+  if (key.tag == SP_TAG_INT) sp_raise_cls("ArgumentError", sp_sprintf("fd %lld specified twice", (long long)key.v.i));
+  const char *k = key.tag == SP_TAG_SYM ? sp_sym_to_s((sp_sym)key.v.i) : "that";
+  int fd = !strcmp(k, "in") ? 0 : !strcmp(k, "out") ? 1 : !strcmp(k, "err") ? 2 : -1;
+  if (fd >= 0) sp_raise_cls("ArgumentError", sp_sprintf("fd %d specified twice", fd));
+  sp_raise_cls("ArgumentError", sp_sprintf("%s option specified twice", k));
+}
+
+/* The pairs of an options Hash into h, each key once. opts can be a Hash
+   that fx_spawn_opts_keys made, which nothing else holds: rooted here, as
+   the sets allocate. */
+static void fx_popen_opts_into(sp_PolyPolyHash *h, sp_RbVal hv, sp_RbVal opts) {
+  SP_GC_ROOT_RBVAL(opts);
+  for (sp_int j = 0, n = sp_poly_length(opts); j < n; j++) {
+    sp_RbVal key, value;
+    sp_poly_hash_pair(opts, j, &key, &value);
+    sp_bool found;
+    sp_poly_hash_get_pair_val(hv, key, &found);
+    if (found) fx_popen_option_twice(key);
+    sp_PolyPolyHash_set(h, key, value);
+  }
+}
+
 /* IO.popen(env, cmd, mode = "r", **opts): a child with a pipe to its stdout
    (mode "r") or from its stdin ("w"), through spawn with the options given
    and the pipe's end for the child's stream (fx_spawn). The command is an
-   argv Array, each element an argument, or a command line. The IO of the
-   parent's end goes into L.popens with the pid (fx_popen_pid): close waits
-   for the child and sets $?. "r+", "-" and the other modes stop as gaps. */
+   argv Array, each element an argument, or a command line. The Array can
+   hold an environment Hash at its head, which a leading Hash argument
+   replaces, and an options Hash at its end, which the keywords join; a
+   stream or option named in both, or the stream of the pipe, is an
+   ArgumentError, as CRuby raises. The IO of the parent's end goes into
+   L.popens with the pid (fx_popen_pid): close waits for the child and sets
+   $?. "r+", "-" and the other modes stop as gaps. */
 static int fx_io_popen(int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out) {
   SP_GC_SAVE();
-  sp_RbVal env = sp_box_nil(), opts = sp_box_nil();
+  sp_RbVal env = sp_box_nil(), opts = sp_box_nil(), inner = sp_box_nil();
   SP_GC_ROOT_RBVAL(env);
   SP_GC_ROOT_RBVAL(opts);
+  SP_GC_ROOT_RBVAL(inner);
   if (argc >= 2 && fx_is_kwargs(argv[argc - 1])) opts = argv[--argc];
   if (argc >= 2 && fx_is_hash(argv[0])) { env = argv[0]; argv++; argc--; }
   if (argc < 1 || argc > 2) fx_arity_error(argc, 1, 2, 0);
   sp_RbVal cmd = argv[0];
   SP_GC_ROOT_RBVAL(cmd);
+  sp_int first = 0, last = fx_is_array(cmd) ? sp_poly_length(cmd) : 0;
+  if (last > 0 && fx_is_hash(sp_poly_arr_get(cmd, 0))) {
+    if (env.tag == SP_TAG_NIL) env = sp_poly_arr_get(cmd, 0);
+    first = 1;
+  }
+  if (last > first && fx_is_hash(sp_poly_arr_get(cmd, last - 1))) inner = sp_poly_arr_get(cmd, --last);
   const char *mode = argc == 2 ? sp_poly_arg_str_chk(argv[1]) : SPL("r");   /* rooted: a marked literal */
   SP_GC_ROOT_STR(mode);
   int write;
@@ -831,20 +868,19 @@ static int fx_io_popen(int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *o
   sp_PolyPolyHash *h = sp_PolyPolyHash_new();
   sp_RbVal hv = sp_box_obj(h, SP_BUILTIN_POLY_POLY_HASH);
   SP_GC_ROOT_RBVAL(hv);
-  if (opts.tag != SP_TAG_NIL) {
-    for (sp_int j = 0, n = sp_poly_length(opts); j < n; j++) {
-      sp_RbVal key, value;
-      sp_poly_hash_pair(opts, j, &key, &value);
-      sp_PolyPolyHash_set(h, key, value);
-    }
-  }
-  sp_PolyPolyHash_set(h, sp_box_sym(sp_sym_intern(write ? "in" : "out")), child_end);
+  if (inner.tag != SP_TAG_NIL) fx_popen_opts_into(h, hv, fx_spawn_opts_keys(inner));
+  if (opts.tag != SP_TAG_NIL) fx_popen_opts_into(h, hv, fx_spawn_opts_keys(opts));
+  sp_RbVal stream = sp_box_sym(sp_sym_intern(write ? "in" : "out"));
+  sp_bool found;
+  sp_poly_hash_get_pair_val(hv, stream, &found);
+  if (found) fx_popen_option_twice(stream);
+  sp_PolyPolyHash_set(h, stream, child_end);
   /* the arguments of spawn: the environment, the command, the options */
   sp_PolyArray *sa = sp_PolyArray_new();
   SP_GC_ROOT(sa);
   if (env.tag != SP_TAG_NIL) sp_PolyArray_push(sa, env);
   if (fx_is_array(cmd)) {
-    for (sp_int i = 0, n = sp_poly_length(cmd); i < n; i++) sp_PolyArray_push(sa, sp_poly_arr_get(cmd, i));
+    for (sp_int i = first; i < last; i++) sp_PolyArray_push(sa, sp_poly_arr_get(cmd, i));
   } else {
     sp_PolyArray_push(sa, cmd);
   }
