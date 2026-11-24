@@ -24,6 +24,27 @@ begin
 rescue Errno::ENOENT => e
   p e.class
 end
+# an options Hash at the end of the command Array and an environment at its
+# head, as CRuby reads them (rubish: IO.popen([exe, "-c", script, err:
+# %i[child out]], &:read)); the options given as keywords join those of the
+# Array, and a stream or option named by both is an ArgumentError
+p IO.popen(["sh", "-c", "echo out; echo err >&2", err: [:child, :out]], &:read).lines.sort
+p IO.popen([{ "FX_POPEN" => "1" }, "sh", "-c", "echo $FX_POPEN; echo e >&2", { err: File::NULL }], &:read)
+p IO.popen(["sh", "-c", "pwd", chdir: "/"], &:read)
+p IO.popen(["sh", "-c", "pwd; echo e >&2", chdir: "/"], err: File::NULL, &:read)
+p IO.popen({ "FX_POPEN" => "2" }, [{ "FX_POPEN" => "1", "FX_POPEN_B" => "5" }, "sh", "-c", "echo $FX_POPEN $FX_POPEN_B"], &:read)
+p IO.popen([["sh", "shx"], "-c", "echo $0", err: File::NULL], &:read)
+[-> { IO.popen(["sh", "-c", "echo", in: File::NULL], in: File::NULL, &:read) },
+ -> { IO.popen(["sh", "-c", "pwd", chdir: "/"], chdir: "/tmp", &:read) },
+ -> { IO.popen(["sh", "-c", "echo", err: File::NULL], 2 => File::NULL, &:read) },
+ -> { IO.popen(["sh", "-c", "echo w", 1 => :err], &:read) },
+ -> { IO.popen([{ "FX_POPEN" => "1" }], &:read) }].each do |l|
+  begin
+    l.call
+  rescue ArgumentError => e
+    p e.message
+  end
+end
 p $stdout.pid
 File.delete(f)
 Dir.rmdir(dir)
