@@ -697,6 +697,15 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     }
   }
 #endif
+  /* close_on_exec=: the FD_CLOEXEC flag of the descriptor, set or cleared
+     by the truth of the value, which is the answer (close_on_exec? is a
+     row of the generated table); a closed stream is the runtime's IOError */
+  if (FX_IS("close_on_exec=")) {
+    if (argc != 1) fx_arity_error(argc, 1, 0, 0);
+    sp_File_set_close_on_exec(io, sp_poly_truthy(argv[0]));
+    *out = argv[0];
+    return 1;
+  }
   /* io/console, once it is required: winsize= (winsize is a row of the
      generated table), from the terminal (Errno::ENOTTY for a pipe or a
      file, as CRuby raises) */

@@ -589,14 +589,15 @@ static char *fx_load_path_find(const char *name) {
    - packages/<first>/<name>.rb, the package of the first segment of the
      name, runs once, with <name>.share.rb after it when that exists.
    - A feature of the runtime (socket, ostruct, ...) and a core capability
-     (thread, fiber, ...) load nothing, and the require answers false.
+     (thread, fiber, ...) load nothing, and the require answers false;
+     fcntl makes the Fcntl module, and its first require answers true.
    - Any other name is a LoadError. (spinel refuses it at compile time.)
    A require of set answers false, as Set is loaded before the program in
    CRuby. */
 static sp_RbVal fx_require_lib(const char *name) {
   static const char *const builtin[] = { "io/console", "monitor", "time", "socket", "ostruct",
                                          "thread", "enumerator", "fiber", "ffi", "rational", "complex",
-                                         "io/wait", "rbconfig", "rubygems", NULL };
+                                         "io/wait", "rbconfig", "rubygems", "fcntl", NULL };
   static const char *const preloaded[] = { "set", NULL };
   char *found = fx_load_path_find(name);
   if (found) {
@@ -632,6 +633,13 @@ static sp_RbVal fx_require_lib(const char *name) {
     fx_feature_add(name);
     if (!strcmp(name, "io/console")) fx_console_loaded = 1;
     if (!strcmp(name, "ostruct")) fx_ostruct_loaded = 1;
+    /* fcntl is the one feature a require makes here (the Fcntl module,
+       fx_builtin), so its first require answers true, as CRuby's does */
+    if (!strcmp(name, "fcntl")) {
+      int first = !fx_fcntl_loaded;
+      fx_fcntl_loaded = 1;
+      return sp_box_bool(first);
+    }
     return sp_box_bool(0);
   }
   sp_raise_load_error(name);
