@@ -771,7 +771,7 @@ static int fx_builtin_responds(sp_RbVal r, const char *name) {
   if (fx_console_loaded && fx_is_io(r) && (!strcmp(name, "winsize=") || !strcmp(name, "raw") ||
                                            !strcmp(name, "raw!") || !strcmp(name, "noecho")))
     return 1;
-  if (fx_is_io(r) && !strcmp(name, "close_on_exec=")) return 1;   /* global.c */
+  if (fx_is_io(r) && (!strcmp(name, "close_on_exec=") || !strcmp(name, "autoclose="))) return 1;   /* global.c */
   static const char *const any[] = { "!", "nil?", "to_s", "inspect", "==", "!=", "class", "is_a?", "kind_of?",
                                      "instance_of?", "respond_to?", "send", "__send__", "public_send", "frozen?",
                                      "freeze", "itself", NULL };

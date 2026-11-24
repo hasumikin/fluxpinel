@@ -935,12 +935,20 @@ static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal 
       *out = argc == 0 ? L.console : fx_send(L.console, fx_name_arg(argv[0]), argc - 1, argv + 1);
       return 1;
     }
-    /* IO.open(fd[, mode], **enc), IO.new and IO.for_fd: an IO on the
-       descriptor. The standard descriptors stay open when it closes. The
-       keywords of the encoding are taken and do nothing. */
+    /* IO.open(fd[, mode], **opts), IO.new and IO.for_fd: an IO on the
+       descriptor. The standard descriptors stay open when it closes, and so
+       does any descriptor under autoclose: false, which the runtime's maker
+       wraps in a dup(2) of its own (sp_io_for_fd), so neither a close nor
+       the collector touches the caller's. The keywords of the encoding are
+       taken and do nothing. */
     if ((FX_IS("open") || FX_IS("new") || FX_IS("for_fd")) && argc >= 1 && argc <= 3 && argv[0].tag == SP_TAG_INT) {
-      int n = argc;
-      if (fx_is_kwargs(argv[n - 1])) n--;
+      int n = argc, autoclose = 1;
+      if (fx_is_kwargs(argv[n - 1])) {
+        sp_bool found;
+        sp_RbVal ac = sp_poly_hash_get_pair_val(argv[n - 1], sp_box_sym(sp_sym_intern("autoclose")), &found);
+        if (found) autoclose = sp_poly_truthy(ac);
+        n--;
+      }
       if (n > 2) return 0;
       /* the handle keeps the mode and the collector reads the byte ahead of
          it, so the default is a marked literal (SPL), not a bare one */
@@ -949,8 +957,12 @@ static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal 
       /* a descriptor that is not open is CRuby's Errno::EBADF, before the
          stream is made (the runtime's fdopen would say IOError) */
       if (fd < 0 || fcntl(fd, F_GETFD) < 0) sp_raise_cls("Errno::EBADF", "Bad file descriptor");
-      sp_File *f = sp_io_fdopen_ex(fd, mode, fd > 2);
-      if (fd <= 2) f->no_autoclose = 1;   /* a close, or the collector, flushes and leaves the descriptor */
+      sp_File *f;
+      if (!autoclose) f = sp_io_for_fd(fd, mode, 0);
+      else {
+        f = sp_io_fdopen_ex(fd, mode, fd > 2);
+        if (fd <= 2) f->no_autoclose = 1;   /* a close, or the collector, flushes and leaves the descriptor */
+      }
       /* a terminal sees each write at once, as CRuby's IO flushes a write to
          a tty and as the runtime keeps stdout: stdio would hold the bytes of
          a line until its newline (Reline's rendering of IRB has none) */
