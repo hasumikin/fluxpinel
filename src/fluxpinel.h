@@ -593,6 +593,7 @@ static sp_RbVal fx_ffi_invoke(const struct FxFfi *x, sp_RbVal self, int argc, sp
 
 /* process.c */
 static void fx_process_consts(FxClass *c);
+static void fx_fcntl_consts(FxClass *c);
 static int fx_process_class(const FxClass *k, const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);
 static int fx_process_responds(sp_RbVal r, const char *name);
 static int fx_process_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out);

@@ -73,6 +73,8 @@ static int fx_feature_loaded;
 /* 1 after a require of ostruct: OpenStruct is a constant, as in CRuby; a
    program that defines its own OpenStruct without the require keeps it */
 static int fx_ostruct_loaded;
+/* require "fcntl" has run: Fcntl is a module (fx_fcntl_consts) */
+static int fx_fcntl_loaded;
 
 /* 1 after a require of io/console: IO#winsize and its kin answer */
 static int fx_console_loaded;
@@ -342,6 +344,7 @@ static FxClass *fx_builtin(const char *name) {
   for (size_t i = 0; i < sizeof alias / sizeof alias[0]; i++)
     if (!strcmp(name, alias[i][0])) name = alias[i][1];
   if (!fx_ostruct_loaded && !strcmp(name, "OpenStruct")) return NULL;
+  if (!fx_fcntl_loaded && !strcmp(name, "Fcntl")) return NULL;
   for (int i = 0; i < L.nbuiltins; i++)
     if (!strcmp(L.builtins[i]->name, name)) return L.builtins[i];
   sp_int id = fx_builtin_id(name);
@@ -374,10 +377,12 @@ static FxClass *fx_builtin(const char *name) {
   /* a module that spinel's codegen answers by name (process.c, marshal.c),
      and Errno, whose classes (Errno::ENOENT) the runtime names: an id of
      its own below the table too */
-  if (!id && (!strcmp(name, "Process") || !strcmp(name, "GC") || !strcmp(name, "Errno") || !strcmp(name, "Marshal"))) {
+  if (!id && (!strcmp(name, "Process") || !strcmp(name, "GC") || !strcmp(name, "Errno") || !strcmp(name, "Marshal") ||
+              !strcmp(name, "Fcntl"))) {
     FxClass *c = fx_class_alloc(FX_EXC_CLS_BASE - L.nbuiltins, fx_name_dup(name), 1, NULL, NULL);
     fx_push_class(&L.builtins, &L.nbuiltins, &L.builtins_cap, c);
     if (name[0] == 'P') fx_process_consts(c);
+    if (name[0] == 'F') fx_fcntl_consts(c);
     if (name[0] == 'M') {
       fx_const_set(c, sp_sym_intern("MAJOR_VERSION"), sp_box_int(4));
       fx_const_set(c, sp_sym_intern("MINOR_VERSION"), sp_box_int(8));
