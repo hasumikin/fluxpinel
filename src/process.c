@@ -184,6 +184,8 @@ static sp_RbVal fx_clock(const char *name, int argc, sp_RbVal *argv) {
 }
 
 static int fx_process_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
+  /* Process.exit, exit! and abort are Kernel's (fx_exit_kernel) */
+  if (FX_IS("exit") || FX_IS("exit!") || FX_IS("abort")) return fx_exit_kernel(name, argc, argv);
   if (argc == 0) {
     if (FX_IS("pid")) { *out = sp_box_int((sp_int)getpid()); return 1; }
     if (FX_IS("ppid")) { *out = sp_box_int(sp_process_ppid()); return 1; }
@@ -875,6 +877,7 @@ static int fx_gc_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
 /* respond_to? on Process or GC: the functions above. */
 static int fx_process_responds(sp_RbVal r, const char *name) {
   static const char *const process[] = { "pid", "ppid", "uid", "gid", "euid", "egid", "getpgrp", "times", "groups",
+                                         "exit", "exit!", "abort",
                                          "getsid", "setsid", "getpgid", "setpgid", "clock_gettime", "clock_getres", "getpriority", "kill", "spawn",
                                          "exec", "fork", "wait", "waitpid", "wait2", "waitpid2", "detach", "last_status",
                                          NULL };
