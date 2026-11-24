@@ -55,6 +55,11 @@ CLI_CASES = [
     env: { "HOME" => Dir.tmpdir },
     out: /unsupported undef of an interpolated name \(PM_UNDEF_NODE\) \(NotImplementedError\).*unsupported block for the builtin Integer#succ \(NotImplementedError\).*^2\n+\z/m },
   { args: ["-e", "1.succ { 2 }"], out: /\A\z/, status: 2 },
+  # a redirection of a descriptor past 2 to a descriptor of the child
+  # ([:child, fd]) is a form Fluxpinel does not make: a gap, not the
+  # TypeError of a path
+  { args: ["-e", "exec('true', 3 => [:child, :out])"], out: /\A\z/, status: 2,
+    stderr: /unsupported exec with a redirection of descriptor 3 to a descriptor of the child/ },
   # an irb that parses with ripper: --irb names the gems and `make gems`
   { args: ["-Iold_irb", "--irb"], out: /\A\z/, status: 1,
     stderr: /\Afluxpinel: IRB does not load \(cannot load such file -- ripper\)\.\n.*irb \(1\.18 or later\).*`make gems`/m },
