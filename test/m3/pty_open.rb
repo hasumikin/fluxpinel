@@ -14,6 +14,11 @@ slave.write("back\n")
 p master.gets
 master.close
 slave.close
+# two terminals open at once: each slave keeps the path of its own
+m1, s1 = PTY.open
+m2, s2 = PTY.open
+p s1.path != s2.path, s1.path == File.realpath(s1.path), s2.path == File.realpath(s2.path)
+[m1, s1, m2, s2].each(&:close)
 x = PTY.open { |m, s| m.write("yo\n"); [s.gets, m, s] }
 p x[0], x[1].closed?, x[2].closed?
 v = PTY.spawn("echo spawned") do |reader, writer, pid|

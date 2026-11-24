@@ -17,7 +17,9 @@
 # 4.1 (whose block form no longer detaches the child).
 module PTY
   module Native
-    native_func :ptsname, [:int], :string, "ptsname"
+    # the answer is libc's own buffer, which the next call writes again:
+    # :cstring copies it
+    native_func :ptsname, [:int], :cstring, "ptsname"
   end
 
   def self.open
@@ -25,7 +27,12 @@ module PTY
     path = Native.ptsname(fd)
     master = IO.new(fd, "r+")
     master.sync = true
-    slave = File.open(path, File::RDWR | File::NOCTTY)
+    begin
+      slave = File.open(path, File::RDWR | File::NOCTTY)
+    rescue Exception
+      master.close
+      raise
+    end
     return [master, slave] unless block_given?
     begin
       yield master, slave
