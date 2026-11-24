@@ -156,6 +156,28 @@ static void fx_process_consts(FxClass *c) {
 #endif
 }
 
+/* The constants of Fcntl (require "fcntl"): the commands and flags of
+   fcntl(2) and open(2) that CRuby's fcntl defines, with the values of the
+   platform. The module is made when the require has run (fx_builtin). */
+static void fx_fcntl_consts(FxClass *c) {
+  static const struct { const char *name; sp_int v; } k[] = {
+    { "F_DUPFD", F_DUPFD }, { "F_GETFD", F_GETFD }, { "F_SETFD", F_SETFD }, { "F_GETFL", F_GETFL },
+    { "F_SETFL", F_SETFL }, { "F_GETLK", F_GETLK }, { "F_SETLK", F_SETLK }, { "F_SETLKW", F_SETLKW },
+    { "FD_CLOEXEC", FD_CLOEXEC }, { "F_RDLCK", F_RDLCK }, { "F_WRLCK", F_WRLCK }, { "F_UNLCK", F_UNLCK },
+#ifdef F_DUPFD_CLOEXEC
+    { "F_DUPFD_CLOEXEC", F_DUPFD_CLOEXEC },
+#endif
+#ifdef F_DUP2FD
+    { "F_DUP2FD", F_DUP2FD },
+#endif
+    { "O_CREAT", O_CREAT }, { "O_EXCL", O_EXCL }, { "O_NOCTTY", O_NOCTTY }, { "O_TRUNC", O_TRUNC },
+    { "O_APPEND", O_APPEND }, { "O_NONBLOCK", O_NONBLOCK }, { "O_NDELAY", O_NDELAY }, { "O_RDONLY", O_RDONLY },
+    { "O_RDWR", O_RDWR }, { "O_WRONLY", O_WRONLY }, { "O_ACCMODE", O_ACCMODE },
+  };
+  for (size_t i = 0; i < sizeof k / sizeof k[0]; i++)
+    fx_const_set(c, sp_sym_intern(k[i].name), sp_box_int(k[i].v));
+}
+
 /* The clock of clock_gettime: an id, or a Symbol that names a clock
    constant, as CRuby takes :CLOCK_MONOTONIC. */
 static sp_int fx_clock_id(sp_RbVal v) {
