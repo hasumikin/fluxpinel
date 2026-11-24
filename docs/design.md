@@ -1295,7 +1295,9 @@ The server serves its pages all the time. `exit` closes the session only.
 |---|---|
 | `ROUNDHOUSE_COMMIT` | holds the pin: the Roundhouse commit that Fluxpinel uses |
 | `roundhouse/roundhouse.mk` | holds the make targets of this section |
+| `CAMPFIRE_COMMIT` | holds the commit of Campfire (section 5.4.7) |
 | `roundhouse/apply.rb` | changes the Spinel output of an application |
+| `roundhouse/spin_flags.rb` | writes the flags of the packages of the output |
 | `roundhouse/console.rb` | is the console and its entries |
 | `test/roundhouse/test.rb` | runs the host build of the blog and checks it |
 | `test/roundhouse/helper.rb` | holds the helpers of the test |
@@ -1319,9 +1321,23 @@ changes four things:
 - It writes `.fx-ext-class`, the classes of `--ext-class` for the host
   build.
 
-`apply.rb` reads the models from the output. Roundhouse writes
-`app/models/NAME_row.rb` for each table, and `app/models/NAME.rb` has the
-class of the model.
+`apply.rb` reads the classes from `app/models` of the output:
+
+- A class of records is a class whose superclasses go up to
+  `ActiveRecord::Base`. The class right under `ActiveRecord::Base`
+  (`ApplicationRecord`) is not one. These classes go in `.fx-ext-class`.
+- A model with a table is a class of records with a file `NAME_row.rb`
+  beside its `NAME.rb`. Roundhouse writes that file for each table. These
+  models get a `when` in `console.rb`.
+
+A class of single table inheritance (`Rooms::Open < Room`) is a class of
+records with no table of its own.
+
+`spin_flags.rb` runs `spin flags` in the output, which is a spin project.
+It writes `.fx-kernel-flags` (the `-I` of each package, `--rbs`) and
+`.fx-host-libs` (the objects and libraries of the packages). The link
+also reads the libraries that the kernel binds with `ffi_lib` from the
+kernel C, so no file names them.
 
 Each change of `main.rb` finds an anchor line. When an anchor is not in
 `main.rb` exactly once, `apply.rb` stops and changes nothing.
@@ -1341,15 +1357,15 @@ steps:
 1. It fetches Roundhouse at the pin into `deps/roundhouse` and builds it.
 2. It makes the Rails fixture with `bin/rh fixture` of Roundhouse.
 3. It makes the Spinel output of the blog in `build/roundhouse/blog` and
-   runs `apply.rb` on it.
+   runs `apply.rb` and `spin_flags.rb` on it.
 4. It builds the assets of the blog: the JavaScript of Turbo and
    Stimulus, and the Tailwind CSS. Without them, the browser does not
    connect to Action Cable.
 5. It builds the host in `build/roundhouse/host/blog`.
 
 Each step runs again only when its input changes. A new pin starts again
-from step 1. A change of `apply.rb`, `console.rb` or `kernel/fluxpinel.rb`
-starts again from step 3.
+from step 1. A change of `apply.rb`, `spin_flags.rb`, `console.rb`,
+`kernel/fluxpinel.rb` or the spinel pin starts again from step 3.
 
 rh and Bundler use the Ruby of `.ruby-version` of Fluxpinel. Rails must be
 installed for that Ruby.
@@ -1442,6 +1458,41 @@ runs on a socket, it skips this part. It checks these things:
 - A session of IRB calls a model.
 - `exit` as Ruby code (`(exit)`) and the `exit` command of IRB close the
   session, and the server runs after each.
+
+### 5.4.7 Campfire
+
+Campfire (basecamp/once-campfire) is a Rails application that is not a
+fixture of Roundhouse. `make campfire` builds its host with the same
+steps as the blog. Nothing in the make rules names a model or a package
+of Campfire.
+
+You need the tools of section 5.4.3 and the headers of libvips
+(`libvips-dev`). The build takes about 30 minutes.
+
+`make campfire` does these steps:
+
+1. It fetches Campfire at the commit in `CAMPFIRE_COMMIT` into
+   `deps/once-campfire`.
+2. It makes the Spinel output in `build/roundhouse/campfire` with
+   `--allow-unsupported`. Roundhouse does not lower each part of Campfire,
+   and the flag writes the output with those parts left out.
+3. It runs `apply.rb` and `spin_flags.rb` on the output.
+4. It builds the host in `build/roundhouse/campfire-host/campfire`.
+
+The kernel is compiled with `--load-model=inline` (`RH_CAMPFIRE_FLAGS`).
+Under the graph load model of spinel, the kernel compiles and the start
+raises `NameError`. Remove the flag when Campfire starts without it.
+
+Run the server with the console:
+
+```sh
+cd build/roundhouse/campfire
+FLUXPINEL_CONSOLE=4000 ../campfire-host/campfire
+```
+
+The server serves Campfire on http://localhost:3000. With no account, each
+page goes to `/first_run`. `make campfire` is not a part of `make
+roundhouse` or of the checks of the pins.
 
 ## 6. Prior art
 

@@ -20,15 +20,43 @@ abort "apply: #{main} has the changes already" if src.include?("Fluxpinel demo:"
 
 lines = src.lines
 
-# The models of the application: Roundhouse writes app/models/NAME_row.rb
-# for each table, and app/models/NAME.rb has the class.
-models = Dir.glob(File.join(blog, "app/models/*_row.rb")).sort.map do |row|
-  file = row.delete_suffix("_row.rb") + ".rb"
-  head = File.exist?(file) && File.foreach(file).find { |l| l.match?(/\Aclass \S+ < /) }
-  abort "apply: #{file} has no line `class NAME < ...` (see ROUNDHOUSE_COMMIT)" unless head
-  head[/\Aclass (\S+) < /, 1]
+# The classes of app/models that have a superclass, each with its full name,
+# the name of the superclass as written, the modules and classes around it
+# and its file. Roundhouse writes one `module` or `class` to a line and
+# indents each body, so the indent of a line gives what is around it.
+classes = Dir.glob(File.join(blog, "app/models/**/*.rb")).sort.flat_map do |file|
+  open = []
+  File.foreach(file).filter_map do |line|
+    head = line.match(/\A(\s*)(module|class)\s+([A-Z][\w:]*)(?:\s*<\s*([\w:]+))?/) or next
+    open.pop while open.any? && open.last[0] >= head[1].size
+    around = open.map { |_, name| name }
+    open << [head[1].size, head[3]]
+    next unless head[2] == "class" && head[4]
+    { name: (around + [head[3]]).join("::"), parent: head[4], around: around, file: file }
+  end
 end
-abort "apply: #{blog}/app/models has no model (no file *_row.rb)" if models.empty?
+
+# The classes of records: a class whose line of superclasses goes up to
+# ActiveRecord::Base. The class right under ActiveRecord::Base
+# (ApplicationRecord) is the abstract one, and is not in the list. A
+# superclass is looked for as Ruby does, from the innermost name around the
+# class outward.
+by_name = classes.to_h { |c| [c[:name], c] }
+parent_of = lambda do |c|
+  c[:around].size.downto(0).map { |n| (c[:around][0, n] + [c[:parent]]).join("::") }
+            .find { |name| by_name[name] || name == "ActiveRecord::Base" }
+end
+record = lambda do |c, seen = []|
+  parent = parent_of.(c)
+  next false if parent.nil? || seen.include?(c[:name])
+  parent == "ActiveRecord::Base" || record.(by_name[parent], seen + [c[:name]])
+end
+records = classes.select { |c| record.(c) && parent_of.(c) != "ActiveRecord::Base" }.sort_by { |c| c[:name] }
+# The models with a table: Roundhouse writes NAME_row.rb beside NAME.rb for
+# each one. A class of single table inheritance has none, and neither has a
+# file that opens a model again (user/avatar.rb).
+models = records.select { |c| File.exist?(c[:file].delete_suffix(".rb") + "_row.rb") }.map { |c| c[:name] }
+abort "apply: #{blog}/app/models has no model with a file *_row.rb (see ROUNDHOUSE_COMMIT)" if models.empty?
 
 # console.rb, with a `when` for each model in place of each `# arms:` line.
 console = File.readlines(File.join(__dir__, "console.rb"))
@@ -79,7 +107,10 @@ File.write(main, lines.join)
 File.write(File.join(blog, "console.rb"), console.join)
 File.write(File.join(blog, "fluxpinel.rb"), File.read(File.join(FX, "kernel/fluxpinel.rb")))
 # The classes whose methods IRB calls by name through the table of
-# --ext-class: the models, and the classes of Active Record whose objects
-# their methods answer (a Relation of Article.all).
-File.write(File.join(blog, ".fx-ext-class"), (models + %w[ActiveRecord::Base ActiveRecord::Relation]).join(",") + "\n")
+# --ext-class: the classes of records, and the classes of Active Record
+# whose objects their methods answer (a Relation of Article.all). Each name
+# starts at the top level (`::Message`): the runtime of Roundhouse has
+# classes of the same last name in its modules.
+ext = records.map { |c| c[:name] }.uniq + %w[ActiveRecord::Base ActiveRecord::Relation]
+File.write(File.join(blog, ".fx-ext-class"), ext.map { |name| "::" + name }.join(",") + "\n")
 puts "apply: changed #{main} (models: #{models.join(", ")})"

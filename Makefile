@@ -230,8 +230,9 @@ KERNEL_MAIN =
 KERNEL_OVERFLOW = $(shell echo $(HOST_INT_OVERFLOW) | tr A-Z a-z)
 # KERNEL_FLAGS: more flags of spinel for the kernel, such as the ones that
 # `spin flags` prints for a spin project (-I DIR --rbs DIR). HOST_LIBS: more
-# libraries for the link, such as the ones that the kernel binds with
-# ffi_func (-lsqlite3).
+# objects and libraries for the link, such as the objects of a package of
+# the spin project. The libraries that the kernel binds with ffi_lib
+# (-lsqlite3) need no entry: the link reads them from the kernel C.
 KERNEL_FLAGS =
 HOST_LIBS =
 # The classes whose methods the kernel exports by name (host.c reads the
@@ -270,6 +271,11 @@ $(HOST)/kernel.c: $(KERNEL) kernel/fluxpinel.rb src/kernel_prelude.h SPINEL_COMM
 	  while read f; do if test -f "$$f"; then echo "$$f"; fi; done > $(HOST)/kernel.srcs
 	{ printf '$@:'; tr '\n' ' ' < $(HOST)/kernel.srcs; echo; sed 's/$$/:/' $(HOST)/kernel.srcs; } > $(HOST)/kernel.d
 
+# the libraries that the kernel binds (ffi_lib): spinel names each one in a
+# comment of the kernel C, for the link
+$(HOST)/kernel.libs: $(HOST)/kernel.c
+	sed -n 's|^/\* SPINEL_LINK: \(.*\) \*/$$|\1|p' $< | sort -u | tr '\n' ' ' > $@
+
 # the wrapper of each entry (host.c)
 $(HOST)/entries.c: $(HOST)/kernel.c tools/entry_gen.rb tools/c_box.rb
 	ruby tools/entry_gen.rb '$(KERNEL_ENTRIES)' $(HOST)/kernel.h > $@
@@ -280,11 +286,11 @@ $(HOST)/ivars.c: $(HOST)/kernel.c tools/ivar_gen.rb tools/c_box.rb
 
 $(HOST)/$(HOST_NAME): src/*.c src/*.h $(HOST)/kernel.c $(HOST)/entries.c $(HOST)/ivars.c $(BUILD)/bop_gen_out.c \
               $(BUILD)/off.flags $(BUILD)/prelude.inc $(BUILD)/responds.inc $(BUILD)/gem_dirs.h $(NATIVE_FLAGS) \
-              $(HOST)/link.args
+              $(HOST)/link.args $(HOST)/kernel.libs
 	$(CC) $(HOST_CFLAGS) -I$(HOST) -DFX_KERNEL=fx_kernel_init $(if $(KERNEL_MAIN),'-DFX_KERNEL_MAIN="$(KERNEL_MAIN)"') \
 	  -include src/kernel_prelude.h -include $(HOST)/kernel.c \
 	  -include $(HOST)/entries.c -include $(HOST)/ivars.c $$(cat $(BUILD)/off.flags) -o $@ src/main.c \
-	  $(if $(NATIVE_FLAGS),$$(cat $(NATIVE_FLAGS))) $(LIBS) $(HOST_LIBS)
+	  $(if $(NATIVE_FLAGS),$$(cat $(NATIVE_FLAGS))) $(LIBS) $(HOST_LIBS) $$(cat $(HOST)/kernel.libs)
 
 host: $(HOST)/$(HOST_NAME)
 
