@@ -625,6 +625,9 @@ static sp_RbVal fx_require_lib(const char *name) {
     struct stat st;
     extra = sp_sprintf("%s.share.rb", path);
     int ran = fx_load_once(real, stat(extra, &st) ? NULL : extra);
+    /* pty: PTY.open and the block form of PTY.spawn, which the package
+       leaves out for the typing of a compiled program (lib/fluxpinel/pty.rb) */
+    if (ran && !strcmp(name, "pty")) fx_load_once(FX_LIB_DIR "/fluxpinel/pty.rb", NULL);
     if (!ran || fx_lib_in(name, preloaded)) return sp_box_bool(0);
     return L.ctl == FX_CTL_NONE ? sp_box_bool(1) : sp_box_nil();
   }
