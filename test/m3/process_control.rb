@@ -171,3 +171,30 @@ puts $?.to_s.sub(pid.to_s, "PID"), $?.inspect.sub(pid.to_s, "PID")
 pid = fork { exit 0 }
 _, st = Process.wait2(pid)
 p st.to_s == "pid #{pid} exit 0", st.inspect.start_with?("#<Process::Status: pid "), [st.to_s, st.inspect].map(&:frozen?)
+
+# Process.exit and Process.exit! are Kernel's: exit raises a SystemExit the
+# at_exit hooks see, exit! ends the process at once with no hook (rubish's
+# tests fork a child that leaves with Process.exit!(0))
+pid = fork { at_exit { puts "hook ran" }; Process.exit(3) }
+Process.wait(pid); p $?.exitstatus
+pid = fork { at_exit { puts "hook ran" }; $stdout.flush; Process.exit!(4) }
+Process.wait(pid); p $?.exitstatus
+pid = fork { Process.exit! }
+Process.wait(pid); p $?.exitstatus
+pid = fork { Process.exit }
+Process.wait(pid); p $?.exitstatus
+pid = fork { Process.exit!(false) }
+Process.wait(pid); p $?.exitstatus
+pid = fork { begin; Process.exit(5); rescue SystemExit => e; puts "status #{e.status}"; end; exit 6 }
+Process.wait(pid); p $?.exitstatus
+begin
+  Process.exit!("x")
+rescue TypeError => e
+  puts e.message
+end
+begin
+  Process.exit(1, 2)
+rescue ArgumentError => e
+  puts e.message
+end
+p Process.respond_to?(:exit!), Process.respond_to?(:exit)
