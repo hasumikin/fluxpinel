@@ -30,6 +30,9 @@
 #   make roundhouse, make test-roundhouse, make upgrade_roundhouse
 #               make the blog of Roundhouse and check it, and move its pin
 #               (roundhouse/roundhouse.mk)
+#   make campfire, make test-campfire
+#               make the host of Campfire and check it
+#               (roundhouse/roundhouse.mk)
 #
 # SPINEL points at a built spinel checkout, deps/spinel by default. Set it
 # on the command line or in config.mk (not tracked) to use another one,

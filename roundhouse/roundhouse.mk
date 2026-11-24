@@ -14,6 +14,8 @@
 #               fetch Campfire at the commit in CAMPFIRE_COMMIT into
 #               deps/once-campfire, make its Spinel output and build its
 #               host (docs/design.md, section 5.4.7)
+#   make test-campfire
+#               run the host build of Campfire and check it
 #
 # The steps need Rust, Rails, Bundler, Node.js with npm, the SQLite CLI and
 # headers, and the jemalloc headers. rh and Bundler use the Ruby of this
@@ -136,6 +138,9 @@ $(RH_CAMPFIRE_DIR)/.fx-stamp: $(BUILD)/roundhouse/roundhouse.stamp $(BUILD)/roun
 campfire: $(RH_CAMPFIRE_DIR)/.fx-stamp
 	$(call rh_host,campfire,$(RH_CAMPFIRE_DIR),$(RH_CAMPFIRE_HOST_DIR),$(RH_CAMPFIRE_FLAGS))
 
+test-campfire:
+	ruby test/roundhouse/campfire.rb $(RH_CAMPFIRE_DIR) $(RH_CAMPFIRE_HOST_DIR)/campfire
+
 # Moves the pin to the main of Roundhouse and checks the blog on it. It
 # stops when deps/roundhouse has changes. It does not commit: commit
 # ROUNDHOUSE_COMMIT when the check passes.
@@ -159,4 +164,4 @@ upgrade_roundhouse:
 	    "a newer spinel. Run make upgrade_spinel first." >&2; exit 1; }
 	@echo "upgrade_roundhouse: ROUNDHOUSE_COMMIT is $$(cat ROUNDHOUSE_COMMIT), from $(ROUNDHOUSE_COMMIT)."
 
-.PHONY: roundhouse test-roundhouse upgrade_roundhouse campfire
+.PHONY: roundhouse test-roundhouse upgrade_roundhouse campfire test-campfire

@@ -1300,7 +1300,8 @@ The server serves its pages all the time. `exit` closes the session only.
 | `roundhouse/spin_flags.rb` | writes the flags of the packages of the output |
 | `roundhouse/console.rb` | is the console and its entries |
 | `test/roundhouse/test.rb` | runs the host build of the blog and checks it |
-| `test/roundhouse/helper.rb` | holds the helpers of the test |
+| `test/roundhouse/campfire.rb` | runs the host build of Campfire and checks it (section 5.4.7) |
+| `test/roundhouse/helper.rb` | holds the helpers of the two tests |
 
 For the update of the pin, see [development.md](development.md).
 
@@ -1491,8 +1492,22 @@ FLUXPINEL_CONSOLE=4000 ../campfire-host/campfire
 ```
 
 The server serves Campfire on http://localhost:3000. With no account, each
-page goes to `/first_run`. `make campfire` is not a part of `make
-roundhouse` or of the checks of the pins.
+page goes to `/first_run`.
+
+`make test-campfire` runs `test/roundhouse/campfire.rb` on the host build.
+The test starts the server on a new database and checks these items:
+
+- The pages go to `/first_run` with no account, and to the sign in with
+  an account.
+- The console creates and reads records of Account, User, Room,
+  Membership, Message, Boost and Session.
+- The console reads associations, the search of messages and the users
+  that a message mentions.
+- The IRB of `--irb-port` reads the records.
+
+`make campfire` and `make test-campfire` are not a part of `make
+roundhouse` or of `make upgrade_roundhouse`. Run them by hand after a
+change of a pin.
 
 ## 6. Prior art
 
