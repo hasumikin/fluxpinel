@@ -25,13 +25,24 @@ RH_RAILS = $(RH_BLOG_DIR)-rails
 RH_HOST_DIR = $(BUILD)/roundhouse/host
 RH_HOST ?= $(RH_HOST_DIR)/blog
 RH_ENTRIES = Main.start,Console.count,Console.find,Console.create
-# The classes whose methods IRB calls by name through the table of
-# --ext-class: the models, and the classes of Active Record whose objects
-# their methods answer (a Relation of Article.all). `all` roots every
-# public method of the blog, and spinel then refuses
-# runtime/logger_spinel.rb (a Proc read from a slot that holds other
-# values appends to a String).
-RH_EXT_CLASS = Article,Comment,ActiveRecord::Base,ActiveRecord::Relation
+# The host build of an application, from its Spinel output after apply.rb:
+#
+#   $(call rh_host,NAME,OUT,HOST,FLAGS,LIBS)
+#
+# NAME is the name of the binary, OUT the output directory (an absolute
+# path) and HOST the directory of the host build. FLAGS are more flags of
+# spinel (the -I of a package) and LIBS more objects and libraries of the
+# link. The classes of --ext-class come from OUT/.fx-ext-class, which
+# apply.rb writes: the models, and the classes of Active Record whose
+# objects their methods answer. `all` roots every public method of the
+# application, and spinel then refuses runtime/logger_spinel.rb (a Proc
+# read from a slot that holds other values appends to a String).
+define rh_host
+$(MAKE) host HOST=$(3) HOST_NAME=$(1) KERNEL=$(2)/main.rb KERNEL_MAIN=Main.start \
+  KERNEL_ENTRIES=$(RH_ENTRIES) \
+  KERNEL_FLAGS="$(strip -I $(2) --rbs $(2) $(4))" \
+  KERNEL_EXT_CLASS="$$(cat $(2)/.fx-ext-class)" HOST_LIBS="$(strip $(5) -lsqlite3 -ljemalloc)"
+endef
 # The interpreter itself, not a shim of a version manager. A shim of rbenv
 # picks the Ruby from the directory of the script, and deps/roundhouse
 # names a Ruby of its own.
@@ -66,10 +77,7 @@ $(RH_BLOG_DIR)/.fx-stamp: $(RH_RAILS)/.fx-stamp roundhouse/apply.rb roundhouse/c
 	touch $@
 
 roundhouse: $(RH_BLOG_DIR)/.fx-stamp
-	$(MAKE) host HOST=$(RH_HOST_DIR) HOST_NAME=blog KERNEL=$(RH_BLOG_DIR)/main.rb KERNEL_MAIN=Main.start \
-	  KERNEL_ENTRIES=$(RH_ENTRIES) \
-	  KERNEL_FLAGS="-I $(RH_BLOG_DIR) --rbs $(RH_BLOG_DIR)" \
-	  KERNEL_EXT_CLASS=$(RH_EXT_CLASS) HOST_LIBS="-lsqlite3 -ljemalloc"
+	$(call rh_host,blog,$(RH_BLOG_DIR),$(RH_HOST_DIR),,)
 
 test-roundhouse:
 	ruby test/roundhouse/test.rb $(RH_BLOG) $(RH_HOST)

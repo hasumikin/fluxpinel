@@ -5,7 +5,9 @@
 # Console.listen accepts connections on 127.0.0.1:port, one green thread
 # for each session, and gives each line to Fluxpinel.feed. The entries
 # below choose the model with a `case`: spinel compiles no lookup of a
-# class by a String at run time.
+# class by a String at run time. apply.rb writes one `when` for each model
+# of the application in place of each `# arms:` line, with the name of the
+# model for MODEL.
 require_relative "fluxpinel"
 
 module Console
@@ -35,8 +37,7 @@ module Console
   #: (String) -> Integer
   def self.count(model)
     case model
-    when "Article" then Article.count
-    when "Comment" then Comment.count
+    # arms: MODEL.count
     else raise ArgumentError, "unknown model: " + model
     end
   end
@@ -44,8 +45,7 @@ module Console
   #: (String, Hash[Symbol, untyped]) -> untyped
   def self.create(model, attrs)
     case model
-    when "Article" then Article.create(attrs)
-    when "Comment" then Comment.create(attrs)
+    # arms: MODEL.create(attrs)
     else raise ArgumentError, "unknown model: " + model
     end
   end
@@ -53,8 +53,7 @@ module Console
   #: (String, Integer) -> untyped
   def self.find(model, id)
     case model
-    when "Article" then Article.find(id)
-    when "Comment" then Comment.find(id)
+    # arms: MODEL.find(id)
     else raise ArgumentError, "unknown model: " + model
     end
   end

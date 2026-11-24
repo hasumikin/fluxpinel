@@ -1,21 +1,43 @@
-# Changes the Spinel output of the blog of Roundhouse for the console:
+# Changes the Spinel output of Roundhouse for an application, for the
+# console:
 #
-#   ruby roundhouse/apply.rb BLOG
+#   ruby roundhouse/apply.rb APP
 #
-# BLOG is the output directory of `roundhouse --target spinel`. The script
-# changes BLOG/main.rb and copies console.rb and kernel/fluxpinel.rb into
-# BLOG. Each change finds its anchor line in main.rb. When an anchor is
-# not there exactly once, the script stops and changes nothing, so a change
-# of the Roundhouse output cannot put a change in the wrong place.
+# APP is the output directory of `roundhouse --target spinel`. The script
+# changes APP/main.rb, writes console.rb with the models of the application
+# and copies kernel/fluxpinel.rb into APP. It writes APP/.fx-ext-class, the
+# classes of the `--ext-class` of the host build. Each change finds its
+# anchor line in main.rb. When an anchor is not there exactly once, the
+# script stops and changes nothing, so a change of the Roundhouse output
+# cannot put a change in the wrong place.
 
 FX = File.expand_path("..", __dir__)
 
-blog = ARGV[0] or abort "usage: ruby #{$0} BLOG"
+blog = ARGV[0] or abort "usage: ruby #{$0} APP"
 main = File.join(blog, "main.rb")
 src = File.read(main)
 abort "apply: #{main} has the changes already" if src.include?("Fluxpinel demo:")
 
 lines = src.lines
+
+# The models of the application: Roundhouse writes app/models/NAME_row.rb
+# for each table, and app/models/NAME.rb has the class.
+models = Dir.glob(File.join(blog, "app/models/*_row.rb")).sort.map do |row|
+  file = row.delete_suffix("_row.rb") + ".rb"
+  head = File.exist?(file) && File.foreach(file).find { |l| l.match?(/\Aclass \S+ < /) }
+  abort "apply: #{file} has no line `class NAME < ...` (see ROUNDHOUSE_COMMIT)" unless head
+  head[/\Aclass (\S+) < /, 1]
+end
+abort "apply: #{blog}/app/models has no model (no file *_row.rb)" if models.empty?
+
+# console.rb, with a `when` for each model in place of each `# arms:` line.
+console = File.readlines(File.join(__dir__, "console.rb"))
+arms = console.grep(/\A\s*# arms: /).size
+abort "apply: console.rb has #{arms} lines `# arms:`, not 3" unless arms == 3
+console = console.flat_map do |line|
+  arm = line.match(/\A(\s*)# arms: (.*)\n\z/) or next [line]
+  models.map { |name| "#{arm[1]}when \"#{name}\" then #{arm[2].sub("MODEL", name)}\n" }
+end
 
 # The index of the line that is text. Stops when not exactly one line is.
 def anchor(lines, text)
@@ -54,6 +76,10 @@ RUBY
 lines.insert(boot + 1, "require_relative \"console\"\n")
 
 File.write(main, lines.join)
-File.write(File.join(blog, "console.rb"), File.read(File.join(__dir__, "console.rb")))
+File.write(File.join(blog, "console.rb"), console.join)
 File.write(File.join(blog, "fluxpinel.rb"), File.read(File.join(FX, "kernel/fluxpinel.rb")))
-puts "apply: changed #{main}"
+# The classes whose methods IRB calls by name through the table of
+# --ext-class: the models, and the classes of Active Record whose objects
+# their methods answer (a Relation of Article.all).
+File.write(File.join(blog, ".fx-ext-class"), (models + %w[ActiveRecord::Base ActiveRecord::Relation]).join(",") + "\n")
+puts "apply: changed #{main} (models: #{models.join(", ")})"

@@ -1295,25 +1295,33 @@ The server serves its pages all the time. `exit` closes the session only.
 |---|---|
 | `ROUNDHOUSE_COMMIT` | holds the pin: the Roundhouse commit that Fluxpinel uses |
 | `roundhouse/roundhouse.mk` | holds the make targets of this section |
-| `roundhouse/apply.rb` | changes the Spinel output of the blog |
+| `roundhouse/apply.rb` | changes the Spinel output of an application |
 | `roundhouse/console.rb` | is the console and its entries |
-| `test/roundhouse/test.rb` | runs the host build and checks it |
+| `test/roundhouse/test.rb` | runs the host build of the blog and checks it |
+| `test/roundhouse/helper.rb` | holds the helpers of the test |
 
 For the update of the pin, see [development.md](development.md).
 
 ### 5.4.2 Changes to the output of Roundhouse
 
 The output of Roundhouse runs the server at its top level. `apply.rb`
-changes three things:
+changes four things:
 
 - It moves the start of the server in `main.rb` into an entry,
   `Main.start`. Fluxpinel starts after the top level of the kernel, so the
   host build calls this entry. With `FLUXPINEL_CONSOLE=PORT`, `Main.start`
   also starts the console.
-- It copies `console.rb`. This file accepts the connections of the console
+- It writes `console.rb`. This file accepts the connections of the console
   and gives each line to `Fluxpinel.feed`. It also has the entries
-  `Console.count`, `Console.find` and `Console.create`.
+  `Console.count`, `Console.find` and `Console.create`. Each entry has a
+  `when` for each model of the application.
 - It copies `kernel/fluxpinel.rb` of Fluxpinel beside `console.rb`.
+- It writes `.fx-ext-class`, the classes of `--ext-class` for the host
+  build.
+
+`apply.rb` reads the models from the output. Roundhouse writes
+`app/models/NAME_row.rb` for each table, and `app/models/NAME.rb` has the
+class of the model.
 
 Each change of `main.rb` finds an anchor line. When an anchor is not in
 `main.rb` exactly once, `apply.rb` stops and changes nothing.
@@ -1373,7 +1381,7 @@ of Reline, to each telnet connection on 127.0.0.1:PORT (see `--irb-port`
 in the [README](../README.md)). The two arguments can be at any place
 before a `--`, and the entry does not get them.
 The kernel is compiled with `--ext-class` for the models and for
-`ActiveRecord::Base` and `ActiveRecord::Relation` (`RH_EXT_CLASS`), so IRB
+`ActiveRecord::Base` and `ActiveRecord::Relation` (`.fx-ext-class`), so IRB
 calls the methods of the models and of a `Relation` by name:
 
 ```sh
