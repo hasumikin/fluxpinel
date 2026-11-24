@@ -20,7 +20,11 @@ ENV["SPINEL_GC_VERIFY"] = "1"
 out = +""
 r, w, pid = PTY.spawn(ENV["FLUXPINEL"], "-e", program)
 begin
-  out << r.read
+  # by the line: a read to the end raises Errno::EIO when the child ends
+  # (Linux), and the text it had read goes with the error
+  while (line = r.gets)
+    out << line
+  end
 rescue Errno::EIO
 end
 Process.wait(pid)

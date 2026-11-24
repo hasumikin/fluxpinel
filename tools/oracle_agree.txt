@@ -1,5 +1,5 @@
 # The spinel tests that Fluxpinel answers right, for make regress.
-# make oracle writes this file. spinel: 74a918fe2658
+# make oracle writes this file. spinel: 24e563b38867
 absolute_class_reopen_inside_module
 abstract_raise_override_return
 accessor_def_history_both_sides
@@ -615,6 +615,7 @@ bind_call_static_method_boxed_object
 bind_call_struct_member
 bind_call_struct_member_override
 binding_lvget
+binding_lvget_class_body_call
 binop_recv_root
 bitwise_mask_over_int64
 blank_slate_bare_identifier_name_error
@@ -768,10 +769,14 @@ blockless_cycle_enumerator
 bm_instance_eval
 body_def_builtin_list
 body_def_called_from_body
+body_def_chain_list
 body_def_class_value_respond
 body_def_instance_list
 body_def_list_side
+body_def_module_list
 body_def_presence_window
+body_def_respond_runtime_name
+body_def_self_list
 body_def_sure_point
 body_def_vcall_name_error
 body_definer_after_other_class_body
@@ -1103,6 +1108,7 @@ builtin_reopen_array_hash_overrides
 builtin_reopen_array_hash_poly
 builtin_reopen_bignum_receiver
 builtin_reopen_blank_shapes
+builtin_reopen_block_call
 builtin_reopen_const_ancestor
 builtin_reopen_const_read_late_write
 builtin_reopen_enum_alias_own
@@ -1435,6 +1441,7 @@ clamp_nil_open_bounds
 class_allocate
 class_ancestors_superclass
 class_basicobject_superclass
+class_body_attribute_program_method
 class_body_bare_call_before_its_def
 class_body_bare_private_new
 class_body_block_self_reflection
@@ -1482,6 +1489,7 @@ class_eval_block_bare_reflection
 class_eval_block_bare_superclass
 class_eval_block_class_ivar
 class_eval_block_class_ivar_in_block
+class_eval_block_def_under_condition
 class_eval_block_include_in_block
 class_eval_block_method_added_in_block
 class_eval_block_on_self_in_method
@@ -1718,6 +1726,7 @@ class_value_new_leading_optional
 class_value_new_module_with_initialize
 class_value_new_narrowing_limits
 class_value_new_nil_unlisted
+class_value_new_object_array_param_converges
 class_value_new_optional_param
 class_value_new_positional_ctor_param
 class_value_new_proc_into_yielding_init
@@ -2014,6 +2023,8 @@ const_nil_int_element_past_4096_scopes
 const_op_assign_kinds
 const_parent_array_pattern
 const_path_array_push_widens
+const_path_builtin_parent_leaf
+const_path_builtin_parent_leaf_nested
 const_path_builtin_parent_shadowed
 const_path_builtin_scope_computed_mixin
 const_path_class_value_new
@@ -2023,6 +2034,8 @@ const_path_deep_nesting
 const_path_dynamic_receiver
 const_path_dynamic_receiver_many
 const_path_message_is_written_path
+const_path_nested_builtin_namesake
+const_path_nested_builtin_namesake_reopen
 const_path_no_toplevel
 const_path_parent_literal_operand
 const_path_parent_or_write
@@ -2125,6 +2138,7 @@ control_flow_while_modifier_method
 conv_alias_inherited_method
 conv_bridge_boxed_answer
 conv_typeerror_names_the_right_class
+core_reopen_hook_def_bare_builtin_call
 count_block_poly_pred
 crashers_536
 ctor_block_return_spliced_caller
@@ -2220,6 +2234,7 @@ default_arg_ivar_value_receiver
 default_arg_param_beside_capture
 default_args
 default_call_name_body_local
+default_container_alias_identity
 default_cycle_inline
 default_empty_array_object_rows_use
 default_nil_param_with_str_return
@@ -2514,6 +2529,7 @@ empty_container_rebinds_scalar_slot
 empty_hash_arg_param_widen
 empty_hash_block_result_key
 empty_hash_const_value
+empty_hash_default_slot
 empty_hash_forwarded_param
 empty_hash_int_int_no_widen
 empty_hash_int_int_promote
@@ -3616,6 +3632,8 @@ hoisted_begin_value_held
 hoisted_handle_arg_into_boxed_param
 hoisted_read_after_nil_store
 hoisted_store_clears_nil_bit
+hook_extend_module_attr_accessor
+hook_extend_same_leaf_modules
 hook_included_called
 hook_included_per_point
 hook_inherited_per_point
@@ -4178,6 +4196,7 @@ io_select_high_fd
 io_select_nonio_array_elements
 io_select_set_parks_thread
 io_select_timeout_interval
+io_select_trap_from_process
 io_select_user_to_io
 io_set_encoding
 io_set_encoding_unknown_name_reopen_mode
@@ -4644,6 +4663,7 @@ ivar_from_method_hash_new_widens
 ivar_get_numeric_nil
 ivar_get_own_method_unused
 ivar_hash_direct_write_misfit
+ivar_hash_dup_two_news
 ivar_hash_literal_shared_string_values
 ivar_hash_or_write_shared_value
 ivar_int_table_narrowing
@@ -4999,6 +5019,7 @@ map_bang_tail_widens_param_ivar_member
 map_bang_widens_element_type
 map_block_string_new_join
 map_each_cons_typed
+map_next_nil_elements
 map_next_value_gc_rooted
 map_obj_array_poly_field
 map_object_block_narrows
@@ -5010,6 +5031,7 @@ map_shadowed_param_poly_arg
 map_to_heap_objects
 map_to_value_type_objects
 map_untyped_block_result
+map_with_index_next_kind
 mapped_array_mutable_elements
 marshal_boxed_shared_string
 marshal_hash_default
@@ -5549,6 +5571,12 @@ nested_array_inspect
 nested_array_pattern_binding
 nested_array_pattern_deconstruct
 nested_block_captures_outer_param
+nested_body_in_value_forms
+nested_body_in_value_held
+nested_body_in_value_hook
+nested_body_in_value_hook_held
+nested_body_in_value_order
+nested_body_in_value_unplaced
 nested_bundled_name_lexical
 nested_catch
 nested_class_inherits_outer_same_name
@@ -7330,6 +7358,7 @@ reopen_builtin_implicit_self
 reopen_builtin_name_yielding
 reopen_in_lambda_body
 reopen_pf_nested_tail_box
+reopen_plain_iterator_statement
 reopen_redef_poly_call_between
 reopen_redef_subclass_override_between
 reopen_redef_versions
@@ -7338,6 +7367,7 @@ reopen_yield_block_captures
 reopen_yield_block_value_nil
 reopen_yield_return
 reopen_yielding_forwarded_block
+reopen_yielding_iterator_runs
 reopen_yielding_method_call
 reopened_builtin_case_equality
 reopened_builtin_class_identity
@@ -7404,6 +7434,8 @@ rescue_modifier_next_into_typed_slot
 rescue_modifier_stmt_std_only
 rescue_module_bare_reader
 rescue_namespaced_exception
+rescue_nested_builtin_namesake_module
+rescue_nested_builtin_namesake_toplevel
 rescue_operand_before_exception
 rescue_operand_validation
 rescue_rebound_handler_var
@@ -8889,6 +8921,7 @@ superclass_missing_qualified_path
 superclass_named_where_header_stands
 superclass_path_moved_class
 superclass_self_in_class_body
+sure_run_in_literal_elements
 surplus_arg_refusal
 sym_hash_cross_variant_merge
 sym_hash_default_through_poly_receiver
@@ -9423,6 +9456,8 @@ virtual_dispatch_void_override
 virtual_dispatch_void_override_empty_base
 visibility_decl_value
 visibility_explicit_receiver
+visibility_word_body_def_order
+visibility_word_def_after_raise
 visibility_word_placed_then_body
 void_call_interpolated
 void_tail_same_name_elsewhere
