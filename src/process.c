@@ -633,7 +633,9 @@ static void fx_exec_fds(sp_RbVal opts) {
   }
   for (int i = 0; i < n; i++) {
     if (!path[i]) continue;
-    src[i] = open(path[i], fl[i], (mode_t)perm[i]);
+    /* (close-on-exec: the descriptor is closed below, and a fork of another
+       thread before that does not hand it to a command) */
+    src[i] = open(path[i], fl[i] | O_CLOEXEC, (mode_t)perm[i]);
     if (src[i] < 0) {
       int e = errno;
       for (int k = 0; k < i; k++) if (path[k]) close(src[k]);
