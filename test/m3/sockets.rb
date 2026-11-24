@@ -76,4 +76,12 @@ begin
   TCPSocket.new("127.0.0.1", 1)
 rescue SystemCallError => e
   p e.class
+  puts e.message
+end
+# a bind that fails: a privileged port, as a user
+begin
+  TCPServer.new("127.0.0.1", 1)
+rescue SystemCallError => e
+  p e.class
+  puts e.message
 end

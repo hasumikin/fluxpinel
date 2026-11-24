@@ -140,15 +140,15 @@ static int fx_sock_class(const FxClass *k, const char *name, int argc, sp_RbVal 
        every address */
     const char *host = argc == 2 && argv[0].tag != SP_TAG_NIL ? sp_poly_arg_str_chk(argv[0]) : NULL;
     sp_int port = sp_poly_arg_int_chk(argv[argc - 1]);
-    int fd;
-    FX_UNLOCKED(fd = sp_net_listen_host(host, (int)port, 0));
-    f = sp_io_fdopen_sock(fd, SPL("tcpserver"));
+    /* the runtime's maker, as the code spinel emits calls it: a bind or a
+       connect that fails raises its Errno with the address in the message
+       (Errno::ECONNREFUSED "Connection refused - connect(2) for ..."), and
+       an unresolved host its SocketError */
+    FX_UNLOCKED_ROOT(f = sp_sock_tcp_server(host, port), SP_GC_ROOT(f));
   } else if (is_new && !strcmp(cn, "TCPSocket") && argc == 2) {
     const char *host = sp_poly_arg_str_chk(argv[0]);
     sp_int port = sp_poly_arg_int_chk(argv[1]);
-    int fd;
-    FX_UNLOCKED(fd = sp_net_connect(host, (int)port));
-    f = sp_io_fdopen_sock(fd, SPL("tcp"));
+    FX_UNLOCKED_ROOT(f = sp_sock_tcp_client(host, port), SP_GC_ROOT(f));
   } else if (is_new && !strcmp(cn, "UNIXServer") && argc == 1) {
     f = sp_sock_unix_server(sp_poly_arg_str_chk(argv[0]));
   } else if (is_new && !strcmp(cn, "UNIXSocket") && argc == 1) {
