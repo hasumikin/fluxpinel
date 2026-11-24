@@ -812,8 +812,11 @@ static void fx_popen_option_twice(sp_RbVal key) {
   sp_raise_cls("ArgumentError", sp_sprintf("%s option specified twice", k));
 }
 
-/* The pairs of an options Hash into h, each key once. */
+/* The pairs of an options Hash into h, each key once. opts can be a Hash
+   that fx_spawn_opts_keys made, which nothing else holds: rooted here, as
+   the sets allocate. */
 static void fx_popen_opts_into(sp_PolyPolyHash *h, sp_RbVal hv, sp_RbVal opts) {
+  SP_GC_ROOT_RBVAL(opts);
   for (sp_int j = 0, n = sp_poly_length(opts); j < n; j++) {
     sp_RbVal key, value;
     sp_poly_hash_pair(opts, j, &key, &value);
