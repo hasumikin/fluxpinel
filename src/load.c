@@ -322,6 +322,37 @@ static const char *fx_syntax_error_message(const FxSource *s, const char *path) 
 /* Parses the bytes of a file into a new source, which starts at the line
    line, inside the scopes scopes (a piece of the console). Answers the
    message of the first syntax error, or NULL. */
+/* The warnings of the parser for a source with no error, as CRuby gives
+   them: each one goes to Warning.warn as "path:line: warning: message\n",
+   so a program that defines Warning.warn gets them, and the Warning of
+   Fluxpinel writes them to $stderr (lib/fluxpinel/warning.rb). prism
+   tells which ones are for -w only: $VERBOSE false leaves those out, and
+   $VERBOSE nil leaves all of them out. A source of Fluxpinel itself (the
+   prelude) gives none. A Warning.warn that raises ends the load of the
+   file, as in CRuby. */
+static void fx_parse_warnings(const FxSource *s, const char *path) {
+  if (!s->parser.warning_list.size || !L.object || path[0] == '<') return;
+  sp_RbVal verbose = fx_gvar_get("$VERBOSE");
+  if (verbose.tag == SP_TAG_NIL) return;
+  int all = sp_poly_truthy(verbose);
+  SP_GC_SAVE();
+  sp_RbVal warning = sp_box_nil(), msg = sp_box_nil();
+  const char *text = NULL;
+  SP_GC_ROOT_RBVAL(warning);
+  SP_GC_ROOT_RBVAL(msg);
+  SP_GC_ROOT_STR(text);
+  for (const pm_diagnostic_t *d = (const pm_diagnostic_t *)s->parser.warning_list.head; d;
+       d = (const pm_diagnostic_t *)d->node.next) {
+    if (d->level == PM_WARNING_LEVEL_VERBOSE && !all) continue;
+    if (warning.tag == SP_TAG_NIL && !fx_const_lookup(L.object, sp_sym_intern("Warning"), &warning)) return;
+    int line = (int)pm_newline_list_line_column(&s->parser.newline_list, d->location.start, s->parser.start_line).line;
+    text = sp_sprintf("%s:%d: warning: %s\n", path, line, d->message);
+    msg = fx_new_string((const uint8_t *)text, strlen(text));
+    fx_send_v(warning, "warn", 1, &msg, NULL, 0, NULL);
+    if (L.ctl != FX_CTL_NONE) return;
+  }
+}
+
 static const char *fx_parse_in(const char *path, const char *real, char *buf, size_t len, int line,
                                const pm_constant_id_list_t *const *scopes, int nscopes, FxSource **out) {
   FxSource *s = calloc(1, sizeof *s);
@@ -357,8 +388,9 @@ static const char *fx_parse_in(const char *path, const char *real, char *buf, si
   L.sources[L.nsources++] = s;
   fx_source_index(s);
   *out = s;
-  if (!s->parser.error_list.size) return NULL;
-  return fx_syntax_error_message(s, path);
+  if (s->parser.error_list.size) return fx_syntax_error_message(s, path);
+  fx_parse_warnings(s, path);
+  return NULL;
 }
 
 static const char *fx_parse(const char *path, const char *real, char *buf, size_t len, FxSource **out) {

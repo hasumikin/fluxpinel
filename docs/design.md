@@ -567,6 +567,13 @@ The walker evaluates the prism AST directly (`src/walk.c`).
     has no listing: `Dir.glob` and `File.exist?` do not see its paths.
   - The gems of IRB (`--irb`, `--irb-port`) and each other file that a
     program names are files of the disk in each mode.
+- **Warnings of the parser.** A source with no error can have warnings
+  of prism (a duplicated Hash key, `= literal` in a conditional). Each
+  one goes to `Warning.warn` as `path:line: warning: message`, as in
+  CRuby: for the main program, a `require`, a `load`, an autoload and an
+  `eval`. `$VERBOSE` false leaves out the ones that prism marks for `-w`,
+  and `$VERBOSE` nil leaves out all of them. A `Warning.warn` of the
+  program gets them, and one that raises ends the load of the file.
 - **Autoload.** `autoload(name, path)` records the path on the module
   (`src/object.c`). The first read of the constant loads the file, as a
   require of the path does. `defined?` does not load it. `Set` is such a
