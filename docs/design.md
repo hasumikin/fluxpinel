@@ -1467,6 +1467,10 @@ fixture of Roundhouse. `make campfire` builds its host with the same
 steps as the blog. Nothing in the make rules names a model or a package
 of Campfire.
 
+The Campfire build is frozen. The rules and the test stay in the tree,
+and the project does not keep them green. A move of a pin does not run
+them.
+
 You need the tools of section 5.4.3 and the headers of libvips
 (`libvips-dev`). The build takes about 30 minutes.
 
@@ -1510,8 +1514,7 @@ The test starts the server on a new database and checks these items:
 - The IRB of `--irb-port` reads the records.
 
 `make campfire` and `make test-campfire` are not a part of `make
-roundhouse` or of `make upgrade_roundhouse`. Run them by hand after a
-change of a pin.
+roundhouse` or of `make upgrade_roundhouse`.
 
 ## 6. Prior art
 

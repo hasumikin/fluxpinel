@@ -102,7 +102,8 @@ test-roundhouse:
 # fetches it into deps/once-campfire, makes its Spinel output and builds
 # its host, $(RH_CAMPFIRE_HOST_DIR)/campfire. The build takes about 30
 # minutes and needs the headers of libvips (libvips-dev). It is not a part
-# of `make roundhouse`.
+# of `make roundhouse`. The Campfire rules are frozen: a move of a pin does
+# not run them.
 DEPS_CAMPFIRE = $(CURDIR)/deps/once-campfire
 CAMPFIRE_URL ?= https://github.com/basecamp/once-campfire.git
 CAMPFIRE_COMMIT := $(shell cat CAMPFIRE_COMMIT)
