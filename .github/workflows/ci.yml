@@ -84,6 +84,10 @@ jobs:
       - name: make test-host
         run: make test-host
 
+      # the libraries in the binary (EMBED=1), in a build of its own
+      - name: make test-embed
+        run: make test-embed
+
       - name: make regress
         run: make regress
 

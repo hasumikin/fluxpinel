@@ -14,6 +14,9 @@
 #   make regress
 #               run the tests that the last oracle found right, under
 #               Fluxpinel only
+#   make test-embed
+#               build with the libraries in the binary (EMBED=1) and run
+#               the tests on that build
 #   make gem-oracle
 #               load the packages of spinel and the files of the gems of IRB
 #               under Fluxpinel, and report the first failure of each
@@ -101,10 +104,27 @@ endif
 FX_VERSION := $(shell cat VERSION)
 FX_SPINEL_REV := $(shell git -C $(SPINEL) rev-parse --short=9 HEAD 2>/dev/null)
 FX_ENGINE_FLAGS := $(if $(wildcard $(SPINEL)/src/analyze.h),$(shell ruby tools/engine_flags.rb $(SPINEL)))
+# The Ruby files of the libraries: the packages and the builtins of spinel,
+# and lib/ of Fluxpinel. EMBED=0 reads them from these directories, whose
+# paths go in the binary, so the binary runs on a machine that has them.
+# EMBED=1 puts the files in the binary (tools/embed_gen.rb), under paths
+# that no file system has: the binary reads no file of the three
+# directories and runs on any machine. One build directory has one mode
+# (the file embed_mode).
+EMBED ?= 0
+EMBED_DIRS = packages=$(SPINEL)/packages builtins=$(SPINEL)/builtins lib=lib
+ifeq ($(EMBED),1)
+LIB_DIR_FLAGS = -DFX_EMBED -DFX_PACKAGES_DIR='"/@fluxpinel/packages"' \
+         -DFX_BUILTINS_DIR='"/@fluxpinel/builtins"' -DFX_LIB_DIR='"/@fluxpinel/lib"'
+EMBED_INC = $(BUILD)/embed.inc
+else
+LIB_DIR_FLAGS = -DFX_PACKAGES_DIR='"$(SPINEL)/packages"' -DFX_BUILTINS_DIR='"$(SPINEL)/builtins"' \
+         -DFX_LIB_DIR='"$(CURDIR)/lib"'
+EMBED_INC =
+endif
 # The runtime of spinel holds a String as its handle (SP_ONE_STRING).
 BASE_CFLAGS = -O2 -g -std=gnu11 -ffp-contract=off -DSP_ONE_STRING $(RT_CFLAGS) \
-         -DFX_PACKAGES_DIR='"$(SPINEL)/packages"' -DFX_BUILTINS_DIR='"$(SPINEL)/builtins"' \
-         -DFX_LIB_DIR='"$(CURDIR)/lib"' -DFX_FFI=$(FFI) \
+         $(LIB_DIR_FLAGS) -DFX_FFI=$(FFI) \
          -DFX_VERSION='"$(FX_VERSION)"' -DFX_SPINEL_REV='"$(FX_SPINEL_REV)"' $(FX_ENGINE_FLAGS) \
          -Isrc -I$(BUILD) -I$(SPINEL)/lib -I$(SPINEL)/lib/regexp -I$(SPINEL)/vendor/prism/include
 CFLAGS = $(BASE_CFLAGS) -DSP_INT_OVERFLOW_MODE_$(INT_OVERFLOW)
@@ -185,8 +205,18 @@ $(BUILD)/int_overflow: FORCE
 	@mkdir -p $(BUILD)
 	@echo '$(INT_OVERFLOW)' | cmp -s - $@ || echo '$(INT_OVERFLOW)' > $@
 
+$(BUILD)/embed_mode: FORCE
+	@mkdir -p $(BUILD)
+	@echo '$(EMBED)' | cmp -s - $@ || echo '$(EMBED)' > $@
+
+# the Ruby files of the libraries as a table of C, for EMBED=1
+EMBED_SOURCES = $(shell find $(SPINEL)/packages $(SPINEL)/builtins lib -name '*.rb' -not -path '*/test/*' 2>/dev/null)
+$(BUILD)/embed.inc: tools/embed_gen.rb $(EMBED_SOURCES) SPINEL_COMMIT
+	@mkdir -p $(BUILD)
+	ruby tools/embed_gen.rb $(EMBED_DIRS) > $@.tmp && mv $@.tmp $@
+
 $(BUILD)/fluxpinel: src/*.c src/*.h $(BUILD)/bop_gen_out.c $(BUILD)/off.flags $(BUILD)/prelude.inc $(BUILD)/responds.inc \
-                    $(BUILD)/gem_dirs.h $(NATIVE_FLAGS) VERSION $(BUILD)/int_overflow
+                    $(BUILD)/gem_dirs.h $(NATIVE_FLAGS) VERSION $(BUILD)/int_overflow $(BUILD)/embed_mode $(EMBED_INC)
 	$(CC) $(CFLAGS) $$(cat $(BUILD)/off.flags) -o $@ src/main.c $(if $(NATIVE_FLAGS),$$(cat $(NATIVE_FLAGS))) \
 	  $(LIBS)
 	git -C $(SPINEL) rev-parse HEAD > $(BUILD)/spinel.rev
@@ -256,6 +286,10 @@ $(HOST)/link.args: FORCE
 	@mkdir -p $(HOST)
 	@echo '$(LINK_ARGS)' | cmp -s - $@ || echo '$(LINK_ARGS)' > $@
 
+$(HOST)/embed_mode: FORCE
+	@mkdir -p $(HOST)
+	@echo '$(EMBED)' | cmp -s - $@ || echo '$(EMBED)' > $@
+
 # kernel.d names each source file of the kernel, so a change of a file that
 # KERNEL requires makes the kernel C again. The #line directives of the
 # kernel C name the files. A name with no file (a source of a Roundhouse
@@ -289,7 +323,7 @@ $(HOST)/ivars.c: $(HOST)/kernel.c tools/ivar_gen.rb tools/c_box.rb
 
 $(HOST)/$(HOST_NAME): src/*.c src/*.h $(HOST)/kernel.c $(HOST)/entries.c $(HOST)/ivars.c $(BUILD)/bop_gen_out.c \
               $(BUILD)/off.flags $(BUILD)/prelude.inc $(BUILD)/responds.inc $(BUILD)/gem_dirs.h $(NATIVE_FLAGS) \
-              $(HOST)/link.args $(HOST)/kernel.libs
+              $(HOST)/link.args $(HOST)/kernel.libs $(HOST)/embed_mode $(EMBED_INC)
 	$(CC) $(HOST_CFLAGS) -I$(HOST) -DFX_KERNEL=fx_kernel_init $(if $(KERNEL_MAIN),'-DFX_KERNEL_MAIN="$(KERNEL_MAIN)"') \
 	  -include src/kernel_prelude.h -include $(HOST)/kernel.c \
 	  -include $(HOST)/entries.c -include $(HOST)/ivars.c $$(cat $(BUILD)/off.flags) -o $@ src/main.c \
@@ -306,6 +340,14 @@ test-host: $(HOST)/fluxpinel
 	$(MAKE) host HOST=$(BUILD)/host_bare KERNEL=test/kernel/bare.rb
 	ruby test/run.rb --require kernel/fluxpinel_cruby.rb --require test/kernel/bare.rb \
 	  $(BUILD)/host_bare/fluxpinel test/host_bare
+
+# The tests on a build with the libraries in the binary (EMBED=1), in a
+# build directory of its own. The paths of the libraries in that binary
+# name no file, so a test that requires a library passes only when the
+# binary reads the library from itself.
+test-embed:
+	$(MAKE) BUILD=$(BUILD)/embed EMBED=1 all
+	ruby test/run.rb $(BUILD)/embed/fluxpinel $(TEST_DIRS)
 
 # One session of IRB under valgrind. A String function of the runtime reads
 # the byte ahead of its argument, so memory of libc given to one is a read
@@ -445,5 +487,5 @@ check-spinel-master:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test park-audit host test-host test-valgrind oracle regress census gem-oracle optcarrot deps gems upgrade_spinel \
+.PHONY: all test park-audit host test-host test-embed test-valgrind oracle regress census gem-oracle optcarrot deps gems upgrade_spinel \
         check-spinel-master clean FORCE

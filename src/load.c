@@ -26,8 +26,64 @@
 
 #define FX_IS(s) (!strcmp(name, (s)))
 
+/* The libraries in the binary (make EMBED=1). The Ruby files of the three
+   directories are a table of the build (tools/embed_gen.rb), under paths
+   that no file system has: FX_PACKAGES_DIR, FX_BUILTINS_DIR and FX_LIB_DIR
+   start with FX_EMBED_ROOT then. A path under the root is a file of the
+   table and never a file of the disk, so the binary reads the same
+   libraries on each machine. */
+#define FX_EMBED_ROOT "/@fluxpinel/"
+#ifdef FX_EMBED
+#include "embed.inc"
+#endif
+
+static int fx_path_embedded(const char *path) {
+#ifdef FX_EMBED
+  return !strncmp(path, FX_EMBED_ROOT, sizeof FX_EMBED_ROOT - 1);
+#else
+  (void)path;
+  return 0;
+#endif
+}
+
+/* The row of path in the table, or -1. */
+static int fx_embed_find(const char *path) {
+#ifdef FX_EMBED
+  int lo = 0, hi = fx_embed_count - 1;
+  while (lo <= hi) {
+    int mid = (lo + hi) / 2, c = strcmp(path, fx_embed_files[mid].path);
+    if (!c) return mid;
+    if (c < 0) hi = mid - 1; else lo = mid + 1;
+  }
+#else
+  (void)path;
+#endif
+  return -1;
+}
+
+static const char *fx_path_clean(const char *path);
+
+/* realpath(path, NULL): for a path of the libraries in the binary, the
+   path with no "." and ".." when the table has it. */
+static char *fx_real_path(const char *path) {
+  if (!fx_path_embedded(path)) return realpath(path, NULL);
+  const char *clean = fx_path_clean(path);
+  return fx_embed_find(clean) >= 0 ? strdup(clean) : NULL;
+}
+
 /* The bytes of a file, or NULL when it cannot be read. */
 static char *fx_read_file(const char *path, size_t *len) {
+#ifdef FX_EMBED
+  if (fx_path_embedded(path)) {
+    int i = fx_embed_find(path);
+    if (i < 0) return NULL;
+    char *copy = malloc(fx_embed_files[i].len + 1);
+    if (!copy) return NULL;
+    memcpy(copy, fx_embed_files[i].src, fx_embed_files[i].len + 1);
+    *len = fx_embed_files[i].len;
+    return copy;
+  }
+#endif
   FILE *fp = fopen(path, "rb");
   if (!fp) return NULL;
   fseek(fp, 0, SEEK_END);
@@ -544,7 +600,7 @@ static sp_RbVal fx_require(const pm_node_t *n, const char *arg, int rel) {
   path = fx_path_clean(path);
   size_t plen = strlen(path);
   file = plen > 3 && !strcmp(path + plen - 3, ".rb") ? path : sp_sprintf("%s.rb", path);
-  char *real = realpath(file, NULL);
+  char *real = fx_real_path(file);
   if (!real) {
     /* the message names the path that it tried, with no .rb: as given for
        require, and absolute for require_relative */
@@ -606,7 +662,7 @@ static sp_RbVal fx_require_lib(const char *name) {
   }
   /* lib/<name>.rb of Fluxpinel: a feature that spinel writes at compile
      time, whose package is a stub (forwardable) */
-  char *own = realpath(sp_sprintf("%s/%s.rb", FX_LIB_DIR, name), NULL);
+  char *own = fx_real_path(sp_sprintf("%s/%s.rb", FX_LIB_DIR, name));
   if (own) {
     if (!fx_load_once(own, NULL)) return sp_box_bool(0);
     return L.ctl == FX_CTL_NONE ? sp_box_bool(1) : sp_box_nil();
@@ -620,18 +676,19 @@ static sp_RbVal fx_require_lib(const char *name) {
   /* the ffi package and fiddle over it need libffi, as in spinel */
   int pkg = FX_FFI || !((first == 3 && !strncmp(name, "ffi", 3)) || (first == 6 && !strncmp(name, "fiddle", 6)));
   path = sp_sprintf("%s/%.*s/%.*s", FX_PACKAGES_DIR, (int)first, name, (int)nl, name);
-  char *real = pkg ? realpath(sp_sprintf("%s.rb", path), NULL) : NULL;
+  char *real = pkg ? fx_real_path(sp_sprintf("%s.rb", path)) : NULL;
   if (real) {
     struct stat st;
     extra = sp_sprintf("%s.share.rb", path);
-    int ran = fx_load_once(real, stat(extra, &st) ? NULL : extra);
+    int has_extra = fx_path_embedded(extra) ? fx_embed_find(extra) >= 0 : !stat(extra, &st);
+    int ran = fx_load_once(real, has_extra ? extra : NULL);
     /* pty: PTY.open and the block form of PTY.spawn, which the package
        leaves out for the typing of a compiled program (lib/fluxpinel/pty.rb) */
-    if (ran && !strcmp(name, "pty")) fx_load_once(FX_LIB_DIR "/fluxpinel/pty.rb", NULL);
+    if (ran && !strcmp(name, "pty")) fx_load_once(strdup(FX_LIB_DIR "/fluxpinel/pty.rb"), NULL);
     /* etc: Etc.nprocessors, which the package does not have (lib/fluxpinel/etc.rb) */
-    if (ran && !strcmp(name, "etc")) fx_load_once(FX_LIB_DIR "/fluxpinel/etc.rb", NULL);
+    if (ran && !strcmp(name, "etc")) fx_load_once(strdup(FX_LIB_DIR "/fluxpinel/etc.rb"), NULL);
     /* strscan: StringScanner::Version and Id (lib/fluxpinel/strscan.rb) */
-    if (ran && !strcmp(name, "strscan")) fx_load_once(FX_LIB_DIR "/fluxpinel/strscan.rb", NULL);
+    if (ran && !strcmp(name, "strscan")) fx_load_once(strdup(FX_LIB_DIR "/fluxpinel/strscan.rb"), NULL);
     if (!ran || fx_lib_in(name, preloaded)) return sp_box_bool(0);
     return L.ctl == FX_CTL_NONE ? sp_box_bool(1) : sp_box_nil();
   }

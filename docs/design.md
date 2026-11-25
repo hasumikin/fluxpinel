@@ -530,6 +530,25 @@ The walker evaluates the prism AST directly (`src/walk.c`).
     which an IO does not answer before the require, as in CRuby.
   - Any other name is a LoadError. spinel refuses it at compile time under
     `--require-gate`, and ignores it with a warning otherwise.
+- **The libraries in the binary.** The Ruby files of the libraries are in
+  three directories: `packages/` and `builtins/` of spinel, and `lib/` of
+  Fluxpinel. The make variable `EMBED` selects where a binary reads them.
+  - `EMBED=0` (the default): the binary holds the paths of the three
+    directories and reads the files at run time. It runs on a machine that
+    has the checkouts at those paths. A change of a file in `lib/` needs
+    no build.
+  - `EMBED=1`: `tools/embed_gen.rb` writes the files as a table of C, and
+    the binary holds them. The files have paths under `/@fluxpinel/`
+    (`/@fluxpinel/packages/json/json.rb`), which no file system has. The
+    loader reads a path under that root from the table only
+    (`src/load.c`), so the binary reads the same libraries on each
+    machine. `__FILE__`, `$LOADED_FEATURES` and a backtrace show those
+    paths.
+  - `make host EMBED=1` gives a host binary that runs with no checkout of
+    spinel or Fluxpinel. `make test-embed` runs the tests on a build with
+    `EMBED=1`.
+  - The gems of IRB (`--irb`, `--irb-port`) and the files that a program
+    names itself are files of the disk in each mode.
 - **Autoload.** `autoload(name, path)` records the path on the module
   (`src/object.c`). The first read of the constant loads the file, as a
   require of the path does. `defined?` does not load it. `Set` is such a
