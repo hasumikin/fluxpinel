@@ -697,6 +697,15 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     }
   }
 #endif
+  /* autoclose=: whether a close or the collector closes the descriptor,
+     by the truth of the value, which is the answer (autoclose? is a row of
+     the generated table); a closed stream is the runtime's IOError */
+  if (FX_IS("autoclose=")) {
+    if (argc != 1) fx_arity_error(argc, 1, 0, 0);
+    sp_File_set_autoclose(io, sp_poly_truthy(argv[0]));
+    *out = argv[0];
+    return 1;
+  }
   /* close_on_exec=: the FD_CLOEXEC flag of the descriptor, set or cleared
      by the truth of the value, which is the answer (close_on_exec? is a
      row of the generated table); a closed stream is the runtime's IOError */
