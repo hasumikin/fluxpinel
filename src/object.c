@@ -870,19 +870,22 @@ static int fx_builtin_shadows(sp_RbVal recv, const FxMethod *m, const char *name
 
 /* The method that super calls from m, for a class method of the class c:
    along the singleton methods of c and of its superclasses, each with the
-   modules that it extends. *found is 0 when m is not on that path. */
+   modules that it extends. *found is 0 when m is not on that path. A
+   module that a class and its superclass both extend is on the path one
+   time, as in the ancestors of the singleton class in CRuby: m itself is
+   not its own super. */
 static FX_ANC_FN FxMethod *fx_find_ssuper(const FxClass *c, const FxMethod *m, int *found) {
   *found = 0;
   for (const FxClass *k = c; k; k = k->super) {
     FxMethod *s = fx_table_get(&k->smethods, m->name);
-    if (s && *found) return s;
+    if (s && *found && s != m) return s;
     if (s == m) *found = 1;
     for (int i = k->nextends - 1; i >= 0; i--) {
       const FxClass *anc[128];
       int n = fx_ancestors(k->extends[i], anc, 128);
       for (int j = 0; j < n; j++) {
         s = fx_table_get(&anc[j]->methods, m->name);
-        if (s && *found) return s;
+        if (s && *found && s != m) return s;
         if (s == m) *found = 1;
       }
     }
