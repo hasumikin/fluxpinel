@@ -76,9 +76,9 @@ static int fx_sock_class(const FxClass *k, const char *name, int argc, sp_RbVal 
     sp_int proto = argc == (is_unix ? 2 : 3) ? sp_poly_arg_int_chk(argv[argc - 1]) : 0;
     int fds[2];
     sp_sock_socketpair(dom, type, proto, fds);
-    sp_File *a = sp_sock_pair_handle(fds[0], is_unix);
+    sp_File *a = sp_sock_pair_handle(fds, 0, is_unix);
     SP_GC_ROOT(a);
-    sp_File *b = sp_sock_pair_handle(fds[1], is_unix);
+    sp_File *b = sp_sock_pair_handle(fds, 1, is_unix);
     SP_GC_ROOT(b);
     sp_PolyArray *pa = sp_PolyArray_new();
     SP_GC_ROOT(pa);

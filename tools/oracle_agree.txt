@@ -1,5 +1,5 @@
 # The spinel tests that Fluxpinel answers right, for make regress.
-# make oracle writes this file. spinel: 24e563b38867
+# make oracle writes this file. spinel: f060138a064b
 absolute_class_reopen_inside_module
 abstract_raise_override_return
 accessor_def_history_both_sides
@@ -761,6 +761,7 @@ block_tail_empty_literal
 block_tail_prelude_inside
 block_tail_rescue_modifier
 block_value_cond_boxed
+block_value_gc_rooted
 block_value_taken_by_program_iterator
 block_yield_keyword_param
 block_yield_optional_param
@@ -774,7 +775,9 @@ body_def_class_value_respond
 body_def_instance_list
 body_def_list_side
 body_def_module_list
+body_def_object_own_list
 body_def_presence_window
+body_def_respond_runtime_include_all
 body_def_respond_runtime_name
 body_def_self_list
 body_def_sure_point
@@ -1079,6 +1082,7 @@ builtin_class_reassigned_isa
 builtin_class_singleton_override
 builtin_class_value_id
 builtin_cls_id_distinct
+builtin_const_defined_beside_same_leaf
 builtin_const_path_beside_nested_namesake
 builtin_exception_reopen_ivar
 builtin_forwarded_yield_proc_form
@@ -1129,12 +1133,14 @@ builtin_reopen_self_cmethod
 builtin_reopen_self_const
 builtin_reopen_strbuf_poly
 builtin_reopen_super_reaches_builtin
+builtin_reopen_yield_tap
 builtin_row_recv_once
 builtin_send_kwsplat
 builtin_send_kwsplat_hash
 builtin_singleton_alias_call
 builtin_singleton_alias_user
 builtin_singleton_class_unused
+builtin_singleton_unused
 builtin_singleton_valued_break
 builtin_splice_hash_in_literal
 builtin_splice_heredoc_opening_line
@@ -1473,6 +1479,7 @@ class_body_self_call_private_or_namespaced
 class_body_self_inherited_class_method
 class_body_singleton_class_of_const
 class_body_undefined_call
+class_body_value
 class_builtin_before_override
 class_builtin_sub_before_override
 class_builtin_sub_exception_before_override
@@ -1520,6 +1527,7 @@ class_eval_value_form
 class_eval_value_on_constant_path
 class_exec_arguments_in_class_body
 class_exec_def_body
+class_exec_literal_splat_args
 class_facts_row_of_table
 class_header_alias_between_headers
 class_header_alias_chain
@@ -1560,16 +1568,22 @@ class_level_ivar_string
 class_level_ivar_string_alias
 class_local_copy_receiver
 class_lt_builtin_parent
+class_macro_after_a_method_named_a
+class_macro_after_computed_send_passing_nothing
+class_macro_after_send_and_recursive_methods
 class_macro_called_from_another_macro
 class_macro_keyword_param_attr_reader
 class_macro_name_of_an_attr_reader
 class_macro_named_only_where_it_goes
 class_macro_never_called
 class_macro_reached_by_forwarding_or_op_assign
+class_macro_run_defining_nothing
 class_macro_self_name
+class_macro_send_write
 class_macro_through_superclass
 class_maker_through_send
 class_member_beats_kernel
+class_method_attr_macro
 class_method_bare_new_builds_descendant
 class_method_body_definers
 class_method_body_visibility
@@ -1667,6 +1681,7 @@ class_superclass_class_new
 class_table_loop_status_classes
 class_table_loop_values
 class_value_aref_census
+class_value_args_many_classes
 class_value_attr_or_write
 class_value_builtin_and_nested
 class_value_builtin_arm_conversion_raises
@@ -2695,6 +2710,7 @@ eq_string_vs_int
 eql_on_chain_result
 equal_p_boxed_argument
 errno_class_values
+errno_leaf_program_class
 errno_number
 errno_shared_number
 error_protocol_edges
@@ -2911,6 +2927,7 @@ ffi_int_arg_bigint
 ffi_int_arg_poly_value
 ffi_libc_libm_basic
 ffi_ptr_array
+ffi_ptr_int_literal
 ffi_ptr_nil
 ffi_read_write_widths
 ffi_str_arg_boxed_strbuf
@@ -3673,6 +3690,7 @@ if_else_void_branch_value
 if_elsif_raise_no_else_value
 if_empty_container_arm
 if_expr_multi_stmt_body
+if_folded_empty_arm_oint_slot
 if_isa_fold_oint_arm
 if_ivar_generated_writer
 implicit_alloc_site_cache_helper_specialization
@@ -3844,6 +3862,7 @@ inline_long_renamed_names
 inline_nested_yield_ivar_self
 inline_next_container
 inline_rbs_nil_param
+inline_rbs_override_returns
 inline_rbs_signatures
 inline_rbs_statementless_ivar
 inline_rbs_type_aliases
@@ -4663,7 +4682,9 @@ ivar_from_method_hash_new_widens
 ivar_get_numeric_nil
 ivar_get_own_method_unused
 ivar_hash_direct_write_misfit
+ivar_hash_dup_super_init
 ivar_hash_dup_two_news
+ivar_hash_dup_unknown_origin
 ivar_hash_literal_shared_string_values
 ivar_hash_or_write_shared_value
 ivar_int_table_narrowing
@@ -4958,10 +4979,13 @@ loop_bounded_index_read
 loop_break_keyword_values
 loop_break_runs_ensure
 loop_break_value
+loop_chunked_polls
+loop_chunked_polls_trap
 loop_cobounded_reads
 loop_cobounded_reads_threads
 loop_header_cache_return
 loop_raise_nested_class_stop
+loop_region_user_operator
 loop_reraise_keeps_exception
 loop_return_frame_pop
 loop_return_string_handle
@@ -5894,6 +5918,7 @@ object_path_write_class_value
 object_private_class_value_module_method
 object_reopen_bare_call_in_method
 object_reopen_call_on_setter_result
+object_reopen_display_methods
 object_reopen_dynamic_const_get
 object_reopen_implicit_self
 object_reopen_poly_dispatch
@@ -6648,6 +6673,7 @@ poly_to_i_base
 poly_to_i_base_beside_class_to_i
 poly_to_i_base_user_to_i
 poly_to_i_via_str_poly_hash
+poly_to_r_beside_program_object
 poly_to_r_beside_user_to_r
 poly_to_s_base_user_to_s
 poly_to_s_into_string_slot
@@ -6937,6 +6963,7 @@ promote_bigrational_to_i
 promote_block_loop_bigint
 promote_block_param_nil
 promote_boxed_index_header_cache
+promote_class_macro_int_overflow
 promote_const_from_boxed_local_array
 promote_float_div_bignum
 promote_float_divmod_bignum_quotient
@@ -7941,17 +7968,20 @@ singleton_attr_class_slot_dispatch
 singleton_attr_inherited
 singleton_attr_writer_only
 singleton_body_declarations
+singleton_body_mixin_after_code
 singleton_class_alias_in_hook_class_eval
 singleton_class_attr_accessor
 singleton_class_attr_at_point
 singleton_class_attr_value
 singleton_class_block
 singleton_class_body_constants
+singleton_class_body_runs
 singleton_class_conditional_def
 singleton_class_declarations
 singleton_class_define_method
 singleton_class_object
 singleton_class_of_const_attr
+singleton_class_value_arm
 singleton_class_value_block
 singleton_class_visibility_def
 singleton_deep_paren_class_receiver
@@ -7994,6 +8024,8 @@ socket_const_defined
 socket_constants
 socket_domain_type_by_name
 socket_dup_keeps_shut_side
+socket_for_fd_getc_split_char
+socket_for_fd_read_only_file
 socket_getaddrinfo_family_socktype
 socket_getsockname
 socket_getsockopt_raises
@@ -8095,6 +8127,8 @@ splat_slice_keys
 splat_spreads_boxed_range_and_enumerator
 splat_string_elem_handle_param
 splat_then_positional_args
+splat_to_a_object_respond_to
+splat_to_a_toplevel_respond_to_missing
 splat_trailing_positional_keywords
 splat_typed_scalar_into_builtin
 splat_value_positions
@@ -8597,6 +8631,7 @@ string_reopen_block_returns
 string_reopen_call_in_its_body
 string_reopen_match_p_poly_pattern
 string_reopen_proc_self_mutation
+string_reopen_self_class_subclass
 string_reopen_yield_self_mutation
 string_reopened_tap_tail
 string_repeat_lengths
@@ -9005,6 +9040,7 @@ tap_then_forwarded_callable
 tap_then_tail_value
 tap_void_receiver
 tcp_connect_concurrent
+tcp_server_nil_host
 tcp_server_port_in_use
 template_self_call_shared_string
 ternary_lazy_arms
@@ -9086,6 +9122,7 @@ thread_sleep_wakeup_short
 thread_spawned_by_thread_lets_workers_idle
 thread_stack_overflow_rescued
 thread_stack_overflow_unhandled
+thread_start_beside_other_class_start
 thread_start_fork
 thread_state_read_without_lock
 thread_status_string_handles
@@ -9457,8 +9494,14 @@ virtual_dispatch_void_override_empty_base
 visibility_decl_value
 visibility_explicit_receiver
 visibility_word_body_def_order
+visibility_word_cell_decided_name
+visibility_word_chain_not_followed
 visibility_word_def_after_raise
 visibility_word_placed_then_body
+visibility_word_respond_to_missing_class
+visibility_word_respond_to_missing_object
+visibility_word_respond_to_missing_other_class
+visibility_word_under_run_condition
 void_call_interpolated
 void_tail_same_name_elsewhere
 void_value_and_case
@@ -9475,6 +9518,7 @@ warn_category
 warn_double_splat
 warn_kernel
 warn_render
+warn_stderr_reassigned_io
 warn_through_stderr_object_write
 warn_unresolved_call_context
 wasm_rescuing_yielder_block_forms

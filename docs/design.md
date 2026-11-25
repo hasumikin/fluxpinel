@@ -1327,9 +1327,9 @@ fx> exit
 
 The server serves its pages all the time. `exit` closes the session only.
 
-The blog is a check of the host build on a large kernel: a move of the
-pin of spinel runs it (docs/development.md). The plan (section 9) has no
-step for Roundhouse.
+The blog and Campfire (section 5.4.7) are checks of the host build on
+large kernels: a move of the pin of spinel runs them
+(docs/development.md). The plan (section 9) has no step for Roundhouse.
 
 ### 5.4.1 The files
 
@@ -1509,10 +1509,6 @@ fixture of Roundhouse. `make campfire` builds its host with the same
 steps as the blog. Nothing in the make rules names a model or a package
 of Campfire.
 
-The Campfire build is frozen. The rules and the test stay in the tree,
-and the project does not keep them green. A move of a pin does not run
-them.
-
 You need the tools of section 5.4.3 and the headers of libvips
 (`libvips-dev`). The build takes about 30 minutes.
 
@@ -1526,13 +1522,11 @@ You need the tools of section 5.4.3 and the headers of libvips
 3. It runs `apply.rb` and `spin_flags.rb` on the output.
 4. It builds the host in `build/roundhouse/campfire-host/campfire`.
 
-Campfire does not start at the pin of spinel. The kernel compiles, and
-the start raises `NameError` (uninitialized constant
-`ActionText::Content::Filter`). Campfire has `require` calls in class
-bodies. The load graph of spinel gives no place to such a file, or to the
-files that it requires. `make test-campfire` fails until spinel places
-those files. `RH_CAMPFIRE_FLAGS` holds more flags of spinel for the
-kernel, and is empty.
+`RH_CAMPFIRE_FLAGS` holds more flags of spinel for the kernel, and is
+empty. Campfire has `require` calls in class bodies, and files that
+require each other. The load graph of spinel places such files since
+spinel 4cc507c2b (matz/spinel#12524); with an older spinel the start
+raises `NameError`.
 
 Run the server with the console:
 
@@ -1556,7 +1550,8 @@ The test starts the server on a new database and checks these items:
 - The IRB of `--irb-port` reads the records.
 
 `make campfire` and `make test-campfire` are not a part of `make
-roundhouse` or of `make upgrade_roundhouse`.
+roundhouse` or of `make upgrade_roundhouse`. Run them by hand after a
+change of a pin.
 
 ### 5.5 A server in three settings
 

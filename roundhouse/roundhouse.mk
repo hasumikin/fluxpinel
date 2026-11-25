@@ -102,19 +102,14 @@ test-roundhouse:
 # fetches it into deps/once-campfire, makes its Spinel output and builds
 # its host, $(RH_CAMPFIRE_HOST_DIR)/campfire. The build takes about 30
 # minutes and needs the headers of libvips (libvips-dev). It is not a part
-# of `make roundhouse`. The Campfire rules are frozen: a move of a pin does
-# not run them.
+# of `make roundhouse`: run it by hand after a move of a pin.
 DEPS_CAMPFIRE = $(CURDIR)/deps/once-campfire
 CAMPFIRE_URL ?= https://github.com/basecamp/once-campfire.git
 CAMPFIRE_COMMIT := $(shell cat CAMPFIRE_COMMIT)
 RH_CAMPFIRE_DIR = $(abspath $(BUILD)/roundhouse/campfire)
 RH_CAMPFIRE_HOST_DIR = $(BUILD)/roundhouse/campfire-host
-# Campfire does not start at the pin of spinel. The kernel compiles, and
-# the start raises NameError (uninitialized constant
-# ActionText::Content::Filter): a require in a class body leaves its file,
-# and each file that one requires, with no place in the load order. The
-# inline load model, which loaded them, is not in spinel after 4d25b80de.
-# `make test-campfire` fails until spinel gives those files a place.
+# More flags of spinel for the kernel of Campfire. Campfire needs none at
+# the pin of spinel.
 RH_CAMPFIRE_FLAGS =
 
 $(BUILD)/roundhouse/campfire-src.stamp: CAMPFIRE_COMMIT

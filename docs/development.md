@@ -217,9 +217,10 @@ Move the pin on a green day.
 [design.md](design.md), section 5.4). Run `make roundhouse` and
 `make test-roundhouse` after a change of the pin of spinel.
 
-The Campfire build (design.md, section 5.4.7) is frozen. A change of a
-pin does not need `make campfire` or `make test-campfire`, and no workflow
-runs them.
+Campfire is a second application on the same pins (design.md, section
+5.4.7). After a change of the pin of spinel or of Roundhouse, run
+`make campfire` and `make test-campfire` also. The build takes about 35
+minutes, and no workflow runs it.
 
 `make upgrade_roundhouse` moves the pin to the main of Roundhouse.
 
