@@ -547,8 +547,15 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   - `make host EMBED=1` gives a host binary that runs with no checkout of
     spinel or Fluxpinel. `make test-embed` runs the tests on a build with
     `EMBED=1`.
-  - The gems of IRB (`--irb`, `--irb-port`) and the files that a program
-    names itself are files of the disk in each mode.
+  - `EMBED_EXTRA` adds directories of a program to the table, as
+    `NAME=DIR` pairs. `DIR/a/b.rb` has the path `/@fluxpinel/NAME/a/b.rb`.
+    A `require`, a `load` or `Fluxpinel.load` of that path reads the
+    table, and a `require_relative` in such a file reads its neighbor.
+    Each `.rb` file under `DIR` goes in (a directory named `test` also;
+    the three directories of the libraries leave theirs out). The table
+    has no listing: `Dir.glob` and `File.exist?` do not see its paths.
+  - The gems of IRB (`--irb`, `--irb-port`) and each other file that a
+    program names are files of the disk in each mode.
 - **Autoload.** `autoload(name, path)` records the path on the module
   (`src/object.c`). The first read of the constant loads the file, as a
   require of the path does. `defined?` does not load it. `Set` is such a

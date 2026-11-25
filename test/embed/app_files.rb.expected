@@ -1,0 +1,10 @@
+true
+["/@fluxpinel/app/main.rb", "from test/inner", 1]
+false
+false
+true
+2
+["/@fluxpinel/app/sub/helper.rb", "/@fluxpinel/app/test/inner.rb"]
+cannot load such file -- /@fluxpinel/app/absent
+cannot load such file -- /@fluxpinel/app/absent.rb
+{"ok":true}

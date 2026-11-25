@@ -75,7 +75,8 @@ static char *fx_real_path(const char *path) {
 static char *fx_read_file(const char *path, size_t *len) {
 #ifdef FX_EMBED
   if (fx_path_embedded(path)) {
-    int i = fx_embed_find(path);
+    /* the path as a load or Fluxpinel.load gives it can have "." and ".." */
+    int i = fx_embed_find(fx_path_clean(path));
     if (i < 0) return NULL;
     char *copy = malloc(fx_embed_files[i].len + 1);
     if (!copy) return NULL;
@@ -737,7 +738,7 @@ static int fx_load_call(const pm_node_t *n, sp_RbVal self, int on_kernel, const 
     size_t len;
     char *buf = fx_read_file(path, &len);
     if (!buf) sp_raise_load_error(path);
-    char *real = realpath(path, NULL);
+    char *real = fx_real_path(path);
     FxSource *s;
     const char *err = fx_parse(strdup(path), real ? real : strdup(path), buf, len, &s);
     if (err) sp_raise_cls("SyntaxError", err);

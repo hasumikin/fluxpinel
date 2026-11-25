@@ -267,7 +267,8 @@ static void fx_api_check(void) {
    statement. The source stays: a method of it can run later. */
 static sp_RbVal fx_api_run(const char *path, char *buf, size_t len) {
   FxSource *s;
-  char *real = realpath(path, NULL);
+  /* a path of the files in the binary (EMBED=1) is one of the table */
+  char *real = fx_real_path(path);
   const char *err = fx_parse(strdup(path), real ? real : strdup(path), buf, len, &s);
   if (err) sp_raise_cls("SyntaxError", err);
   return fx_run_source_as(s, 1);

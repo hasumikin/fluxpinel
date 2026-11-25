@@ -318,7 +318,8 @@ make oracle
   `EMBED=1` puts the Ruby files of the libraries (`require "json"`) in
   the binary. That binary runs on a machine with no checkout of spinel or
   Fluxpinel. With the default, `EMBED=0`, the binary reads them from the
-  checkouts.
+  checkouts. `EMBED_EXTRA="app=dir"` adds the Ruby files of `dir` under
+  `EMBED=1`: the program loads `dir/a.rb` as `/@fluxpinel/app/a.rb`.
 - `make test-host` runs the tests on that build, with `test/kernel/app.rb`
   as the kernel. It also builds a kernel with no entry
   (`test/kernel/bare.rb`) and calls its methods by name.

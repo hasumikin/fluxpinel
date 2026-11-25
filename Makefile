@@ -111,7 +111,11 @@ FX_ENGINE_FLAGS := $(if $(wildcard $(SPINEL)/src/analyze.h),$(shell ruby tools/e
 # that no file system has: the binary reads no file of the three
 # directories and runs on any machine. One build directory has one mode
 # (the file embed_mode).
+# EMBED_EXTRA adds directories of a program under EMBED=1, as NAME=DIR
+# pairs: DIR/a/b.rb is /@fluxpinel/NAME/a/b.rb in the binary, for a require
+# or a load of that path. Each .rb file under DIR goes in.
 EMBED ?= 0
+EMBED_EXTRA ?=
 EMBED_DIRS = packages=$(SPINEL)/packages builtins=$(SPINEL)/builtins lib=lib
 ifeq ($(EMBED),1)
 LIB_DIR_FLAGS = -DFX_EMBED -DFX_PACKAGES_DIR='"/@fluxpinel/packages"' \
@@ -205,15 +209,23 @@ $(BUILD)/int_overflow: FORCE
 	@mkdir -p $(BUILD)
 	@echo '$(INT_OVERFLOW)' | cmp -s - $@ || echo '$(INT_OVERFLOW)' > $@
 
+EMBED_MODE = $(EMBED) $(EMBED_EXTRA)
 $(BUILD)/embed_mode: FORCE
 	@mkdir -p $(BUILD)
-	@echo '$(EMBED)' | cmp -s - $@ || echo '$(EMBED)' > $@
+	@echo '$(EMBED_MODE)' | cmp -s - $@ || echo '$(EMBED_MODE)' > $@
 
-# the Ruby files of the libraries as a table of C, for EMBED=1
-EMBED_SOURCES = $(shell find $(SPINEL)/packages $(SPINEL)/builtins lib -name '*.rb' -not -path '*/test/*' 2>/dev/null)
-$(BUILD)/embed.inc: tools/embed_gen.rb $(EMBED_SOURCES) SPINEL_COMMIT
+# the Ruby files of the libraries, and of EMBED_EXTRA, as a table of C,
+# for EMBED=1. embed.args makes the table again for a new EMBED_EXTRA.
+EMBED_EXTRA_DIRS = $(foreach pair,$(EMBED_EXTRA),$(word 2,$(subst =, ,$(pair))))
+EMBED_SOURCES = $(shell find $(SPINEL)/packages $(SPINEL)/builtins lib -name '*.rb' -not -path '*/test/*' 2>/dev/null) \
+                $(if $(EMBED_EXTRA_DIRS),$(shell find $(EMBED_EXTRA_DIRS) -name '*.rb' 2>/dev/null))
+$(BUILD)/embed.args: FORCE
 	@mkdir -p $(BUILD)
-	ruby tools/embed_gen.rb $(EMBED_DIRS) > $@.tmp && mv $@.tmp $@
+	@echo '$(EMBED_EXTRA)' | cmp -s - $@ || echo '$(EMBED_EXTRA)' > $@
+
+$(BUILD)/embed.inc: tools/embed_gen.rb $(EMBED_SOURCES) SPINEL_COMMIT $(BUILD)/embed.args
+	@mkdir -p $(BUILD)
+	ruby tools/embed_gen.rb $(EMBED_DIRS) $(if $(EMBED_EXTRA),--extra $(EMBED_EXTRA)) > $@.tmp && mv $@.tmp $@
 
 $(BUILD)/fluxpinel: src/*.c src/*.h $(BUILD)/bop_gen_out.c $(BUILD)/off.flags $(BUILD)/prelude.inc $(BUILD)/responds.inc \
                     $(BUILD)/gem_dirs.h $(NATIVE_FLAGS) VERSION $(BUILD)/int_overflow $(BUILD)/embed_mode $(EMBED_INC)
@@ -288,7 +300,7 @@ $(HOST)/link.args: FORCE
 
 $(HOST)/embed_mode: FORCE
 	@mkdir -p $(HOST)
-	@echo '$(EMBED)' | cmp -s - $@ || echo '$(EMBED)' > $@
+	@echo '$(EMBED_MODE)' | cmp -s - $@ || echo '$(EMBED_MODE)' > $@
 
 # kernel.d names each source file of the kernel, so a change of a file that
 # KERNEL requires makes the kernel C again. The #line directives of the
@@ -345,9 +357,11 @@ test-host: $(HOST)/fluxpinel
 # build directory of its own. The paths of the libraries in that binary
 # name no file, so a test that requires a library passes only when the
 # binary reads the library from itself.
+# The build also holds the files of test/embed/app as a program does
+# (EMBED_EXTRA), for test/embed.
 test-embed:
-	$(MAKE) BUILD=$(BUILD)/embed EMBED=1 all
-	ruby test/run.rb $(BUILD)/embed/fluxpinel $(TEST_DIRS)
+	$(MAKE) BUILD=$(BUILD)/embed EMBED=1 EMBED_EXTRA=app=test/embed/app all
+	ruby test/run.rb $(BUILD)/embed/fluxpinel $(TEST_DIRS) test/embed
 
 # One session of IRB under valgrind. A String function of the runtime reads
 # the byte ahead of its argument, so memory of libc given to one is a read
