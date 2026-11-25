@@ -21,7 +21,9 @@ p s1.path != s2.path, s1.path == File.realpath(s1.path), s2.path == File.realpat
 [m1, s1, m2, s2].each(&:close)
 x = PTY.open { |m, s| m.write("yo\n"); [s.gets, m, s] }
 p x[0], x[1].closed?, x[2].closed?
-v = PTY.spawn("echo spawned") do |reader, writer, pid|
+# the child lives while the reader reads: macOS drops the output of a child
+# that ended before the read, and gets then answers nil (seen under CRuby)
+v = PTY.spawn("echo spawned; sleep 0.3") do |reader, writer, pid|
   p reader.gets
   $pid = pid
   $reader = reader
@@ -52,7 +54,7 @@ end
 p :child_ended
 PTY.spawn("true") { |r, _w, pid| r.read rescue nil; Process.wait(pid); $st = $?.exitstatus }
 p $st
-reader, writer, pid = PTY.spawn("echo plain")
+reader, writer, pid = PTY.spawn("echo plain; sleep 0.3")
 p reader.gets, reader.closed?
 reader.close
 writer.close
