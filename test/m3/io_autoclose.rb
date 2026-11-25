@@ -42,6 +42,12 @@ p c
 r2, w2 = IO.pipe
 d = IO.for_fd(w2.fileno, "w", autoclose: true)
 p d.autoclose?
+# the keyword clears the flag only with false: nil keeps it
+r3, w3 = IO.pipe
+e = IO.for_fd(w3.fileno, "w", autoclose: nil)
+p e.autoclose?
+e.close
+r3.close
 d.autoclose = false
 d.close
 w2.close

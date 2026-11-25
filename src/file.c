@@ -946,7 +946,8 @@ static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal 
       if (fx_is_kwargs(argv[n - 1])) {
         sp_bool found;
         sp_RbVal ac = sp_poly_hash_get_pair_val(argv[n - 1], sp_box_sym(sp_sym_intern("autoclose")), &found);
-        if (found) autoclose = sp_poly_truthy(ac);
+        /* only false clears the flag: autoclose: nil keeps it, as in CRuby */
+        if (found && ac.tag == SP_TAG_BOOL && !ac.v.b) autoclose = 0;
         n--;
       }
       if (n > 2) return 0;
