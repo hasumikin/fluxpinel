@@ -1521,6 +1521,83 @@ static sp_int fx_trap_fn(void *cap, sp_int argc, sp_int *args) {
   return 0;
 }
 
+#ifndef FX_KERNEL
+/* SIGINT and SIGTERM with no trap, in a program with a thread. The default
+   handler of the runtime (main.c) raises in the OS thread that gets the
+   signal, or records it for the next poll. With a second thread the main
+   thread can wait where neither holds (TCPServer#accept beside a thread
+   that sleeps), and the signal did nothing: the program did not end.
+
+   The first Thread.new starts a watch. The handler tells the watch of the
+   signal, then does what the handler of the runtime does. The watch is an
+   OS thread that is no thread of the runtime. It waits FX_SIG_WATCH_SEC,
+   and when the signal still waits for its raise, it ends the process with
+   the default of the system, as AOT code with a thread ends (a program
+   with threads keeps the default of the system there). A raise in that
+   time is the one of CRuby, and the watch does nothing. A trap of the
+   program takes the place of the handler.
+
+   The trap thread of the runtime could give the raise to the main thread,
+   but a thread that waits for signals stops the deadlock check of
+   Thread#join. */
+#define FX_SIG_WATCH_SEC 1
+static int fx_sig_watch_pipe[2] = { -1, -1 };
+
+static void fx_sig_watch_handler(int no) {
+  int e = errno;
+  char b = (char)no;
+  ssize_t w = write(fx_sig_watch_pipe[1], &b, 1);
+  (void)w;
+  errno = e;
+  sp_sig_default_handler(no);
+}
+
+static void *fx_sig_watch_body(void *arg) {
+  (void)arg;
+  for (;;) {
+    char b;
+    ssize_t n = read(fx_sig_watch_pipe[0], &b, 1);
+    if (n < 0 && errno == EINTR) continue;
+    if (n <= 0) return NULL;
+    struct timespec ts = { FX_SIG_WATCH_SEC, 0 };
+    while (nanosleep(&ts, &ts) < 0 && errno == EINTR) {}
+    int no = (unsigned char)b;
+    if (!sp_sig_default_pending[no == SIGTERM]) continue;
+    signal(no, SIG_DFL);
+    kill(getpid(), no);
+  }
+}
+
+static void fx_sig_defaults_threaded(void) {
+  /* once for each process: the child of a fork has no watch of its own,
+     and its pipe is the one of the parent */
+  static pid_t owner;
+  if (owner == getpid()) return;
+  if (owner) { close(fx_sig_watch_pipe[0]); close(fx_sig_watch_pipe[1]); }
+  owner = getpid();
+  if (pipe(fx_sig_watch_pipe) != 0) return;
+  for (int e = 0; e < 2; e++) fcntl(fx_sig_watch_pipe[e], F_SETFD, FD_CLOEXEC);
+  fcntl(fx_sig_watch_pipe[1], F_SETFL, O_NONBLOCK);
+  /* the watch gets no signal: each one goes to a thread of the program */
+  sigset_t all, old;
+  sigfillset(&all);
+  pthread_sigmask(SIG_BLOCK, &all, &old);
+  pthread_t th;
+  int made = pthread_create(&th, NULL, fx_sig_watch_body, NULL) == 0;
+  pthread_sigmask(SIG_SETMASK, &old, NULL);
+  if (!made) return;
+  pthread_detach(th);
+  static const int sigs[] = { SIGINT, SIGTERM };
+  for (int i = 0; i < 2; i++) {
+    struct sigaction sa;
+    if (sigaction(sigs[i], NULL, &sa) != 0) continue;
+    if (sa.sa_handler != sp_sig_default_handler && sa.sa_handler != fx_sig_watch_handler) continue;
+    sa.sa_handler = fx_sig_watch_handler;
+    sigaction(sigs[i], &sa, NULL);
+  }
+}
+#endif
+
 /* trap(sig) { }, trap(sig, handler) and Signal.trap: the runtime keeps
    the handler (sp_signal_trap) and runs it on the main thread. A Proc of
    Fluxpinel goes in a Proc of the runtime that yields to it; the previous

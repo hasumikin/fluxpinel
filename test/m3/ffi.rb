@@ -51,6 +51,7 @@ module SQL
   ffi_func :sqlite3_close, [:ptr], :int
   ffi_func :sqlite3_exec, [:ptr, :str, :ptr, :ptr, :ptr], :int
   ffi_func :sqlite3_prepare_v2, [:ptr, :str, :int, :ptr, :ptr], :int
+  ffi_func :sqlite3_bind_text, [:ptr, :int, :str, :int, :ptr], :int
   ffi_func :sqlite3_step, [:ptr], :int, blocking: true
   ffi_func :sqlite3_column_int, [:ptr, :int], :int
   ffi_func :sqlite3_column_double, [:ptr, :int], :double
@@ -66,6 +67,12 @@ db = SQL.read_ptr(SQL.db_out)
 p db.nil?
 p SQL.sqlite3_exec(db, "create table t (n integer, x real, s text)", nil, nil, nil)
 p SQL.sqlite3_exec(db, "insert into t values (1, 1.5, 'one'), (2, 2.5, 'two')", nil, nil, nil)
+# an Integer for a :ptr argument is the address itself: -1 is
+# SQLITE_TRANSIENT, with which SQLite copies the text
+p SQL.sqlite3_prepare_v2(db, "insert into t values (3, 3.5, ?)", -1, SQL.stmt_out, nil)
+ins = SQL.read_ptr(SQL.stmt_out)
+p SQL.sqlite3_bind_text(ins, 1, "thr" + "ee", -1, -1)
+p SQL.sqlite3_step(ins), SQL.sqlite3_finalize(ins)
 p SQL.sqlite3_prepare_v2(db, "select n, x, s from t order by n", -1, SQL.stmt_out, nil)
 stmt = SQL.read_ptr(SQL.stmt_out)
 rows = []

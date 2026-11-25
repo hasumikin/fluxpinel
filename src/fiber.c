@@ -277,6 +277,8 @@ static int fx_fiber_class(FxClass *k, const char *name, int argc, sp_RbVal *argv
          ENV, and main then runs every thread. The host build keeps the
          workers of the kernel. */
       setenv("SPINEL_WORKERS", "1", 1);
+      /* SIGINT and SIGTERM with no trap go on to the main thread (walk.c) */
+      fx_sig_defaults_threaded();
 #endif
       *out = sp_box_obj(sp_Thread_spawn_fiber(f, sp_box_nil()), SP_BUILTIN_THREAD);
       return 1;

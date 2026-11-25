@@ -47,6 +47,28 @@ rescue Interrupt
 end
 p t.value
 
+# a signal of another process, while the main thread waits in accept beside
+# a thread that sleeps: the program ends by the signal (CRuby raises in the
+# main thread and ends by the signal; Fluxpinel ends by the default of the
+# system after a moment)
+require "socket"
+child = fork do
+  $stderr.reopen(File::NULL)
+  server = TCPServer.new("127.0.0.1", 0)
+  Thread.new { sleep 30 }
+  server.accept
+end
+sleep 0.5
+Process.kill("TERM", child)
+deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 5
+status = nil
+until status || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+  status = Process.wait2(child, Process::WNOHANG)&.last
+  sleep 0.05 unless status
+end
+Process.kill("KILL", child) unless status
+p status && [status.signaled?, status.termsig]
+
 # the Proc of a trap runs in a loop that only computes
 hits = 0
 trap("USR1") { hits += 1 }

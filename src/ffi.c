@@ -171,9 +171,11 @@ static sp_RbVal fx_ptr_box(void *p) {
   return p ? sp_box_obj(p, SP_BUILTIN_FOREIGN_PTR) : sp_box_nil();
 }
 
-/* The address that a :ptr argument passes: a pointer, or NULL for nil. */
+/* The address that a :ptr argument passes: a pointer, NULL for nil, or an
+   Integer as the address itself, as in AOT code (SQLITE_TRANSIENT is -1). */
 static void *fx_ptr_arg(sp_RbVal v) {
   if (v.tag == SP_TAG_NIL) return NULL;
+  if (v.tag == SP_TAG_INT) return (void *)(intptr_t)v.v.i;
   if (v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_FOREIGN_PTR) return v.v.p;
   fx_gap(sp_sprintf("a %s as an FFI pointer", sp_poly_class_name(v)));
 }
