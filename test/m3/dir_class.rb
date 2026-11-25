@@ -1,5 +1,7 @@
 # The class methods of Dir: exist?, empty?, mkdir, children, entries,
-# glob, each_child, foreach, rmdir.
+# glob, each_child, foreach, rmdir. The flags of glob, as an argument or
+# as flags:, convert as an Integer: a Float truncates, and a String, true
+# or false raises TypeError.
 root = File.join(Dir.pwd, "build", "dirtest_#{Process.pid}")
 p Dir.exist?(root)
 p Dir.mkdir(root)
@@ -20,6 +22,20 @@ names = []
 Dir.foreach(root) { |c| names << c }
 p names.sort
 p Dir.glob("*.rb", base: root) { |f| names << f }, names.size
+p Dir.glob(File.join(root, "*.rb"), 4.9).map { |f| File.basename(f) }
+p Dir.glob("*.rb", flags: 4.9, base: root)
+["x", true, false].each do |flags|
+  begin
+    Dir.glob("*", flags)
+  rescue TypeError => e
+    p e.message
+  end
+  begin
+    Dir.glob("*", flags: flags, base: root)
+  rescue TypeError => e
+    p e.message
+  end
+end
 File.delete(File.join(root, "sub", "c.rb"))
 p Dir.rmdir(File.join(root, "sub"))
 File.delete(File.join(root, "a.txt"), File.join(root, "b.rb"))
