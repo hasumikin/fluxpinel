@@ -31,22 +31,25 @@ end
 p v, $reader.closed?, $writer.closed?
 $reader.close
 $writer.close
-# the child of the block form is the caller's to wait for, ended or not
+# the child of the block form is the caller's to wait for, ended or not.
+# CRuby 4.0 also detaches it after the block, and the thread of the detach
+# can reap the child first (Errno::ECHILD, seen on macOS): the two ends are
+# one answer here.
 sleep 0.5
 begin
   Process.wait($pid)
-  p :waited
 rescue Errno::ECHILD
-  p :reaped
+  # reaped by the detach of CRuby
 end
+p :child_ended
 PTY.spawn("sleep 0.2") { |_r, _w, pid| $pid = pid }
 sleep 0.7
 begin
   Process.wait($pid)
-  p :waited
 rescue Errno::ECHILD
-  p :reaped
+  # reaped by the detach of CRuby
 end
+p :child_ended
 PTY.spawn("true") { |r, _w, pid| r.read rescue nil; Process.wait(pid); $st = $?.exitstatus }
 p $st
 reader, writer, pid = PTY.spawn("echo plain")
