@@ -1331,7 +1331,15 @@ static int fx_builtin_module_name(sp_RbVal r, const char *name) {
 static int fx_vis_denied(const FxMethod *m, int check, const sp_RbVal *caller) {
   if (!check || m->vis == FX_VIS_PUBLIC) return 0;
   if (m->vis == FX_VIS_PRIVATE) return FX_MISS_PRIVATE;
-  return check == 1 && caller && fx_is_a(*caller, m->owner) ? 0 : FX_MISS_PROTECTED;
+  if (check != 1 || !caller) return FX_MISS_PROTECTED;
+  if (fx_is_a(*caller, m->owner)) return 0;
+  /* a protected class method (protected under class << self): the caller
+     is the class that defines it or a class under that one, whose
+     singleton class is under the one of the owner */
+  if (caller->tag == SP_TAG_CLASS && fx_table_get(&m->owner->smethods, m->name) == m)
+    for (const FxClass *k = fx_class_value(*caller); k; k = k->super)
+      if (k == m->owner) return 0;
+  return FX_MISS_PROTECTED;
 }
 
 /* A call that cannot reach the method for the reason why goes to the
