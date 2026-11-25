@@ -108,13 +108,13 @@ CAMPFIRE_URL ?= https://github.com/basecamp/once-campfire.git
 CAMPFIRE_COMMIT := $(shell cat CAMPFIRE_COMMIT)
 RH_CAMPFIRE_DIR = $(abspath $(BUILD)/roundhouse/campfire)
 RH_CAMPFIRE_HOST_DIR = $(BUILD)/roundhouse/campfire-host
-# Campfire starts only under the inline load model. Under the graph model
-# of spinel (the default) the kernel compiles, and the start raises
-# NameError (uninitialized constant ActionText::Content::Filter): a
-# require in a class body leaves its file, and each file that one requires,
-# with no place in the load order. Remove the flag when Campfire starts
-# without it.
-RH_CAMPFIRE_FLAGS = --load-model=inline
+# Campfire does not start at the pin of spinel. The kernel compiles, and
+# the start raises NameError (uninitialized constant
+# ActionText::Content::Filter): a require in a class body leaves its file,
+# and each file that one requires, with no place in the load order. The
+# inline load model, which loaded them, is not in spinel after 4d25b80de.
+# `make test-campfire` fails until spinel gives those files a place.
+RH_CAMPFIRE_FLAGS =
 
 $(BUILD)/roundhouse/campfire-src.stamp: CAMPFIRE_COMMIT
 	if [ ! -d $(DEPS_CAMPFIRE)/.git ]; then \

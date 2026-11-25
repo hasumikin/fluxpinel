@@ -1480,9 +1480,13 @@ You need the tools of section 5.4.3 and the headers of libvips
 3. It runs `apply.rb` and `spin_flags.rb` on the output.
 4. It builds the host in `build/roundhouse/campfire-host/campfire`.
 
-The kernel is compiled with `--load-model=inline` (`RH_CAMPFIRE_FLAGS`).
-Under the graph load model of spinel, the kernel compiles and the start
-raises `NameError`. Remove the flag when Campfire starts without it.
+Campfire does not start at the pin of spinel. The kernel compiles, and
+the start raises `NameError` (uninitialized constant
+`ActionText::Content::Filter`). Campfire has `require` calls in class
+bodies. The load graph of spinel gives no place to such a file, or to the
+files that it requires. `make test-campfire` fails until spinel places
+those files. `RH_CAMPFIRE_FLAGS` holds more flags of spinel for the
+kernel, and is empty.
 
 Run the server with the console:
 
