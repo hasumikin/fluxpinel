@@ -529,8 +529,10 @@ static sp_int fx_io_copy_stream(sp_RbVal src, sp_RbVal dst) {
    With a block, each match goes to it and the answer is nil. */
 static int fx_dir_glob(const char *name, int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out) {
   int kw = argc > 0 && fx_is_kwargs(argv[argc - 1]);
-  /* Dir.glob(pattern, flags): the flags as a second argument */
-  int pos_flags = FX_IS("glob") && argc - kw == 2 && argv[1].tag == SP_TAG_INT;
+  /* Dir.glob(pattern, flags): the flags as a second argument, which the
+     runtime converts as it does flags: (a Float truncates, any other
+     non-Integer is TypeError) */
+  int pos_flags = FX_IS("glob") && argc - kw == 2;
   if (FX_IS("[]") ? kw || argc < 1 : argc - kw != 1 + pos_flags) return 0;
   static const char *const keys[] = { "base", "flags", "sort", NULL };
   sp_RbVal base = sp_box_nil(), flags = pos_flags ? argv[1] : sp_box_nil(), sort = sp_box_nil();
