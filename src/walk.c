@@ -290,7 +290,7 @@ static const char *fx_bt_label(const FxTrace *t) {
     case FX_TR_BLOCK:
       in = t->method ? sp_sprintf("%s%s%s", t->method->owner->name ? t->method->owner->name : "#<Class>",
                                   t->singleton ? "." : "#", sp_sym_to_s(t->method->name))
-                     : sp_sprintf("<main>");
+                     : sp_sprintf("%s", t->kind == FX_TR_BLOCK && t->cls ? t->cls : "<main>");
       break;
     case FX_TR_CLASS: in = sp_sprintf("<class:%s>", t->cls); break;
     case FX_TR_MODULE: in = sp_sprintf("<module:%s>", t->cls); break;
@@ -300,7 +300,9 @@ static const char *fx_bt_label(const FxTrace *t) {
       in = t->singleton ? sp_sprintf("%s.%s", fx_rs_sing_owner(t->cls, t->bname), t->bname)
                         : sp_sprintf("%s#%s", fx_rs_owner(t->cls, t->bname), t->bname);
       break;
-    default: in = sp_sprintf("<main>");
+    /* the top level of the main program, or of a file that a require or a
+       load runs (levels, load.c) */
+    default: in = sp_sprintf(t->kind == FX_TR_TOP && t->levels ? "<top (required)>" : "<main>");
   }
   if (t->kind != FX_TR_BLOCK) return in;
   SP_GC_ROOT_STR(in);
@@ -864,7 +866,13 @@ static sp_RbVal fx_yield_in(const FxBlock *b, int argc, sp_RbVal *argv, int stri
   bf.lambda = b->lambda;
   /* a block in a block of a live home is one level deeper */
   int lv = live && h->fs->tr[h->depth].kind == FX_TR_BLOCK ? h->fs->tr[h->depth].levels + 1 : 1;
-  fx_frame_tag(&bf, FX_TR_BLOCK, bf.method, NULL, b->node, bf.self.tag == SP_TAG_CLASS, lv);
+  /* a block at the top level of a file that a require runs, or in a block
+     there: "block in <top (required)>" (cls of a FX_TR_BLOCK entry) */
+  const FxTrace *ht = live ? &h->fs->tr[h->depth] : NULL;
+  const char *top = !ht || bf.method ? NULL
+                  : ht->kind == FX_TR_TOP && ht->levels ? "<top (required)>"
+                  : ht->kind == FX_TR_BLOCK ? ht->cls : NULL;
+  fx_frame_tag(&bf, FX_TR_BLOCK, bf.method, top, b->node, bf.self.tag == SP_TAG_CLASS, lv);
   if (!m) bf.block = mblk;
   fx_bind_block(&bf, params, argc, argv, b->lambda, strict);
   if (!m) bf.block = h->block;

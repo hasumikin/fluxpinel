@@ -44,12 +44,14 @@ static int fx_is_location(sp_RbVal v) {
 static const char *fx_bt_base_label(const FxTrace *t) {
   switch (t->kind) {
     case FX_TR_METHOD:
-    case FX_TR_BLOCK: return sp_sprintf("%s", t->method ? sp_sym_to_s(t->method->name) : "<main>");
+    case FX_TR_BLOCK:
+      return sp_sprintf("%s", t->method ? sp_sym_to_s(t->method->name)
+                                        : t->kind == FX_TR_BLOCK && t->cls ? t->cls : "<main>");
     case FX_TR_CLASS: return sp_sprintf("<class:%s>", t->cls);
     case FX_TR_MODULE: return sp_sprintf("<module:%s>", t->cls);
     case FX_TR_SCLASS: return sp_sprintf("singleton class");
     case FX_TR_BUILTIN: return sp_sprintf("%s", t->bname);
-    default: return sp_sprintf("<main>");
+    default: return sp_sprintf(t->kind == FX_TR_TOP && t->levels ? "<top (required)>" : "<main>");
   }
 }
 

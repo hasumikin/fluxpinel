@@ -439,6 +439,9 @@ static sp_RbVal fx_run_source_as(const FxSource *s, int main) {
   const pm_program_node_t *prog = (const pm_program_node_t *)s->root;
   FX_FRAME(top, &prog->locals, L.main, L.object);
   top.vis = FX_VIS_PRIVATE;   /* a top-level def is a private method of Object */
+  /* a backtrace names the top level of a file that a require or a load
+     runs "<top (required)>" (levels of a FX_TR_TOP entry, fx_bt_label) */
+  if (!main) fx_frame_tag(&top, FX_TR_TOP, NULL, NULL, NULL, 0, 1);
   if (main && !toplevel) {
     toplevel = 1;
     fx_const_set(L.object, sp_sym_intern("TOPLEVEL_BINDING"), fx_binding_new(&top, "<main>", 0));
@@ -720,6 +723,9 @@ static int fx_load_call(const pm_node_t *n, sp_RbVal self, int on_kernel, const 
   if (name[0] != '_' && name[0] != 'r' && name[0] != 'l') return 0;
   if (!FX_IS("__dir__") && !FX_IS("require_relative") && !FX_IS("require") && !FX_IS("load")) return 0;
   if (!on_kernel && fx_find_method(fx_lookup_class(self), sp_sym_intern(name))) return 0;
+  /* the file runs under a frame of the call, as in a backtrace of CRuby
+     ("in 'Kernel#load'" above "in '<top (required)>'") */
+  int bt __attribute__((cleanup(fx_bt_builtin_exit))) = FX_IS("__dir__") ? -1 : fx_bt_builtin_enter("Kernel", name, 0);
   /* load(path): the file runs at each call, from the path as given, which
      is relative to the current directory. A true wrap is not modeled. */
   if (FX_IS("load") && (argc == 1 || (argc == 2 && !sp_poly_truthy(argv[1])))) {
