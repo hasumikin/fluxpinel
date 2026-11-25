@@ -317,7 +317,7 @@ static const struct {
 static int fx_unknown_builtin(const char *name) {
   static const char *const names[] = { "Binding",
                                        "Mutex", "Queue", "SizedQueue", "ConditionVariable",
-                                       "Warning", "RubyVM", NULL };
+                                       "RubyVM", NULL };
   for (int i = 0; names[i]; i++)
     if (!strcmp(names[i], name)) return 1;
   return 0;

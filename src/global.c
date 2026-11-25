@@ -396,6 +396,8 @@ static void fx_global_init(void) {
   /* Enumerator::Lazy: lib/fluxpinel/lazy.rb of Fluxpinel. spinel compiles
      a lazy chain to a loop and has no Lazy object in its runtime. */
   fx_autoload_set(fx_builtin("Enumerator"), sp_sym_intern("Lazy"), FX_LIB_DIR "/fluxpinel/lazy.rb");
+  /* Warning: lib/fluxpinel/warning.rb of Fluxpinel. spinel has none. */
+  fx_autoload_set(L.object, sp_sym_intern("Warning"), FX_LIB_DIR "/fluxpinel/warning.rb");
   /* ARGV: the arguments after the path, as frozen Strings (CRuby 4.0) */
   sp_PolyArray *argv = sp_PolyArray_new();
   SP_GC_ROOT(argv);
