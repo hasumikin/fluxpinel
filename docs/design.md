@@ -25,6 +25,17 @@ Fluxpinel serves two uses:
 The oracle needs no change to spinel, and it gives the walker a test
 harness. Use 1 reuses the same walker.
 
+The main program of use 1 is a server whose framework and application
+are written in the Ruby that spinel compiles. The same source runs in
+three settings (section 5.5):
+
+- **Development.** Fluxpinel alone runs the framework and the
+  application. A change of a file needs no compile.
+- **Deployment.** spinel compiles the framework and the application, and
+  Fluxpinel is in the same binary. The interpreter makes the pages from
+  the components of the user interface, and runs pure Ruby gems.
+- **Test.** The same tests run on Fluxpinel and on the compiled binary.
+
 ## 2. Constraints
 
 - Fluxpinel does not modify spinel on its own. The spinel maintainer keeps a VM
@@ -1316,6 +1327,10 @@ fx> exit
 
 The server serves its pages all the time. `exit` closes the session only.
 
+The blog is a check of the host build on a large kernel: a move of the
+pin of spinel runs it (docs/development.md). The plan (section 9) has no
+step for Roundhouse.
+
 ### 5.4.1 The files
 
 | File | What it does |
@@ -1543,6 +1558,74 @@ The test starts the server on a new database and checks these items:
 `make campfire` and `make test-campfire` are not a part of `make
 roundhouse` or of `make upgrade_roundhouse`.
 
+### 5.5 A server in three settings
+
+A server has a thread for each connection, over `TCPServer`. Its
+framework and its application are one source, written in the Ruby that
+spinel compiles. The source runs under Fluxpinel alone, and as the kernel
+of a host build.
+
+### 5.5.1 Development: Fluxpinel alone
+
+`fluxpinel server.rb` runs the whole server in the walker.
+
+- **Threads.** The walker runs one thread at a time (section 3.3.5). A
+  thread that waits (in `accept`, a read, `Queue#pop`) gives its turn up.
+  A thread that computes keeps its turn for 10 ms, then the next thread
+  runs. `RUBY_THREAD_TIMESLICE` sets that time in milliseconds, as in
+  CRuby.
+- **Many connections.** A server with 5,000 open event streams answers a
+  short request in 0.2 ms, and a write to each stream takes 0.3 s. The
+  memory is 36 kB for a stream. These numbers are those of CRuby within
+  a factor of two.
+- **Requests that compute.** A short request beside k requests that
+  compute waits about (k + 1) times the time of a turn: 20 ms for one,
+  173 ms for sixteen. A compiled binary does not wait, as its threads run
+  on more than one core.
+- **A file that changes.** `Kernel#load` runs a file again, and the
+  server goes on. A server loads each file whose time changed before it
+  takes a request. A file with a syntax error raises SyntaxError, with
+  the file, the line and the lines of the source, and the code of before
+  stays. As in CRuby, a method that the file no longer has stays too.
+- **Errors.** A backtrace has the file and the line of each frame. The
+  top level of a loaded file is `<top (required)>`, under a frame of
+  `Kernel#load`.
+- **Signals.** SIGINT and SIGTERM with no trap raise Interrupt and
+  SignalException in the main thread, as in CRuby. With a second thread,
+  the main thread can wait where the raise does not reach it (`accept`).
+  A watch then ends the process with the default of the system after one
+  second (`src/walk.c`). CRuby raises there too; that needs the runtime.
+- **Tests.** minitest runs: `require "minitest/autorun"` runs the tests
+  of a file at the exit. Fluxpinel has no RubyGems, so `-I` names the
+  directory of a gem.
+
+### 5.5.2 Deployment: a host build
+
+`make host KERNEL=server.rb KERNEL_MAIN=Server.start EMBED=1` gives one
+binary. spinel compiles the server, and Fluxpinel is in the binary for
+the code that stays Ruby at run time.
+
+- **The entry.** `KERNEL_MAIN` names a method that takes the arguments of
+  the command (`def self.start(argv)`). Fluxpinel starts after the top
+  level of the kernel, so the entry is the first place that calls it.
+- **Pages from the interpreter.** The entry calls `Fluxpinel.load` one
+  time for the components of the user interface. The answer is a value
+  of the walker (a module). For each request, compiled code makes the
+  data of the page (a Hash and Arrays, with no conversion) and calls
+  `Fluxpinel.call(module, "render", [data])`. The answer is the String of
+  the page.
+- **Threads.** The compiled threads run on more than one core. A call of
+  Fluxpinel takes the walker lock, so one page is made at a time. A small
+  page takes about 2 ms, and the binary makes about 500 of them in a
+  second from any number of threads.
+- **The files in the binary.** `EMBED=1` puts the libraries in the
+  binary, and `EMBED_EXTRA` adds the Ruby files of the program (section
+  3.3.6). The binary then reads no Ruby file from the disk. It links
+  shared libraries (libffi, libcrypt, and each one that `ffi_lib`
+  names), which the machine must have.
+- **What does not change at run time.** A file that `Fluxpinel.load` runs
+  again changes the code of the walker. Compiled code does not change.
+
 ## 6. Prior art
 
 - **suppify** (bash0C7/suppify). It wraps spinel output as a C library, a
@@ -1691,31 +1774,41 @@ part are in order too. A step that needs a change of spinel or of
 Roundhouse says so. Such a change is proposed with a demo that shows its
 use.
 
-### 9.1 Roundhouse
+### 9.1 A server in three settings
 
-The console of a compiled Rails app (section 5.4) is the main use of the
-dynamic layer.
+The server of section 5.5 is the main use of the dynamic layer. The gaps
+that it meets come first in the parts 9.2 to 9.5.
 
-1. **Changes of Roundhouse.** `roundhouse/apply.rb` changes the output of
-   Roundhouse by anchor lines (section 5.4.2). Propose these changes to
-   Roundhouse:
-   - The output starts the server from an entry, not from its top level.
-   - Roundhouse builds the output as a kernel that a host links.
-
-   When Roundhouse has them, `apply.rb` goes.
-2. **More classes in the console.** The blog names four classes for
-   `--ext-class` (`RH_EXT_CLASS`), as spinel refuses the blog with
-   `--ext-class all` (section 5.4.5). Find what spinel refuses, and name
-   each class that a session uses until `all` compiles.
-3. **A larger app.** Run the console on an app of Roundhouse with more
-   than the scaffold of the blog. The gaps that it meets come first in
-   the parts 9.2 to 9.5.
-4. **The tests of an app.** Run the tests of a Roundhouse output under
-   Fluxpinel and under AOT code, as the oracle does for the tests of
-   spinel (section 4). A difference points to spinel or to Fluxpinel
-   before the app runs.
-5. **`binding.irb` in an action.** A `binding.irb` in a controller opens
-   IRB on the locals of the action. This demo needs step 2 of section 9.2.
+1. **The gems of pure Ruby.** A gem that the server needs must load and
+   run in the walker. Take the gaps in the order that the gems meet
+   them. The known ones:
+   - rexml stops at its first read (a `StringIO` under its source).
+   - `ObjectSpace::WeakMap` is missing (connection_pool).
+   - tzinfo and concurrent-ruby stop after a warning of their engine
+     check; the cause is not known.
+   - A character property (`\p{Han}`) and a pattern with many capture
+     groups stop in the regexp engine of spinel (kramdown, addressable,
+     rouge). They are issues of spinel.
+2. **The same tests on the two sides.** Run the tests of a framework and
+   an application under Fluxpinel and on the compiled binary, as the
+   oracle does for the tests of spinel (section 4). A difference points
+   to spinel or to Fluxpinel before the server runs.
+3. **Pages from more than one walker.** One page is made at a time
+   (section 5.5.2). Measure a large page. When the time of the pages
+   limits a server, the choices are a cache of pages, more processes, or
+   more than one walker in a process (which the one walker lock of
+   section 3.3.5 does not allow now).
+4. **A raise for a signal in each wait.** With a second thread, a signal
+   that finds the main thread in `accept` ends the process after a
+   second (section 5.5.1). A raise there, as in CRuby, needs the runtime
+   to wake the main thread; its trap thread stops the deadlock check of
+   `Thread#join`. Propose the change to spinel.
+5. **The other files of a program in the binary.** `EMBED_EXTRA` takes
+   Ruby files. A program also has files for the browser. Take them when a
+   program asks for one binary with all its files.
+6. **A client of PostgreSQL.** A server binds SQLite with `ffi_func` now.
+   A client of PostgreSQL over a socket, in the Ruby that spinel
+   compiles, is a later step.
 
 ### 9.2 The boundary to AOT code
 

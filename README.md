@@ -31,6 +31,11 @@ The runtime of spinel runs inside it.
 - **A standalone interpreter.** `fluxpinel script.rb` runs a script with
   no compiled program. A large program such as optcarrot runs (see
   below).
+- **One source, two ways to run it.** A server that is written in the
+  Ruby that spinel compiles runs under `fluxpinel` while you develop it,
+  with no compile. For deployment, spinel compiles it, and Fluxpinel stays
+  in the binary for the code that is Ruby at run time, such as the pages.
+  See [docs/design.md](docs/design.md), section 5.5.
 
 ## An example
 
