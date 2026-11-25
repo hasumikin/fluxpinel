@@ -2705,9 +2705,10 @@ static sp_RbVal fx_singleton_class(FxFrame *f, const pm_singleton_class_node_t *
   if (L.ctl != FX_CTL_NONE) return sp_box_nil();
   FxClass *k = fx_class_value(target);
   if (k) {
-    /* class << self in a class body: the defs are its class methods */
+    /* class << self in a class body: the defs are its class methods, and
+       self is the singleton class (mc = class << self; self; end) */
     if (!n->body) return sp_box_nil();
-    FX_FRAME(sf, &n->locals, target, k);
+    FX_FRAME(sf, &n->locals, fx_class_box(fx_meta_of(k)), k);
     sf.body = n->body;
     sf.singleton_defs = 1;
     fx_frame_tag(&sf, FX_TR_SCLASS, NULL, NULL, n->body, 0, 0);

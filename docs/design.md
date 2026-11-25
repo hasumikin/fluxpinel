@@ -518,7 +518,8 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   (`src/spinel_parse.c`). Fluxpinel resolves the name at run time in the same
   order:
   - `lib/<name>.rb` of Fluxpinel comes first: a feature that spinel writes
-    at compile time, whose package is a stub (`forwardable`).
+    at compile time, whose package is a stub (`forwardable`), or a library
+    that spinel has no package for (`delegate`).
   - `packages/<first>/<name>.rb` of spinel is the package. The first
     segment of the name selects the package. The file runs once, and its
     `<name>.share.rb` follows it when that file exists.
