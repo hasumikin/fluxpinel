@@ -726,6 +726,8 @@ static sp_RbVal fx_require_lib(const char *name) {
     if (ran && !strcmp(name, "etc")) fx_load_once(strdup(FX_LIB_DIR "/fluxpinel/etc.rb"), NULL);
     /* strscan: StringScanner::Version and Id (lib/fluxpinel/strscan.rb) */
     if (ran && !strcmp(name, "strscan")) fx_load_once(strdup(FX_LIB_DIR "/fluxpinel/strscan.rb"), NULL);
+    /* openssl: OpenSSL::KDF.pbkdf2_hmac with its loop in C (lib/fluxpinel/openssl.rb) */
+    if (ran && !strcmp(name, "openssl")) fx_load_once(strdup(FX_LIB_DIR "/fluxpinel/openssl.rb"), NULL);
     if (!ran || fx_lib_in(name, preloaded)) return sp_box_bool(0);
     return L.ctl == FX_CTL_NONE ? sp_box_bool(1) : sp_box_nil();
   }

@@ -824,6 +824,53 @@ static sp_RbVal fx_ffi_invoke(const FxFfi *cx, sp_RbVal self, int argc, sp_RbVal
   }
 }
 
+/* PBKDF2 (RFC 8018) over the HMAC of the runtime, for
+   OpenSSL::KDF.pbkdf2_hmac (lib/fluxpinel/openssl.rb binds it with
+   native_func). The openssl package of spinel has the loop in Ruby, which
+   AOT compiles; under the walker 100,000 iterations take seconds. sha1 0
+   is HMAC-SHA256 (32 bytes a block), another value HMAC-SHA1 (20). The
+   caller checks iterations and length. The answer is a binary String. */
+const char *sp_crypto_hmac_sha256_bin(const char *key, const char *msg);   /* lib/sp_crypto.h of spinel */
+const char *sp_crypto_hmac_sha1_bin(const char *key, const char *msg);
+__attribute__((used)) const char *fx_pbkdf2_hmac(const char *pass, const char *salt, sp_int iterations, sp_int length, sp_int sha1) {
+  SP_GC_SAVE();
+  SP_GC_ROOT_STR(pass);
+  SP_GC_ROOT_STR(salt);
+  const char *(*hmac)(const char *, const char *) = sha1 ? sp_crypto_hmac_sha1_bin : sp_crypto_hmac_sha256_bin;
+  size_t hlen = sha1 ? 20 : 32, want = length > 0 ? (size_t)length : 0, have = 0, slen = sp_str_byte_len(salt);
+  unsigned char *out = malloc(want + hlen), t[32], u[32];
+  /* the message of the first round of a block: the salt and the number of
+     the block, 4 bytes, the high byte first */
+  char *first = malloc(slen + 4);
+  const char *msg = NULL;
+  SP_GC_ROOT_STR(msg);
+  memcpy(first, salt, slen);
+  for (uint32_t block = 1; have < want; block++) {
+    first[slen] = (char)(block >> 24);
+    first[slen + 1] = (char)(block >> 16);
+    first[slen + 2] = (char)(block >> 8);
+    first[slen + 3] = (char)block;
+    msg = sp_str_from_bytes(first, slen + 4);
+    /* the answer of the runtime is in a buffer of its thread, with no
+       length: it is copied at once, before an allocation can let another
+       thread of the program use the buffer, and the next round reads the
+       copy as a String */
+    memcpy(u, hmac(pass, msg), hlen);
+    memcpy(t, u, hlen);
+    for (sp_int i = 1; i < iterations; i++) {
+      msg = sp_str_from_bytes((const char *)u, hlen);
+      memcpy(u, hmac(pass, msg), hlen);
+      for (size_t k = 0; k < hlen; k++) t[k] ^= u[k];
+    }
+    memcpy(out + have, t, hlen);
+    have += hlen;
+  }
+  const char *r = sp_str_as_binary(sp_str_from_bytes((const char *)out, want));
+  free(first);
+  free(out);
+  return r;
+}
+
 #else
 
 struct FxFfi { int unused; };
