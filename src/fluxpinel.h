@@ -803,6 +803,7 @@ static sp_RbVal fx_bsub_new(FxClass *k);
 static sp_RbVal fx_bsub_like(sp_RbVal v);
 static FxClass *fx_singleton_of(sp_RbVal v, int create);
 static FxClass *fx_meta_scope(FxClass *k, FxClass *around);
+static int fx_kw_exception(sp_RbVal kw);
 static FxClass *fx_lookup_class(sp_RbVal v);
 static int fx_singleton_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, const FxBlock *blk,
                                sp_RbVal *out);

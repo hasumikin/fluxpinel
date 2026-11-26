@@ -807,6 +807,26 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     *out = sp_box_int(n);
     return 1;
   }
+  /* read_nonblock(n, buf = nil, exception: true): the runtime function
+     that the code spinel generates calls (sp_sock_read_nb), which no
+     wrapper of the table names. It serves what the handle holds, else one
+     read of at most n bytes with the descriptor nonblocking. With
+     exception: false, :wait_readable when the read would block, and nil
+     at the end of the stream; buf is emptied at the end and kept when the
+     read would block, as CRuby leaves it. */
+  if ((argc - kw == 1 || argc - kw == 2) && FX_IS("read_nonblock")) {
+    int exc = kw ? fx_kw_exception(argv[argc - 1]) : 1;
+    sp_int n = sp_poly_arg_int_chk(argv[0]);
+    int into = argc - kw == 2 && argv[1].tag != SP_TAG_NIL;
+    if (into) sp_str_check_mutable(sp_poly_arg_str_chk(argv[1]));
+    const char *s;
+    sp_bool eof = 0;
+    FX_UNLOCKED_ROOT(s = sp_sock_read_nb(io, n, exc, 0, &eof), SP_GC_ROOT_STR(s));
+    if (!s && !eof) { *out = sp_box_sym(sp_sym_intern("wait_readable")); return 1; }
+    if (into) sp_poly_str_become(argv[1], s ? s : sp_str_empty);
+    *out = !s ? sp_box_nil() : into ? argv[1] : sp_box_str_new(s);
+    return 1;
+  }
   if (!kw && argc == 1 && (FX_IS("readpartial") || FX_IS("sysread"))) {
     sp_int n = sp_poly_arg_int_chk(argv[0]);
     const char *s;
