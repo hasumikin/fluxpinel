@@ -269,6 +269,8 @@ typedef struct {
   pm_options_t options;      /* the parser reads its filepath from here */
   pm_parser_t parser;
   pm_node_t *root;
+  uint8_t file;              /* the text is a file's: an error in it has the mark under its
+                                source (fx_mark_text), as error_highlight reads a file back */
   struct {                   /* the refinements that `using` made active in this
                                 file, newest last: a call at a byte in
                                 [from, to) sees r */
@@ -356,6 +358,7 @@ typedef struct {
   int bt_keep;         /* a raise by name is raised again: the next landing keeps bt */
   sp_StrArray *bt;     /* the backtrace of a raise by name that landed, for the
                           exception object that fx_caught_obj makes */
+  const pm_node_t *bt_node;   /* and the node of its raise, for the mark of a NameError */
   struct { const void *fiber; FxFrameStack *fs; } *fstacks;   /* by fiber */
   int nfstacks, fstacks_cap;
   FxConst *globals;    /* the global variables that the program assigned;
@@ -553,6 +556,7 @@ static int fx_child_fd(sp_RbVal v, int *fd);
 static void fx_child_check(sp_RbVal opts);
 static void fx_spawn_opts_check(sp_RbVal opts);
 static sp_RbVal fx_spawn_slot(sp_RbVal opts, sp_PolyArray *slots, int slot, int *owned, int *done);
+static void fx_mark_note(sp_Exception *e, const pm_node_t *n);
 static int fx_is_exc_class(const FxClass *k);
 static sp_RbVal fx_exc_new(FxClass *k, int argc, sp_RbVal *argv, const FxBlock *blk);
 static void fx_exc_init(sp_RbVal v, int argc, sp_RbVal *argv);

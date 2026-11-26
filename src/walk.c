@@ -382,13 +382,23 @@ static void fx_bt_land(void) {
   L.bt_keep = 0;
   if (keep) return;
   L.bt = NULL;
+  L.bt_node = NULL;
   if (e && e->backtrace) return;
   SP_GC_SAVE();
   if (e) { SP_GC_ROOT(e); }
   FxFrameStack *s = fx_fs();
   sp_StrArray *bt = fx_bt_build(s, s->depth, 0);
-  if (e) sp_Exception_set_backtrace(e, bt);
-  else L.bt = bt;
+  /* the node of the innermost frame, the first line of the trace, for the
+     mark of a NameError (fx_mark_note) */
+  const FxTrace *t = s->depth ? &s->tr[s->depth - 1] : NULL;
+  const pm_node_t *n = t ? (t->at ? t->at : t->body) : NULL;
+  if (e) {
+    sp_Exception_set_backtrace(e, bt);
+    fx_mark_note(e, n);
+  } else {
+    L.bt = bt;
+    L.bt_node = n;
+  }
 }
 
 /* A frame that ends pops its entry. A raise skips this cleanup; the
@@ -3131,8 +3141,12 @@ static sp_Exception *fx_caught_obj(FxCaught *c) {
   if (c->msg && !sp_exc_msg_empty_given(c->msg) && e->msg) c->msg = e->msg;
   c->obj = e;
   /* the backtrace that the landing read (fx_bt_land) for a raise by name */
-  if (!e->backtrace && L.bt) sp_Exception_set_backtrace(e, L.bt);
+  if (!e->backtrace && L.bt) {
+    sp_Exception_set_backtrace(e, L.bt);
+    fx_mark_note(e, L.bt_node);
+  }
   L.bt = NULL;
+  L.bt_node = NULL;
   if (!e->cause) {
     sp_gc_wb(e);
     e->cause = (sp_Exception *)sp_pending_cause;

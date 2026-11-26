@@ -272,6 +272,7 @@ static void fx_run_main(void) {
   char *buf;
   size_t len;
   const char *real = L.path;
+  int file = 0;   /* the program is a file, not -e, stdin or --irb */
   if (fx_irb) {
     fx_irb_load_path();
     buf = strdup(fx_irb_src);
@@ -286,8 +287,10 @@ static void fx_run_main(void) {
     if (!buf) fx_opt_fail("No such file or directory -- ", L.path, "LoadError");
     char *r = realpath(L.path, NULL);
     if (r) real = r;
+    file = 1;
   }
   FxSource *s = fx_parse_main(L.path, real, buf, len);
+  s->file = (uint8_t)file;
   if (fx_opt.check) {
     puts("Syntax OK");
     return;

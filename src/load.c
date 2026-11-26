@@ -601,6 +601,7 @@ static int fx_load_once(char *real, const char *extra) {
   FxSource *s;
   const char *err = fx_parse(real, real, buf, len, &s);
   if (err) sp_raise_cls("SyntaxError", err);
+  s->file = 1;
   fx_run_source(s);
   /* $LOADED_FEATURES names the file that a require ran. The first call
      allocates the Array, so the Array comes before the copy of the path:
