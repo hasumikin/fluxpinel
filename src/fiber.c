@@ -449,16 +449,9 @@ static int fx_fiber_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
       return 1;
     }
     if (strcmp(sp_Mutex_class_name(m), "Monitor")) return 0;
-    /* the names of Monitor over the lock of the runtime; enter and exit
-       answer nil as CRuby's */
-    if (argc == 0 && (FX_IS("enter") || FX_IS("mon_enter"))) { fx_send(r, "lock", 0, NULL); *out = sp_box_nil(); return 1; }
-    if (argc == 0 && (FX_IS("exit") || FX_IS("mon_exit"))) { fx_send(r, "unlock", 0, NULL); *out = sp_box_nil(); return 1; }
-    if (argc == 0 && (FX_IS("try_enter") || FX_IS("mon_try_enter") || FX_IS("try_mon_enter"))) {
-      *out = fx_send(r, "try_lock", 0, NULL);
-      return 1;
-    }
-    if (argc == 0 && FX_IS("mon_locked?")) { *out = fx_send(r, "locked?", 0, NULL); return 1; }
-    /* new_cond: MonitorMixin::ConditionVariable.new(self), the condition
+    /* enter, exit, try_enter and their mon_ names are the runtime's (the
+       generated wrappers).
+       new_cond: MonitorMixin::ConditionVariable.new(self), the condition
        variable of spinel's builtins/monitor_mixin.rb (autoloaded) */
     if (argc == 0 && FX_IS("new_cond")) {
       sp_RbVal mm, cv;
