@@ -1,5 +1,5 @@
 # The spinel tests that Fluxpinel answers right, for make regress.
-# make oracle writes this file. spinel: f060138a064b
+# make oracle writes this file. spinel: 7bcab402147a
 absolute_class_reopen_inside_module
 abstract_raise_override_return
 accessor_def_history_both_sides
@@ -113,6 +113,7 @@ argf_class_no_args
 argf_gets_chomp
 argf_line_with_nul
 argf_reads_whole_lines
+arity_error_arm_args_unconverted
 arity_keyword_argument_errors
 array_arg_through_sequence
 array_aset_boxed_index_widens
@@ -539,6 +540,7 @@ begin_while_locals_not_volatile
 beginless_range_iterate
 between_ivar_widened_by_module_write
 big_rational_comparable
+big_rational_numerator_rationalize
 big_rational_to_s_root
 bigint_bit_length_negative
 bigint_bitwise_negative
@@ -744,6 +746,7 @@ block_param_value_read_when_stored
 block_param_walk_name_collision
 block_param_widen_multi_struct
 block_param_written_bp_suffix
+block_pass_reads_ahead_in_order
 block_presence_decided_at_runtime
 block_raise_tail_nullable_number_slot
 block_rest_only_builtin_iter
@@ -928,6 +931,7 @@ boxed_num_array_cross_kind
 boxed_numeric_polar
 boxed_object_inspect_returns_boxed
 boxed_openstruct_to_s
+boxed_param_push_each_value
 boxed_param_value_into_typed_hash_slot
 boxed_positional_string_slice_handles
 boxed_pow_integer_only
@@ -1570,6 +1574,7 @@ class_local_copy_receiver
 class_lt_builtin_parent
 class_macro_after_a_method_named_a
 class_macro_after_computed_send_passing_nothing
+class_macro_after_computed_send_passing_one_argument
 class_macro_after_send_and_recursive_methods
 class_macro_called_from_another_macro
 class_macro_keyword_param_attr_reader
@@ -2719,6 +2724,7 @@ escaping_block_captures_self
 escaping_proc_captures_value_self
 eval_block_wide_body
 eval_with_method_block
+ewi_fold_pair_rooted
 ewi_map_next_boxed_value
 ewi_terminal_poly_name
 ewo_empty_memo_mixed_push
@@ -3110,6 +3116,7 @@ float_to_s_fixed_1e15
 flock_nonblock_held
 flock_wait_leaves_world
 fold_captured_boxed_accumulator
+fold_elem_taken_out
 fold_hoist_root
 fold_literal_table_bignum_row
 fold_literal_table_empty_row
@@ -3171,6 +3178,11 @@ forward_all_block_reaches_callee
 forward_args
 forward_args_after_leading_param
 forward_args_block
+forward_args_builtin_uncalled_each
+forward_args_builtin_uncalled_eq
+forward_args_builtin_uncalled_names
+forward_args_builtin_uncalled_other
+forward_args_builtin_uncalled_to_str
 forward_args_mixed_targets
 forward_block_boxed_builtin_blockless
 forward_block_to_yielding
@@ -3540,6 +3552,7 @@ hash_range_enum_extensions
 hash_range_key
 hash_range_reopen_enum_names
 hash_reader_dispatch
+hash_reader_over_inherited_method
 hash_reduce_inject_ewi
 hash_reduce_predicate
 hash_reopen_block_fold_names
@@ -3640,6 +3653,7 @@ hash_zero_arguments_own_methods
 hashsub_kw_splat
 hashsub_store_value
 hc_frozen_store
+hcv_text_size_line_map
 header_cache_yield_param_defaults
 held_arg_boxed_converted
 helper_results_rooted
@@ -3901,6 +3915,7 @@ inspect_subclass_in_parent_slot
 instance_call_arity
 instance_class_new
 instance_eval_bare_call_block_params
+instance_eval_bare_call_in_class_method
 instance_eval_bare_object_methods
 instance_eval_block_params
 instance_eval_boxed_literal_forward_to_method_missing
@@ -3908,6 +3923,7 @@ instance_eval_boxed_receiver_nested_forward_literal
 instance_eval_boxed_self_after_new_nodes
 instance_eval_builtin_receiver
 instance_eval_class_body_block
+instance_eval_class_body_self
 instance_eval_def_class_method
 instance_eval_defs_placed_by_record
 instance_eval_forward_after_boxed_one
@@ -3925,6 +3941,7 @@ instance_eval_ivar_table_write
 instance_eval_masgn_ivar_target
 instance_eval_nested_block_param_default
 instance_eval_nested_block_self
+instance_eval_nested_class_body_self
 instance_eval_nested_nonobj_receiver
 instance_eval_nested_receiver_block
 instance_eval_nil_write_result
@@ -3952,6 +3969,7 @@ instance_exec_block_params_builtin_receiver
 instance_exec_break
 instance_exec_cached_candidates
 instance_exec_capture
+instance_exec_class_body_self
 instance_exec_const_receiver
 instance_exec_direct
 instance_exec_direct_splat
@@ -4170,6 +4188,7 @@ io_copy_stream_boxed_path
 io_copy_stream_poly_union
 io_each_forward_poly_respond_to
 io_each_line_splat_args
+io_frozen_bare_output
 io_getc_binary_handle
 io_gets_long_line
 io_gets_splat_sep_and_limit
@@ -4655,6 +4674,8 @@ iter_block_autosplat
 iter_block_string_share
 iter_bound_evaluated_once
 iter_boxed_param_nil_elem
+iter_chunked_polls
+iter_chunked_polls_trap
 iter_elem_handed_to_appender
 iter_recv_evaluated_once
 iter_shadow_param_nil_elem
@@ -4682,6 +4703,7 @@ ivar_from_method_hash_new_widens
 ivar_get_numeric_nil
 ivar_get_own_method_unused
 ivar_hash_direct_write_misfit
+ivar_hash_dup_reopened_init
 ivar_hash_dup_super_init
 ivar_hash_dup_two_news
 ivar_hash_dup_unknown_origin
@@ -4745,6 +4767,14 @@ ivar_write_frozen_subclass_message
 ivar_write_tail_nullable_number
 ivar_write_value_ptr_array
 join_separator_slot
+joint_guard_aliased
+joint_guard_frozen
+joint_guard_key_reads_element
+joint_guard_negative_index
+joint_guard_nil_addend
+joint_guard_nil_element
+joint_guard_pair
+joint_guard_past_end
 json_parse_ostruct_member_names
 json_parse_temp_source
 kept_block_index_write_non_string
@@ -4897,6 +4927,7 @@ lambda_local_beside_later_outer_local
 lambda_named_param_type
 lambda_nested_emit
 lambda_nested_numbered_params
+lambda_param_from_poly_each_slice_map
 lambda_param_written_int
 lambda_returned_from_lambda
 lambda_strict_arity
@@ -4990,6 +5021,7 @@ loop_reraise_keeps_exception
 loop_return_frame_pop
 loop_return_string_handle
 loop_size_hoist_mutators
+loop_slow_pass_trap
 loop_stop_iteration_kept_blocks
 loop_stop_iteration_kept_yield
 loop_stop_iteration_sources
@@ -5291,8 +5323,10 @@ method_kernel_output_any_args
 method_level_rescue_return
 method_level_rescue_return_string
 method_list_beside_conditional_defs
+method_missing_call_expression_receiver
 method_missing_explicit
 method_missing_forward_unreached_super
+method_missing_held_receiver
 method_missing_method_cond
 method_missing_static_receiver
 method_name_behind_shadow
@@ -7564,6 +7598,7 @@ rest_leading_optional_slot
 rest_param_keyword_argument
 rest_param_reassigned
 rest_param_write_def_first
+rest_store_splat_relay
 retry_beside_ensure
 return_empty_literal_recursive_tail
 return_from_block_in_spliced_yielder
@@ -7681,6 +7716,7 @@ scan_block_live_subject
 scan_block_param_renamed_by_inline
 scan_block_regexp_last_match
 scan_block_tail_value
+scan_block_temp_subject
 scan_call_subject_mutated_in_block
 scan_constant_subject_mutated_in_block
 scan_global_subject_mutated_in_block
@@ -8011,6 +8047,7 @@ sleep_under_signal_flood
 slice_bang_boxed_index_range
 slice_bang_boxed_recv_boxed_range
 slice_when_first_class
+slow_pass_safepoint
 socket_addr_boxed_handle
 socket_address_string_identity
 socket_addrinfo_and_option
@@ -8561,6 +8598,7 @@ string_mutator_answers_handle
 string_mutator_expr_receiver
 string_mutator_receiver_grown_by_argument
 string_mutator_receiver_grown_by_constant_path
+string_mutator_recv_rebound_by_code
 string_narrowed_element_append
 string_nested_masgn_alias
 string_nested_masgn_deep
@@ -8899,6 +8937,7 @@ super_block_yields_on
 super_chain_literal_block_value
 super_class_method_class_ivar
 super_ensure_discarded_return
+super_extend_inherited_block
 super_forward_block_given
 super_forwarded_nil_block_safe_call
 super_freeze_object
