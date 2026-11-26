@@ -275,7 +275,10 @@ static void fx_collect(int k, sp_PolyArray *acc, sp_RbVal v, sp_RbVal y) {
 }
 
 /* The answer of the collector k over what fx_collect gathered: sort_by
-   sorts the elements by their keys */
+   sorts the elements by their keys. The sort of many elements is long and
+   has no poll, so a signal that comes in it waits; the poll after it runs
+   the trap before sort_by returns, as CRuby does, and not after the next
+   statement of the caller. */
 static sp_RbVal fx_collect_done(int k, sp_PolyArray *acc) {
   if (k != 6) return sp_box_poly_array(acc);
   SP_GC_ROOT(acc);
@@ -287,7 +290,10 @@ static sp_RbVal fx_collect_done(int k, sp_PolyArray *acc) {
     sp_PolyArray_push(keys, acc->data[i]);
     sp_PolyArray_push(vals, acc->data[i + 1]);
   }
-  return fx_sorted(vals, keys, NULL);
+  sp_RbVal sorted = fx_sorted(vals, keys, NULL);
+  SP_GC_ROOT_RBVAL(sorted);
+  fx_poll();
+  return sorted;
 }
 
 static int fx_enum_include(sp_RbVal r, sp_RbVal x, sp_RbVal *out);
