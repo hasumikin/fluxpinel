@@ -100,3 +100,32 @@ begin
 rescue ArgumentError => e
   puts e.message
 end
+
+# on a class, the String runs in the singleton class of the class, as a
+# `class << self` body does: the constants of the class are out of sight,
+# a constant it makes belongs to the singleton class, and Module.nesting
+# names the singleton class
+class WithConst
+  K = 1
+end
+p WithConst.class_eval("K")
+begin
+  WithConst.instance_eval("K")
+rescue NameError => e
+  puts e.message
+end
+WithConst.instance_eval("def self.k = K")
+begin
+  WithConst.k
+rescue NameError => e
+  puts e.message
+end
+p WithConst.instance_eval("Module.nesting")
+WithConst.instance_eval("IN_SINGLETON = 2")
+p WithConst.singleton_class.const_defined?(:IN_SINGLETON, false), WithConst.const_defined?(:IN_SINGLETON, false)
+p WithConst.instance_eval("IN_SINGLETON")
+
+# class_eval of a String on the singleton class: a def is a class method
+WithConst.singleton_class.class_eval("def from_meta = K rescue 3")
+p WithConst.from_meta, WithConst.new.respond_to?(:from_meta)
+p WithConst.singleton_class.class_eval("Module.nesting")

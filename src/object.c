@@ -1112,7 +1112,11 @@ static FX_ANC_FN FxConst *fx_cvar_find(const FxClass *c, sp_sym name, FxClass **
 
 /* The class of a class variable access: the lexical class. At the top
    level there is none, as in CRuby. */
+/* The class of the class variables of a scope. A singleton class has
+   none of its own: in the body of `class << self`, @@x is the variable
+   of the scope around it, as in CRuby. */
 static FxClass *fx_cvar_base(FxClass *cref) {
+  while (cref && cref->singleton) cref = cref->lexical;
   if (!cref || cref == L.object) sp_raise_cls("RuntimeError", "class variable access from toplevel");
   return cref;
 }
@@ -1224,14 +1228,27 @@ static int fx_const_lookup_peek(const FxClass *cref, sp_sym name, sp_RbVal *out)
   return fx_const_lookup_load(cref, name, out, 0);
 }
 
-/* The NameError of a constant that scope does not have. name is as the
-   message shows it ("A::B" for a path). The receiver of the error is the
-   scope: the class or module of the path, or of the body that reads a
-   bare name (NameError#receiver, which did_you_mean reads). */
-static __attribute__((noreturn)) void fx_const_missing(const FxClass *scope, const char *name) {
-  fx_trace_missing("const#", name, 0);
-  sp_exc_stage_recv(fx_class_box((FxClass *)(scope ? scope : L.object)));
-  sp_raise_cls("NameError", sp_sprintf("uninitialized constant %s", name));
+/* The class of k that is no singleton class: k itself, else the class of
+   the object, or Class or Module for the singleton class of a class or a
+   module (rb_class_real). */
+static const FxClass *fx_class_real(const FxClass *k) {
+  while (k && k->singleton && k->super) k = k->super;
+  return k;
+}
+
+/* The NameError of a constant that scope does not have: the class or
+   module of a path or of const_get, or the scope of the body that reads a
+   bare name. The message names the scope when its real class is not
+   Object, as CRuby writes it: "A::B" in the body of A, for A::B and for
+   A.const_get(:B); "#<Class:A>::B" in the body of `class << A` and in an
+   instance_eval String on A. The receiver of the error is the scope
+   (NameError#receiver, which did_you_mean reads). */
+static __attribute__((noreturn)) void fx_const_missing(const FxClass *scope, sp_sym name) {
+  if (!scope) scope = L.object;
+  const char *shown = fx_class_real(scope) == L.object ? sp_sym_to_s(name) : fx_const_full(scope, name);
+  fx_trace_missing("const#", shown, 0);
+  sp_exc_stage_recv(fx_class_box((FxClass *)scope));
+  sp_raise_cls("NameError", sp_sprintf("uninitialized constant %s", shown));
 }
 
 /* ---- objects and instance variables ---- */
@@ -2480,6 +2497,10 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
      name, and lists the smethods of its class; any other call through it
      is a singleton definition in that class */
   int meta = k->attached != NULL;
+  /* the constants are the receiver's own: a singleton class has a table
+     of constants of its own, as in CRuby (kc), and the rest of a call
+     through it goes to its class (k) */
+  FxClass *kc = k;
   if (meta) {
     if (argc == 0 && (!strcmp(name, "name") || !strcmp(name, "to_s") || !strcmp(name, "inspect"))) {
       *out = name[0] == 'n' ? sp_box_nil() : sp_box_str_new(sp_str_dup(k->name));
@@ -2851,7 +2872,7 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   if (argc == 1 && !strcmp(name, "const_get")) {
     sp_RbVal v;
     const char *cn = fx_name_arg(argv[0]);
-    if (!fx_const_scoped(k, sp_sym_intern(cn), &v)) fx_const_missing(k, cn);
+    if (!fx_const_scoped(kc, sp_sym_intern(cn), &v)) fx_const_missing(kc, sp_sym_intern(cn));
     *out = v;
     return 1;
   }
@@ -2859,7 +2880,7 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   if (argc == 2 && !strcmp(name, "const_set")) {
     const char *cn = fx_name_arg(argv[0]);
     if (!isupper((unsigned char)cn[0])) sp_raise_cls("NameError", sp_sprintf("wrong constant name %s", cn));
-    fx_const_set(k, sp_sym_intern(cn), argv[1]);
+    fx_const_set(kc, sp_sym_intern(cn), argv[1]);
     *out = argv[1];
     return 1;
   }
@@ -2871,7 +2892,7 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     sp_sym s = sp_sym_intern(cn);
     sp_RbVal v;
     int inherit = argc == 1 || sp_poly_truthy(argv[1]);
-    *out = sp_box_bool(inherit ? fx_const_scoped_peek(k, s, &v) : fx_const_find(k, s, 0) != NULL);
+    *out = sp_box_bool(inherit ? fx_const_scoped_peek(kc, s, &v) : fx_const_find(kc, s, 0) != NULL);
     return 1;
   }
   /* const_source_location(name, inherit = true): the file and the line
@@ -2881,12 +2902,12 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     sp_sym s = sp_sym_intern(fx_name_arg(argv[0]));
     int inherit = argc == 1 || sp_poly_truthy(argv[1]);
     const FxClass *anc[128];
-    int n = inherit ? fx_ancestors(k, anc, 128) : 1;
-    if (!inherit) anc[0] = k;
+    int n = inherit ? fx_ancestors(kc, anc, 128) : 1;
+    if (!inherit) anc[0] = kc;
     const FxConst *found = NULL;
     for (int i = 0; i < n && !found; i++) found = fx_const_find((FxClass *)anc[i], s, 0);
     sp_RbVal v;
-    if (!found && !(inherit ? fx_const_scoped_peek(k, s, &v) : 0)) { *out = sp_box_nil(); return 1; }
+    if (!found && !(inherit ? fx_const_scoped_peek(kc, s, &v) : 0)) { *out = sp_box_nil(); return 1; }
     sp_PolyArray *a = sp_PolyArray_new();
     SP_GC_ROOT(a);
     if (found && found->at) {
@@ -2903,12 +2924,12 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
     sp_PolyArray *a = sp_PolyArray_new();
     SP_GC_ROOT(a);
     const FxClass *anc[128];
-    int n = inherit ? fx_ancestors(k, anc, 128) : 1;
-    if (!inherit) anc[0] = k;
+    int n = inherit ? fx_ancestors(kc, anc, 128) : 1;
+    if (!inherit) anc[0] = kc;
     /* the walk ends before the ancestors of Object, which are Object and
        the modules ahead of it (a prepend), unless Object is the receiver */
     int stop = n;
-    if (k != L.object && inherit) {
+    if (kc != L.object && inherit) {
       const FxClass *oanc[128];
       int m = fx_ancestors(L.object, oanc, 128);
       if (m <= n && anc[n - m] == oanc[0]) stop = n - m;
@@ -2932,12 +2953,12 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   /* remove_const(name): the value, and the constant goes */
   if (argc == 1 && !strcmp(name, "remove_const")) {
     const char *cn = fx_name_arg(argv[0]);
-    FxConst *c = fx_const_own(k, sp_sym_intern(cn));
-    if (!c) sp_raise_cls("NameError", sp_sprintf("constant %s not defined", fx_const_full(k, sp_sym_intern(cn))));
+    FxConst *c = fx_const_own(kc, sp_sym_intern(cn));
+    if (!c) sp_raise_cls("NameError", sp_sprintf("constant %s not defined", fx_const_full(kc, sp_sym_intern(cn))));
     *out = c->autoload ? sp_box_nil() : c->value;
     free((char *)c->autoload);
-    memmove(c, c + 1, sizeof *c * (size_t)(&k->consts[k->nconsts] - (c + 1)));
-    k->nconsts--;
+    memmove(c, c + 1, sizeof *c * (size_t)(&kc->consts[kc->nconsts] - (c + 1)));
+    kc->nconsts--;
     return 1;
   }
   /* deprecate_constant(*names): CRuby warns at a read of the constant
@@ -2945,7 +2966,7 @@ static int fx_class_core(FxFrame *f, sp_RbVal r, const char *name, int argc, sp_
   if (argc >= 1 && !strcmp(name, "deprecate_constant")) {
     for (int i = 0; i < argc; i++) {
       sp_sym s = sp_sym_intern(fx_name_arg(argv[i]));
-      if (!fx_const_own(k, s)) sp_raise_cls("NameError", sp_sprintf("constant %s not defined", fx_const_full(k, s)));
+      if (!fx_const_own(kc, s)) sp_raise_cls("NameError", sp_sprintf("constant %s not defined", fx_const_full(kc, s)));
     }
     *out = r;
     return 1;

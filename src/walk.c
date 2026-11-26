@@ -940,8 +940,9 @@ static sp_RbVal fx_yield_under(const FxBlock *b, sp_RbVal self, FxClass *k, int 
    call by send, which has no frame: then it sees none). A def in it goes
    where the block form puts one: an instance method of the class for
    class_eval, a singleton method of r for instance_eval, a class method
-   when r is a class. Constants are those of the class of r. Answers 0
-   for another call. */
+   when r is a class. Constants are those of the class for class_eval, and
+   of the singleton class for instance_eval on a class, as CRuby reads them
+   (fx_meta_scope). Answers 0 for another call. */
 static int fx_eval_string_on(FxFrame *under, sp_RbVal r, const char *name, int argc, sp_RbVal *argv,
                              sp_RbVal *out) {
   int inst = !strcmp(name, "instance_eval");
@@ -959,9 +960,16 @@ static int fx_eval_string_on(FxFrame *under, sp_RbVal r, const char *name, int a
   ctx.vis = FX_VIS_PUBLIC;
   ctx.vis_scope = 1;   /* a def is public, whatever the caller's default */
   if (under) ctx.block = under->block;   /* the block of the method around the call: block_given? and yield */
+  FxClass *around = under ? under->cref : L.object;
   if (mod) {
-    ctx.cref = k->attached ? k->attached : k;
-    ctx.definee = ctx.cref;
+    ctx.cref = k;
+    ctx.definee = k;
+    /* class_eval of a singleton class: as the body of `class << A` */
+    if (k->attached) {
+      ctx.cref = fx_meta_scope(k->attached, around);
+      ctx.definee = k->attached;
+      ctx.singleton_defs = 1;
+    }
   } else {
     ctx.cref = k ? k : fx_class_of(r);
     ctx.definee = ctx.cref;
@@ -969,6 +977,10 @@ static int fx_eval_string_on(FxFrame *under, sp_RbVal r, const char *name, int a
     if (k && k->attached) {
       ctx.definee = k->attached;
       ctx.singleton_defs = 1;
+    } else if (k) {
+      /* instance_eval of a class: the String runs in its singleton class,
+         as the body of `class << A` does */
+      ctx.cref = fx_meta_scope(k, around);
     }
   }
   *out = fx_eval_in(under, &ctx, src, path, line, NULL);
@@ -1330,8 +1342,7 @@ static int fx_binding_call(FxFrame *f, const pm_node_t *n, int has_recv, sp_RbVa
   /* Module.nesting: the classes and modules of the scope of the call, the
      innermost first. Fluxpinel keeps one lexical scope for a class, that
      of its first body, so a body reopened by a path (`class A::B` at the
-     top level) answers the scopes of the first body. The body of
-     `class << self` answers the class, not its singleton class. */
+     top level) answers the scopes of the first body. */
   if (has_recv && !argc && !blk && name[0] == 'n' && !strcmp(name, "nesting") && recv.tag == SP_TAG_CLASS) {
     FxClass *k = fx_class_value(recv);
     if (!k || k->cls_id >= 0 || strcmp(k->name, "Module")) return 0;
@@ -2717,17 +2728,32 @@ static sp_RbVal fx_class_def(FxFrame *f, const pm_node_t *path, const pm_node_t 
   return fx_eval(&cf, body);
 }
 
+/* The singleton class of k as the scope of a body: `class << k`, an
+   instance_eval String on k, a class_eval String on the singleton class.
+   A constant that the body reads comes from the singleton class, then from
+   the scope around the body (around), as in CRuby. As a class keeps the
+   scope of its first body, the singleton class keeps the first around
+   that is not the top level. */
+static FxClass *fx_meta_scope(FxClass *k, FxClass *around) {
+  FxClass *m = fx_meta_of(k);
+  if (!m->lexical || m->lexical == L.object) m->lexical = around ? around : L.object;
+  return m;
+}
+
 static sp_RbVal fx_singleton_class(FxFrame *f, const pm_singleton_class_node_t *n) {
   SP_GC_SAVE();
   sp_RbVal target = fx_eval(f, n->expression);
   if (L.ctl != FX_CTL_NONE) return sp_box_nil();
   FxClass *k = fx_class_value(target);
   if (k) {
-    /* class << self in a class body: the defs are its class methods, and
-       self is the singleton class (mc = class << self; self; end) */
+    /* class << self in a class body: self is the singleton class (mc =
+       class << self; self; end), the body reads and makes the constants
+       of the singleton class, with the scope around it as the next one
+       (fx_meta_scope), and the defs are the class methods of k */
     if (!n->body) return sp_box_nil();
-    FX_FRAME(sf, &n->locals, fx_class_box(fx_meta_of(k)), k);
+    FX_FRAME(sf, &n->locals, fx_class_box(fx_meta_of(k)), fx_meta_scope(k, f->cref));
     sf.body = n->body;
+    sf.definee = k;
     sf.singleton_defs = 1;
     fx_frame_tag(&sf, FX_TR_SCLASS, NULL, NULL, n->body, 0, 0);
     return fx_eval(&sf, n->body);
@@ -2750,7 +2776,7 @@ static sp_RbVal fx_const_read(FxFrame *f, const pm_node_t *n) {
   sp_RbVal v;
   if (PM_NODE_TYPE_P(n, PM_CONSTANT_READ_NODE)) {
     sp_sym name = fx_sym(((const pm_constant_read_node_t *)n)->name);
-    if (!fx_const_lookup(f->cref, name, &v)) fx_const_missing(f->cref, sp_sym_to_s(name));
+    if (!fx_const_lookup(f->cref, name, &v)) fx_const_missing(f->cref, name);
     return v;
   }
   const pm_constant_path_node_t *cp = (const pm_constant_path_node_t *)n;
@@ -2762,7 +2788,7 @@ static sp_RbVal fx_const_read(FxFrame *f, const pm_node_t *n) {
     scope = fx_class_value(pv);
     if (!scope) sp_raise_cls("TypeError", sp_sprintf("%s is not a class/module", sp_poly_inspect(pv)));
   }
-  if (!fx_const_path(scope, name, &v)) fx_const_missing(scope, fx_const_full(scope, name));
+  if (!fx_const_path(scope, name, &v)) fx_const_missing(scope, name);
   return v;
 }
 
@@ -2820,7 +2846,7 @@ static sp_RbVal fx_const_logic_write(FxFrame *f, const pm_node_t *n) {
     scope = f->cref, name = fx_sym(id);
     hit = fx_const_lookup(scope, name, &cur);
   }
-  if (!hit && kind != 1) fx_const_missing(scope, path ? fx_const_full(scope, name) : sp_sym_to_s(name));
+  if (!hit && kind != 1) fx_const_missing(scope, name);
   SP_GC_ROOT_RBVAL(cur);
   if (kind == 1 && sp_poly_truthy(cur)) return cur;
   if (kind == 2 && !sp_poly_truthy(cur)) return cur;

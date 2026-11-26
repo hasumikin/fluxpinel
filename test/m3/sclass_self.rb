@@ -42,3 +42,18 @@ p C.z
 # Etc.nprocessors: a count of processors
 require "etc"
 p Etc.nprocessors.is_a?(Integer), Etc.nprocessors >= 1
+
+# a constant in `class << self` belongs to the singleton class, and the
+# body reads the constants of the class around it, as a nested scope
+class WithSclassConst
+  OUTER = :outer
+  class << self
+    INNER = :inner
+    def both = [OUTER, INNER]
+    def nesting = Module.nesting
+  end
+end
+p WithSclassConst.both, WithSclassConst.nesting
+p WithSclassConst.singleton_class.const_defined?(:INNER, false), WithSclassConst.const_defined?(:INNER, false)
+p WithSclassConst.singleton_class.constants(false), WithSclassConst.singleton_class.const_get(:INNER)
+p WithSclassConst.singleton_class.const_get(:OUTER) rescue puts $!.message

@@ -87,3 +87,16 @@ end
     p [e.class, e.message]
   end
 end
+
+# the body of `class << self` reads and writes the class variables of the
+# class around it: a singleton class has none of its own
+class CvHolder
+  @@from_body = 1
+  class << self
+    @@from_body += 1
+    @@from_sclass = :set_in_sclass
+    def from_body = @@from_body
+  end
+  def from_sclass = @@from_sclass
+end
+p CvHolder.from_body, CvHolder.new.from_sclass, CvHolder.class_variables.sort
