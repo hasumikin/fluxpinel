@@ -31,6 +31,12 @@ def in_method = [1].nosuch_zzz
 show { in_method }
 require_relative "requires/nosuch_mark"
 show { marked_in_file }
+require "tmpdir"
+loaded = File.join(Dir.tmpdir, "nosuch_mark_#{Process.pid}.rb")
+File.write(loaded, "def marked_in_loaded = [1].nosuch_zzz\n")
+load loaded
+show { marked_in_loaded }
+File.delete(loaded)
 show { [1]
   .nosuch_zzz }
 show { [1].nosuch_zzz(

@@ -400,7 +400,7 @@ static const char *fx_mark_text(const sp_Exception *e, int hl) {
   memset(p, '^', car);
   p += car;
   sprintf(p, "%s", plain);
-  const char *r = sp_str_dup(buf);
+  const char *r = sp_str_dup_external(buf);   /* malloc memory: no marker byte before it for sp_str_dup to read */
   free(buf);
   return r;
 }
