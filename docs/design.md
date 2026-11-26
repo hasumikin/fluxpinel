@@ -1853,9 +1853,10 @@ A script does not replace a method that AOT code calls directly (section
    - A backtrace has no line for an operator of the fast path
      (`'Integer#/'`), and none for the methods that CRuby calls inside a
      builtin method (section 3.3.2).
-   - An error has no mark under its source (the gem error_highlight,
-     which reads `RubyVM::AbstractSyntaxTree`). Fluxpinel has the node
-     of the call and can write the mark with no gem.
+   - An error in the input of IRB has no mark under its source. The IRB
+     of CRuby 4.1 keeps the lines of its input (`RubyVM.keep_script_lines`)
+     for error_highlight to mark them; Fluxpinel has no RubyVM, and marks
+     an error in a file (`fx_mark_text`), as CRuby does without the lines.
    - `10 ** 30` is a RangeError in the IRB of a host build, which is in
      raise mode as its kernel (section 4.3).
 

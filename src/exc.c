@@ -234,17 +234,194 @@ static int fx_exc_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *o
   return 1;   /* not reached */
 }
 
+/* ---- the mark under the source of a NameError ----
+
+   CRuby's error_highlight writes, after the message of a NameError or a
+   NoMethodError, an empty line, the line of the raise and carets under the
+   name with its dot, `&.` or `::`; it finds the node of the raise through
+   RubyVM. The walker has the node: the landing (fx_bt_land) notes the node
+   of the innermost frame on the exception, in its ivar table under a name
+   with no @, which no program reads and which goes with the exception;
+   clone and dup copy it. */
+
+static sp_sym fx_mark_key(void) {
+  static sp_sym key;
+  static int made;
+  if (!made) { key = sp_sym_intern("fx.raise_node"); made = 1; }
+  return key;
+}
+
+/* Notes n as the node of the raise of e, when e is a NameError. */
+static void fx_mark_note(sp_Exception *e, const pm_node_t *n) {
+  if (!e || !n || !sp_exc_cls_matches(e->cls_name, "NameError")) return;
+  SP_GC_ROOT(e);
+  sp_RbVal v = sp_box_int((sp_int)(intptr_t)n);
+  /* made and written under the tables' lock, as sp_bivar_set does */
+  FX_UNLOCKED(sp_ivtbl_tables_lock());   /* the lock is a park */
+  sp_SymPolyHash *t = (sp_SymPolyHash *)sp_ivtbl_get(e);
+  if (!t) {
+    t = sp_SymPolyHash_new();
+    sp_ivtbl_put(e, t);
+  }
+  sp_SymPolyHash_set(t, fx_mark_key(), v);
+  sp_ivtbl_tables_unlock();
+}
+
+/* The node that the raise of e noted, or NULL. */
+static const pm_node_t *fx_mark_node(const sp_Exception *e) {
+  FX_UNLOCKED(sp_ivtbl_tables_lock());   /* the lock is a park */
+  sp_SymPolyHash *t = (sp_SymPolyHash *)sp_ivtbl_get(e);
+  sp_RbVal v = t && sp_SymPolyHash_has_key(t, fx_mark_key()) ? sp_SymPolyHash_get(t, fx_mark_key()) : sp_box_nil();
+  sp_ivtbl_tables_unlock();
+  return v.tag == SP_TAG_INT ? (const pm_node_t *)(intptr_t)v.v.i : NULL;
+}
+
+static void fx_mark_copy(const sp_Exception *from, sp_Exception *to) {
+  const pm_node_t *n = fx_mark_node(from);
+  if (n) fx_mark_note(to, n);
+}
+
+/* The name that the node n reads, for the search of the node of the error:
+   the method of a call or of an operator assignment, or a constant. */
+static int fx_mark_name(const pm_node_t *n, sp_sym *out) {
+  switch (PM_NODE_TYPE(n)) {
+    case PM_CALL_NODE: *out = fx_sym(((const pm_call_node_t *)n)->name); return 1;
+    case PM_CONSTANT_READ_NODE: *out = fx_sym(((const pm_constant_read_node_t *)n)->name); return 1;
+    case PM_CONSTANT_PATH_NODE: *out = fx_sym(((const pm_constant_path_node_t *)n)->name); return 1;
+    case PM_CALL_OPERATOR_WRITE_NODE: *out = fx_sym(((const pm_call_operator_write_node_t *)n)->read_name); return 1;
+    case PM_LOCAL_VARIABLE_OPERATOR_WRITE_NODE:
+      *out = fx_sym(((const pm_local_variable_operator_write_node_t *)n)->binary_operator);
+      return 1;
+    default: return 0;
+  }
+}
+
+typedef struct { sp_sym name; const pm_node_t *found; } FxMarkFind;
+
+static bool fx_mark_visit(const pm_node_t *n, void *data) {
+  FxMarkFind *f = (FxMarkFind *)data;
+  sp_sym s;
+  if (f->found) return false;
+  if (fx_mark_name(n, &s) && s == f->name) { f->found = n; return false; }
+  return true;
+}
+
+/* The node of the error, under at, the node of the raise: at itself when
+   it is the call of the name; else the first node in at that reads the
+   name, a constant or a call that a builtin evaluated (`puts Nosuch`);
+   else at when it is a call, which a builtin raised in (`obj.send(:zz)`,
+   `raise NameError`). */
+static const pm_node_t *fx_mark_target(const pm_node_t *at, sp_RbVal xname) {
+  int is_call = PM_NODE_TYPE(at) == PM_CALL_NODE;
+  if (xname.tag != SP_TAG_SYM) return is_call ? at : NULL;
+  FxMarkFind f = { (sp_sym)xname.v.i, NULL };
+  pm_visit_node(at, fx_mark_visit, &f);
+  return f.found ? f.found : is_call ? at : NULL;
+}
+
+/* The span of the mark of the node t, [*from, *to) in the bytes of its
+   source, as error_highlight spots a prism node; 0 for none. */
+static int fx_mark_span(const pm_node_t *t, const FxSource *src, const uint8_t **from, const uint8_t **to) {
+  pm_location_t loc = { NULL, NULL }, op = { NULL, NULL };
+  int assign = 0;
+  switch (PM_NODE_TYPE(t)) {
+    case PM_CALL_NODE: {
+      const pm_call_node_t *c = (const pm_call_node_t *)t;
+      const char *nm = sp_sym_to_s(fx_sym(c->name));
+      size_t len = strlen(nm);
+      if (!c->message_loc.start && !strcmp(nm, "call")) return 0;   /* `recv.()` */
+      loc = c->message_loc.start ? c->message_loc : c->call_operator_loc.start ? c->call_operator_loc : t->location;
+      op = c->call_operator_loc;
+      /* `obj.name = v` writes name=: the mark runs to the `=` */
+      assign = len && nm[len - 1] == '=' && !(c->message_loc.start && c->message_loc.end[-1] == '=');
+      break;
+    }
+    case PM_CALL_OPERATOR_WRITE_NODE: {
+      const pm_call_operator_write_node_t *c = (const pm_call_operator_write_node_t *)t;
+      loc = c->message_loc;
+      op = c->call_operator_loc;
+      break;
+    }
+    case PM_LOCAL_VARIABLE_OPERATOR_WRITE_NODE:
+      loc = ((const pm_local_variable_operator_write_node_t *)t)->binary_operator_loc;
+      loc.end--;   /* `x += 1` marks the `+` */
+      break;
+    case PM_CONSTANT_READ_NODE: loc = t->location; break;
+    case PM_CONSTANT_PATH_NODE: {
+      const pm_constant_path_node_t *c = (const pm_constant_path_node_t *)t;
+      loc = c->name_loc;
+      op = c->delimiter_loc;
+      break;
+    }
+    default: return 0;
+  }
+  if (!loc.start || loc.end <= loc.start) return 0;
+  /* the dot, `&.` or `::` joins the name when it is on the same line */
+  if (op.start && op.end <= loc.start && !memchr(op.start, '\n', (size_t)(loc.start - op.start))) loc.start = op.start;
+  if (assign) {
+    const uint8_t *p = loc.end;
+    while (p < src->end && *p != '=' && *p != '\n') p++;
+    if (p < src->end && *p == '=') loc.end = p + 1;
+  }
+  *from = loc.start;
+  *to = loc.end;
+  return 1;
+}
+
+/* The mark of e for its detailed message, or NULL: an empty line, the line
+   of the raise and the carets, when the mark is on one line of ASCII, as
+   error_highlight writes it. With hl, the two lines are bold. Code from a
+   string (-e, stdin, eval, the input of IRB) has no mark: error_highlight
+   reads the file of the raise back, and marks a string only where
+   RubyVM.keep_script_lines kept it, which Fluxpinel has no RubyVM for. */
+static const char *fx_mark_text(const sp_Exception *e, int hl) {
+  const pm_node_t *at = fx_mark_node(e);
+  if (!at) return NULL;
+  const pm_node_t *t = fx_mark_target(at, e->xname);
+  if (!t) return NULL;
+  const FxSource *src = fx_source_of(t);
+  if (!src->file) return NULL;
+  const uint8_t *from, *to;
+  if (!fx_mark_span(t, src, &from, &to)) return NULL;
+  if (memchr(from, '\n', (size_t)(to - from))) return NULL;
+  const uint8_t *ls = from, *le = to;
+  while (ls > src->start && ls[-1] != '\n') ls--;
+  while (le < src->end && *le != '\n') le++;
+  for (const uint8_t *p = ls; p < le; p++)
+    if (*p >= 0x80) return NULL;
+  const char *bold = hl ? "\033[1m" : "", *plain = hl ? "\033[m" : "";
+  size_t llen = (size_t)(le - ls), ind = (size_t)(from - ls), car = (size_t)(to - from);
+  char *buf = malloc(llen + ind + car + 32), *p = buf;
+  p += sprintf(p, "\n\n%s", bold);
+  memcpy(p, ls, llen);
+  p += llen;
+  p += sprintf(p, "%s\n%s", plain, bold);
+  for (size_t i = 0; i < ind; i++) *p++ = ls[i] == '\t' ? '\t' : ' ';
+  memset(p, '^', car);
+  p += car;
+  sprintf(p, "%s", plain);
+  const char *r = sp_str_dup_external(buf);   /* malloc memory: no marker byte before it for sp_str_dup to read */
+  free(buf);
+  return r;
+}
+
 /* The builtin methods of an exception. */
 /* #detailed_message: "msg (Class)" from #message, which a class of the
    program can define, as the runtime writes it (no class for an unnamed
    Class.new class, "unhandled exception" for an empty message); with
-   highlight, in the bold and the underline of CRuby. */
+   highlight, in the bold and the underline of CRuby. A NameError carries
+   the mark under its source (fx_mark_text). */
 static const char *fx_exc_detailed(sp_RbVal r, sp_Exception *e, int hl) {
   SP_GC_ROOT_RBVAL(r);
   SP_GC_ROOT(e);
   const char *msg = sp_poly_to_s(fx_send(r, "message", 0, NULL));
   SP_GC_ROOT_STR(msg);
-  return hl ? sp_exc_detailed_highlight(e, msg) : sp_exc_detailed_text(e, msg);
+  const char *d = hl ? sp_exc_detailed_highlight(e, msg) : sp_exc_detailed_text(e, msg);
+  SP_GC_ROOT_STR(d);
+  const char *mark = fx_mark_text(e, hl);
+  if (!mark) return d;
+  SP_GC_ROOT_STR(mark);
+  return sp_str_concat(d, mark);
 }
 
 /* #full_message from the detailed message d: the first frame of the
@@ -352,6 +529,7 @@ static int fx_exc_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
     SP_GC_ROOT_RBVAL(r);
     sp_RbVal c = fx_exc_box(name[0] == 'c' ? sp_exc_clone(e) : sp_exc_dup(e));
     SP_GC_ROOT_RBVAL(c);
+    fx_mark_copy(e, (sp_Exception *)c.v.p);
     sp_RbVal names = fx_send(r, "instance_variables", 0, NULL);
     SP_GC_ROOT_RBVAL(names);
     for (sp_int i = 0; i < sp_poly_length(names); i++) {

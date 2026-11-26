@@ -601,6 +601,7 @@ static int fx_load_once(char *real, const char *extra) {
   FxSource *s;
   const char *err = fx_parse(real, real, buf, len, &s);
   if (err) sp_raise_cls("SyntaxError", err);
+  s->file = 1;
   fx_run_source(s);
   /* $LOADED_FEATURES names the file that a require ran. The first call
      allocates the Array, so the Array comes before the copy of the path:
@@ -774,6 +775,7 @@ static int fx_load_call(const pm_node_t *n, sp_RbVal self, int on_kernel, const 
     FxSource *s;
     const char *err = fx_parse(strdup(path), real ? real : strdup(path), buf, len, &s);
     if (err) sp_raise_cls("SyntaxError", err);
+    s->file = 1;
     fx_run_source(s);
     *out = L.ctl == FX_CTL_NONE ? sp_box_bool(1) : sp_box_nil();
     return 1;

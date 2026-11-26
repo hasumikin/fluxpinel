@@ -9,6 +9,8 @@ CLI_CASES = [
   { args: ["-e", "p 1", "-e", "p 2"] },
   { args: ["-e", "p [$0, __FILE__, ARGV]", "a", "b"] },
   { args: ["-e", "exit 3"] },
+  # a NameError in -e has no mark under its source, as in ruby (test/m3/name_error_mark.rb has the file)
+  { args: ["-e", "begin; nil.nosuch_zzz; rescue => e; puts e.detailed_message(highlight: false); end"] },
   # the file of the program, and the arguments after it
   { args: ["args.rb", "a", "-e", "b"] },
   { args: ["--", "args.rb", "-x"] },
