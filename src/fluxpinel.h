@@ -468,7 +468,7 @@ static FxFrameStack *fx_fs(void);
 static FxSource *fx_source_of(const pm_node_t *n);   /* walk.c */
 static void fx_source_index(FxSource *s);
 static int fx_line(const pm_node_t *n);
-static void fx_bt_land(void);
+static void fx_bt_land(sp_Exception *e);
 static const char *fx_str_mut(sp_RbVal r, const char *name);   /* string.c */
 static void fx_frame_tag(const FxFrame *f, int kind, const FxMethod *m, const char *cls, const pm_node_t *body,
                          int singleton, int levels);
@@ -479,7 +479,10 @@ typedef struct {
   const char *cls, *msg;
   void *obj;
 } FxCaught;
-static FxCaught fx_caught(void);
+/* The exception that landed in the handler of this scope. FX_TRY_LANDED
+   reads it from the runtime (fx_caught_slot) and keeps it as _fx_landed. */
+static FxCaught fx_caught_slot(void);
+#define fx_caught() (_fx_landed)
 static sp_Exception *fx_caught_obj(FxCaught *c);
 static void fx_run_main_source(const FxSource *s);   /* load.c */
 static __attribute__((noreturn)) void fx_reraise(FxCaught c);
@@ -499,22 +502,24 @@ static __attribute__((noreturn)) void fx_reraise(FxCaught c);
   sp_exc_top++
 #define FX_TRY_LANDED(d)                                                             \
   sp_exc_top--;                                                                        \
+  /* The landed exception comes first. The runtime keeps it in the slot past  \
+     top, which a switch of OS worker clears (sp_exc_ctx_load), and its class \
+     in a thread-local that no switch carries; the lock below can park, and   \
+     the thread can come back on another worker. The message becomes a copy   \
+     of its own, rooted, as the slot owned the one it held (sp_msg_heapify   \
+     and the root, as sp_exc_new does), and the object is rooted, as the slot \
+     kept it alive. */                                                         \
+  FxCaught _fx_landed = fx_caught_slot();                                            \
   sp_gc_nroots = sp_exc_rootmark[sp_exc_top];                                          \
   sp_rescue_sp = sp_rescue_mark[sp_exc_top];                                           \
-  {                                                                                    \
-    /* The caught message and object are in the slot that the pop left, and            \
-       the next handler takes that slot: a park of the thread, or code that            \
-       runs at an allocation, clears it. The landing holds the two and puts            \
-       them back. */                                                                   \
-    const char *_fx_msg = sp_exc_msg[sp_exc_top];                                      \
-    void *_fx_obj = sp_exc_obj[sp_exc_top];                                            \
-    SP_GC_ROOT_STR(_fx_msg);                                                           \
-    SP_GC_ROOT(_fx_obj);                                                               \
-    fx_lock_set_depth(_fx_lockmark); /* after the roots: a lock can park and collect */ \
-    fx_bt_land();                    /* the trace of the frames, before the cut */   \
-    sp_exc_msg[sp_exc_top] = _fx_msg;                                                  \
-    sp_exc_obj[sp_exc_top] = _fx_obj;                                                  \
-  }                                                                                    \
+  sp_Exception *_fx_landed_obj = (sp_Exception *)_fx_landed.obj;                      \
+  SP_GC_ROOT(_fx_landed_obj);                                                          \
+  const char *_fx_landed_msg = _fx_landed.msg && !sp_exc_msg_sentinel(_fx_landed.msg) \
+                                 ? sp_msg_heapify(_fx_landed.msg) : _fx_landed.msg;    \
+  SP_GC_ROOT_STR(_fx_landed_msg);                                                      \
+  _fx_landed.msg = _fx_landed_msg;                                                     \
+  fx_lock_set_depth(_fx_lockmark);   /* after the roots: a lock can park and collect */ \
+  fx_bt_land(_fx_landed_obj);        /* the trace of the frames, before the cut */   \
   fx_fs()->depth = (d);                                                              \
   L.kwhash = NULL
 

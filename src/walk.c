@@ -373,9 +373,9 @@ static sp_StrArray *fx_bt_build(const FxFrameStack *s, int top, int skip) {
    raise unwound, read before the landing cuts them. It goes on the
    exception, when it has none yet (a raise of a caught exception keeps
    its own). The runtime raises by name with no object: fx_caught_obj
-   makes the object later and takes the trace from L.bt. */
-static void fx_bt_land(void) {
-  sp_Exception *e = (sp_Exception *)sp_exc_obj[sp_exc_top];
+   makes the object later and takes the trace from L.bt. e is the object
+   of the landed exception, or NULL for a raise by name. */
+static void fx_bt_land(sp_Exception *e) {
   /* a raise by name that an inner landing raised again (fx_reraise): the
      trace of that landing has the frames that are cut by now */
   int keep = L.bt_keep && !e && L.bt;
@@ -3145,9 +3145,11 @@ static sp_RbVal fx_index_logic_write(FxFrame *f, const pm_node_t *n) {
 
 /* ---- exceptions ---- */
 
-/* The exception that a handler caught (FX_TRY_PUSH and FX_TRY_LANDED are
-   in fluxpinel.h). */
-static FxCaught fx_caught(void) {
+/* The exception that a handler caught, as the runtime left it at the
+   landing: the class of the last raise, and the message and the object of
+   the slot past top. FX_TRY_LANDED reads it before anything that can park
+   (fluxpinel.h), and the sites read its copy, fx_caught(). */
+static FxCaught fx_caught_slot(void) {
   return (FxCaught){ (const char *)sp_last_exc_cls, sp_exc_msg[sp_exc_top], sp_exc_obj[sp_exc_top] };
 }
 
