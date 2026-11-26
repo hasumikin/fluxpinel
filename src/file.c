@@ -839,6 +839,41 @@ static void fx_popen_opts_into(sp_PolyPolyHash *h, sp_RbVal hv, sp_RbVal opts) {
    ArgumentError, as CRuby raises. The IO of the parent's end goes into
    L.popens with the pid (fx_popen_pid): close waits for the child and sets
    $?. "r+", "-" and the other modes stop as gaps. */
+/* The mode of an open descriptor, for an IO made on it with no mode: its
+   access mode, and "a" for O_APPEND, as CRuby reads the flags of the
+   descriptor (rb_io_oflags_fmode). A marked literal, as the handle keeps
+   the mode. */
+/* The keywords of the encoding of IO.new, IO.for_fd and IO.open, as
+   set_encoding takes them (sp_File_set_encoding): encoding: or
+   external_encoding:, with internal_encoding: ("-" is none, as CRuby reads
+   it); binmode: true is BINARY. The runtime converts nothing, so the choice
+   is what external_encoding answers (global.c): a writable handle with
+   none answers nil, as CRuby does, and irb opens its input on the
+   descriptor of stdin with external_encoding: and reads it back. */
+static void fx_io_encoding_kw(sp_File *f, sp_RbVal kw) {
+  sp_bool found;
+  SP_GC_ROOT(f);
+  SP_GC_ROOT_RBVAL(kw);
+  sp_RbVal ext = sp_poly_hash_get_pair_val(kw, sp_box_sym(sp_sym_intern("external_encoding")), &found);
+  if (!found || ext.tag == SP_TAG_NIL) ext = sp_poly_hash_get_pair_val(kw, sp_box_sym(sp_sym_intern("encoding")), &found);
+  if (!found || ext.tag == SP_TAG_NIL) {
+    sp_RbVal bin = sp_poly_hash_get_pair_val(kw, sp_box_sym(sp_sym_intern("binmode")), &found);
+    if (found && sp_poly_truthy(bin)) sp_File_set_encoding(f, sp_box_encoding(sp_encoding_binary()), sp_box_nil());
+    return;
+  }
+  sp_RbVal in = sp_poly_hash_get_pair_val(kw, sp_box_sym(sp_sym_intern("internal_encoding")), &found);
+  if (!found || (fx_is_string(in) && !strcmp(sp_poly_to_s(in), "-"))) in = sp_box_nil();
+  sp_File_set_encoding(f, ext, in);
+}
+
+static const char *fx_fd_mode(int fd) {
+  int fl = fcntl(fd, F_GETFL);
+  int acc = fl < 0 ? O_RDONLY : fl & O_ACCMODE, app = fl >= 0 && (fl & O_APPEND);
+  if (acc == O_RDONLY) return SPL("r");
+  if (acc == O_WRONLY) return app ? SPL("a") : SPL("w");
+  return app ? SPL("a+") : SPL("r+");
+}
+
 static int fx_io_popen(int argc, sp_RbVal *argv, const FxBlock *blk, sp_RbVal *out) {
   SP_GC_SAVE();
   sp_RbVal env = sp_box_nil(), opts = sp_box_nil(), inner = sp_box_nil();
@@ -941,31 +976,35 @@ static int fx_file_class(const FxClass *k, const char *name, int argc, sp_RbVal 
        descriptor. The standard descriptors stay open when it closes, and so
        does any descriptor under autoclose: false, which the runtime's maker
        wraps in a dup(2) of its own (sp_io_for_fd), so neither a close nor
-       the collector touches the caller's. The keywords of the encoding are
-       taken and do nothing. */
+       the collector touches the caller's. The keywords of the encoding set
+       it (fx_io_encoding_kw). */
     if ((FX_IS("open") || FX_IS("new") || FX_IS("for_fd")) && argc >= 1 && argc <= 3 && argv[0].tag == SP_TAG_INT) {
       int n = argc, autoclose = 1;
+      sp_RbVal kw = sp_box_nil();
+      SP_GC_ROOT_RBVAL(kw);
       if (fx_is_kwargs(argv[n - 1])) {
         sp_bool found;
+        kw = argv[n - 1];
         sp_RbVal ac = sp_poly_hash_get_pair_val(argv[n - 1], sp_box_sym(sp_sym_intern("autoclose")), &found);
         /* only false clears the flag: autoclose: nil keeps it, as in CRuby */
         if (found && ac.tag == SP_TAG_BOOL && !ac.v.b) autoclose = 0;
         n--;
       }
       if (n > 2) return 0;
-      /* the handle keeps the mode and the collector reads the byte ahead of
-         it, so the default is a marked literal (SPL), not a bare one */
-      const char *mode = n == 2 ? sp_poly_arg_str_chk(argv[1]) : SPL("r");
       int fd = (int)argv[0].v.i;
       /* a descriptor that is not open is CRuby's Errno::EBADF, before the
          stream is made (the runtime's fdopen would say IOError) */
       if (fd < 0 || fcntl(fd, F_GETFD) < 0) sp_raise_cls("Errno::EBADF", "Bad file descriptor");
+      /* with no mode, the descriptor's own (fx_fd_mode), as CRuby: "r" on a
+         write-only descriptor would fail to open */
+      const char *mode = n == 2 ? sp_poly_arg_str_chk(argv[1]) : fx_fd_mode(fd);
       sp_File *f;
       if (!autoclose) f = sp_io_for_fd(fd, mode, 0);
       else {
         f = sp_io_fdopen_ex(fd, mode, fd > 2);
         if (fd <= 2) f->no_autoclose = 1;   /* a close, or the collector, flushes and leaves the descriptor */
       }
+      if (kw.tag != SP_TAG_NIL) fx_io_encoding_kw(f, kw);
       /* a terminal sees each write at once, as CRuby's IO flushes a write to
          a tty and as the runtime keeps stdout: stdio would hold the bytes of
          a line until its newline (Reline's rendering of IRB has none) */
