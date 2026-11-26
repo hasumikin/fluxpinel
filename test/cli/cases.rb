@@ -58,8 +58,11 @@ CLI_CASES = [
   # a redirection of a descriptor past 2 to a descriptor of the child
   # ([:child, fd]) is a form Fluxpinel does not make: a gap, not the
   # TypeError of a path
-  { args: ["-e", "exec('true', 3 => [:child, :out])"], out: /\A\z/, status: 2,
-    stderr: /unsupported exec with a redirection of descriptor 3 to a descriptor of the child/ },
+  # a descriptor of the child that no option redirects is CRuby's ArgumentError (test/m3/spawn_child_redirect.rb has the forms that work)
+  { args: ["-e", "begin; exec('true', 3 => [:child, :out]); rescue ArgumentError => e; puts e.message; end"] },
+  # spawn and system have no slot for a descriptor past 2 (exec makes its own)
+  { args: ["-e", "system('true', 3 => $stdout)"], out: /\A\z/, status: 2,
+    stderr: /unsupported spawn with a redirection of descriptor 3/ },
   # an irb that parses with ripper: --irb names the gems and `make gems`
   { args: ["-Iold_irb", "--irb"], out: /\A\z/, status: 1,
     stderr: /\Afluxpinel: IRB does not load \(cannot load such file -- ripper\)\.\n.*irb \(1\.18 or later\).*`make gems`/m },

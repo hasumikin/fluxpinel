@@ -548,6 +548,11 @@ static int fx_method_value_core(sp_RbVal r, const char *name, int argc, sp_RbVal
 /* exc.c */
 static int fx_is_exc(sp_RbVal v);
 static sp_RbVal fx_exc_box(sp_Exception *e);
+static int fx_fd_of(sp_RbVal v);                                                   /* process.c */
+static int fx_child_fd(sp_RbVal v, int *fd);
+static void fx_child_check(sp_RbVal opts);
+static void fx_spawn_opts_check(sp_RbVal opts);
+static sp_RbVal fx_spawn_slot(sp_RbVal opts, sp_PolyArray *slots, int slot, int *owned, int *done);
 static int fx_is_exc_class(const FxClass *k);
 static sp_RbVal fx_exc_new(FxClass *k, int argc, sp_RbVal *argv, const FxBlock *blk);
 static void fx_exc_init(sp_RbVal v, int argc, sp_RbVal *argv);

@@ -302,32 +302,41 @@ static sp_RbVal fx_opt_get(sp_RbVal opts, const char *key) {
    that spinel emits resolves it (emit_spawn_fd_options): -1 for none, nil
    and false; an Integer; the descriptor of an IO; a filename, which the
    runtime opens and owns; [:child, :out], [:child, :err] or [:child, fd].
-   A later slot of a group key ([:out, :err]) shares the first slot's. */
-static sp_RbVal fx_spawn_fd(sp_RbVal opts, sp_PolyArray *slots, int slot, int *owned) {
+   A later slot of a group key ([:out, :err]) shares the first slot's.
+   fx_spawn_slot makes each once. */
+static sp_RbVal fx_spawn_fd(sp_RbVal opts, sp_PolyArray *slots, int slot, int *owned, int *done) {
   sp_bool found;
-  int prior;
+  int prior, cfd;
   sp_RbVal v = sp_process_redirect_value(opts, slot, &found, &prior);
   if (!found) return sp_box_int(-1);
-  if (prior >= 0) return slots->data[prior];
+  if (prior >= 0) return fx_spawn_slot(opts, slots, prior, owned, done);
   if (v.tag == SP_TAG_NIL || (v.tag == SP_TAG_BOOL && !v.v.i)) return sp_box_int(-1);
   if (v.tag == SP_TAG_INT) return v;
   if (v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_IO && v.v.p) return sp_box_int(sp_File_fileno((sp_File *)v.v.p));
   if (fx_is_string(v) && v.v.p)
     return sp_box_int(sp_process_open_redirect(sp_String_cstr((sp_String *)v.v.p), slot, owned));
-  if (v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_POLY_ARRAY) {
-    sp_PolyArray *a = (sp_PolyArray *)v.v.p;
-    if (a->len < 2 || a->data[0].tag != SP_TAG_SYM || a->data[0].v.i != sp_sym_intern("child"))
-      sp_process_spawn_fail(owned, "ArgumentError", "bad child-array shape");
-    sp_RbVal fd = a->data[1];
-    if (fd.tag == SP_TAG_INT) return sp_box_int((int)fd.v.i);
-    if (fd.tag == SP_TAG_SYM) {
-      const char *n = sp_sym_to_s((sp_sym)fd.v.i);
-      if (!strcmp(n, "out")) return sp_box_int(1);
-      if (!strcmp(n, "err")) return sp_box_int(2);
-    }
-    sp_process_spawn_fail(owned, "ArgumentError", "bad redirect value");
+  if (fx_child_fd(v, &cfd)) {
+    /* [:child, fd]: the descriptor of the child after its own redirections,
+       so the source of the option that redirects it, in whichever order
+       the options name them (fx_child_check saw that one does) */
+    if (cfd < 0) sp_process_spawn_fail(owned, "ArgumentError", "bad redirect value");
+    if (cfd > 2) fx_gap(sp_sprintf("a redirection to descriptor %d of the child", cfd));
+    return fx_spawn_slot(opts, slots, cfd, owned, done);
   }
+  if (v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_POLY_ARRAY)
+    sp_process_spawn_fail(owned, "ArgumentError", "bad child-array shape");
   sp_process_spawn_fail(owned, "ArgumentError", "bad redirect type");
+}
+
+/* The value of one standard slot, made once: a slot that names this one
+   ([:child, fd], a later member of a group) reads what it made, whichever
+   order the options come in. */
+static sp_RbVal fx_spawn_slot(sp_RbVal opts, sp_PolyArray *slots, int slot, int *owned, int *done) {
+  if (!done[slot]) {
+    done[slot] = 1;
+    sp_PolyArray_set(slots, slot, fx_spawn_fd(opts, slots, slot, owned, done));
+  }
+  return slots->data[slot];
 }
 
 /* The options Hash with a standard descriptor named by its number (`1 =>
@@ -376,7 +385,10 @@ static sp_PolyArray *fx_spawn_opts(sp_RbVal opts, sp_RbVal env) {
     for (int i = 0; i < 3; i++) sp_PolyArray_push(a, sp_box_int(-1));
     for (int i = 3; i < 7; i++) sp_PolyArray_push(a, sp_box_nil());
   } else {
-    for (int i = 0; i < 3; i++) sp_PolyArray_push(a, fx_spawn_fd(opts, a, i, owned));
+    int done[3] = { 0, 0, 0 };
+    fx_child_check(opts);
+    for (int i = 0; i < 3; i++) sp_PolyArray_push(a, sp_box_int(-1));
+    for (int i = 0; i < 3; i++) fx_spawn_slot(opts, a, i, owned, done);
     sp_RbVal v = fx_opt_get(opts, "pgroup");
     sp_PolyArray_push(a, v.tag == SP_TAG_BOOL && v.v.i ? sp_box_int(1) : v.tag == SP_TAG_INT ? v : sp_box_nil());
     v = fx_opt_get(opts, "rlimit_cpu");
@@ -402,6 +414,7 @@ static sp_int fx_spawn(int argc, sp_RbVal *argv) {
   if (fx_opts_hash(argc, argv)) opts = argv[--argc];
   if (argc >= 1 && fx_is_hash(argv[0])) { env = argv[0]; argv++; argc--; }
   if (argc < 1) sp_raise_cls("ArgumentError", "wrong number of arguments (given 0, expected 1+)");
+  if (opts.tag != SP_TAG_NIL) fx_spawn_opts_check(opts);
   sp_RbVal cmd = argv[0];
   if (cmd.tag == SP_TAG_OBJ && cmd.cls_id != SP_BUILTIN_POLY_ARRAY && sp_rbval_is_array(cmd))
     cmd = sp_box_poly_array(sp_poly_to_poly_array(cmd));
@@ -584,6 +597,79 @@ static int fx_fd_of(sp_RbVal v) {
   return -1;
 }
 
+/* Whether v is [:child, fd], a descriptor of the child; *fd is its number
+   (:in, :out and :err are 0, 1 and 2), or -1 for a value that names none. */
+static int fx_child_fd(sp_RbVal v, int *fd) {
+  if (!(v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_POLY_ARRAY)) return 0;
+  sp_PolyArray *a = (sp_PolyArray *)v.v.p;
+  if (a->len < 1 || a->data[0].tag != SP_TAG_SYM || a->data[0].v.i != sp_sym_intern("child")) return 0;
+  *fd = a->len > 1 ? fx_fd_of(a->data[1]) : -1;
+  if (a->len > 1 && a->data[1].tag == SP_TAG_SYM) {
+    const char *n = sp_sym_to_s((sp_sym)a->data[1].v.i);
+    *fd = !strcmp(n, "in") ? 0 : !strcmp(n, "out") ? 1 : !strcmp(n, "err") ? 2 : -1;
+  }
+  return 1;
+}
+
+/* The descriptor that a key of the options redirects: a number, an IO by
+   its number, or :in, :out and :err; -1 for another key. */
+static int fx_redirect_key_fd(sp_RbVal key) {
+  int fd = fx_fd_of(key);
+  if (fd >= 0 || key.tag != SP_TAG_SYM) return fd;
+  const char *n = sp_sym_to_s((sp_sym)key.v.i);
+  return !strcmp(n, "in") ? 0 : !strcmp(n, "out") ? 1 : !strcmp(n, "err") ? 2 : -1;
+}
+
+/* The value of the option that redirects the descriptor fd of the child,
+   by its key or by a member of a group key, in *v; 0 when none does. */
+static int fx_redirect_of(sp_RbVal opts, int fd, sp_RbVal *v) {
+  for (sp_int j = 0, n = sp_poly_length(opts); j < n; j++) {
+    sp_RbVal key, value;
+    sp_poly_hash_pair(opts, j, &key, &value);
+    int hit = fx_redirect_key_fd(key) == fd;
+    if (!hit && sp_rbval_is_array(key))
+      for (sp_int i = 0, len = sp_poly_length(key); i < len && !hit; i++) hit = fx_redirect_key_fd(sp_poly_arr_get(key, i)) == fd;
+    if (hit) { *v = value; return 1; }
+  }
+  return 0;
+}
+
+/* The descriptors of the child that the options name ([:child, fd]), as
+   CRuby checks them before anything opens: the one named must be
+   redirected by an option of the call, through other such names at most,
+   else the ArgumentError of CRuby, which names the descriptor; the first
+   name in a cycle is the one reported. */
+static void fx_child_check(sp_RbVal opts) {
+  sp_int n = sp_poly_length(opts);
+  for (sp_int j = 0; j < n; j++) {
+    sp_RbVal key, value, v;
+    int fd, cur;
+    sp_poly_hash_pair(opts, j, &key, &value);
+    if (!fx_child_fd(value, &fd) || fd < 0) continue;
+    cur = fd;
+    for (sp_int depth = 0;; depth++) {
+      if (!fx_redirect_of(opts, cur, &v)) sp_raise_cls("ArgumentError", sp_sprintf("child fd %d is not redirected", fd));
+      if (!fx_child_fd(v, &cur) || cur < 0) break;
+      if (depth >= n) sp_raise_cls("ArgumentError", sp_sprintf("cyclic child fd redirection from %d", fd));
+    }
+  }
+}
+
+/* The options of spawn and system: a redirection of a descriptor past 2
+   has no slot in the options array of the runtime (an exec makes its own,
+   fx_exec_fds), so it stops as a gap rather than go unread. */
+static void fx_spawn_opts_check(sp_RbVal opts) {
+  for (sp_int j = 0, n = sp_poly_length(opts); j < n; j++) {
+    sp_RbVal key, value;
+    sp_poly_hash_pair(opts, j, &key, &value);
+    int fd = fx_fd_of(key);
+    if (fd > 2) fx_gap(sp_sprintf("spawn with a redirection of descriptor %d", fd));
+    if (sp_rbval_is_array(key))
+      for (sp_int i = 0, len = sp_poly_length(key); i < len; i++)
+        if ((fd = fx_fd_of(sp_poly_arr_get(key, i))) > 2) fx_gap(sp_sprintf("spawn with a redirection of descriptor %d", fd));
+  }
+}
+
 /* A file value of a redirection past 2, as File.open reads it: [path,
    mode] or [path, flags, perm], or a bare path, which is opened to read
    (CRuby reads a path under a descriptor past 2). An element past the third
@@ -627,7 +713,8 @@ static const char *fx_exec_file(sp_RbVal v, int *fl, int *perm) {
 #define FX_EXEC_FDS 16
 #define FX_EXEC_CLOSE (-2)
 static void fx_exec_fds(sp_RbVal opts) {
-  int dst[FX_EXEC_FDS], src[FX_EXEC_FDS], tmp[FX_EXEC_FDS], fl[FX_EXEC_FDS], perm[FX_EXEC_FDS], n = 0, floor = 3;
+  int dst[FX_EXEC_FDS], src[FX_EXEC_FDS], tmp[FX_EXEC_FDS], fl[FX_EXEC_FDS], perm[FX_EXEC_FDS], child[FX_EXEC_FDS];
+  int n = 0, floor = 3;
   const char *path[FX_EXEC_FDS];
   sp_int len = sp_poly_length(opts);
   for (sp_int j = 0; j < len; j++) {
@@ -638,8 +725,12 @@ static void fx_exec_fds(sp_RbVal opts) {
     if (n == FX_EXEC_FDS) fx_gap("exec with more than 16 redirections of a descriptor past 2");
     dst[n] = fd;
     path[n] = NULL;
+    child[n] = -1;
     if (value.tag == SP_TAG_SYM && value.v.i == sp_sym_intern("close")) src[n] = FX_EXEC_CLOSE;
-    else if ((src[n] = fx_fd_of(value)) < 0) path[n] = fx_exec_file(value, &fl[n], &perm[n]);
+    else if (fx_child_fd(value, &child[n])) {
+      if (child[n] < 0) sp_raise_cls("ArgumentError", "bad redirect value");
+      src[n] = -1;
+    } else if ((src[n] = fx_fd_of(value)) < 0) path[n] = fx_exec_file(value, &fl[n], &perm[n]);
     n++;
     if (fd >= floor) floor = fd + 1;
   }
@@ -666,6 +757,29 @@ static void fx_exec_fds(sp_RbVal opts) {
       sp_raise_cls(sp_errno_class_name(e), sp_sprintf("%s - %s", strerror(e), path[i]));
     }
   }
+  /* a descriptor of the child ([:child, fd]): the source of the option that
+     redirects fd, a descriptor made above or a standard stream sent to an
+     IO or a number (fx_child_check saw that an option redirects it). A
+     standard stream sent to a file is the runtime's to open, later, so its
+     descriptor is not known here. A pass per entry follows a chain. */
+  for (int pass = 0; pass < n; pass++)
+    for (int i = 0; i < n; i++) {
+      if (child[i] < 0 || src[i] >= 0) continue;
+      int c = child[i], k = -1;
+      for (int j = 0; j < n; j++) if (dst[j] == c) k = j;
+      if (k >= 0) {
+        if (src[k] >= 0) src[i] = src[k];
+        else if (src[k] == FX_EXEC_CLOSE)
+          fx_gap(sp_sprintf("exec with descriptor %d sent to descriptor %d of the child, which the call closes", dst[i], c));
+        continue;
+      }
+      sp_RbVal v;
+      if (!fx_redirect_of(opts, c, &v)) continue;
+      int from = fx_fd_of(v);
+      if (from >= 0) src[i] = from;
+      else if (fx_child_fd(v, &c)) child[i] = c;
+      else fx_gap(sp_sprintf("exec with descriptor %d sent to standard stream %d, which the call sends to a file", dst[i], c));
+    }
   for (int i = 0; i < n; i++) {
     tmp[i] = -1;
     if (src[i] < 0) continue;
@@ -707,13 +821,10 @@ static void fx_exec_opts_check(sp_RbVal opts) {
     sp_poly_hash_pair(opts, j, &key, &value);
     int fd = fx_fd_of(key);
     if (fd >= 0 && fd <= 2) continue;
-    /* a descriptor past 2: fx_exec_fds makes it. An Array that names a
-       descriptor of the child ([:child, fd]) is a form it does not make;
-       another Array is a file's, and one whose first element is no String
-       raises the TypeError File.open would. */
+    /* a descriptor past 2: fx_exec_fds makes it, also from a descriptor of
+       the child ([:child, fd]); another Array is a file's, and one whose
+       first element is no String raises the TypeError File.open would. */
     if (fd > 2) {
-      if (sp_rbval_is_array(value) && sp_poly_length(value) > 0 && sp_poly_arr_get(value, 0).tag == SP_TAG_SYM)
-        fx_gap(sp_sprintf("exec with a redirection of descriptor %d to a descriptor of the child", fd));
       if (fx_fd_of(value) >= 0 || fx_is_string(value) || sp_rbval_is_array(value) ||
           (value.tag == SP_TAG_SYM && value.v.i == sp_sym_intern("close"))) continue;
       fx_gap(sp_sprintf("exec with a redirection of descriptor %d to a value that is no IO, number, file or :close", fd));
