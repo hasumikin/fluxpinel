@@ -14,17 +14,23 @@
 # The versions that --irb cannot run:
 # - irb before 1.18 parses with ripper, which Fluxpinel does not have.
 # - The default gem of prism has no lib directory of its own.
-# - The prism gem without build/libprism.so: IRB loads prism through its
-#   ffi backend, which opens that file.
+# - The prism gem without its shared library (build/libprism.so, or
+#   build/libprism.dylib on macOS): IRB loads prism through its ffi
+#   backend, which opens that file.
+
+require "rbconfig"
 
 MIN_VERSION = { "irb" => "1.18" }.freeze
+
+# The shared library of the prism gem, from the directory of the gem.
+LIBPRISM = "build/libprism.#{RbConfig::CONFIG['SOEXT']}".freeze
 
 # Why --irb cannot run the gem of spec, or nil.
 def unusable(name, spec)
   min = MIN_VERSION[name]
   return "is older than #{min}" if min && spec.version < Gem::Version.new(min)
   return "has no lib directory" unless Dir.exist?(File.join(spec.full_gem_path, "lib"))
-  return "has no build/libprism.so" if name == "prism" && !File.exist?(File.join(spec.full_gem_path, "build/libprism.so"))
+  return "has no #{LIBPRISM}" if name == "prism" && !File.exist?(File.join(spec.full_gem_path, LIBPRISM))
   nil
 end
 

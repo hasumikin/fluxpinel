@@ -439,8 +439,8 @@ optcarrot:
 
 # The gems of the Gemfile into the Ruby that runs make, and the shared
 # library of the prism gem: IRB loads prism through its ffi backend
-# (lib/prism/ffi.rb), which opens build/libprism.so in the directory of the
-# gem. Run it after a change of the Ruby.
+# (lib/prism/ffi.rb), which opens build/libprism.so (build/libprism.dylib
+# on macOS) in the directory of the gem. Run it after a change of the Ruby.
 gems:
 	bundle install
 	$(MAKE) -C "$$(ruby -e 'puts Gem::Specification.find_by_name("prism").full_gem_path')" shared

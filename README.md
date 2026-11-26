@@ -266,10 +266,17 @@ with Homebrew (`brew install libffi openssl`); the Makefile finds them
 there.
 
 `make gems` installs the gems of the `Gemfile` into the Ruby that runs
-`make`, and builds the shared library of the prism gem. `--irb`,
-`--irb-port` and `make test` need them. The irb that CRuby bundles does
-not run on Fluxpinel: `--irb` needs irb 1.18 or later. Run `make gems`
-before `make`, and again after a change of the Ruby.
+`make`, and builds the shared library of the prism gem. It needs
+Bundler. `--irb`, `--irb-port` and `make test` need the gems. A build
+that only runs programs does not need them: leave `make gems` out. The
+irb that CRuby bundles does not run on Fluxpinel: `--irb` needs irb 1.18
+or later. Run `make gems` before `make`, and again after a change of the
+Ruby.
+
+`make gems` does both steps for prism. The prism gem of a platform has
+the sources too, so `gem install --platform ruby prism` and a `make` by
+hand in the directory of the gem are not necessary. When `make` prints a
+warning of `gem_dirs.rb`, run `make gems` and then `make` again.
 
 ```sh
 make deps

@@ -47,9 +47,12 @@ The build and the tests read some gems of the Ruby that runs make. The
 - `test/m3/ffi_gem.rb` compares with the `ffi` gem under CRuby.
 
 Run `make gems` once, and again after a change of the Ruby. It runs
-`bundle install`. Then it builds the shared library of the prism gem
-(`build/libprism.so` in the directory of the gem), which IRB loads through
-the ffi backend of prism.
+`bundle install`. Then it builds the shared library of the prism gem,
+which IRB loads through the ffi backend of prism. The library is
+`build/libprism.so` in the directory of the gem (`build/libprism.dylib`
+on macOS). The prism gem of a platform (`arm64-darwin`,
+`x86_64-linux-gnu`) has the sources too, so `make gems` builds the
+library there with no other step.
 
 Fluxpinel does not run under Bundler. Make and the tests call `ruby` with
 no `bundle exec`, and the build takes the newest version of each gem. Git
