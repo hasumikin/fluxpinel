@@ -205,12 +205,61 @@ static sp_RbVal fx_clock(const char *name, int argc, sp_RbVal *argv) {
   sp_raise_cls("ArgumentError", sp_sprintf("unexpected unit: %s", unit));
 }
 
+/* Process.setproctitle writes the title over the memory of the command
+   line, the strings of argv and the environment strings that follow them,
+   as CRuby does where the system has no setproctitle(3)
+   (missing/setproctitle.c): ps reads that memory. fx_proctitle_init runs
+   first in main and copies the strings of argv and environ out of it, so
+   that $0, ARGV and ENV keep theirs. A title is cut to 1023 bytes (the
+   buffer of CRuby's setproctitle) and to what the memory holds; the rest
+   of the strings of argv is zeroed, as in CRuby, so that ps shows the
+   title alone. */
+static char *fx_title_mem;        /* the memory of the command line */
+static size_t fx_title_argv_len;  /* the strings of argv in it */
+static size_t fx_title_len;       /* with the environment strings after them */
+static const char *fx_argv0;      /* Process.argv0: $0 as the program started */
+
+static void fx_proctitle_init(int argc, char **argv) {
+  extern char **environ;
+  if (argc == 0 || !argv[0]) return;
+  char *last = NULL;
+  for (int i = 0; i < argc; i++)
+    if (!last || last + 1 == argv[i]) last = argv[i] + strlen(argv[i]);
+  char *last_env = last;
+  int n = 0;
+  for (; environ[n]; n++)
+    if (last_env + 1 == environ[n]) last_env = environ[n] + strlen(environ[n]);
+  fx_title_mem = argv[0];
+  fx_title_argv_len = (size_t)(last - argv[0]);
+  fx_title_len = (size_t)(last_env - argv[0]);
+  for (int i = 0; i < argc; i++) argv[i] = strdup(argv[i]);
+  char **env = calloc((size_t)n + 1, sizeof *env);
+  for (int i = 0; i < n; i++) env[i] = strdup(environ[i]);
+  environ = env;
+}
+
+static void fx_proctitle_set(const char *title) {
+  if (!fx_title_len) return;
+  size_t len = strlen(title);
+  if (len > 1023) len = 1023;
+  size_t n = len < fx_title_len ? len : fx_title_len - 1;
+  memcpy(fx_title_mem, title, n);
+  fx_title_mem[n] = '\0';
+  size_t pad = len > fx_title_argv_len ? fx_title_len : fx_title_argv_len;
+  for (len = n + 1; len < pad; len++) fx_title_mem[len] = '\0';
+}
+
 static int fx_process_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) {
   /* Process.exit, exit! and abort are Kernel's (fx_exit_kernel) */
   if (FX_IS("exit") || FX_IS("exit!") || FX_IS("abort")) return fx_exit_kernel(name, argc, argv);
   if (argc == 0) {
     if (FX_IS("pid")) { *out = sp_box_int((sp_int)getpid()); return 1; }
     if (FX_IS("ppid")) { *out = sp_box_int(sp_process_ppid()); return 1; }
+    if (FX_IS("argv0")) {
+      sp_RbVal s = fx_new_string((const uint8_t *)fx_argv0, strlen(fx_argv0));
+      *out = fx_send(s, "freeze", 0, NULL);
+      return 1;
+    }
     if (FX_IS("uid")) { *out = sp_box_int((sp_int)getuid()); return 1; }
     if (FX_IS("gid")) { *out = sp_box_int((sp_int)getgid()); return 1; }
     if (FX_IS("euid")) { *out = sp_box_int((sp_int)geteuid()); return 1; }
@@ -249,6 +298,16 @@ static int fx_process_fn(const char *name, int argc, sp_RbVal *argv, sp_RbVal *o
     rl.rlim_max = argc == 3 && argv[2].tag != SP_TAG_NIL ? fx_rlim_arg(argv[2]) : rl.rlim_cur;
     if (setrlimit(res, &rl) < 0) sp_raise_cls(sp_errno_class_name(errno), sp_sprintf("%s - setrlimit", strerror(errno)));
     *out = sp_box_nil();
+    return 1;
+  }
+  if (FX_IS("setproctitle") && argc == 1) {
+    /* the String, or what to_str answers: CRuby's StringValue */
+    sp_RbVal s = fx_to_str_arg(argv[0]);
+    if (!fx_is_string(s))
+      sp_raise_cls("TypeError", sp_sprintf("no implicit conversion of %s into String",
+                                           s.tag == SP_TAG_NIL ? "nil" : sp_poly_class_name(s)));
+    fx_proctitle_set(sp_poly_recv_s(s, "setproctitle"));
+    *out = s;
     return 1;
   }
   if (FX_IS("getpgid") && argc == 1) {
@@ -1013,7 +1072,7 @@ static int fx_process_responds(sp_RbVal r, const char *name) {
                                          "exit", "exit!", "abort",
                                          "getsid", "setsid", "getpgid", "setpgid", "clock_gettime", "clock_getres", "getpriority", "kill", "spawn",
                                          "exec", "fork", "wait", "waitpid", "wait2", "waitpid2", "detach", "last_status",
-                                         NULL };
+                                         "setproctitle", "argv0", NULL };
   static const char *const gc[] = { "start", "compact", "stat", "total_time", NULL };
   FxClass *k = fx_class_value(r);
   if (!k || k->cls_id >= 0 || !k->is_module) return 0;
