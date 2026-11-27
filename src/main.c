@@ -386,6 +386,7 @@ static void fx_body(void) {
 }
 
 int main(int argc, char **argv) {
+  fx_proctitle_init(argc, argv);
 #ifdef FX_KERNEL_MAIN
   L.path = argv[0];
   int skip = 0;
@@ -417,6 +418,7 @@ int main(int argc, char **argv) {
   L.args = argv + i;
   L.nargs = argc - i;
 #endif
+  fx_argv0 = L.path;
   sp_main_stack_run(fx_body);
   return fx_main_rc;
 }
