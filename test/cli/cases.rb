@@ -40,6 +40,12 @@ CLI_CASES = [
   { args: ["-Iother", "-e", "p $LOAD_PATH.first(3).map { |d| File.basename(d) }"],
     env: { "RUBYLIB" => "lib:#{File.expand_path('lib', __dir__)}" } },
   { args: ["-e", "p $LOAD_PATH.first == File.expand_path('lib')"], env: { "RUBYLIB" => "lib" } },
+  # the gems of the build (build/gem_dirs.h) come last in $LOAD_PATH, for
+  # every program and not only --irb: a program requires reline with no
+  # RUBYLIB, and a copy of -I or RUBYLIB comes first
+  { args: ["-e", "require 'reline'; puts Reline.name"], env: { "RUBYLIB" => nil }, out: /\AReline\n\z/ },
+  { args: ["-Ifake_reline", "-e", "require 'reline'; p Reline::FAKE"], env: { "RUBYLIB" => nil } },
+  { args: ["-e", "require 'reline'; p Reline::FAKE"], env: { "RUBYLIB" => "fake_reline" } },
   # --irb: the IRB of CRuby on stdin; the arguments after it are its
   # options, and HOME keeps the history out of the home of the user
   { args: ["--irb", "-f", "--nocolorize", "--noprompt"], stdin: "1 + 1\n[$0, ARGV]\nrequire 'greet'\nGreet.hi\n",

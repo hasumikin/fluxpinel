@@ -1,13 +1,14 @@
-# gem_dirs.rb -- the lib directories of the gems that --irb needs, as a
-# C header (build/gem_dirs.h).
+# gem_dirs.rb -- the lib directories of the gems of the build (those that
+# --irb needs), as a C header (build/gem_dirs.h).
 #
 # Usage: ruby tools/gem_dirs.rb GEM...
 #
 # IRB and Reline are pure Ruby, so Fluxpinel runs the ones of the CRuby
 # that builds it. FX_GEM_DIRS holds their lib directories, joined by ":",
-# and --irb adds them at the end of $LOAD_PATH (src/main.c). A gem that
-# this Ruby does not have, or has only in a version that --irb cannot run,
-# prints a warning and stays out: --irb then needs -I or RUBYLIB. With no
+# and every program has them at the end of $LOAD_PATH (src/main.c), so
+# that `require "reline"` works with no RUBYLIB. A gem that this Ruby does
+# not have, or has only in a version that --irb cannot run, prints a
+# warning and stays out: a program, and --irb, then need -I or RUBYLIB. With no
 # gem found, the header defines nothing. The directories of GEM_DIRS_FIRST
 # ("a:b") come before those of the gems.
 #

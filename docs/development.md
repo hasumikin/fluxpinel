@@ -39,7 +39,8 @@ The build and the tests read some gems of the Ruby that runs make. The
 
 - `--irb` runs the gems `irb`, `reline`, `prism` and `rdoc` under
   Fluxpinel. The build records their lib directories
-  (`tools/gem_dirs.rb`).
+  (`tools/gem_dirs.rb`), and every program has them at the end of
+  `$LOAD_PATH`.
 - `--irb` also loads `did_you_mean`, for the `Did you mean?` line of an
   error. CRuby has it as a default gem, with its files in the directory
   of the standard library. `make gems` installs it in a directory of its

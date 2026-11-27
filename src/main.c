@@ -9,11 +9,12 @@
    comes from stdin. The directories of RUBYLIB follow those of -I in
    $LOAD_PATH, as in ruby.
 
-   --irb runs `require "irb"; IRB.start`. The IRB and Reline of CRuby are
-   pure Ruby: FX_GEM_DIRS (build/gem_dirs.h, from tools/gem_dirs.rb) names
-   the lib directories of their gems on the machine of the build, and --irb
-   adds them at the end of $LOAD_PATH. -I and RUBYLIB come first, so they
-   can name other copies.
+   The IRB and Reline of CRuby are pure Ruby: FX_GEM_DIRS (build/gem_dirs.h,
+   from tools/gem_dirs.rb) names the lib directories of their gems on the
+   machine of the build, and every program has them at the end of
+   $LOAD_PATH, so that `require "reline"` works as under CRuby. -I and
+   RUBYLIB come first, so they can name other copies. --irb runs
+   `require "irb"; IRB.start` on that load path.
 
    --irb-port PORT starts the listener of lib/fluxpinel/remote_irb.rb
    before the program: a telnet connection to 127.0.0.1:PORT opens IRB in
@@ -100,8 +101,8 @@ static void fx_load_path_add(const char *list, int at) {
   }
 }
 
-/* The gem directories of IRB, after -I and RUBYLIB. */
-static void fx_irb_load_path(void) {
+/* The gem directories of the build, after -I and RUBYLIB. */
+static void fx_gem_load_path(void) {
 #ifdef FX_GEM_DIRS
   fx_load_path_add(FX_GEM_DIRS, -1);
 #endif
@@ -119,7 +120,6 @@ static int fx_is_port(const char *s) {
 /* Starts the listener of --irb-port, as a program of its own before the
    main program. */
 static void fx_irb_listen(void) {
-  fx_irb_load_path();
   const char *src = sp_sprintf("require \"fluxpinel/remote_irb\"\nFluxpinel::RemoteIRB.listen(%s)\n", fx_irb_port);
   fx_run_source_top(fx_parse_main("(irb-port)", "(irb-port)", strdup(src), strlen(src)), 0);
 }
@@ -267,6 +267,7 @@ static void fx_run_main(void) {
   sp_StrArray *lp = sp_get_load_path();
   for (int i = 0; i < fx_opt.ndirs; i++) fx_strs_insert(lp, i, sp_str_dup(fx_opt_dir(fx_opt.dirs[i])));
   fx_load_path_add(getenv("RUBYLIB"), fx_opt.ndirs);
+  fx_gem_load_path();
   if (fx_opt.verbose >= 0)
     fx_gvar_set("$VERBOSE", fx_opt.verbose == 0 ? sp_box_nil() : sp_box_bool(fx_opt.verbose == 2));
   char *buf;
@@ -274,7 +275,6 @@ static void fx_run_main(void) {
   const char *real = L.path;
   int file = 0;   /* the program is a file, not -e, stdin or --irb */
   if (fx_irb) {
-    fx_irb_load_path();
     buf = strdup(fx_irb_src);
     len = sizeof fx_irb_src - 1;
   } else if (fx_opt.code) {
@@ -355,8 +355,8 @@ static void fx_body(void) {
 
 #ifdef FX_KERNEL_MAIN
   fx_load_path_add(getenv("RUBYLIB"), 0);
+  fx_gem_load_path();
   if (fx_irb) {
-    fx_irb_load_path();
     fx_load_main_src(L.path, L.path, strdup(fx_irb_src), sizeof fx_irb_src - 1);
   } else {
     if (fx_irb_port) fx_irb_listen();
