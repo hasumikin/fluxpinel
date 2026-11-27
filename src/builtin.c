@@ -1639,7 +1639,8 @@ static int fx_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVal *out) 
       SP_GC_ROOT_STR(s);
       size_t n = sp_str_byte_len(s);
       sp_String_append_n(text, s, n);
-      if (!n || s[n - 1] != '\n') sp_String_append_n(text, "\n", 1);
+      /* a C literal has no String header, which sp_String_append_n reads */
+      if (!n || s[n - 1] != '\n') sp_String_append(text, "\n");
     }
     sp_RbVal msg = sp_box_str_new(sp_String_cstr(text));
     SP_GC_ROOT_RBVAL(msg);

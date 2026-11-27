@@ -193,8 +193,34 @@ const sp_int sp_exc_subclass_ids[] = { 0 };
 #ifdef SP_THREADS
 static sp_mutex *fx_walker_lock;
 
-static void fx_lock(void) { if (fx_walker_lock) sp_Mutex_lock(fx_walker_lock); }
-static void fx_unlock(void) { if (fx_walker_lock) sp_Mutex_unlock(fx_walker_lock); }
+/* The runtime owns a Mutex per Fiber, and the walker lock is the thread's:
+   a Fiber of the program runs walker code under the lock that the Fiber
+   that resumed it took. The running Fiber of the owner thread takes the
+   name of the owner before a lock or an unlock. Only the owner thread
+   writes owner_fiber. */
+static void fx_lock_adopt(void) {
+  if (SP_ATOMIC_LOAD(&fx_walker_lock->owner, __ATOMIC_RELAXED) == sp_Thread_current())
+    SP_ATOMIC_STORE(&fx_walker_lock->owner_fiber, sp_fiber_current_uid(), __ATOMIC_RELAXED);
+}
+
+/* Mutex#lock raises ThreadError in a trap proc, as CRuby's does. That rule
+   is for a Mutex of the program. A trap proc is walker code, and it takes
+   the walker lock again after a wait, so the lock is taken with the trap
+   depth of the thread put aside. */
+static void fx_lock(void) {
+  if (!fx_walker_lock) return;
+  fx_lock_adopt();
+  sp_thread *t = sp_Thread_current();
+  unsigned char in_trap = t ? t->in_trap : 0;
+  if (in_trap) t->in_trap = 0;
+  sp_Mutex_lock(fx_walker_lock);
+  if (in_trap) t->in_trap = in_trap;
+}
+static void fx_unlock(void) {
+  if (!fx_walker_lock) return;
+  fx_lock_adopt();
+  sp_Mutex_unlock(fx_walker_lock);
+}
 
 /* How many times the running thread holds the lock; 0 when it does not. */
 static int fx_lock_depth(void) {

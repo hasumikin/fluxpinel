@@ -501,8 +501,20 @@ static __attribute__((noreturn)) void fx_reraise(FxCaught c);
   sp_exc_top--;                                                                        \
   sp_gc_nroots = sp_exc_rootmark[sp_exc_top];                                          \
   sp_rescue_sp = sp_rescue_mark[sp_exc_top];                                           \
-  fx_lock_set_depth(_fx_lockmark);   /* after the roots: a lock can park and collect */ \
-  fx_bt_land();                      /* the trace of the frames, before the cut */   \
+  {                                                                                    \
+    /* The caught message and object are in the slot that the pop left, and            \
+       the next handler takes that slot: a park of the thread, or code that            \
+       runs at an allocation, clears it. The landing holds the two and puts            \
+       them back. */                                                                   \
+    const char *_fx_msg = sp_exc_msg[sp_exc_top];                                      \
+    void *_fx_obj = sp_exc_obj[sp_exc_top];                                            \
+    SP_GC_ROOT_STR(_fx_msg);                                                           \
+    SP_GC_ROOT(_fx_obj);                                                               \
+    fx_lock_set_depth(_fx_lockmark); /* after the roots: a lock can park and collect */ \
+    fx_bt_land();                    /* the trace of the frames, before the cut */   \
+    sp_exc_msg[sp_exc_top] = _fx_msg;                                                  \
+    sp_exc_obj[sp_exc_top] = _fx_obj;                                                  \
+  }                                                                                    \
   fx_fs()->depth = (d);                                                              \
   L.kwhash = NULL
 

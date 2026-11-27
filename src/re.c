@@ -418,10 +418,12 @@ static const char *fx_re_text(sp_RbVal v) {
    1 binary, 0 UTF-8), which raises Encoding::CompatibilityError for a piece
    of high bytes in the other encoding beside high bytes so far, as CRuby's
    rb_enc_cr_str_buf_cat does for the receiver's pieces and the
-   replacements alike. */
+   replacements alike. p can point into the middle of a String, so the
+   bytes go in with sp_fd_append_len: sp_String_append_n reads the header
+   of its argument for the encoding. */
 static void fx_re_subst_piece(int *st, sp_String *acc, const char *p, size_t n, int bin) {
   *st = sp_str_enc_step(*st, sp_String_cstr(acc), (size_t)acc->len, p, n, bin);
-  sp_String_append_n(acc, p, n);
+  sp_fd_append_len(acc, p, (int64_t)n);
 }
 
 static int fx_re_subst_each(sp_RbVal r, const char *name, sp_RbVal pv, sp_RbVal hash, const FxBlock *blk,
