@@ -1,5 +1,5 @@
 # The spinel tests that Fluxpinel answers right, for make regress.
-# make oracle writes this file. spinel: bef1496bcb6b
+# make oracle writes this file. spinel: aa0ac234c894
 absolute_class_reopen_inside_module
 abstract_raise_override_return
 accessor_def_history_both_sides
@@ -997,6 +997,7 @@ boxed_split_regexp_limit
 boxed_start_with_regexp
 boxed_stat_fields
 boxed_stat_time_readers
+boxed_store_into_object_with_block_param_aset
 boxed_store_shared_string_unrelated_struct
 boxed_strbuf_comparable
 boxed_strbuf_string_class
@@ -1129,6 +1130,7 @@ builtin_reopen_array_hash_poly
 builtin_reopen_bignum_receiver
 builtin_reopen_blank_shapes
 builtin_reopen_block_call
+builtin_reopen_cond_def_after_other_def
 builtin_reopen_const_ancestor
 builtin_reopen_const_read_late_write
 builtin_reopen_enum_alias_own
@@ -1279,6 +1281,7 @@ byref_poly_receiver_takes_handle
 byref_string_arg_in_rescue_method
 byref_string_param_instance_method
 byref_string_selective_volatile
+byte_conditional_reads_fresh_string_arm
 cached_element_literal_eq
 cached_index_nil_cold
 cached_store_nilable_value
@@ -1861,6 +1864,8 @@ cmethod_chain_reachability
 cmethod_cvar_reflection_self
 cmethod_default_new_subclass
 cmethod_fanout_specialization
+cmethod_inline_subclass_new_in_new_arg
+cmethod_inline_subclass_new_upcast
 cmethod_inline_yield_sibling_self_cls
 cmethod_ivar_op_assign_expr
 cmethod_lambda_self_subclass
@@ -1975,11 +1980,13 @@ computed_ivar_get_poly
 computed_ivar_get_self
 computed_ivar_set_issue_example
 computed_ivar_set_skips_reopened_builtin
+computed_require_allocated_class
 computed_require_file_dir
 computed_require_literal_path
 computed_require_load_error
 computed_require_load_error_long
 computed_require_singleton_object
+computed_require_unmade_class
 computed_send_args_lambda_return_required
 computed_send_at_arm_class_index
 computed_send_builtin_receiver
@@ -2255,6 +2262,8 @@ cvar_undeclared_typed_store
 cvar_value_type_object
 cvar_write_boxed_value_typed_slot
 cvb_split_identity_test_is_builtin
+cvb_split_path_arg_later_args_run
+cvb_split_path_arg_raises
 cycle_block_value_position
 cycle_boxed_receiver_endless
 cycle_boxed_receiver_reader_owner
@@ -2618,6 +2627,7 @@ empty_hash_int_int_promote
 empty_hash_int_key_narrowing
 empty_hash_key_context
 empty_hash_key_through_tap
+empty_hash_literal_in_chained_local_write
 empty_hash_literal_kwsplat
 empty_hash_method_return
 empty_hash_nonscalar_key
@@ -3447,6 +3457,7 @@ hash_compound_assign_more
 hash_const_into_defaulted_param
 hash_copy_keeps_default
 hash_default_array_fetch_concat_wave9
+hash_default_block_self_in_long_named_class
 hash_default_block_string_mutated
 hash_default_block_valued_next
 hash_default_nilable_value
@@ -3919,6 +3930,7 @@ inherited_factory_poly_param_narrow_attr
 inherited_hook_by_qualified_name
 inherited_hook_deep_chain
 inherited_hook_nested_class_qualified_name
+inherited_hook_param_subclasses
 inherited_hook_skips_errno_superclass
 inherited_initialize_default_arg
 inherited_initialize_default_reads_self
@@ -4134,6 +4146,7 @@ int_arg_into_bigint_param
 int_array_array
 int_array_bracket_assign_expr
 int_array_concat_one
+int_array_fetch_nil_slot
 int_array_foreign_values
 int_array_full_queue
 int_array_nil_cr2
@@ -4275,6 +4288,7 @@ io_boxed_byte_mode_half_close
 io_class_method_before_def
 io_close_cancels_waiting_accept
 io_close_handler_watermark
+io_close_under_inflight_read
 io_close_wakes_parked_reader
 io_close_wakes_polled_waiter
 io_closed_stream_raises
@@ -4292,10 +4306,13 @@ io_gets_zero_limit
 io_handle_value_surface
 io_line_read_boxed_splat
 io_lines_chomp_paragraph
+io_negative_length_nonblock_sysread
 io_nil_inspect
+io_nonblock_string_result_handles
 io_nul_bytes
 io_null_constant
 io_pipe
+io_pipe_at_descriptor_limit
 io_pipe_close_on_exec
 io_pipe_sync_write
 io_poly_flush_write
@@ -4311,8 +4328,10 @@ io_puts_pipe_parks
 io_puts_print_binary
 io_puts_threads_one_write
 io_pwrite_binary_seek_errno
+io_read_checks_readable
 io_read_directory
 io_read_n_is_binary
+io_read_outbuf_binary_nul
 io_read_short_read_rooted
 io_reader_forwards
 io_readiness_and_dir_fd
@@ -4333,6 +4352,7 @@ io_select_high_fd
 io_select_nonio_array_elements
 io_select_set_parks_thread
 io_select_timeout_interval
+io_select_to_io
 io_select_trap_from_process
 io_select_user_to_io
 io_set_encoding
@@ -5022,6 +5042,7 @@ lambda_explicit_return
 lambda_float_captures_with_float_param
 lambda_inference_chain
 lambda_keyword_call
+lambda_kwarg_default_io
 lambda_local_beside_later_outer_local
 lambda_named_param_type
 lambda_nested_emit
@@ -5403,6 +5424,7 @@ method_cmethod_default_reads_class
 method_compose_container
 method_const_get_in_module_method
 method_defined
+method_defined_boxed_beside_program_accessor
 method_defined_dynamic
 method_defined_guard_after_loop
 method_defined_guard_before_def
@@ -5411,6 +5433,7 @@ method_defined_guard_in_proc
 method_defined_guard_in_tap
 method_defined_guard_rescue_retry
 method_defined_on_constant_path
+method_defined_on_program_instance
 method_defined_own_guard_folds
 method_defined_runtime_name_plain_class
 method_defined_struct_member_private_section
@@ -5624,6 +5647,7 @@ module_method_via_class_value
 module_nested_reopen_yield
 module_never_included_instance_methods
 module_new_args_run_first
+module_new_in_reopened_module_program
 module_new_raises_nomethod
 module_new_without_block
 module_own_reflection_cmethods
@@ -5726,6 +5750,7 @@ name_reach_arity_object_default
 name_reach_arity_send_fallback
 name_reader_two_types
 named_capture_writes_block_param_beside_outer_local
+named_captures_in_yield_inlined_method
 named_captures_symbolize
 namespaced_class_named_like_builtin_module
 namespaced_exception_boxed_method
@@ -6620,6 +6645,7 @@ poly_map_empty_block
 poly_map_next_string_bytes_slot
 poly_map_receiver_rooted
 poly_match_interp_pattern_user_claimed
+poly_match_not_in_condition
 poly_match_string_pattern
 poly_merge_arm
 poly_merge_block_beside_user_merge
@@ -8136,6 +8162,7 @@ signal_trap_mutex_lock
 signal_trap_stub
 sigpipe_write_raises_epipe
 singleton_accessor_class_ivar
+singleton_accessor_slot_written_nil_in_body
 singleton_accessor_through_inherited_cmethod
 singleton_accessor_via_object_class
 singleton_accessor_writer_value
@@ -8223,6 +8250,7 @@ socket_pack_sockaddr
 socket_read_partial_while_allocating
 socket_readpartial_idle_thread_gc
 socket_readpartial_then_write
+socket_reads_share_one_buffer
 socket_recv_after_read
 socket_recv_closed_in_thread
 socket_reopen_drops_buffered_bytes
@@ -8374,6 +8402,7 @@ stored_enumerator_block_local_elsewhere
 str_append_accumulator
 str_append_ascii_int
 str_append_value_keeps_nul
+str_array_compact_nil
 str_array_delete_boxed_needle
 str_array_elem_write
 str_array_include_nil_arg
@@ -8742,6 +8771,9 @@ string_logic_handle_receiver
 string_lshift_int_codepoint
 string_match_block
 string_match_p_poly_pattern_beside_user_match_p
+string_match_reopened_string_after_other
+string_match_string_class_method
+string_match_user_operand
 string_method_tail_answers_recv
 string_method_unread_value_linear
 string_minus_dispatch
@@ -9211,6 +9243,7 @@ system_program_argv0_pair
 system_splat_kernel_receiver
 systemcallerror_errno_namespaced_subclass
 systemcallerror_hierarchy
+syswrite_poly
 table_empty_row_literal
 table_printed_class_puts
 table_printed_narrows
