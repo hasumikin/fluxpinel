@@ -8,3 +8,7 @@ p c["host_os"][/\A[a-z]+/], c["host_cpu"], c["SOEXT"], c["EXEEXT"], c["arch"][/\
 p RbConfig.ruby.class
 p Gem::Version.new("1.2") < Gem::Version.new("1.10"), Gem.win_platform?
 p require("rbconfig"), require("rubygems")
+# RbConfig.ruby: the running interpreter, which runs a program
+r = RbConfig.ruby
+p r.start_with?("/"), File.executable?(r)
+p IO.popen([r, "-e", "puts 6 * 7"], &:read)

@@ -753,6 +753,9 @@ static int fx_enum_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, 
    Fluxpinel::Session): fx_unsupported and fx_gap raise NotImplementedError
    there, so a line of the session does not end the program. */
 static int fx_gap_raises;
+/* The real path of this binary (fx_exe_path of main.c): RbConfig.ruby. */
+static const char *fx_exe_real;
+static void fx_autoload_ran(const char *path);
 static __attribute__((noreturn)) void fx_unsupported(const pm_node_t *n, const char *what);
 static __attribute__((noreturn)) void fx_gap(const char *what);
 static sp_sym fx_sym(pm_constant_id_t id);

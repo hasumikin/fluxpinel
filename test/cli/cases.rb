@@ -93,6 +93,8 @@ CLI_CASES = [
     out: /\A"spinel"\n"\d+\.\d+\.\d+"\n0\n"\w+-\w[\w-]*"\n\z/ },
   { args: ["-e", "p [RUBY_VERSION, RUBY_ENGINE, RUBY_PLATFORM, RUBY_DESCRIPTION].all?(&:frozen?)"] },
   { args: ["-e", "puts RUBY_DESCRIPTION"], out: /#{DESCRIPTION}\z/ },
+  # RbConfig.ruby is this binary, by its real path
+  { args: ["-e", "puts RbConfig.ruby"], out: /\A\/.*\/fluxpinel\n\z/ },
   { args: ["-e", "p RUBY_RELEASE_DATE, RUBY_REVISION.size, RUBY_COPYRIGHT.start_with?('ruby - Copyright')"],
     out: /\A"\d{4}-\d\d-\d\d"\n40\ntrue\n\z/ },
   # SIGINT and SIGTERM with no trap, which the standalone command raises
