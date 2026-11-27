@@ -1602,7 +1602,8 @@ of a host build.
   second (`src/walk.c`). CRuby raises there too; that needs the runtime.
 - **Tests.** minitest runs: `require "minitest/autorun"` runs the tests
   of a file at the exit. Fluxpinel has no RubyGems, so `-I` names the
-  directory of a gem.
+  directory of a gem, except for the gems of the build (irb, reline,
+  prism, rdoc), which every program has at the end of `$LOAD_PATH`.
 
 ### 5.5.2 Deployment: a host build
 

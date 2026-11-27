@@ -213,15 +213,18 @@ prints the version of Fluxpinel (one integer in `VERSION`), the commit of
 spinel and the version of Ruby that spinel gives.
 
 `require "name"` looks for `name.rb` in each directory of `$LOAD_PATH`
-(`-I`, then `RUBYLIB`, or a change of the program), then in the packages
-of spinel.
+(`-I`, then `RUBYLIB`, then the gems of the build, or a change of the
+program), then in the packages of spinel.
 
-`--irb` runs the IRB and Reline gems of CRuby, which are pure Ruby. The
-build records the lib directories of the gems `irb`, `reline`, `prism`
-and `rdoc` of the Ruby that builds Fluxpinel (`tools/gem_dirs.rb`), and
-`--irb` adds them at the end of `$LOAD_PATH`. Name other copies with `-I`
-or `RUBYLIB`. With the gem `did_you_mean` too, an error of a session has
-its `Did you mean?` line. A host program with `KERNEL_MAIN` opens IRB with `--irb` as
+The gems `irb`, `reline`, `prism` and `rdoc` of CRuby are pure Ruby, and
+Fluxpinel runs them. The build records the lib directories of these gems
+of the Ruby that builds Fluxpinel (`tools/gem_dirs.rb`), and every
+program has them at the end of `$LOAD_PATH`: `require "reline"` works
+with no `RUBYLIB`, as under CRuby. Name other copies with `-I` or
+`RUBYLIB`, which come first.
+
+`--irb` runs the IRB of these gems. With the gem `did_you_mean` too, an
+error of a session has its `Did you mean?` line. A host program with `KERNEL_MAIN` opens IRB with `--irb` as
 its first argument, with the program loaded but not run.
 
 `--irb` needs irb 1.18 or later, which parses with prism. When the build
