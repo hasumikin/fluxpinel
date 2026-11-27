@@ -271,6 +271,8 @@ typedef struct {
   pm_node_t *root;
   uint8_t file;              /* the text is a file's: an error in it has the mark under its
                                 source (fx_mark_text), as error_highlight reads a file back */
+  uint8_t loaded;            /* a require ran it, or runs it now: a require of the same real path
+                                answers false (fx_load_once). A file that raised is not loaded. */
   struct {                   /* the refinements that `using` made active in this
                                 file, newest last: a call at a byte in
                                 [from, to) sees r */

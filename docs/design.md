@@ -524,7 +524,9 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   the call, and adds `.rb`. A file with a real path that is loaded already
   answers false. `require` of a path (`./x`, `../x`, `/x`) resolves from the
   current directory. After a file runs, `$LOADED_FEATURES` has its real
-  path.
+  path. A file whose run raised is not loaded: the next require runs it
+  again, and the autoload of a constant whose file raised stays, as in
+  CRuby.
 - **Library names.** spinel resolves `require "json"` at compile time
   (`src/spinel_parse.c`). Fluxpinel resolves the name at run time in the same
   order:

@@ -1050,8 +1050,8 @@ static const char *fx_autoload_path(const FxClass *c, sp_sym name) {
 }
 
 /* Loads the file of an autoload constant k of c, and answers the constant
-   with its value. The file is not loaded again when it raises: the
-   constant keeps its autoload, as in CRuby. When the file does not define
+   with its value. When the file raises, the constant keeps its autoload,
+   and the next read runs the file again (fx_load_once), as in CRuby. When the file does not define
    the constant, or a require loaded it already (a `class Set` in the file
    of Set, which a require runs now), the autoload goes and the constant is
    not defined: NULL. */
