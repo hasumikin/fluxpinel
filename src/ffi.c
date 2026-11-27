@@ -183,15 +183,29 @@ static void *fx_ptr_arg(sp_RbVal v) {
 /* ffi_lib "name": the shared library of the platform, libname.so or
    libname.dylib on macOS, or a versioned one when only that exists
    (libname.so.9, libname.9.dylib). A name with a slash or a suffix is a
-   path, and opens as it is. */
+   path, and opens as it is.
+
+   macOS ends a process that opens its own libcrypto.dylib or libssl.dylib
+   with no version, so those two names never open that way: Fluxpinel
+   looks for a versioned one, then in the directories of Homebrew, where
+   OpenSSL is. The other names look there too, after the search of the
+   system, since dlopen does not search /opt/homebrew/lib. */
 static void fx_ffi_open(const char *lib) {
   if (strchr(lib, '/') || strstr(lib, ".so") || strstr(lib, ".dylib")) {
     if (dlopen(lib, RTLD_NOW | RTLD_GLOBAL)) return;
   } else {
 #ifdef __APPLE__
-    if (dlopen(sp_sprintf("lib%s.dylib", lib), RTLD_NOW | RTLD_GLOBAL)) return;
+    static const char *const dirs[] = { "/opt/homebrew/lib/", "/usr/local/lib/", "/opt/homebrew/opt/openssl@3/lib/",
+                                        "/usr/local/opt/openssl@3/lib/" };
+    int guarded = !strcmp(lib, "crypto") || !strcmp(lib, "ssl");
+    if (!guarded && dlopen(sp_sprintf("lib%s.dylib", lib), RTLD_NOW | RTLD_GLOBAL)) return;
     for (int v = 0; v <= 9; v++)
       if (dlopen(sp_sprintf("lib%s.%d.dylib", lib, v), RTLD_NOW | RTLD_GLOBAL)) return;
+    for (size_t d = 0; d < sizeof dirs / sizeof dirs[0]; d++) {
+      if (dlopen(sp_sprintf("%slib%s.dylib", dirs[d], lib), RTLD_NOW | RTLD_GLOBAL)) return;
+      for (int v = 0; v <= 9; v++)
+        if (dlopen(sp_sprintf("%slib%s.%d.dylib", dirs[d], lib, v), RTLD_NOW | RTLD_GLOBAL)) return;
+    }
 #else
     if (dlopen(sp_sprintf("lib%s.so", lib), RTLD_NOW | RTLD_GLOBAL)) return;
     for (int v = 0; v <= 9; v++)

@@ -599,6 +599,9 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   same declarations in a module body at run time (`src/ffi.c`):
   - `ffi_lib` opens the library with `dlopen`: `libNAME.so`, or
     `libNAME.dylib` on macOS, or a versioned name when only that exists.
+    On macOS it also looks in the directories of Homebrew. It does not
+    open `libcrypto.dylib` or `libssl.dylib` of the system with no
+    version, because macOS ends a process that does.
   - `ffi_func` declares a singleton method of the module (`FX_M_FFI`).
     Its first call finds the symbol with `dlsym`, and each call goes
     through libffi with the C types that the declaration names.
