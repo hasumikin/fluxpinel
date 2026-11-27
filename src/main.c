@@ -152,7 +152,10 @@ static const char fx_usage[] =
   "  --version       Print the version\n"
   "  --irb [arg...]  Start IRB (the gems of CRuby); arg... are its options\n"
   "  --irb-port PORT Open IRB to each telnet connection on 127.0.0.1:PORT\n"
-  "  --console       Read Ruby from stdin, one line at a time, as irb does\n";
+  "  --console       Read Ruby from stdin, one line at a time, as irb does\n"
+  "  --enable=list   Turn features on, --disable=list off: gems (Gem and\n"
+  "                  RbConfig before the program), frozen_string_literal; the\n"
+  "                  other features of ruby are accepted and change nothing\n";
 
 /* A wrong command line ends Fluxpinel, as it ends ruby. fx_options runs
    before the runtime starts, so these use no string of the runtime. */
@@ -164,6 +167,36 @@ static __attribute__((noreturn)) void fx_opt_fail(const char *msg, const char *a
 static __attribute__((noreturn)) void fx_opt_invalid(const char *dash, const char *opt, int len) {
   fprintf(stderr, "fluxpinel: invalid option %s%.*s  (-h will show valid options) (RuntimeError)\n", dash, len, opt);
   exit(1);
+}
+
+/* The features of --enable=list and --disable=list, or of --enable-name:
+   the names of ruby, in any case, with - for _, each one in the list that
+   commas separate. Fluxpinel has gems and frozen_string_literal; the other
+   names change nothing, and "all" names them all. A name ruby does not
+   know gets its two warnings, and the program runs. */
+static void fx_opt_features(int on, const char *list, const char *opt) {
+  static const char *const names[] = { "gems", "error_highlight", "did_you_mean", "syntax_suggest", "rubyopt",
+                                       "frozen_string_literal", "yjit", "zjit", "all", NULL };
+  for (const char *p = list; *p; p += *p == ',') {
+    size_t n = strcspn(p, ",");
+    int which = -1;
+    for (int i = 0; which < 0 && names[i]; i++) {
+      size_t j = 0;
+      for (; j < n && names[i][j]; j++) {
+        char c = p[j] == '-' ? '_' : p[j] >= 'A' && p[j] <= 'Z' ? (char)(p[j] + ('a' - 'A')) : p[j];
+        if (c != names[i][j]) break;
+      }
+      if (j == n && !names[i][j]) which = i;
+    }
+    if (which < 0 && n > 0) {
+      fprintf(stderr, "fluxpinel: warning: unknown argument for --%s: '%.*s'\n", opt, (int)n, p);
+      fprintf(stderr, "fluxpinel: warning: features are [gems, error_highlight, did_you_mean, syntax_suggest, "
+                      "rubyopt, frozen_string_literal, yjit, zjit].\n");
+    }
+    if (which == 0 || which == 8) fx_gems = on;
+    if (which == 5 || which == 8) fx_frozen_literals = on;
+    p += n;
+  }
 }
 
 static void fx_opt_code(const char *code) {
@@ -199,6 +232,15 @@ static int fx_options(int argc, char **argv) {
         fx_gap_raises = 1;
       }
       else if (!strcmp(a, "--console")) fx_opt.console = 1;
+      else if (!strncmp(a, "--enable", 8) || !strncmp(a, "--disable", 9)) {
+        /* --enable=list, --enable-name, or --enable and the next word */
+        const char *opt = a[2] == 'e' ? "enable" : "disable", *rest = a + 2 + strlen(opt), *list;
+        if (*rest == '=' || *rest == '-') list = rest + 1;
+        else if (!*rest) list = i + 1 < argc ? argv[++i] : "";
+        else fx_opt_invalid("", a, (int)strlen(a));
+        if (!*list) fx_opt_fail("missing argument for --", opt, "RuntimeError");
+        fx_opt_features(a[2] == 'e', list, opt);
+      }
       else if (!strcmp(a, "--help")) { fputs(fx_usage, stdout); exit(0); }
       else if (!strcmp(a, "--version")) { puts(FX_DESCRIPTION); exit(0); }
       else fx_opt_invalid("", a, (int)strlen(a));
