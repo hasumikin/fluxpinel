@@ -385,12 +385,13 @@ static int fx_seq_collector(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
     return 1;
   }
   /* each, each_pair and each_with_index with no block on a Hash or a
-     Range: an Enumerator over the elements that remembers the method
+     Range, and each_key and each_value on a Hash: an Enumerator over the
+     elements (the keys, the values) that remembers the method
      (#<Enumerator: {a: 1}:each>); a Range with no end, or with an infinite
      Float end, gives the endless generator of the runtime, read only as
      far as first(n) or next pulls it. The Array arms are in array.c. */
-  if (argc == 0 && (FX_IS("each") || FX_IS("each_with_index") || (fx_is_hash(r) && FX_IS("each_pair"))) &&
-      (fx_is_hash(r) || fx_is_range(r))) {
+  int hash_each = fx_is_hash(r) && (FX_IS("each_pair") || FX_IS("each_key") || FX_IS("each_value"));
+  if (argc == 0 && (FX_IS("each") || FX_IS("each_with_index") || hash_each) && (fx_is_hash(r) || fx_is_range(r))) {
     SP_GC_ROOT_RBVAL(r);
     const sp_Range *g = fx_is_range(r) ? (const sp_Range *)r.v.p : NULL;
     if (g && g->nobeg) sp_raise_cls("TypeError", "can't iterate from NilClass");
@@ -398,7 +399,13 @@ static int fx_seq_collector(sp_RbVal r, const char *name, int argc, sp_RbVal *ar
     SP_GC_ROOT_STR(m);
     sp_Enumerator *e;
     if (g && (g->noend || (g->fe && g->fend == HUGE_VAL))) e = sp_range_endless_step(sp_box_int(g->first), sp_box_int(1));
-    else e = sp_Enumerator_new_from_items(fx_seq_array(r));
+    else if (hash_each && !FX_IS("each_pair")) {
+      const sp_PolyPolyHash *h = sp_poly_as_poly_poly_hash(r);
+      sp_PolyArray *a = sp_PolyArray_new();
+      SP_GC_ROOT(a);
+      for (sp_int i = 0; i < h->len; i++) sp_PolyArray_push(a, name[5] == 'k' ? h->keys[h->order[i]] : h->vals[h->order[i]]);
+      e = sp_Enumerator_new_from_items(a);
+    } else e = sp_Enumerator_new_from_items(fx_seq_array(r));
     SP_GC_ROOT(e);
     if (FX_IS("each_with_index")) e = sp_Enumerator_with_index(e, 0);
     sp_enum_with_src(e, r, m);
