@@ -1,5 +1,5 @@
 # The spinel tests that Fluxpinel answers right, for make regress.
-# make oracle writes this file. spinel: aa0ac234c894
+# make oracle writes this file. spinel: 1900697207ce
 absolute_class_reopen_inside_module
 abstract_raise_override_return
 accessor_def_history_both_sides
@@ -734,6 +734,7 @@ block_param_cell_published_at_body_top
 block_param_destructure
 block_param_distribution
 block_param_elem_store_widens_array
+block_param_fed_by_a_raise
 block_param_forwarded_yield_union
 block_param_from_boxed_value
 block_param_from_every_block_call
@@ -873,6 +874,7 @@ boxed_class_name_survives_gc
 boxed_class_own_singleton_accessor_first
 boxed_class_singleton_accessor
 boxed_collection_elem_eq
+boxed_compiler_scalar_strings
 boxed_compiler_string_projections
 boxed_complex_finite
 boxed_condition_variable_signal
@@ -1536,6 +1538,7 @@ class_eval_text_call_after_def
 class_eval_text_call_before_def_raises
 class_eval_text_hook_call_before_def_raises
 class_eval_text_hook_local
+class_eval_text_in_hook_calls_enumerable
 class_eval_text_nested
 class_eval_text_nested_in_hook_text
 class_eval_text_own_local
@@ -1832,6 +1835,7 @@ closure_captures_class_value
 closure_captures_object_array
 closure_captures_pointer_locals
 closure_cells_after_guards
+closure_cells_at_capture
 cls_fact_any_recv_reader_push
 cls_fact_block_autosplat
 cls_fact_builtin_only_alias
@@ -2706,6 +2710,7 @@ enum_for_method_args
 enum_for_method_with_args
 enum_index_reduce
 enum_instance_eval_receiver
+enum_label_alias_and_hash_walks
 enum_map_chain
 enum_nil_safe_nav
 enum_own_arm_typed_receiver
@@ -3336,6 +3341,7 @@ gc_conc_sweep_late_join
 gc_first_thread_threshold
 gc_fresh_receiver_eq_exc_rooted
 gc_fresh_receiver_render_rooted
+gc_full_cadence_request_garbage
 gc_full_cycle_space_bound
 gc_grandparent_ivar_scan
 gc_ivar_set_receiver_root
@@ -3490,12 +3496,15 @@ hash_each_next
 hash_each_pair_boxed_kinds
 hash_each_store_beside_appending_aset
 hash_each_value_into_mutable_string_param
+hash_each_value_key_enumerator
+hash_each_value_with_index_types
 hash_each_with_object
 hash_element_push_each_bang
 hash_empty_block_methods
 hash_empty_literal_alias_key
 hash_empty_literal_alias_mixed_keys
 hash_empty_literal_and_map
+hash_enum_boxed_cmethod_namesake
 hash_enum_with_index_chain
 hash_eq_boxed
 hash_eq_empty_literal
@@ -3829,6 +3838,9 @@ include_constant_path
 include_copy_name_own_method
 include_copy_super_after_read
 include_enumerable_block_each
+include_guarded_by_extended_include_p
+include_guarded_by_include_p
+include_guarded_by_own_include_p
 include_hook_namesake_module
 include_late_after_lambda_in_constant
 include_late_in_module
@@ -3975,6 +3987,7 @@ inline_recv_hold_r2
 inline_self_reentry_proc_form
 inline_stmt_ensure_return_slot
 inline_string_add_boxed_result
+inline_string_operand_nil_recv
 inline_struct_block
 inline_yield_arity
 inline_yield_deep_nested_self
@@ -4128,6 +4141,7 @@ instance_exec_valuetype
 instance_exec_valuetype_trampoline
 instance_method_named_new_param
 instance_method_parameters_dynamic
+instance_method_self_in_class_method
 instance_methods_false
 instance_methods_false_chain
 instance_methods_false_class_method
@@ -4227,6 +4241,7 @@ integer_bignum_batch2
 integer_bit_index_clamped
 integer_bit_read_never_nil
 integer_chr_char_table
+integer_chr_encoding
 integer_clamp_float_bound
 integer_conversion_of_nilable
 integer_digits_base
@@ -4308,6 +4323,7 @@ io_line_read_boxed_splat
 io_lines_chomp_paragraph
 io_negative_length_nonblock_sysread
 io_nil_inspect
+io_nonblock_errno_message
 io_nonblock_string_result_handles
 io_nul_bytes
 io_null_constant
@@ -4317,6 +4333,7 @@ io_pipe_close_on_exec
 io_pipe_sync_write
 io_poly_flush_write
 io_poly_print_puts
+io_poly_read_nonblock
 io_poly_sync_assign
 io_poly_write
 io_popen_comment_beside_eval
@@ -4371,6 +4388,8 @@ io_waiters_leave_out_of_order
 io_winsize_set
 io_winsize_set_poly_handle
 io_write_counted_conversion
+io_write_nonblock_not_writable
+io_write_nonblock_poly_nul
 io_write_operand_setup_order
 io_write_print_splat
 io_write_receiver_once
@@ -5033,6 +5052,7 @@ kwsplat_to_positional
 kwsplat_yield_inline_bind
 lambda_arrow_string_return
 lambda_bare_break_nil
+lambda_block_param_to_builtin
 lambda_break_pops_exception_frames
 lambda_call_arg_into_ivar_array
 lambda_capturing_block_param
@@ -5961,6 +5981,7 @@ nomethod_message_shapes
 nomethod_raises_on_every_receiver
 nomethod_receiver_parens
 nomethod_scalar_slot
+nonblock_boxed_receiver_rooted
 nonlocal_return_in_block_of_non_yielding_method
 nonnumeric_reflection_sign_predicates
 noreturn_call_value
@@ -6424,6 +6445,7 @@ poly_complex_float_edges
 poly_concat_chain_rooted
 poly_container_delete
 poly_container_stores_own_element
+poly_conversion_unbuilt_class
 poly_count_arg_beside_class_method_count
 poly_count_arg_root
 poly_count_arity_grows
@@ -6604,7 +6626,9 @@ poly_instance_variable_set_any_class
 poly_int_bit_field
 poly_int_bit_range_index
 poly_int_bitops_auto_unify
+poly_int_chr_encoding
 poly_int_index_str_sym_hash
+poly_io_beside_owner_class
 poly_io_descriptor_surface
 poly_io_each_iterators
 poly_io_file_seek
@@ -7608,6 +7632,7 @@ require_end_marker
 require_engine_branch
 require_expression_lines
 require_first_line
+require_in_block_runs_later
 require_in_conditional
 require_in_method_order
 require_io_console_winsize
@@ -7640,6 +7665,7 @@ rescue_binding_captured_local
 rescue_builtin_module_include
 rescue_builtin_module_leaf_class
 rescue_class_variable
+rescue_exc_subclass_assign
 rescue_local_write_kept
 rescue_mod_yield_nil_value
 rescue_modifier_assign
@@ -8223,11 +8249,14 @@ slow_pass_safepoint
 socket_addr_boxed_handle
 socket_address_string_identity
 socket_addrinfo_and_option
+socket_binary_write
 socket_bind_connect_sockaddr
 socket_boxed_connect_nonblock_sockopt
+socket_calls_closed_in_thread
 socket_class_constants
 socket_class_hierarchy
 socket_close_read_write
+socket_connect_interrupt_releases
 socket_connect_nonblock_eisconn
 socket_connect_nonblock_keywords_alone_arm
 socket_const_defined
@@ -8245,6 +8274,7 @@ socket_given_to_child
 socket_handle_kind
 socket_large_read_n
 socket_large_write_slow_reader
+socket_nonblock
 socket_open_without_block
 socket_pack_sockaddr
 socket_read_partial_while_allocating
@@ -8269,6 +8299,7 @@ socket_tcp_thread
 socket_two_readers_one_buffer
 socket_unix_tcp_class_methods
 socket_unpack_sockaddr_un_edges
+socket_write_nonblock_ivar_nul
 socket_write_parked_across_spawn
 sort_block_cmp_answer_float
 sort_block_nil_answer
@@ -8695,6 +8726,8 @@ string_handle_yield_splat
 string_handle_yielder_name_group
 string_hash_alias_block_param_store
 string_hash_call
+string_hash_chained_index_alias
+string_hash_chained_index_observed
 string_hash_fresh
 string_hash_fresh_each
 string_hash_fresh_index
@@ -9344,6 +9377,7 @@ thread_raise_answers_nil
 thread_raise_boxed_receiver
 thread_raise_class_value
 thread_raise_main
+thread_raise_main_running
 thread_raise_reaches_main
 thread_regexp_shared_pattern
 thread_report_flag_truthiness
@@ -9547,9 +9581,13 @@ transpose_string_input_class
 trap_before_first_thread
 trap_no_reentry
 trap_previous_handler
+trap_raise_main_running_threaded
 trap_raise_pending
 trap_raise_rescued
 trap_runs_outside_signal_handler
+trap_single_worker_no_nesting
+trap_single_worker_running_main
+trap_single_worker_sibling_pass
 trap_throw_pending
 truncate_module_method
 tuple_elem_local
@@ -9618,6 +9656,7 @@ uniq_block
 uniq_user_eql_hash
 unix_server_accept_class
 unix_server_default_backlog
+unix_socket_half_closed_wait_writable
 unix_socket_large_write_slow_reader
 unix_socket_pair
 unix_socket_read_partial_while_allocating
