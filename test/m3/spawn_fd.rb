@@ -80,3 +80,16 @@ end
 w.close
 p r.read
 r.close
+
+# a thread other than the main one: the child of the runtime makes the
+# descriptor, so the call needs no fork of the walker
+t = Thread.new do
+  r, w = IO.pipe
+  pid = spawn("sh", "-c", "echo thread >&3", 3 => w)
+  w.close
+  s = r.read
+  Process.wait(pid)
+  r.close
+  s
+end
+p t.value

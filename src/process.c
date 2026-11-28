@@ -462,114 +462,6 @@ static sp_PolyArray *fx_spawn_opts(sp_RbVal opts, sp_RbVal env) {
   return a;
 }
 
-/* A copy of the name s that stays for the run, one per distinct name:
-   for a raise by a name that no static string of the program holds. */
-static const char *fx_name_kept(const char *s) {
-  static const char *kept[64];
-  static int n;
-  for (int i = 0; i < n; i++) if (!strcmp(kept[i], s)) return kept[i];
-  const char *copy = strdup(s);
-  if (n < (int)(sizeof kept / sizeof kept[0])) kept[n++] = copy;
-  return copy;
-}
-
-/* The bytes a descriptor gives until it closes, at most cap - 1, as a
-   string. */
-static size_t fx_read_all(int fd, char *buf, size_t cap) {
-  size_t n = 0;
-  while (n < cap - 1) {
-    ssize_t got = read(fd, buf + n, cap - 1 - n);
-    if (got < 0 && errno == EINTR) continue;
-    if (got <= 0) break;
-    n += (size_t)got;
-  }
-  buf[n] = 0;
-  return n;
-}
-
-/* spawn with a redirection of a descriptor past 2, which the options array
-   of the runtime has no slot for: a fork here, then in the child the
-   redirections of the descriptors past 2 (fx_exec_fds, as Kernel#exec
-   makes them) and the exec of the runtime with the options array, which
-   makes the standard streams, the process group, the directory and the
-   environment. What fails in the child before the program runs (a file
-   that does not open, a program that is not found) comes to the parent
-   through a pipe, as the class and the message of the exception; the
-   parent reaps the child, so $? reads its exit 127 as under CRuby, and
-   raises it: a spawn that cannot run raises Errno::ENOENT and leaves no
-   child. A gap met in the child (fx_gap_raises makes it a
-   NotImplementedError there) stops the parent as a gap. The parent closes
-   the files that the options opened for the standard streams, as the
-   runtime's spawn closes them once the child has them. */
-static sp_int fx_spawn_fork(sp_RbVal cmd, sp_PolyArray *args, sp_PolyArray *o, sp_RbVal opts) {
-  SP_GC_ROOT_RBVAL(cmd);
-  SP_GC_ROOT(args);
-  SP_GC_ROOT(o);
-  SP_GC_ROOT_RBVAL(opts);
-  int ep[2];
-  if (pipe(ep) < 0) sp_raise_cls(sp_errno_class_name(errno), strerror(errno));
-  fcntl(ep[0], F_SETFD, FD_CLOEXEC);
-  fcntl(ep[1], F_SETFD, FD_CLOEXEC);
-  fx_send(fx_gvar_get("$stdout"), "flush", 0, NULL);
-  fx_send(fx_gvar_get("$stderr"), "flush", 0, NULL);
-  fflush(NULL);
-  int pid;
-  FX_UNLOCKED(pid = sp_sched_fork());
-  if (pid < 0) {
-    int e = errno;
-    close(ep[0]);
-    close(ep[1]);
-    sp_raise_cls(sp_errno_class_name(e), strerror(e));
-  }
-  if (pid == 0) {
-    close(ep[0]);
-    fx_gap_raises = 1;
-    FX_TRY_PUSH();
-    if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
-      fx_exec_fds(opts, "spawn", o);
-      /* the program expects blocking standard streams, as after Kernel#exec */
-      for (int fd = 0; fd <= 2; fd++) {
-        int fl = fcntl(fd, F_GETFL);
-        if (fl >= 0 && (fl & O_NONBLOCK)) fcntl(fd, F_SETFL, fl & ~O_NONBLOCK);
-      }
-      sp_process_exec(cmd, sp_box_poly_array(args), sp_box_poly_array(o));
-      _exit(127);   /* not reached: an exec that fails raises */
-    }
-    FX_TRY_LANDED(0);
-    FxCaught c = fx_caught();
-    /* the class by its name and the message, as the object answers them
-       (a program-defined class included); each rooted while the next
-       call allocates */
-    sp_RbVal ev = fx_exc_box(fx_caught_obj(&c));
-    SP_GC_ROOT_RBVAL(ev);
-    const char *cls = sp_poly_arg_str_chk(fx_send(fx_send(ev, "class", 0, NULL), "name", 0, NULL));
-    SP_GC_ROOT_STR(cls);
-    const char *msg = sp_poly_arg_str_chk(fx_send(ev, "message", 0, NULL));
-    SP_GC_ROOT_STR(msg);
-    (void)!write(ep[1], cls, strlen(cls) + 1);
-    (void)!write(ep[1], msg, strlen(msg) + 1);
-    _exit(127);
-  }
-  close(ep[1]);
-  /* the files the options opened for the standard streams: the child has
-     its copies */
-  sp_int owned = o->data[7].v.i;
-  for (int i = 0; i < 3; i++)
-    if ((owned >> i) & 1) close((int)o->data[i].v.i);
-  char buf[4096];
-  size_t n;
-  FX_UNLOCKED(n = fx_read_all(ep[0], buf, sizeof buf));
-  close(ep[0]);
-  if (n == 0) return pid;
-  FX_UNLOCKED(sp_process_waitpid(pid));
-  const char *cls = buf, *msg = strlen(buf) + 1 < n ? buf + strlen(buf) + 1 : "";
-  static const char gap[] = "fluxpinel: unsupported ";
-  if (!strcmp(cls, "NotImplementedError") && !strncmp(msg, gap, sizeof gap - 1)) fx_gap(msg + sizeof gap - 1);
-  /* the runtime keeps the name of the class, not a copy, and reads it
-     after this frame is gone: a copy that stays */
-  sp_raise_cls(fx_name_kept(cls), msg);
-}
-
 /* spawn(env, cmd, *args, opts): the pid of the child. A leading Hash is
    the environment, a trailing one the options; the command is a String (a
    command line when it is alone) or [program, argv0]; an Array of Strings
@@ -611,7 +503,8 @@ static sp_int fx_spawn(int argc, sp_RbVal *argv) {
   sp_PolyArray *o = fx_spawn_opts(opts, env);
   SP_GC_ROOT(o);
   sp_int pid;
-  if (fds) return fx_spawn_fork(cmd, args, o, opts);
+  /* the descriptors past 2: slot 10, which the child of the runtime makes */
+  if (fds) fx_past_std_slot(o, opts);
   FX_UNLOCKED(pid = sp_process_spawn(cmd, sp_box_poly_array(args), sp_box_poly_array(o)));
   return pid;
 }
@@ -827,8 +720,9 @@ static void fx_child_check(sp_RbVal opts) {
 
 /* The options of a spawn that the runtime runs: a group with a descriptor
    past 2 has no slot in the options array of the runtime, so it stops as
-   a gap rather than go unread. A plain descriptor past 2 takes the fork
-   path (fx_spawn_fork), whose options fx_exec_opts_check reads. */
+   a gap rather than go unread. A plain descriptor past 2 goes in slot 10
+   of that array (fx_past_std_slot), and fx_exec_opts_check reads the
+   options of such a call. */
 static void fx_spawn_opts_check(sp_RbVal opts) {
   for (sp_int j = 0, n = sp_poly_length(opts); j < n; j++) {
     sp_RbVal key, value;
@@ -879,135 +773,72 @@ static const char *fx_exec_file(sp_RbVal v, int *fl, int *perm) {
   return p;
 }
 
-/* The redirections of an exec to a descriptor past 2 (`3 => io`,
-   `io3 => 4`, `3 => [path, "w"]`, `3 => :close`), which have no slot in
-   the options array of the runtime. An exec applies its options to this
-   process, which becomes the command, so the descriptors are made here,
-   ahead of the runtime's own: a file is opened, each source is copied
-   aside, so one redirection reads the descriptor another one replaces as
-   it was before the call (`3 => r4, 4 => r3`), and a standard stream sent
-   to one of them is the stream of before (`1 => w, 3 => $stdout`). A
-   descriptor opened here is closed once copied, so the program gets the
-   copy alone; a :close is done after the copies land, as CRuby closes
-   after its dup2s. The copy made by dup2 stays open across the exec. As
-   for the standard streams, the program gets a blocking descriptor. An
-   exec that fails leaves them as made, as CRuby does. */
-#define FX_EXEC_FDS 16
-#define FX_EXEC_CLOSE (-2)
-static void fx_exec_fds(sp_RbVal opts, const char *call, sp_PolyArray *o) {
-  int dst[FX_EXEC_FDS], src[FX_EXEC_FDS], tmp[FX_EXEC_FDS], fl[FX_EXEC_FDS], perm[FX_EXEC_FDS], child[FX_EXEC_FDS];
-  int n = 0, floor = 3;
-  const char *path[FX_EXEC_FDS];
+/* The redirections of a spawn or an exec to a descriptor past 2 (`3 =>
+   io`, `io3 => 4`, `3 => [path, "w"]`, `3 => :close`, `3 => [:child,
+   :out]`), as slot 10 of the options array of the runtime takes them
+   (lib/sp_process.c of spinel): six values for each, the descriptor of
+   the child, the kind (0 a dup of a descriptor of this process, 1 a close,
+   2 a dup of a descriptor of the child, 3 a file that the child opens), a
+   descriptor, and the path, the open flags and the permission of a file.
+   The runtime makes them in the child of its fork, with system calls
+   only, so a spawn from any thread has them; a source is the descriptor
+   of before the call (`3 => r4, 4 => r3`, `1 => w, 3 => $stdout`), a
+   :close comes after the dups, and an exec that fails leaves them as
+   made, as CRuby does. nil when the options have none. */
+static sp_RbVal fx_past_std(sp_RbVal opts) {
+  SP_GC_ROOT_RBVAL(opts);
+  sp_PolyArray *a = NULL;
+  SP_GC_ROOT(a);
   sp_int len = sp_poly_length(opts);
   for (sp_int j = 0; j < len; j++) {
     sp_RbVal key, value;
     sp_poly_hash_pair(opts, j, &key, &value);
     int fd = fx_fd_of(key);
     if (fd <= 2) continue;
-    if (n == FX_EXEC_FDS) fx_gap(sp_sprintf("%s with more than 16 redirections of a descriptor past 2", call));
-    dst[n] = fd;
-    path[n] = NULL;
-    child[n] = -1;
-    if (value.tag == SP_TAG_SYM && value.v.i == sp_sym_intern("close")) src[n] = FX_EXEC_CLOSE;
-    else if (fx_child_fd(value, &child[n])) {
-      if (child[n] < 0) sp_raise_cls("ArgumentError", "bad redirect value");
-      src[n] = -1;
-    } else if ((src[n] = fx_fd_of(value)) < 0) path[n] = fx_exec_file(value, &fl[n], &perm[n]);
-    n++;
-    if (fd >= floor) floor = fd + 1;
-  }
-  if (n == 0) return;
-  /* a file that the options opened for a standard stream (fx_spawn_opts)
-     sits on the lowest free descriptor, which may be one the call
-     redirects: it moves above them first, so the dup2 or the close below
-     does not take it from the runtime, which sends it to the stream */
-  sp_int owned = o->data[7].v.i;
-  for (int i = 0; i < 3; i++) {
-    if (!((owned >> i) & 1)) continue;
-    int fd = (int)o->data[i].v.i, hit = 0;
-    for (int k = 0; k < n; k++) if (dst[k] == fd) hit = 1;
-    if (!hit) continue;
-    int moved = fcntl(fd, F_DUPFD_CLOEXEC, floor);
-    if (moved < 0) sp_raise_cls(sp_errno_class_name(errno), strerror(errno));
-    close(fd);
-    o->data[i] = sp_box_int(moved);
-  }
-  /* the runtime applies a standard stream after these: one that reads a
-     descriptor made or closed here would not read the one of before */
-  for (sp_int j = 0; j < len; j++) {
-    sp_RbVal key, value;
-    sp_poly_hash_pair(opts, j, &key, &value);
-    if (fx_fd_of(key) > 2) continue;
-    int from = fx_fd_of(value);
-    if (sp_rbval_is_array(value) && sp_poly_length(value) == 2) from = fx_fd_of(sp_poly_arr_get(value, 1));
-    for (int i = 0; i < n; i++)
-      if (from == dst[i]) fx_gap(sp_sprintf("%s with a standard stream sent to descriptor %d, which the call replaces", call, from));
-  }
-  for (int i = 0; i < n; i++) {
-    if (!path[i]) continue;
-    /* (close-on-exec: the descriptor is closed below, and a fork of another
-       thread before that does not hand it to a command) */
-    src[i] = open(path[i], fl[i] | O_CLOEXEC, (mode_t)perm[i]);
-    if (src[i] < 0) {
-      int e = errno;
-      for (int k = 0; k < i; k++) if (path[k]) close(src[k]);
-      sp_raise_cls(sp_errno_class_name(e), sp_sprintf("%s - %s", strerror(e), path[i]));
+    SP_GC_ROOT_RBVAL(value);
+    int kind = 0, src = -1, fl = 0, perm = 0, child = -1;
+    sp_RbVal path = sp_box_nil();
+    SP_GC_ROOT_RBVAL(path);
+    if (value.tag == SP_TAG_SYM && value.v.i == sp_sym_intern("close")) kind = 1;
+    else if (fx_child_fd(value, &child)) {
+      if (child < 0) sp_raise_cls("ArgumentError", "bad redirect value");
+      kind = 2;
+      src = child;
+    } else if ((src = fx_fd_of(value)) < 0) {
+      const char *p = fx_exec_file(value, &fl, &perm);
+      SP_GC_ROOT_STR(p);
+      kind = 3;
+      path = sp_box_str_new(p);
     }
+    if (!a) a = sp_PolyArray_new();
+    sp_PolyArray_push(a, sp_box_int(fd));
+    sp_PolyArray_push(a, sp_box_int(kind));
+    sp_PolyArray_push(a, sp_box_int(src));
+    sp_PolyArray_push(a, path);
+    sp_PolyArray_push(a, sp_box_int(fl));
+    sp_PolyArray_push(a, sp_box_int(perm));
   }
-  /* a descriptor of the child ([:child, fd]): the source of the option that
-     redirects fd, a descriptor made above or a standard stream sent to an
-     IO or a number (fx_child_check saw that an option redirects it). A
-     standard stream sent to a file is the runtime's to open, later, so its
-     descriptor is not known here. A pass per entry follows a chain. */
-  for (int pass = 0; pass < n; pass++)
-    for (int i = 0; i < n; i++) {
-      if (child[i] < 0 || src[i] >= 0) continue;
-      int c = child[i], k = -1;
-      for (int j = 0; j < n; j++) if (dst[j] == c) k = j;
-      if (k >= 0) {
-        if (src[k] >= 0) src[i] = src[k];
-        else if (src[k] == FX_EXEC_CLOSE)
-          fx_gap(sp_sprintf("%s with descriptor %d sent to descriptor %d of the child, which the call closes", call, dst[i], c));
-        continue;
-      }
-      sp_RbVal v;
-      if (!fx_redirect_of(opts, c, &v)) continue;
-      int from = fx_fd_of(v);
-      if (from >= 0) src[i] = from;
-      else if (fx_child_fd(v, &c)) child[i] = c;
-      else fx_gap(sp_sprintf("%s with descriptor %d sent to standard stream %d, which the call sends to a file", call, dst[i], c));
-    }
-  for (int i = 0; i < n; i++) {
-    tmp[i] = -1;
-    if (src[i] < 0) continue;
-    tmp[i] = fcntl(src[i], F_DUPFD_CLOEXEC, floor);
-    if (tmp[i] < 0) {
-      int e = errno;
-      for (int k = 0; k < i; k++) if (tmp[k] >= 0) close(tmp[k]);
-      for (int k = 0; k < n; k++) if (path[k]) close(src[k]);
-      sp_raise_cls(sp_errno_class_name(e), strerror(e));
-    }
-  }
-  for (int i = 0; i < n; i++) if (path[i]) close(src[i]);
-  for (int i = 0; i < n; i++) {
-    if (tmp[i] < 0) continue;
-    if (dup2(tmp[i], dst[i]) < 0) {
-      int e = errno;
-      for (int k = i; k < n; k++) if (tmp[k] >= 0) close(tmp[k]);
-      sp_raise_cls(sp_errno_class_name(e), strerror(e));
-    }
-    close(tmp[i]);
-    int f = fcntl(dst[i], F_GETFL);
-    if (f >= 0 && (f & O_NONBLOCK)) fcntl(dst[i], F_SETFL, f & ~O_NONBLOCK);
-  }
-  for (int i = 0; i < n; i++) if (src[i] == FX_EXEC_CLOSE) close(dst[i]);
+  return a ? sp_box_poly_array(a) : sp_box_nil();
 }
+
+/* Puts the redirections past 2 of opts in slot 10 of the options array o
+   of fx_spawn_opts, which has slots 0 to 8: slot 9 (unsetenv_others) stays
+   nil. */
+static void fx_past_std_slot(sp_PolyArray *o, sp_RbVal opts) {
+  if (opts.tag == SP_TAG_NIL) return;
+  sp_RbVal x = fx_past_std(opts);
+  SP_GC_ROOT_RBVAL(x);
+  if (x.tag == SP_TAG_NIL) return;
+  while (o->len < 10) sp_PolyArray_push(o, sp_box_nil());
+  sp_PolyArray_push(o, x);
+}
+
 
 /* The keys of an exec's options Hash: the ones of spawn that the runtime
    reads (in, out, err, their groups, pgroup, rlimit_cpu, rlimit_as, chdir,
    and the ones every spawn ignores, close_others and unsetenv_others), and
    a descriptor past 2 sent to an IO, a number, a file (a path, or an Array
-   of path, mode and permission) or :close, which fx_exec_fds makes. Another
+   of path, mode and permission) or :close, which fx_past_std reads. Another
    key, or another value for such a descriptor (one of a descriptor of the
    child among them), stops as a gap rather than go unread. */
 static void fx_exec_opts_check(sp_RbVal opts, const char *call) {
@@ -1018,7 +849,7 @@ static void fx_exec_opts_check(sp_RbVal opts, const char *call) {
     sp_poly_hash_pair(opts, j, &key, &value);
     int fd = fx_fd_of(key);
     if (fd >= 0 && fd <= 2) continue;
-    /* a descriptor past 2: fx_exec_fds makes it, also from a descriptor of
+    /* a descriptor past 2: fx_past_std reads it, also from a descriptor of
        the child ([:child, fd]); another Array is a file's, and one whose
        first element is no String raises the TypeError File.open would. */
     if (fd > 2) {
@@ -1068,8 +899,8 @@ static int fx_process_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVa
     return 1;
   }
   /* exec(env, cmd, *args, opts): the Hashes of spawn, read as spawn reads
-     them (fx_spawn_opts). A redirection of a descriptor past 2 has no slot
-     in the options array of the runtime: fx_exec_fds makes it. */
+     them (fx_spawn_opts). A redirection of a descriptor past 2 goes in
+     slot 10 of the options array of the runtime (fx_past_std_slot). */
   if (FX_IS("exec") && argc >= 1) {
     sp_RbVal env = sp_box_nil(), opts = sp_box_nil();
     SP_GC_ROOT_RBVAL(env);
@@ -1083,7 +914,7 @@ static int fx_process_kernel(const char *name, int argc, sp_RbVal *argv, sp_RbVa
     for (int i = 1; i < argc; i++) sp_PolyArray_push(args, argv[i]);
     sp_PolyArray *o = fx_spawn_opts(opts, env);
     SP_GC_ROOT(o);
-    if (opts.tag != SP_TAG_NIL) fx_exec_fds(opts, "exec", o);
+    fx_past_std_slot(o, opts);
     /* a pipe of the runtime is O_NONBLOCK; the program that replaces this
        one expects blocking stdio, which the child of spawn gets the same
        way (sp_process.c of spinel). An exec that fails raises, and the
