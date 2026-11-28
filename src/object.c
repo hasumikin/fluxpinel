@@ -1066,6 +1066,7 @@ static FxConst *fx_const_load(FxClass *c, sp_sym name, FxConst *k) {
     if (path[0] == '/' || !strncmp(path, "./", 2) || !strncmp(path, "../", 3)) fx_require(NULL, path, 0);
     else fx_require_lib(path);
     sp_exc_top--;
+    fx_autoload_ran(path);
     free(path);
   } else {
     FX_TRY_LANDED(depth);

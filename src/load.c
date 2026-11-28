@@ -748,6 +748,33 @@ static sp_RbVal fx_require_lib(const char *name) {
   sp_raise_load_error(name);
 }
 
+/* After the file of an autoload ran (fx_const_load). RbConfig of spinel's
+   builtins describes a compiled program, which has no Ruby of its own: its
+   RbConfig.ruby is "ruby", and the directories of CONFIG are a conventional
+   prefix, by design. Fluxpinel is the Ruby of its programs, so its
+   RbConfig.ruby is the real path of the binary: a program that starts it to
+   run Ruby runs this Fluxpinel. The definition runs as a source of its own,
+   "(rbconfig)", with the path as a string literal; CONFIG stays as it is. */
+static void fx_autoload_ran(const char *path) {
+  if (strcmp(path, FX_BUILTINS_DIR "/rbconfig.rb") || !fx_exe_real) return;
+  sp_RbVal mod;
+  if (!fx_const_lookup(L.object, sp_sym_intern("RbConfig"), &mod) || !fx_class_value(mod)) return;
+  /* the path as a literal: \, " and # escaped */
+  size_t n = strlen(fx_exe_real);
+  char *lit = malloc(2 * n + 1), *q = lit;
+  for (const char *p = fx_exe_real; *p; p++) {
+    if (*p == '\\' || *p == '"' || *p == '#') *q++ = '\\';
+    *q++ = *p;
+  }
+  *q = 0;
+  char *src = sp_sprintf("module RbConfig\n  def self.ruby = \"%s\"\nend\n", lit);
+  free(lit);
+  FxSource *s;
+  const char *err = fx_parse("(rbconfig)", "(rbconfig)", strdup(src), strlen(src), &s);
+  if (err) sp_raise_cls("SyntaxError", err);
+  fx_run_source(s);
+}
+
 /* require_relative, require of a path, and __dir__: the calls that answer
    from the file of the call node n, unless the program defines a method of
    the name for self. on_kernel is set for `Kernel.load(path)` and its kin,

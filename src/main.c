@@ -385,8 +385,29 @@ static void fx_body(void) {
   fx_sched_end();
 }
 
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+
+/* The real path of this binary, which RbConfig.ruby answers: the executable
+   of the process, as the system names it, else argv[0]; links followed.
+   argv[0] itself when nothing resolves (a binary that moved). */
+static const char *fx_exe_path(const char *argv0) {
+  char buf[4096] = "";
+#ifdef __APPLE__
+  uint32_t n = sizeof buf;
+  if (_NSGetExecutablePath(buf, &n) != 0) buf[0] = 0;
+#else
+  ssize_t n = readlink("/proc/self/exe", buf, sizeof buf - 1);
+  if (n > 0) buf[n] = 0; else buf[0] = 0;
+#endif
+  char *real = realpath(buf[0] ? buf : argv0, NULL);
+  return real ? real : argv0;
+}
+
 int main(int argc, char **argv) {
   fx_proctitle_init(argc, argv);
+  fx_exe_real = fx_exe_path(argv[0]);
 #ifdef FX_KERNEL_MAIN
   L.path = argv[0];
   int skip = 0;

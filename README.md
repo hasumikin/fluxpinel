@@ -248,7 +248,9 @@ with `-I`, `RUBYLIB` or `make GEM_DIRS_FIRST=DIR`.
 `RUBY_ENGINE` is `"spinel"`, and `RUBY_VERSION` is the version that spinel
 gives. Thus a branch on `RUBY_ENGINE == "spinel"` goes the same way in
 Fluxpinel and in AOT code. `RUBY_DESCRIPTION` is the line that `-v`
-prints.
+prints. `RbConfig.ruby` is the real path of the running binary, so a
+program that starts `RbConfig.ruby` to run Ruby runs Fluxpinel; the
+directories of `RbConfig::CONFIG` stay the conventional ones of spinel.
 
 The walker keeps a side table next to the nodes of prism, for the caches
 of each call and each instance variable. See
