@@ -438,6 +438,41 @@ static int fx_int_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, s
   if (FX_IS("[]") && fx_int_aref(r, argc, argv, out)) return 1;
   sp_Bigint *b = r.tag == SP_TAG_BIGINT ? (sp_Bigint *)r.v.p : NULL;
   if (b && argc <= 1 && FX_IS("chr")) sp_raise_cls("RangeError", "bignum out of char range");
+  /* chr(encoding): the character of the codepoint in the encoding, an
+     Encoding or the name of one, as CRuby checks it (rb_enc_uint_chr): a
+     negative codepoint, or one past the widest character of UTF-8, is out
+     of char range; one that the encoding has no character for (past 0xFF
+     in ASCII-8BIT, past 0x7F in US-ASCII, a surrogate in UTF-8) is an
+     invalid codepoint. The runtime keeps UTF-8 and binary Strings, so a
+     US-ASCII character is a UTF-8 String here, as force_encoding leaves
+     it. Another encoding is a gap. */
+  if (argc == 1 && FX_IS("chr")) {
+    sp_RbVal enc = argv[0];
+    SP_GC_ROOT_RBVAL(enc);
+    if (fx_is_string(enc)) {
+      const char *given = sp_poly_arg_str_chk(enc);
+      SP_GC_ROOT_STR(given);
+      enc = sp_encoding_find(enc);
+      if (enc.tag != SP_TAG_ENCODING) sp_raise_cls("ArgumentError", sp_sprintf("unknown encoding name - %s", given));
+    } else if (enc.tag != SP_TAG_ENCODING) {
+      sp_poly_arg_str_chk(enc);
+    }
+    const char *en = sp_poly_arg_str_chk(fx_send(enc, "to_s", 0, NULL));
+    SP_GC_ROOT_STR(en);
+    int bin = !strcmp(en, "ASCII-8BIT"), ascii = !strcmp(en, "US-ASCII"), utf8 = !strcmp(en, "UTF-8");
+    if (!bin && !ascii && !utf8) fx_gap(sp_sprintf("Integer#chr with the encoding %s", en));
+    sp_int cp = r.v.i;
+    if (cp < 0 || cp > 0xFFFFFFFFLL || (utf8 && cp > 0x10FFFF))
+      sp_raise_cls("RangeError", sp_sprintf("%lld out of char range", (long long)cp));
+    if ((bin && cp > 0xFF) || (ascii && cp > 0x7F) || (utf8 && cp >= 0xD800 && cp <= 0xDFFF))
+      sp_raise_cls("RangeError", sp_sprintf("invalid codepoint 0x%llX in %s", (long long)cp, en));
+    char buf[4];
+    int n = utf8 ? sp_utf8_encode((uint32_t)cp, buf) : (buf[0] = (char)cp, 1);
+    char *s = (char *)sp_str_from_bytes(buf, (size_t)n);
+    if (bin) sp_str_mark_binary(s);
+    *out = sp_box_str_new(s);
+    return 1;
+  }
   if (argc == 0) {
     if (FX_IS("numerator")) *out = r;
     else if (FX_IS("denominator")) *out = sp_box_int(1);
