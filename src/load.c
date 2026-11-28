@@ -740,11 +740,22 @@ static sp_RbVal fx_require_lib(const char *name) {
     /* rbconfig and rubygems: CRuby has RbConfig and Gem before the program,
        so a require answers false, and the autoloads of fx_global_init
        define them at the first read. With --disable-gems it has neither,
-       and the first require loads the builtin of spinel and answers true. */
+       and the first require loads the builtins of spinel and answers true:
+       rbconfig.rb, and gem.rb after it for rubygems, as the rubygems of
+       CRuby requires rbconfig, so a later require of either answers false.
+       RbConfig.ruby is this binary after the load, as after the autoload
+       (fx_autoload_ran, which fx_const_load calls). */
     if (!fx_gems && (!strcmp(name, "rbconfig") || !strcmp(name, "rubygems"))) {
-      char *real = fx_real_path(name[1] == 'b' ? FX_BUILTINS_DIR "/rbconfig.rb" : FX_BUILTINS_DIR "/gem.rb");
+      char *real = fx_real_path(FX_BUILTINS_DIR "/rbconfig.rb");
       if (!real) sp_raise_load_error(name);
-      if (!fx_load_once(real, NULL)) return sp_box_bool(0);
+      int ran = fx_load_once(real, NULL);
+      if (ran) fx_autoload_ran(FX_BUILTINS_DIR "/rbconfig.rb");
+      if (name[1] == 'u') {
+        real = fx_real_path(FX_BUILTINS_DIR "/gem.rb");
+        if (!real) sp_raise_load_error(name);
+        ran = fx_load_once(real, NULL);
+      }
+      if (!ran) return sp_box_bool(0);
       return L.ctl == FX_CTL_NONE ? sp_box_bool(1) : sp_box_nil();
     }
     if (!strcmp(name, "io/console")) fx_console_loaded = 1;

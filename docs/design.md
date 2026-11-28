@@ -580,10 +580,12 @@ The walker evaluates the prism AST directly (`src/walk.c`).
   constant of Object: spinel loads its package when a program names `Set`,
   and so does Fluxpinel. Thus `require "set"` answers false. `RbConfig`
   and `Gem` are such constants too, from `builtins/*.rb` of spinel, which
-  its parser splices when a program names them; `--disable-gems` leaves
-  them out, as CRuby without RubyGems has neither, and then a `require` of
-  `rbconfig` or `rubygems` loads the file and answers true. After
-  `RbConfig` loads,
+  its parser splices when a program names them. `--disable-gems` leaves
+  them out, as CRuby without RubyGems has neither; a `require` of
+  `rbconfig` then loads its file and answers true, and a `require` of
+  `rubygems` loads both files, as the rubygems of CRuby requires
+  rbconfig, so a later `require "rbconfig"` answers false. After
+  `RbConfig` loads, by the autoload or by such a require,
   `src/load.c` runs a source `(rbconfig)` that defines `RbConfig.ruby` as
   the real path of the binary: spinel's answers `"ruby"`, for a compiled
   program with no Ruby of its own, and its `CONFIG` directories are a

@@ -122,6 +122,13 @@ CLI_CASES = [
   { args: ["--enable", "-e", "p 1"], err: true },
   { args: ["--disable=foo", "-e", "p 1"], err: true },
   { args: ["--enable-foo", "-e", "p 1"], err: true },
+  # with gems off, a require of rubygems loads rbconfig too, as the rubygems
+  # of CRuby requires it, and RbConfig.ruby is this binary after either
+  # require, as after the autoload
+  { args: ["--disable-gems", "-e", "require 'rubygems'; p defined?(RbConfig), RbConfig::CONFIG.class, require('rbconfig')"] },
+  { args: ["--disable-gems", "-e", "p require('rbconfig'), require('rubygems'), require('rbconfig'), require('rubygems')"] },
+  { args: ["--disable-gems", "-e", "require 'rbconfig'; puts RbConfig.ruby"], out: /\A\/.*\/fluxpinel\n\z/ },
+  { args: ["--disable-gems", "-e", "require 'rubygems'; puts RbConfig.ruby"], out: /\A\/.*\/fluxpinel\n\z/ },
   # the version and the help
   { args: ["-v"], out: /#{DESCRIPTION}\z/ },
   { args: ["--version"], out: /#{DESCRIPTION}\z/ },
