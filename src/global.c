@@ -385,8 +385,12 @@ static void fx_global_init(void) {
      files of its builtins directory for RbConfig and Gem, which CRuby has
      before the program (sp_splice_named_builtin) */
   fx_autoload_set(L.object, sp_sym_intern("Set"), "set");
-  fx_autoload_set(L.object, sp_sym_intern("RbConfig"), FX_BUILTINS_DIR "/rbconfig.rb");
-  fx_autoload_set(L.object, sp_sym_intern("Gem"), FX_BUILTINS_DIR "/gem.rb");
+  /* --disable-gems: neither is defined before the program, as in CRuby
+     with no RubyGems (a require of rbconfig or rubygems defines them) */
+  if (fx_gems) {
+    fx_autoload_set(L.object, sp_sym_intern("RbConfig"), FX_BUILTINS_DIR "/rbconfig.rb");
+    fx_autoload_set(L.object, sp_sym_intern("Gem"), FX_BUILTINS_DIR "/gem.rb");
+  }
   /* ThreadGroup and ObjectSpace: files of the builtins directory that
      spinel splices when a program names them (the finalizers of
      ObjectSpace bind to the runtime with native_func) */

@@ -362,6 +362,9 @@ static const char *fx_parse_in(const char *path, const char *real, char *buf, si
   s->end = (const uint8_t *)buf + len;
   pm_options_filepath_set(&s->options, path);
   pm_options_line_set(&s->options, line);
+  /* --enable=frozen-string-literal: prism marks each plain literal frozen,
+     as the magic comment does, in every file and eval */
+  if (fx_frozen_literals) pm_options_frozen_string_literal_set(&s->options, true);
   fx_options_scopes(&s->options, scopes, nscopes);
   pm_parser_init(&s->parser, (const uint8_t *)buf, len, &s->options);
   /* the parser takes the shared pool, and gives it back grown */
@@ -734,6 +737,27 @@ static sp_RbVal fx_require_lib(const char *name) {
   if (fx_lib_in(name, builtin)) {
     fx_feature_loaded = 1;
     fx_feature_add(name);
+    /* rbconfig and rubygems: CRuby has RbConfig and Gem before the program,
+       so a require answers false, and the autoloads of fx_global_init
+       define them at the first read. With --disable-gems it has neither,
+       and the first require loads the builtins of spinel and answers true:
+       rbconfig.rb, and gem.rb after it for rubygems, as the rubygems of
+       CRuby requires rbconfig, so a later require of either answers false.
+       RbConfig.ruby is this binary after the load, as after the autoload
+       (fx_autoload_ran, which fx_const_load calls). */
+    if (!fx_gems && (!strcmp(name, "rbconfig") || !strcmp(name, "rubygems"))) {
+      char *real = fx_real_path(FX_BUILTINS_DIR "/rbconfig.rb");
+      if (!real) sp_raise_load_error(name);
+      int ran = fx_load_once(real, NULL);
+      if (ran) fx_autoload_ran(FX_BUILTINS_DIR "/rbconfig.rb");
+      if (name[1] == 'u') {
+        real = fx_real_path(FX_BUILTINS_DIR "/gem.rb");
+        if (!real) sp_raise_load_error(name);
+        ran = fx_load_once(real, NULL);
+      }
+      if (!ran) return sp_box_bool(0);
+      return L.ctl == FX_CTL_NONE ? sp_box_bool(1) : sp_box_nil();
+    }
     if (!strcmp(name, "io/console")) fx_console_loaded = 1;
     if (!strcmp(name, "ostruct")) fx_ostruct_loaded = 1;
     /* fcntl is the one feature a require makes here (the Fcntl module,

@@ -207,6 +207,11 @@ The command line takes a part of the options of `ruby`:
 - `--irb`, for IRB; the arguments after it are the options of IRB
 - `--irb-port PORT`, for IRB on a telnet connection to the running program
 - `--console`, for a console on stdin
+- `--enable=list` and `--disable=list` (or `--enable-name`), for the
+  features `gems` (`Gem` and `RbConfig` before the program; a `require` of
+  `rubygems` or `rbconfig` defines them when they are off) and
+  `frozen_string_literal`; the other features of `ruby` are accepted and
+  change nothing, as Fluxpinel has none of them
 
 With no script and no `-e`, Fluxpinel reads the program from stdin. `-v`
 prints the version of Fluxpinel (one integer in `VERSION`), the commit of

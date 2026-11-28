@@ -756,6 +756,14 @@ static int fx_gap_raises;
 /* The real path of this binary (fx_exe_path of main.c): RbConfig.ruby. */
 static const char *fx_exe_real;
 static void fx_autoload_ran(const char *path);
+/* The features of --enable and --disable (fx_options of main.c), as ruby
+   names them: gems is on unless --disable-gems (then RbConfig and Gem are
+   not defined before the program, and a require of rbconfig or rubygems
+   defines them), and frozen_string_literal is off unless
+   --enable=frozen-string-literal (then each plain string literal of each
+   file is frozen). A host build keeps these defaults. */
+static int fx_gems = 1;
+static int fx_frozen_literals;
 static __attribute__((noreturn)) void fx_unsupported(const pm_node_t *n, const char *what);
 static __attribute__((noreturn)) void fx_gap(const char *what);
 static sp_sym fx_sym(pm_constant_id_t id);

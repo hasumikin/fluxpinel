@@ -105,6 +105,30 @@ CLI_CASES = [
   { args: ["-Z"], err: true },
   { args: ["--nosuch"], err: true },
   { args: ["-e"], err: true },
+  # --enable and --disable, as ruby takes them: =list, -name, or the next
+  # word. gems: Gem is not defined, and a require of rubygems defines it.
+  # frozen_string_literal: each plain literal of each file is frozen. The
+  # other features of ruby (error_highlight, did_you_mean, syntax_suggest,
+  # rubyopt, yjit, zjit) are accepted and change nothing: Fluxpinel has
+  # none of them. A feature ruby does not know gets its two warnings.
+  { args: ["--disable-gems", "-e", "p defined?(Gem); p require('rubygems'); p defined?(Gem), require('rubygems')"] },
+  { args: ["--disable=gems,did_you_mean", "-e", "p defined?(Gem), defined?(RbConfig)"] },
+  { args: ["--disable", "all", "-e", "p defined?(Gem)"] },
+  { args: ["--enable=gems", "--disable=yjit,zjit,error_highlight,syntax_suggest,rubyopt", "-e", "p defined?(Gem)"] },
+  { args: ["--enable=frozen-string-literal", "-e", "p 'a'.frozen?, \"a\#{1}\".frozen?, String.new('a').frozen?"] },
+  { args: ["--enable-frozen_string_literal", "-rfrozen_lit", "-e", "p FROZEN_LIT.frozen?, 'b'.frozen?"] },
+  { args: ["--disable=frozen_string_literal", "-e", "p 'a'.frozen?"] },
+  { args: ["--disable=", "-e", "p 1"], err: true },
+  { args: ["--enable", "-e", "p 1"], err: true },
+  { args: ["--disable=foo", "-e", "p 1"], err: true },
+  { args: ["--enable-foo", "-e", "p 1"], err: true },
+  # with gems off, a require of rubygems loads rbconfig too, as the rubygems
+  # of CRuby requires it, and RbConfig.ruby is this binary after either
+  # require, as after the autoload
+  { args: ["--disable-gems", "-e", "require 'rubygems'; p defined?(RbConfig), RbConfig::CONFIG.class, require('rbconfig')"] },
+  { args: ["--disable-gems", "-e", "p require('rbconfig'), require('rubygems'), require('rbconfig'), require('rubygems')"] },
+  { args: ["--disable-gems", "-e", "require 'rbconfig'; puts RbConfig.ruby"], out: /\A\/.*\/fluxpinel\n\z/ },
+  { args: ["--disable-gems", "-e", "require 'rubygems'; puts RbConfig.ruby"], out: /\A\/.*\/fluxpinel\n\z/ },
   # the version and the help
   { args: ["-v"], out: /#{DESCRIPTION}\z/ },
   { args: ["--version"], out: /#{DESCRIPTION}\z/ },
