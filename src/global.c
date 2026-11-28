@@ -17,6 +17,7 @@
    threads of the program keep theirs. */
 
 #include "fluxpinel.h"
+#include <sys/ioctl.h>
 #include <termios.h>
 
 #define FX_IS(s) (!strcmp(name, (s)))
@@ -730,6 +731,60 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
                                                fx_is_array(argv[0]) ? (int)sp_poly_length(argv[0]) : 1));
     sp_File_set_winsize(io, sp_poly_as_int_array(argv[0]));
     *out = argv[0];
+    return 1;
+  }
+  /* ioctl(request, arg = 0): the request on the descriptor, with an
+     Integer argument as its value, or a String as the buffer the call reads
+     and writes. The String comes back with the bytes of the call, grown to
+     the length the request encodes plus a sentinel byte when it was
+     shorter, as CRuby grows it (an 8-byte winsize buffer is 9 bytes after
+     TIOCGWINSZ on macOS, 257 on Linux, whose length is 256 at least); a
+     call that wrote past that length is CRuby's ArgumentError. The answer of ioctl(2); the Errno of a request the
+     descriptor does not take (ENOTTY for a pipe); the runtime's IOError for
+     a closed stream. A program that makes a pty its controlling terminal
+     (TIOCSCTTY) needs it. */
+  if (FX_IS("ioctl") && (argc == 1 || argc == 2)) {
+    unsigned long req = (unsigned long)sp_poly_arg_int_chk(argv[0]);
+    int fd = sp_File_fileno(io);
+    long val = 0;
+    char *buf = NULL;
+    size_t slen = 0;
+    int bin = 0;
+    if (argc == 2 && argv[1].tag != SP_TAG_NIL) {
+      if (fx_is_string(argv[1])) {
+        const char *s = sp_poly_arg_str_chk(argv[1]);
+        size_t len = sp_str_byte_len(s);
+#ifdef IOCPARM_LEN
+        size_t need = IOCPARM_LEN(req);
+#else
+        size_t need = _IOC_SIZE(req);   /* 0 for the old requests of Linux (TIOCGWINSZ is 0x5413): 256 at least, as CRuby takes there */
+        if (need < 256) need = 256;
+#endif
+        bin = sp_str_is_binary(s);
+        slen = len < need + 1 ? need + 1 : len;
+        buf = calloc(slen + 1, 1);
+        memcpy(buf, s, len);
+        buf[slen - 1] = 17;   /* the sentinel CRuby plants past the data */
+      } else {
+        val = (long)sp_poly_arg_int_chk(argv[1]);
+      }
+    }
+    int rc;
+    FX_UNLOCKED(rc = buf ? ioctl(fd, req, buf) : ioctl(fd, req, val));
+    if (rc < 0) {
+      int e = errno;
+      free(buf);
+      sp_raise_cls(sp_errno_class_name(e), strerror(e));
+    }
+    if (buf) {
+      if (buf[slen - 1] != 17) { free(buf); sp_raise_cls("ArgumentError", "return value overflowed string"); }
+      buf[slen - 1] = 0;
+      char *back = (char *)sp_str_from_bytes(buf, slen);
+      if (bin) sp_str_mark_binary(back);
+      sp_poly_str_become(argv[1], back);
+      free(buf);
+    }
+    *out = sp_box_int(rc);
     return 1;
   }
   /* a read or a write of a socket, a pipe or a terminal parks the thread:
