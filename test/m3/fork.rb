@@ -373,3 +373,13 @@ Process.wait(pid)
 p $?.exitstatus
 FileUtils.rm_rf(dir) if defined?(FileUtils)
 Dir.exist?(dir) && (File.delete(out) rescue nil; Dir.rmdir(dir))
+
+# the file a standard stream goes to is opened on the lowest free
+# descriptor, which the call may redirect too
+lowest = IO.pipe.then { |a, b| n = a.fileno; a.close; b.close; n }
+r, w = IO.pipe
+pid = fork { r.close; exec("sh", "-c", "cat <&#{lowest}", lowest => f5, out: w, err: File::NULL) }
+w.close
+p r.read
+Process.wait(pid)
+r.close
