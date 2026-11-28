@@ -46,6 +46,10 @@ rescue RuntimeError => e
   puts e.message
 end
 p require_relative("requires/once_broken"), ONCE_BROKEN, require_relative("requires/once_broken")
+# a throw out of the file leaves it not loaded too (thrower.rb throws the
+# first time)
+p catch(:out) { require_relative "requires/thrower"; :no_throw }
+p require_relative("requires/thrower"), defined?(THROWER), THROWER
 
 p __FILE__.end_with?("requires.rb"), __LINE__
 p __dir__.start_with?("/"), __dir__.end_with?("/m3")
