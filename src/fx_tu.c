@@ -207,13 +207,35 @@ static void fx_lock_adopt(void) {
    is for a Mutex of the program. A trap proc is walker code, and it takes
    the walker lock again after a wait, so the lock is taken with the trap
    depth of the thread put aside. */
+/* The threads that wait for the lock another thread holds. The holder gives
+   the lock up for a turn at a poll once per quantum while one waits
+   (fx_lock_slice): the host build has several workers, and nothing else
+   makes a computing main let go, so a thread that woke, or the trap thread
+   with a proc to run, waited for main's next wait. At one worker the
+   monitor's preemption of main gives the turns already (sp_safepoint), and
+   the count stays at zero for a program whose threads wait on their own. */
+static volatile int fx_lock_waiters;
+static double fx_lock_slice_at;
+#define FX_LOCK_SLICE_SEC 0.01
+static double fx_mono_now(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+}
 static void fx_lock(void) {
   if (!fx_walker_lock) return;
   fx_lock_adopt();
   sp_thread *t = sp_Thread_current();
   unsigned char in_trap = t ? t->in_trap : 0;
   if (in_trap) t->in_trap = 0;
+  sp_thread *owner = SP_ATOMIC_LOAD(&fx_walker_lock->owner, __ATOMIC_RELAXED);
+  int waits = owner && owner != t;
+  if (waits) SP_ATOMIC_FETCH_ADD(&fx_lock_waiters, 1, __ATOMIC_RELAXED);
   sp_Mutex_lock(fx_walker_lock);
+  if (waits) {
+    SP_ATOMIC_FETCH_SUB(&fx_lock_waiters, 1, __ATOMIC_RELAXED);
+    fx_lock_slice_at = fx_mono_now();   /* the new holder's quantum starts */
+  }
   if (in_trap) t->in_trap = in_trap;
 }
 static void fx_unlock(void) {
@@ -295,8 +317,23 @@ static void fx_safepoint(void) {
    AOT code has them: the safepoint, and the finalizers of what a collection
    freed (ObjectSpace.define_finalizer), which run between two statements
    and never inside the allocation that collected. */
+/* A thread waits for the lock (fx_lock_waiters): once per quantum the holder
+   gives it up and sleeps until a waiter has it, which is when the count
+   drops (fx_lock), or for a few sleeps when none is scheduled by then. The
+   sleep is what lets the scheduler run the waiter, on this worker at one
+   worker and on another with more; a pass alone came back before the woken
+   waiter ran, and the holder took the lock again ahead of it. The holder
+   takes it back after the waiter's own quantum. */
+static void fx_lock_slice(void) {
+  double now = fx_mono_now();
+  if (now - fx_lock_slice_at < FX_LOCK_SLICE_SEC) return;
+  fx_lock_slice_at = now;
+  int w = SP_ATOMIC_LOAD(&fx_lock_waiters, __ATOMIC_RELAXED);
+  FX_UNLOCKED(for (int i = 0; i < 20 && SP_ATOMIC_LOAD(&fx_lock_waiters, __ATOMIC_RELAXED) >= w; i++) sp_sleep(0.0001));
+}
 static void fx_poll(void) {
   if (SP_UNLIKELY(SP_SAFEPOINT_POLL())) fx_safepoint();
+  if (SP_UNLIKELY(SP_ATOMIC_LOAD(&fx_lock_waiters, __ATOMIC_RELAXED))) fx_lock_slice();
   if (SP_UNLIKELY(SP_ATOMIC_LOAD(&sp_fin_pending_flag, __ATOMIC_RELAXED))) FX_UNLOCKED(sp_fin_run_pending());
   /* a signal that came outside a wait of the runtime: the Proc of its trap
      runs here, and SIGINT or SIGTERM with no trap raises here (main.c) */

@@ -1542,10 +1542,15 @@ static sp_int fx_at_exit_fn(void *cap, sp_int argc, sp_int *args) {
 }
 
 /* The hook of trap: as at_exit, a Proc of the runtime whose fn yields to the
-   block of the Proc of Fluxpinel (cap), with the number of the signal. */
+   block of the Proc of Fluxpinel (cap), with the number of the signal. The
+   runtime runs it on its trap thread once the program has a thread, which
+   is no thread of the walker: the yield takes the walker lock as an entry
+   from the runtime does (FX_HOOKED), and the frame stack of the trap thread
+   is made at its first frame (fx_fs). Main runs it at its own poll with the
+   lock given up (fx_poll), and takes it back the same way. */
 static sp_int fx_trap_fn(void *cap, sp_int argc, sp_int *args) {
   sp_RbVal no = sp_box_int(argc ? args[0] : 0);
-  fx_yield(&((FxProc *)cap)->b, 1, &no);
+  FX_HOOKED(fx_yield(&((FxProc *)cap)->b, 1, &no));
   L.ctl = FX_CTL_NONE;
   return 0;
 }
