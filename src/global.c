@@ -831,6 +831,19 @@ static int fx_io_core(sp_RbVal r, const char *name, int argc, sp_RbVal *argv, sp
     *out = !s ? sp_box_nil() : into ? argv[1] : sp_box_str_new(s);
     return 1;
   }
+  /* write_nonblock(str, exception: true): one write with the descriptor
+     nonblocking, by the runtime function that the code spinel generates
+     calls (sp_sock_write_nb_poly): the count of bytes written, and with
+     exception: false :wait_writable when the write would block. */
+  if (argc - kw == 1 && FX_IS("write_nonblock")) {
+    int exc = kw ? fx_kw_exception(argv[argc - 1]) : 1;
+    sp_RbVal v = argv[0];
+    SP_GC_ROOT_RBVAL(v);
+    sp_oint n;
+    FX_UNLOCKED(n = sp_sock_write_nb_poly(io, v, exc));
+    *out = n.nil ? sp_box_sym(sp_sym_intern("wait_writable")) : sp_box_int(n.v);
+    return 1;
+  }
   if (!kw && argc == 1 && (FX_IS("readpartial") || FX_IS("sysread"))) {
     sp_int n = sp_poly_arg_int_chk(argv[0]);
     const char *s;
