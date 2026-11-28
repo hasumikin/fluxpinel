@@ -583,10 +583,15 @@ static const char *fx_path_clean(const char *path) {
 
 /* Runs the file at real (an absolute path from realpath, which the source
    keeps) once, with the text of the file extra after it when extra is not
-   NULL. Answers 0, and runs nothing, for a file that is loaded already. */
+   NULL. Answers 0, and runs nothing, for a file that is loaded already, or
+   that is loading now (a require of the file from inside it). A file whose
+   run raised, or that a throw (or another jump of the runtime) left, is
+   not loaded, as in CRuby: the next require parses and runs it again, and
+   $LOADED_FEATURES does not name it. The landing goes on with the jump
+   first, as the other landings do. */
 static int fx_load_once(char *real, const char *extra) {
   for (int i = 0; i < L.nsources; i++)
-    if (!strcmp(L.sources[i]->real, real)) {
+    if (L.sources[i]->loaded && !strcmp(L.sources[i]->real, real)) {
       free(real);
       return 0;
     }
@@ -605,7 +610,18 @@ static int fx_load_once(char *real, const char *extra) {
   const char *err = fx_parse(real, real, buf, len, &s);
   if (err) sp_raise_cls("SyntaxError", err);
   s->file = 1;
-  fx_run_source(s);
+  s->loaded = 1;
+  const int depth = fx_fs()->depth;
+  FX_TRY_PUSH();
+  if (setjmp(sp_exc_stack[sp_exc_top - 1]) == 0) {
+    fx_run_source(s);
+    sp_exc_top--;
+  } else {
+    FX_TRY_LANDED(depth);
+    s->loaded = 0;
+    if (sp_unwind_kind != SP_UNWIND_NONE) sp_unwind_resume();
+    fx_reraise(fx_caught());
+  }
   /* $LOADED_FEATURES names the file that a require ran. The first call
      allocates the Array, so the Array comes before the copy of the path:
      a collection in between would free a copy that nothing holds yet.

@@ -28,6 +28,19 @@ rescue LoadError => e
 end
 # the autoload stays after a LoadError
 p Geo.autoload?(:Missing).end_with?("missing.rb")
+# and after any other exception of the file: the next read runs the file
+# again (flaky.rb raises the first time)
+Geo.autoload :Flaky, File.join(__dir__, "autoload", "flaky.rb")
+begin
+  Geo::Flaky
+rescue RuntimeError => e
+  puts e.message
+end
+p Geo.autoload?(:Flaky).end_with?("flaky.rb"), Geo::Flaky, Geo.autoload?(:Flaky)
+# and after a throw out of the file (thrower.rb throws the first time)
+Geo.autoload :Thrower, File.join(__dir__, "autoload", "thrower.rb")
+p catch(:out) { Geo::Thrower; :no_throw }
+p Geo.autoload?(:Thrower).end_with?("thrower.rb"), Geo::Thrower, Geo.autoload?(:Thrower)
 begin
   Geo::Empty
 rescue NameError => e
