@@ -20,6 +20,9 @@ p Foo.new.to_enum(:pairs, 2).to_a, Foo.new.to_enum(:pairs, 2).inspect.sub(/0x\h+
 
 p [].each_index, [1, 2].each_index.to_a, %w[a b].each_index.map { |i| i * 2 }
 p (1..3).reverse_each, (1..3).reverse_each.to_a, {a: 1, b: 2}.reverse_each.to_a
+h = {a: 1, b: 2}
+p h.each_key, h.each_key.to_a, h.each_key.size, h.each_key.with_index.to_a
+p h.each_value, h.each_value.to_a, h.each_value.any? { |v| v > 1 }, h.each_value.map { |v| v * 2 }
 p [1, 2, 3].combination(2), [1, 2, 3].combination(2).to_a, [1, 2, 3].combination(2).size
 p [1, 2, 3].combination(2).select { |a, b| a + b > 3 }
 p [1, 2].cycle, [1, 2].cycle(2), [1, 2].cycle(2).to_a, [1, 2].cycle(nil).first(3), [1, 2].cycle.size, [1, 2].cycle.take(5)
