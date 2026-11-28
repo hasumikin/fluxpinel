@@ -360,7 +360,8 @@ static sp_RbVal fx_opt_get(sp_RbVal opts, const char *key) {
 /* One standard descriptor of a spawn (0 in, 1 out, 2 err), as the code
    that spinel emits resolves it (emit_spawn_fd_options): -1 for none, nil
    and false; an Integer; the descriptor of an IO; a filename, which the
-   runtime opens and owns; [:child, :out], [:child, :err] or [:child, fd].
+   runtime opens and owns; [:child, :out], [:child, :err] or [:child, fd];
+   :close for a descriptor the child closes (-2).
    A later slot of a group key ([:out, :err]) shares the first slot's.
    fx_spawn_slot makes each once. */
 static sp_RbVal fx_spawn_fd(sp_RbVal opts, sp_PolyArray *slots, int slot, int *owned, int *done) {
@@ -371,6 +372,10 @@ static sp_RbVal fx_spawn_fd(sp_RbVal opts, sp_PolyArray *slots, int slot, int *o
   if (prior >= 0) return fx_spawn_slot(opts, slots, prior, owned, done);
   if (v.tag == SP_TAG_NIL || (v.tag == SP_TAG_BOOL && !v.v.i)) return sp_box_int(-1);
   if (v.tag == SP_TAG_INT) return v;
+  /* :close: the child closes the descriptor, as the runtime takes -2 in the
+     slot (SP_SPAWN_FD_CLOSE, lib/sp_process.c); a descriptor past 2 takes
+     :close in fx_past_std */
+  if (v.tag == SP_TAG_SYM && v.v.i == (sp_int)sp_sym_intern("close")) return sp_box_int(-2);
   if (v.tag == SP_TAG_OBJ && v.cls_id == SP_BUILTIN_IO && v.v.p) return sp_box_int(sp_File_fileno((sp_File *)v.v.p));
   if (fx_is_string(v) && v.v.p)
     return sp_box_int(sp_process_open_redirect(sp_String_cstr((sp_String *)v.v.p), slot, owned));
